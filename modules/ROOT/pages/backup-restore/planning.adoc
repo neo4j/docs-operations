@@ -1,0 +1,238 @@
+[[backup-planning]]
+= Backup and restore planning
+:description: This section describes the benefits of backing up Neo4j, what to consider when deciding on your backup and restore strategy, what needs to be backed up, and the different backup modes and options. 
+
+//Check Mark
+:check-mark: icon:check[]
+
+//Cross Mark
+:cross-mark: icon:times[]
+
+There are two main reasons for backing up your Neo4j databases and storing them in a safe, off-site location:
+
+* to be able to quickly recover your data in case of failure, for example related to hardware, human error, or natural disaster.
+* to be able to perform routine administrative operations, such as moving a database from one instance to another, upgrading, or reclaiming space.
+
+[[backup-restore-strategy]]
+== Backup and restore strategy
+
+Depending on your particular deployment and environment, it is important to design an appropriate backup and restore strategy.
+
+There are various factors to consider when deciding on your strategy, such as:
+
+* Type of environment – development, test, or production.
+* Data volumes.
+* Number of databases.
+* Available system resources.
+* Downtime tolerance during backup and restore.
+* Demands on Neo4j performance during backup and restore.
+This factor might lead your decision towards performing these operations during an off-peak period.
+* Tolerance for data loss in case of failure.
+* Tolerance for downtime in case of failure.
+If you have zero tolerance for downtime and data loss, you might want to consider performing an online or even a scheduled backup.
+* Frequency of updates to the database.
+* Type of backup and restore method (online or offline), which may depend on whether you want to:
+** perform full backups (online or offline).
+** automatically check the consistency of a database backup (online only).
+** perform incremental backups (online only).
+** use SSL/TLS for the backup network communication (online only).
+** keep your databases as archive files (offline only).
+* How many backups you want to keep.
+* Where the backups will be stored — drive or remote server, cloud storage, different data center, different location, etc.
++
+[TIP]
+====
+It is recommended to store your database backups on a separate off-site server (drive or remote) from the database files.
+This ensures that if for some reason your Neo4j DBMS crashes, you will be able to access the backups and perform a restore.
+====
+* How you will test recovery routines, and how often.
+
+[[backup-restore-options]]
+== Backup and restore options
+
+Neo4j supports backing up and restoring both online and offline databases.
+It uses xref:tools/neo4j-admin/index.adoc[Neo4j Admin tool] commands, which can be run from a live, as well as from an offline Neo4j DBMS.
+All `neo4j-admin` commands must be invoked as the `neo4j` user to ensure the appropriate file permissions.
+
+* `neo4j-admin backup/restore` (Enterprise only) -– used for performing online backup (xref:backup-restore/modes.adoc#full-backup[full] and xref:backup-restore/modes.adoc#incremental-backup[incremental]) and restore operations.
+The database to be backed up must be in **online** mode.
+This command is suitable for production environments, where you cannot afford downtime.
+However, it is more memory intensive and is not supported in https://neo4j.com/cloud/aura/[Neo4j Aura].
++
+[TIP]
+====
+When using `neo4j-admin backup` in Causal Cluster, it is recommended to back up from an external instance as opposed to reuse instances that form part of the cluster.
+====
+* `neo4j-admin dump/load` –- used for performing offline dump and load operations.
+The database to be dumped must be in **offline** mode.
+This dump command is suitable for environments, where downtime is not a factor.
+It is faster than the backup command, and produces an archive file, which occupies less space than a normal database structure.
+* `neo4j-admin copy` –- used for copying an offline database or backup.
+This command can be used for cleaning up database inconsistencies, reclaiming unused space, and migrating Neo4j 3.5.any directly to any 4.x version of Neo4j, including the latest version, skipping the intermediate steps.
+For a detailed example, see link:{upgrade-current-uri}/migration/migrate-to-4.any/online-backup-copy-database/[Upgrade and Migration Guide -> Tutorial: Back up and copy a database in a standalone instance].
+
+[WARNING]
+====
+File system copy-and-paste of databases is not supported.
+====
+
+[NOTE]
+====
+In Fabric deployments, the Neo4j Admin commands `backup`, `restore`, `dump`, `load`, `copy`, and `check-consistency` are not supported for use on the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
+They must be run directly on the databases that are part of the Fabric setup.
+====
+
+.The following table describes the commands capabilities and usage.
+[cols="<,^,^,^,^,^",frame="topbot",options="header"]
+|===
+| Capability/ Usage
+| `neo4j-admin backup`
+| `neo4j-admin dump`
+| `neo4j-admin restore`
+| `neo4j-admin load`
+| `neo4j-admin copy`
+
+| Neo4j Edition
+| Enterprise
+| all
+| Enterprise
+| all
+| Enterprise
+
+| Live Neo4j DBMS
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| Offline Neo4j DBMS
+| {cross-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| Run against a user database
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| Run against the `system` database
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {cross-mark}
+
+| Run against the `fabric` database
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+
+| Perform full backups
+| {check-mark}
+| {check-mark}
+| *n/a*
+| *n/a*
+| *n/a*
+
+| Perform incremental backups
+| {check-mark}
+| {cross-mark}
+| *n/a*
+| *n/a*
+| *n/a*
+
+| Applied to an online database
+| {check-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+
+| Applied to an offline database
+| {cross-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| Can be run remotely (support SSL)
+| {check-mark}
+| {cross-mark}
+| {check-mark}
+| {cross-mark}
+| {check-mark}
+
+| Command input
+| database
+| database
+| database backup
+| archive (.dump)
+| database or database backup
+
+| Command output
+| database
+| archive (.dump)
+| database
+| database
+| database; no schema store
+
+| Run consistency check after completion
+| {check-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+
+| Clean up database inconsistencies
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {check-mark}
+
+| Compact data store
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {cross-mark}
+| {check-mark}
+|===
+
+[[backup-planning-databases]]
+== Databases to backup
+
+A Neo4j DBMS can host multiple databases.
+Both Neo4j Community and Enterprise Editions have a default user database, called `neo4j`, and a `system` database, which contains configurations, e.g., operational states of databases, security configuration, schema definitions, login credentials, and roles.
+In the Enterprise Edition, you can also create additional user databases.
+Each of these databases are backed up independently of one another.
+
+[NOTE]
+====
+It is very important to back up each of your databases, including the `system` database, in a safe location.
+====
+
+[[backup-planning-additional]]
+== Additional files to back up
+
+The following files must be backed up separately from the databases:
+
+* The xref:configuration/file-locations.adoc[_neo4j.conf_] file.
+If you have a cluster deployment, you should back up the configuration file for each cluster member.
+* All the files used for encryption, i.e., private key, public certificate, and the contents of the _trusted_ and _revoked_ directories.
+The locations of these are described in xref:security/ssl-framework.adoc[SSL framework].
+If you have a cluster, you should back up these files for each cluster member.
+* If using custom plugins, make sure that you have the plugins in a safe location.
+
+[[backup-planning-storage]]
+== Storage considerations
+
+For any backup, it is important that you store your data separately from the production system, where there are no common dependencies, and preferably off-site.
+If you are running Neo4j in the cloud, you may use a different availability zone or even a separate cloud provider.
+Since backups are kept for a long time, the longevity of archival storage should be considered as part of backup planning.

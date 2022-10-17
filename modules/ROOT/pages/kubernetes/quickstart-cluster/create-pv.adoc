@@ -1,0 +1,145 @@
+[role=enterprise-edition]
+[[cc-create-pv]]
+= Create a persistent volume for each cluster member
+
+You create a persistent disk for each cluster member to be used for its `data` volume mount.
+For more information on persistent volumes and mounts, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
+In this guide, you attach cloud disks/volumes, e.g., gcePersistentDisk, azureDisk, and awsElasticBlockStore without creating Kubernetes PersistentVolumes.
+
+[NOTE]
+====
+The following examples use `core-disk-1`, `core-disk-2`, `core-disk-3`, and `rr-disk-1` as names for the persistent disks.
+====
+
+[.tabbed-example]
+=====
+[.include-with-gke]
+======
+Create a GCP persistent disk for each cluster member (both cores and read replicas) by executing the following commands.
+This is a normal GCP persistent disk and not Kubernetes specific:
+
+[source, shell]
+----
+gcloud compute disks create --size 128Gi --type pd-ssd "core-disk-1"
+gcloud compute disks create --size 128Gi --type pd-ssd "core-disk-2"
+gcloud compute disks create --size 128Gi --type pd-ssd "core-disk-3"
+gcloud compute disks create --size 128Gi --type pd-ssd "rr-disk-1"
+----
+
+Each of the commands should return the name, zone, size, type, and the status of the corresponding disk, for example:
+
+[source, role=noheader]
+----
+Created [https://www.googleapis.com/compute/v1/projects/neo4j-helm/zones/europe-west6-c/disks/core-disk-1].
+NAME         ZONE            SIZE_GB  TYPE    STATUS
+core-disk-1  europe-west6-c  128      pd-ssd  READY
+
+New disks are unformatted. You must format and mount a disk before it
+can be used. You can find instructions on how to do this at:
+
+https://cloud.google.com/compute/docs/disks/add-persistent-disk#formatting
+
+Created [https://www.googleapis.com/compute/v1/projects/neo4j-helm/zones/europe-west6-c/disks/core-disk-2].
+NAME         ZONE            SIZE_GB  TYPE    STATUS
+core-disk-2  europe-west6-c  128      pd-ssd  READY
+
+New disks are unformatted. You must format and mount a disk before it
+can be used. You can find instructions on how to do this at:
+
+https://cloud.google.com/compute/docs/disks/add-persistent-disk#formatting
+
+Created [https://www.googleapis.com/compute/v1/projects/neo4j-helm/zones/europe-west6-c/disks/core-disk-3].
+NAME         ZONE            SIZE_GB  TYPE    STATUS
+core-disk-3  europe-west6-c  128      pd-ssd  READY
+
+New disks are unformatted. You must format and mount a disk before it
+can be used. You can find instructions on how to do this at:
+
+https://cloud.google.com/compute/docs/disks/add-persistent-disk#formatting
+
+Created [https://www.googleapis.com/compute/v1/projects/neo4j-helm/zones/europe-west6-c/disks/rr-disk-1].
+NAME       ZONE            SIZE_GB  TYPE    STATUS
+rr-disk-1  europe-west6-c  128      pd-ssd  READY
+
+New disks are unformatted. You must format and mount a disk before it
+can be used. You can find instructions on how to do this at:
+
+https://cloud.google.com/compute/docs/disks/add-persistent-disk#formatting
+----
+
+[NOTE]
+====
+The message `New disks are unformatted. You must format and mount a disk before it can be used.` _should not_ be a cause for concern, and *_there is no need to take action to format the disk_*.
+If necessary, the disk will be formatted automatically when used in Kubernetes.
+====
+======
+
+[.include-with-aws]
+======
+. Create an AWS EBS disk for each cluster member (both cores and read replicas) using the following commands.
+This is a normal AWS EBS disk and not Kubernetes specific:
++
+[source, shell]
+----
+aws ec2 create-volume --availability-zone=${AWS_AVAILABILITY_ZONE} --size=64 --volume-type=gp3 --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value=core-disk-1}]'
+
+aws ec2 create-volume --availability-zone=${AWS_AVAILABILITY_ZONE} --size=64 --volume-type=gp3 --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value=core-disk-2}]'
+
+aws ec2 create-volume --availability-zone=${AWS_AVAILABILITY_ZONE} --size=64 --volume-type=gp3 --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value=core-disk-3}]'
+
+aws ec2 create-volume --availability-zone=${AWS_AVAILABILITY_ZONE} --size=64 --volume-type=gp3 --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value=rr-disk-1}]'
+----
+
+. Fetch the IDs of the disks that were just created, for example:
++
+[source, shell]
+----
+aws ec2 describe-volumes --filters Name=tag:volume,Values=core-disk-1,core-disk-2,core-disk-3,rr-disk-1 --query "Volumes[*].{ID:VolumeId}" --output text
+----
+
+. Make a note of all IDs.
++
+[source, role=noheader]
+----
+vol-081665be3681e384c
+vol-000ce1338f430d173
+vol-03b099df30ca4f0d3
+vol-04f5ddffea2d7e092
+----
+======
+
+[.include-with-azure]
+======
+. Get the node resource group name by running the following command:
++
+[source, shell]
+----
+MC_RG_NAME="$(az aks show --name my-neo4j-aks-cluster --query nodeResourceGroup --output tsv)"
+----
+. Create an Azure-managed disk for each cluster member (both cores and read replicas) using the following commands.
+This is a normal Azure managed disk and not Kubernetes specific:
++
+[source, shell]
+----
+az disk create --name "core-disk-1" --size-gb "64" --sku Premium_LRS --max-shares 1 --resource-group "${MC_RG_NAME}"
+az disk create --name "core-disk-2" --size-gb "64" --sku Premium_LRS --max-shares 1 --resource-group "${MC_RG_NAME}"
+az disk create --name "core-disk-3" --size-gb "64" --sku Premium_LRS --max-shares 1 --resource-group "${MC_RG_NAME}"
+az disk create --name "rr-disk-1"   --size-gb "64" --sku Premium_LRS --max-shares 1 --resource-group "${MC_RG_NAME}"
+----
+
+. Fetch the IDs of the disks that were just created, for example:
++
+[source, shell]
+----
+az disk show --name "core-disk-1" --query id --resource-group "${MC_RG_NAME}"
+----
+
+. Make a note of all IDs.
++
+[source, role=noheader]
+----
+"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/MC_myneo4jrg_my-neo4j-aks-cluster_westus2/providers/Microsoft.Compute/disks/core-disk-1"
+----
+======
+
+=====

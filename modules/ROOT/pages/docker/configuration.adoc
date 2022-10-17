@@ -1,0 +1,133 @@
+[[docker-neo4j-configuration]]
+= Configuration
+:description: This chapter describes how configure Neo4j to run in a Docker container. 
+
+The default configuration provided by this image is intended for learning about Neo4j, but must be modified to make it suitable for production use.
+In particular, the default memory assignments to Neo4j are very limited (`NEO4J_dbms_memory_pagecache_size=512M` and `NEO4J_dbms_memory_heap_max__size=512M`), to allow multiple containers to be run on the same server.
+You can read more about configuring Neo4j in the xref:docker/ref-settings.adoc[Docker specific configuration settings].
+
+There are three ways to modify the configuration:
+
+* Set environment variables.
+* Mount a _/conf_ volume.
+* Build a new image.
+
+Which one to choose depends on how much you need to customize the image.
+
+
+[[docker-environment-variables]]
+== Environment variables
+
+Pass environment variables to the container when you run it.
+
+[source, shell, subs="attributes"]
+----
+docker run \
+    --detach \
+    --publish=7474:7474 --publish=7687:7687 \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/logs:/logs \
+    --env NEO4J_dbms_memory_pagecache_size=4G \
+    neo4j:{neo4j-version-exact}
+----
+
+Any configuration value (see xref:reference/configuration-settings.adoc[Configuration settings]) can be passed using the following naming scheme:
+
+* Prefix with `NEO4J_`.
+* Underscores must be written twice: `+_+` is written as `+__+`.
+* Periods are converted to underscores: `.` is written as `_`.
+
+As an example, `dbms.tx_log.rotation.size` could be set by specifying the following argument to Docker:
+
+[source, shell]
+----
+--env NEO4J_dbms_tx__log_rotation_size
+----
+
+Variables which can take multiple options, such as `dbms_jvm_additional`, must be defined just once, and include a concatenation of the multiple values.
+For example:
+
+[source, shell]
+----
+--env NEO4J_dbms_jvm_additional="-Dcom.sun.management.jmxremote.authenticate=true -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.password.file=$HOME/conf/jmx.password -Dcom.sun.management.jmxremote.access.file=$HOME/conf/jmx.access -Dcom.sun.management.jmxremote.port=3637"
+----
+
+[[docker-conf-volume]]
+== Mounting the _/conf_ volume
+
+To make arbitrary modifications to the Neo4j configuration, provide the container with a _/conf_ volume.
+
+[source, shell, subs="attributes"]
+----
+docker run \
+    --detach \
+    --publish=7474:7474 --publish=7687:7687 \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/logs:/logs \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact}
+----
+
+Any configuration files in the _/conf_ volume will override files provided by the image.
+So if you want to change one value in a file you must ensure that the rest of the file is complete and correct.
+Environment variables passed to the container by Docker will still override the values in configuration files in _/conf_ volume.
+
+[NOTE]
+--
+If you use a configuration volume you must make sure to listen on all network interfaces.
+This can be done by setting `dbms.default_listen_address=0.0.0.0`.
+--
+
+To dump an initial set of configuration files, run the image with the `dump-config` command.
+
+[source, shell, subs="attributes"]
+----
+docker run --rm \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact} dump-config
+----
+
+
+[[docker-new-image]]
+== Customize а Neo4j Docker image
+
+To customize a Neo4j Docker image, you create a custom Dockerfile based on a Neo4j image (using the `FROM` instruction), build that image, and run a container based on it.
+
+[TIP]
+====
+It is recommended to specify an explicit version of the base Neo4j Docker image.
+For available Neo4j Docker images, see https://hub.docker.com/_/neo4j.
+====
+
+Additionally, you can pass `EXTENSION_SCRIPT` as an environment variable, pointing to a location in a folder you need to mount.
+You can use this script to perform an additional initialization or configuration of the environment, for example, loading credentials or dynamically setting _neo4j.conf_ settings, etc.
+The Neo4j image `entrypoint` script will check for the presence of an `EXTENSION_SCRIPT` environment variable.
+If set, it will first execute the `entrypoint` code, then the extension script specified, and finally, it will start Neo4j.
+
+The following is an example of how to create a custom Dockerfile based on a Neo4j image, build the image, and run a container based on it.
+It also shows how to use the `EXTENSION_SCRIPT` feature.
+
+[source, subs="attributes", role=noheader]
+----
+# Create a custom Dockerfile based on a Neo4j image:
+
+/example/Dockerfile
+
+FROM neo4j:{neo4j-version-exact}-enterprise
+COPY extension_script.sh /extension_script.sh
+ENV EXTENSION_SCRIPT=/extension_script.sh
+
+/example/extension_script.sh
+
+echo "extension logic"
+
+# Build the custom image:
+
+docker build --file /example/Dockerfile --tag neo4j:{neo4j-version-exact}-enterprise-custom-container-1 /example
+
+# Create and run a container based on the custom image:
+
+docker run --interactive --tty --name custom-container-1 -p7687:7687 -p7474:7474 -p7473:7473 --env NEO4J_AUTH=neo4j/password --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes neo4j:{neo4j-version-exact}-enterprise-custom-container-1
+----
+
+The recommended best practices and methods for building efficient Docker images can be found at link:https://docs.docker.com/develop/develop-images/dockerfile_best-practices/[the Docker documentation -> Best practices for writing Dockerfiles].

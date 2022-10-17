@@ -1,0 +1,56 @@
+[[gc-tuning]]
+= Tuning of the garbage collector
+:description: This section discusses the effect of the Java Virtual Machine's garbage collector with regards to Neo4j performance. 
+
+The heap is separated into an _old generation_ and a _young generation_.
+New objects are allocated in the young generation, and then later moved to the old generation, if they stay live (in use) for long enough.
+When a generation fills up, the garbage collector performs a collection, during which all other threads in the process are paused.
+The young generation is quick to collect since the pause time correlates with the _live set_ of objects.
+In the old generation, pause times roughly correlates with the size of the heap.
+For this reason, the heap should ideally be sized and tuned such that transaction and query state never makes it to the old generation.
+
+The heap size is configured with the `dbms.memory.heap.max_size` (in MBs) setting in the _neo4j.conf_ file.
+The initial size of the heap is specified by the `dbms.memory.heap.initial_size` setting, or with the `-Xms???m` flag, or chosen heuristically by the JVM itself if left unspecified.
+The JVM will automatically grow the heap as needed, up to the maximum size.
+The growing of the heap requires a full garbage collection cycle.
+It is recommended to set the initial heap size and the maximum heap size to the same value.
+This way the pause that happens when the garbage collector grows the heap can be avoided.
+
+If the new generation is too small, short-lived objects may be moved to the old generation too soon.
+This is called premature promotion and will slow the database down by increasing the frequency of old generation garbage collection cycles.
+If the new generation is too big, the garbage collector may decide that the old generation does not have enough space to fit all the objects it expects to promote from the new to the old generation.
+This turns new generation garbage collection cycles into old generation garbage collection cycles, again slowing the database down.
+Running more concurrent threads means that more allocations can take place in a given span of time, in turn increasing the pressure on the new generation in particular.
+
+[CAUTION]
+--
+The _Compressed OOPs_ feature in the JVM allows object references to be compressed to use only 32 bits.
+The feature saves a lot of memory but is only available for heaps up to 32 GB.
+The maximum applicable size varies from platform and JVM version.
+The `-XX:+UseCompressedOops` option can be used to verify whether the system can use the _Compressed OOPs_ feature.
+If it cannot, this will will be logged in the default process output stream.
+--
+
+How to tune the specific garbage collection algorithm depends on both the JVM version and the workload.
+It is recommended to test the garbage collection settings under realistic load for days or weeks.
+Problems like heap fragmentation can take a long time to surface.
+
+To gain good performance, these are the things to look into first:
+
+* Make sure the JVM is not spending too much time performing garbage collection.
+  The goal is to have a large enough heap to make sure that heavy/peak load will not result in so called GC-trashing.
+  Performance can drop as much as two orders of magnitude when GC-trashing happens.
+  Having too large heap may also hurt performance so you may have to try some different heap sizes.
+* Neo4j needs enough heap memory for the transaction state and query processing, plus some head-room for the garbage collector.
+  As heap memory requirements are so workload-dependent, it is common to see heap memory configurations from 1 GB, up to 32 GB.
+
+Edit the following properties:
+
+.neo4j.conf JVM tuning properties
+[options="header", cols="<m,<"]
+|====================
+| Property Name                 | Meaning
+| dbms.memory.heap.initial_size | initial heap size (in MB)
+| dbms.memory.heap.max_size     | maximum heap size (in MB)
+| dbms.jvm.additional           | additional literal JVM parameter
+|====================

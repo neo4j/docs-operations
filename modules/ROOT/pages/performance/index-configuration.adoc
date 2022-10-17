@@ -1,0 +1,337 @@
+[[index-configuration]]
+= Index configuration
+:description: How to configure indexes to enhance performance in search, and to enable full-text search. 
+
+
+[[index-configuration-introduction]]
+== Introduction
+
+In Neo4j there are four different index types: xref:performance/index-configuration.adoc#index-configuration-btree[b-tree], xref:performance/index-configuration.adoc#index-configuration-fulltext[full-text],
+xref:performance/index-configuration.adoc#index-configuration-text[text], and xref:performance/index-configuration.adoc#index-configuration-token-lookup[token lookup].
+
+All four types of indexes can be created and dropped using Cypher and they can also all be used to index both nodes and relationships.
+The token lookup index is the only index present by default in the database.
+
+B-tree, text and full-text indexes provide mapping from a property value to an entity (node or relationship).
+Token lookup indexes are different and provide mapping from labels to nodes, or from relationships types to relationships, instead of between properties and entities.
+
+Users are not required to know the difference between the various indexes in order to use them, since Cypher's query planner decides which index to use in which situation.
+
+For for information on the available indexes and their configuration aspects, see below.
+For further details on creating, querying and dropping indexes, see link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher Manual -> Indexes for search performance] and link:/docs/cypher-manual/4.4/indexes-for-full-text-search[Cypher Manual -> Indexes to support full-text search].
+
+The type of an index can be identified according to the table below:
+
+[options="header", cols="a,m,m"]
+|===
+| Index type            | Cypher command          | Core API
+| B-tree index          | SHOW INDEXES#BTREE      | org.neo4j.graphdb.schema.IndexType#BTREE
+| Text index            | SHOW INDEXES#TEXT       | org.neo4j.graphdb.schema.IndexType#TEXT
+| Full-text index       | SHOW INDEXES#FULLTEXT   | org.neo4j.graphdb.schema.IndexType#FULLTEXT
+| Token lookup index    | SHOW INDEXES#LOOKUP     | org.neo4j.graphdb.schema.IndexType#LOOKUP
+|===
+
+
+[role=deprecated]
+[[index-configuration-btree]]
+== B-tree indexes
+
+B-tree indexes are deprecated, partially replaced for now, and will be fully replaced in 5.0 by the xref:performance/index-configuration.adoc#future-indexes[future indexes].
+In 4.4, b-tree indexes are still the correct alternative to use except for when the `lucene+native-3.0` provider is used.
+A new xref:performance/index-configuration.adoc#index-configuration-text[text index] type has been introduced to handle the case `lucene+native-3.0` covered for single property strings.
+
+B-tree indexes are good for exact look-ups on all types of values, range scans, full scans, and prefix searches.
+They can be backed by two different index providers, `native-btree-1.0` and `lucene+native-3.0`.
+If not explicitly set, `native-btree-1.0` will be used.
+
+
+[[index-configuration-btree-limitations]]
+=== Limitations
+
+There are a few limitations for b-tree indexes, which are listed below together with suggested workarounds.
+
+[[index-configuration-btree-limitations-contains-ends-with]]
+==== Limitations for queries using `CONTAINS` and `ENDS WITH`
+
+The index provider `native-btree-1.0` has limited support for `ENDS WITH` and `CONTAINS` queries.
+These queries are not able to do an optimized search as per queries that use `STARTS WITH`, `=`, and `<>`.
+Instead, the index result is a stream of an index scan with filtering.
+
+`ENDS WITH` and `CONTAINS` queries are natively supported by text indexes and these types of queries are handled by a text index in a more performant way compared to a b-tree index.
+Even though the deprecated index provider `lucene+native-3.0` can also be used for these types of queries, it provides no extra value over a text index and it will be removed in 5.0.
+[NOTE]
+====
+`lucene+native-3.0` and text indexes only has support for `ENDS WITH` and `CONTAINS` for single property strings.
+====
+
+* For details about execution plans, refer to  link:/docs/cypher-manual/4.4/execution-plans[Cypher Manual -> Execution plans].
+* For details about string operators, refer to  link:/docs/cypher-manual/4.4/syntax/operators#query-operators-comparison[Cypher Manual -> Operators].
+
+
+[[index-configuration-btree-limitations-key-sizes]]
+==== Limitations on key size
+
+The index provider `native-btree-1.0` has a key size limit of around 8kB.
+
+If a transaction reaches the key size limit for one or more of its changes, that transaction fails before committing any changes.
+If the limit is reached during index population, the resulting index is in a failed state, and as such is not usable for any queries.
+
+If this is an issue, you can use the index provider `lucene+native-3.0` instead.
+This provider has a key size limit for single property strings of around 32kB.
+
+
+[[index-configuration-btree-limitations-workarounds]]
+==== Workarounds to address limitations
+
+To work around problems with key size or performance issues related to `ENDS WITH` or `CONTAINS`, the text index type or the deprecated index provider `lucene+native-3.0` can be used.
+This only works for single-property string indexes.
+
+[IMPORTANT]
+====
+The recommended method to work around key size or performance issues is to create a *text index*.
+For details on the syntax for creating a text index, see link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher Manual -> Indexes for search performance].
+For more information about text indexes see xref:performance/index-configuration.adoc#index-configuration-text[Text indexes]
+====
+
+Alternatively, this can still be done using any of the following methods:
+
+* [deprecated]#_Use `lucene+native-3.0` in `OPTIONS` clause in create command_#
++
+Note that this option uses the `lucene+native-3.0` index provider that has been deprecated and will be removed in a future release.
++
+The Cypher commands for index creation, unique property constraint creation, and node key creation contains an optional `OPTIONS` clause.
+This clause can be used to specify index provider.
++
+For details on indexes, see link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher Manual -> Indexes for search performance].
+For details on constraints, see link:/docs/cypher-manual/4.4/constraints[Cypher manual -> Constraints].
+* [deprecated]#_Use a built-in procedure_#
++
+Note that this option uses built-in procedures that have been deprecated, and will be removed in a future release.
+These have been replaced with the Cypher commands in Option 1.
++
+The built-in procedures `db.createIndex`, `db.createUniquePropertyConstraint`, and `db.createNodeKey` can be used to specify index provider on index creation, unique property constraint creation, and node key creation.
++
+For details on constraints, see link:/docs/cypher-manual/4.4/constraints[Cypher manual -> Constraints], and for more information on built-in procedures, see xref:reference/procedures.adoc[Procedures].
+* [deprecated]#_Change the config_#
++
+Note that this option uses the index setting `dbms.index.default_schema_provider`, which has been deprecated and will be removed in a future release.
+It will be a fully internal concern which index provider an index is using.
+
+. Configure the setting `dbms.index.default_schema_provider` to the one required.
+. Restart Neo4j.
+. Drop and recreate the relevant index.
+. Change `dbms.index.default_schema_provider` back to the original value.
+. Restart Neo4j.
+
++
+The recommended way to set index provider for an index is to use the `OPTIONS` clause for index creation, unique property constraint creation, and node key creation.
+For more information, see link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher Manual -> Indexes for search performance] and link:/docs/cypher-manual/4.4/constraints[Cypher manual -> Constraints].
+
+
+[[index-configuration-btree-migration]]
+=== Index migration
+
+When upgrading a 3.5 store to {neo4j-version-exact}, all indexes are upgraded to the latest index version, and rebuilt automatically, with the exception for the indexes that were previously using Lucene for single-property strings.
+They are upgraded to a fallback version which still uses Lucene for those properties.
+Note that they still need to be rebuilt.
+For more information, see link:{upgrade-current-uri}/migration/index-upgrade/[Upgrade and Migration Guide -> Neo4j indexes].
+
+
+[[index-configuration-btree-procedures]]
+=== Procedures to create index and index backed constraint
+
+Indexes and constraints are best created through link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher], but can still be created through the deprecated procedures described in the example below.
+Index provider and index settings can both be specified using the optional `OPTIONS` clause for the Cypher commands.
+
+.Example of procedures to create index and index backed constraint
+====
+The following procedures provide the option to specify both index provider and index settings (optional).
+Note that settings keys need to be escaped with back-ticks if they contain dots.
+
+Use `db.createIndex` procedure to create an index:
+
+[source, cypher]
+----
+CALL db.createIndex("MyIndex", ["Person"], ["name"], "native-btree-1.0", {`spatial.cartesian.max`: [100.0,100.0], `spatial.cartesian.min`: [-100.0,-100.0]})
+----
+
+If a settings map is not provided, the settings are picked up from the xref:configuration/neo4j-conf.adoc[Neo4j config file], the same way as when creating an index or constraint through Cypher.
+
+[source, cypher]
+----
+CALL db.createIndex("MyIndex", ["Person"], ["name"], "native-btree-1.0")
+----
+
+Use `db.createUniquePropertyConstraint` to create a node property uniqueness constraint (the example is without settings map, left out for abbreviation):
+
+[source, cypher]
+----
+CALL db.createUniquePropertyConstraint("MyIndex", ["Person"], ["name"], "native-btree-1.0")
+----
+
+Use `db.createNodeKey` to create node key constraint (the example is without settings map, left out for abbreviation):
+
+[source, cypher]
+----
+CALL db.createNodeKey("MyIndex", ["Person"], ["name"], "native-btree-1.0")
+----
+====
+
+
+[[index-configuration-text]]
+== Text indexes
+
+Text indexes are a type of single-property index and only index properties with string values, unlike b-tree indexes.
+They are specifically designed to deal with `ENDS WITH` or `CONTAINS` queries efficiently.
+They are used through Cypher and they support a smaller set of string queries.
+Even though text indexes do support other text queries, `ENDS WITH` or `CONTAINS` queries are the only ones for which this index type provides an advantage over a b-tree index.
+
+For more information on the queries a text index can be used for, refer to link:/docs/cypher-manual/4.4/query-tuninges[Cypher Manual -> Query Tuning -> The use of indexes].
+For more information on the different index types, refer to link:/docs/cypher-manual/4.4/indexes-for-search-performance[Cypher Manual -> Indexes for search performance].
+
+[[index-configuration-text-limitations]]
+=== Limitations
+
+Text indexes only index single property strings.
+If the property to index can contain several value types, but string-specific queries are also performed, it is possible to have both a b-tree and a text index on the same schema.
+
+The index has a key size limit for single property strings of around 32kB.
+If a transaction reaches the key size limit for one or more of its changes, that transaction fails before committing any changes.
+If the limit is reached during index population, the resulting index is in a failed state, and as such is not usable for any queries.
+
+
+[[index-configuration-fulltext]]
+== Full-text indexes
+
+Full-text indexes are optimized for indexing and searching text.
+They make it possible to write queries that match within the _contents_ of indexed string properties.
+In other words, they are used for queries that demand an understanding of language and they only index string data.
+They must also be queried explicitly via procedures, as Cypher does not make plans that rely on them.
+
+An example of a use case for full-text indexes is parsing a book for a certain term and taking advantage of the knowledge that the book is written in a certain language.
+The use of an _analyzer_ for that language enables the exclusion of words that are not relevant for the search (for example _"if"_ and _"and"_), and include conjugations of words that are.
+
+Another use case example is indexing the various address fields and text data in a corpus of emails.
+Indexing this data using the `email` analyzer makes it possible to find all emails that are sent from, or to, or mentions, an email account.
+
+In contrast to b-tree and text indexes, full-text indexes are queried using built-in procedures.
+They are however created and dropped using Cypher.
+The use of full-text indexes does require familiarity with how the indexes operate.
+
+Full-text indexes are powered by the http://lucene.apache.org/[Apache Lucene] indexing and search library.
+A full description on how to create and use full-text indexes is provided in the link:/docs/cypher-manual/{neo4j-version}/indexes-for-full-text-search/[Cypher Manual -> Indexes to support full-text search].
+
+
+[[index-configuration-fulltext-configuration]]
+=== Configuration
+
+The following options are available for configuring full-text indexes:
+
+`dbms.index.fulltext.default_analyzer`::
+The name of the analyzer that the full-text indexes should use by default.
+This setting only has effect when a full-text index is created, and will be remembered as an index-specific setting from then on.
++
+The list of possible analyzers is available through the `db.index.fulltext.listAvailableAnalyzers()` Cypher procedure.
++
+Unless otherwise specified, the default analyzer is `standard-no-stop-words`, which is the same as the `StandardAnalyzer` from Lucene, except no stop-words are filtered out.
+
+`dbms.index.fulltext.eventually_consistent`::
+Used to declare whether full-text indexes should be eventually consistent, or not.
+This setting only has effect when a full-text index is created, and is remembered as an index-specific setting from then on.
++
+Indexes are normally fully consistent, and the committing of a transaction does not return until both the store and the indexes have been updated.
+Eventually consistent full-text indexes, on the other hand, are not updated as part of commit, but instead have their updates queued up and applied in a background thread.
+This means that there can be a short delay between committing a change, and that change becoming visible via any eventually consistent full-text indexes.
+This delay is just an artifact of the queueing, and is usually quite small since eventually consistent indexes are updated "as soon as possible".
++
+By default, this is turned off, and full-text indexes are fully consistent.
+
+`dbms.index.fulltext.eventually_consistent_index_update_queue_max_length`::
+Eventually consistent full-text indexes have their updates queued up and applied in a background thread, and this setting determines the maximum size of that update queue.
+If the maximum queue size is reached, then committing transactions block and wait until there is more room in the queue, before adding more updates to it.
++
+This setting applies to all eventually consistent full-text indexes, and they all use the same queue.
+The maximum queue length must be at least 1 index update, and must be no more than 50 million due to heap space usage considerations.
++
+The default maximum queue length is 10.000 index updates.
+
+[[index-configuration-token-lookup]]
+== Token lookup indexes
+
+Token lookup indexes, as the name suggests, are used to look up nodes with a specific label or relationships of a specific type.
+A token lookup index is always created over all labels or relationship types, respectively, and hence there can only be a maximum of two token lookup indexes in a database - one for nodes and one for relationships.
+
+Token lookup indexes are introduced in 4.3 and whereas relationship type lookup index is a new concept, node label lookup index is not.
+The latter evolved from the label scan store, which has been present in various forms for a long time.
+Node label lookup index provides the same functionality as the former label scan store, but has additional features that are common for all indexes, such as the ability to be created and dropped using non-blocking population.
+
+[[index-configuration-token-lookup-use-and-significance]]
+=== Use and Significance
+
+Token lookup indexes are the most important indexes that can be present in a database.
+They are essential for both Cypher queries and Core API operations.
+More importantly, their presence speeds up the population of other indexes significantly, node label lookup index for node b-tree and full-text indexes and relationship type lookup index for the corresponding relationship indexes.
+
+The node label lookup index is important for queries that match a node by one or more labels.
+It can be used even when matching labels and properties of a node, if there are no suitable b-tree indexes available.
+This is essential considering that no b-tree indexes are defined by default.
+In other words, a node label lookup index is often the best way to approach a query that matches labels, unless the user has defined a more appropriate b-tree index.
+Accordingly, the relationship type lookup index does the same for relationships and their types.
+
+Most queries are executed by matching nodes and expanding their relationships, and hence the node label lookup index is slightly more significant than the relationship type lookup index.
+
+Since these indexes are important for both query execution and index population, a lot of consideration should be taken before dropping them.
+
+Both node and relationship type lookup index are present by default in all databases created in 4.3 and onwards.
+Please see the next section for details on databases created in earlier versions.
+
+
+[[index-configuration-token-lookup-upgrade]]
+=== Databases created before 4.3
+
+Databases created before 4.3 get only a node label lookup index when used in a DBMS of version 4.3 or later, by default.
+This is to preserve backwards compatibility and performance characteristics of such databases.
+
+If needed, such databases can get a relationship type lookup index by creating it explicitly through Cypher.
+
+
+[NOTE]
+====
+Creating relationship type lookup index on a large database can take significant amount of time as all relationships need to be scanned when populating such index.
+====
+
+When used in a DBMS of version 4.3 or later, databases created before 4.3 automatically get a node label lookup index, which is created by converting the former label scan store and naming it `__org_neo4j_schema_index_label_scan_store_converted_to_token_index`.
+This index name is reserved from 4.3 onwards, and an error is returned if you attempt to create a user-defined index with this name.
+Similarly, in the unlikely situation that an index with such name was created in previous versions, it must be dropped and recreated with a different name before upgrading to 4.3.
+
+The following table summarizes which of token lookup indexes and label scan store are present by default in various versions.
+Note that the table represents only the default indexes and that the relationship type lookup index can be created explicitly through Cypher if needed.
+
+[options="header"]
+|===
+| Database created 2+<| before 4.3          | from 4.3
+| Neo4j version | < 4.3          2+<| >= 4.3
+| Label scan store | yes | no | no
+| Node label lookup index  | no | yes | yes
+| Relationship type lookup index  | no | no | yes
+|===
+
+[[future-indexes]]
+== Future indexes
+
+Two new index types, range and point index, will be introduced in 5.0.
+They will, together with the text index, replace the deprecated b-tree indexes.
+
+Like the b-tree index, the range index will index all types of values and be good for exact lookups on all types of values, range scans,
+full scans, and prefix searches.
+The difference is that range index will not support spatial queries and therefore will not have the same config options.
+It will still index the point values to support full scans, but if spatial queries are needed, a point index should be created.
+
+The point index is a highly specialized single-property index that is optimized for spatial queries.
+It only indexes point values and exact lookups are the only non-spatial query it supports.
+
+These indexes can be created on the same combination of property and label/relationship type if the functionality of both is needed.
+
+It is possible to create and drop these index types, but they cannot be used in queries yet.
+They are introduced now to allow a smoother migration to 5.0 later.
+See link:/docs/cypher-manual/4.4/indexes-for-search-performance#indexes-future-indexes[Cypher Manual -> Indexes for search performance -> Future indexes] for the new syntax.

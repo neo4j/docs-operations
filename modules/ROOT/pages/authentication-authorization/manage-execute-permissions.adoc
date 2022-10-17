@@ -1,0 +1,184 @@
+[role=enterprise-edition]
+[[auth-manage-execute-permissions]]
+= Manage procedure and user-defined function permissions
+:description: This section describes how access control works with procedures and user-defined functions in Neo4j. 
+
+
+[[auth-manage-execute-permissions-introduction]]
+== Introduction
+
+To be able to run a procedure or user-defined function, the user needs to have the corresponding execute privilege.
+Procedures and user-defined functions are executed according to the same security rules as regular Cypher statements,
+e.g. a procedure performing writes will fail if called by a user that only has _read_ privileges.
+
+Procedures and user-defined functions can also be run with privileges exceeding the users own privileges.
+This is called _execution boosting_.
+The elevated privileges only apply within the procedure or user-defined function; any operation performed outside will still use the users original privileges.
+
+[NOTE]
+--
+The steps below assume that the procedure or user-defined function is already developed and installed.
+
+Please refer to link:/docs/java-reference/4.4/extending-neo4j#extending-neo4j[Java Reference -> Extending Neo4j] for a description on creating and using user-defined procedures and functions.
+--
+
+
+[[auth-manage-procedure-permissions]]
+== Manage procedure permissions
+
+Procedure permissions can be managed using the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-dbms-administration-execute[native execute privileges].
+These control whether the user is allowed to both execute a procedure, and which set of privileges apply during the execution.
+
+A procedure may be run using the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-execute-procedure[`EXECUTE PROCEDURE` privilege].
+
+This allows the user to execute procedures that match the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-name-globbing[globbed procedures].
+
+.Grant privilege to execute procedure
+====
+[source, cypher]
+----
+GRANT EXECUTE PROCEDURE db.schema.visualization ON DBMS TO visualizer
+----
+
+This will allow any user with the `visualizer` role to execute the `db.schema.visualization`.
+E.g. a user that also have the following privileges:
+
+[source, cypher]
+----
+GRANT TRAVERSE ON GRAPH * NODES A, B TO role
+GRANT TRAVERSE ON GRAPH * RELATIONSHIP R1 TO role
+----
+
+When calling the `db.schema.visualization` procedure that user will only see the `A` and `B` nodes and `R1` relationships, even though there might exist other nodes and relationships.
+====
+
+A procedure may also be executed with elevated privileges using the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-execute-boosted-procedure[`EXECUTE BOOSTED PROCEDURE` privilege].
+
+This allows the user to successfully execute procedures that would otherwise fail during execution with their assigned roles.
+The user is given full privileges for the procedure, during the execution of the procedure only.
+
+.Grant privilege to execute procedure with elevated privileges
+====
+[source, cypher]
+----
+GRANT EXECUTE BOOSTED PROCEDURE db.schema.visualization ON DBMS TO visualizer
+----
+
+This will allow any user with the `visualizer` role to execute the `db.schema.visualization` with elevated privileges.
+When calling the `db.schema.visualization` procedure that user will see all nodes and relationships that exist in the graph, even though they have no traversal privileges.
+====
+
+
+[[auth-manage-function-permissions]]
+== Manage user-defined function permissions
+
+User-defined function permissions can be managed using the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-dbms-administration-execute[native execute privileges].
+These control if the user is both allowed to execute a user-defined function, and which set of privileges apply during the execution.
+
+A user-defined function may be executed using the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-execute-user-defined-function[`EXECUTE USER DEFINED FUNCTION` privilege].
+
+This allows the user to execute user-defined functions that match the link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-name-globbing[globbed user-defined function].
+
+.Grant privilege to execute user-defined function
+====
+[source, cypher]
+----
+GRANT EXECUTE USER DEFINED FUNCTION apoc.any.properties ON DBMS TO custom
+----
+
+This will allow any user with the `custom` role to execute the `apoc.any.properties`.
+E.g. a user that also have the following privilege:
+
+[source, cypher]
+----
+GRANT MATCH {visibleProp} ON GRAPH * NODES A TO role
+----
+
+When calling the user-defined function `MATCH (a:A) RETURN apoc.any.properties(a) AS properties`, they will only see the `visibleProp` even though there might exist other properties.
+====
+
+A user-defined function may also be executed with elevated privileges using the
+link:/docs/cypher-manual/4.4/access-control/dbms-administration#access-control-execute-boosted-user-defined-function[`EXECUTE BOOSTED USER DEFINED FUNCTION` privilege].
+
+This allows the user to successfully execute user-defined functions that would otherwise fail during execution with their assigned roles.
+The user is given full privileges for the user-defined function, during the execution of the function only.
+
+.Grant privilege to execute user-defined function with elevated privileges
+====
+[source, cypher]
+----
+GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.any.properties ON DBMS TO custom
+----
+
+This will allow any user with the `custom` role to execute the `apoc.any.properties` with elevated privileges.
+E.g. a user that also have the following privileges:
+
+[source, cypher]
+----
+GRANT TRAVERSE ON GRAPH * NODES A TO role
+----
+
+When calling the user-defined function `MATCH (a:A) RETURN apoc.any.properties(a) AS properties`, they will see all properties that exist on the matched nodes even though they have no read privileges.
+====
+
+
+[role=deprecated]
+[[auth-manage-execute-permissions-config]]
+== Manage procedure and user-defined function permissions from config setting
+
+It is possible to grant boosting for procedures and user-defined functions through config settings.
+These settings will be translated to temporary `execute boosted procedure` and `execute boosted function` privileges that cannot be revoked.
+
+*`xref:reference/configuration-settings.adoc#config_dbms.security.procedures.default_allowed[dbms.security.procedures.default_allowed]`*::
+
+The setting `dbms.security.procedures.default_allowed` defines a single role that is allowed to execute any procedure or user-defined function
+that is not matched by the `dbms.security.procedures.roles` configuration.
++
+.Configure a default role that can execute procedures and user-defined functions
+====
+
+Assume that we have the following configuration:
+
+[source, properties]
+----
+dbms.security.procedures.default_allowed=superAdmin
+----
+
+This will create the following temporary privileges:
+
+* `GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO superAdmin`
+* `GRANT EXECUTE BOOSTED USER DEFINED FUNCTION * ON DBMS TO superAdmin`
+* If the setting dbms.security.procedures.roles has some roles to name defined,
+  then for any procedure/function not also granted to the superAdmin role, create temporary privileges:
+** `DENY EXECUTE BOOSTED PROCEDURE name ON DBMS TO superAdmin`
+** `DENY EXECUTE BOOSTED USER DEFINED FUNCTION name ON DBMS TO superAdmin`
+
+====
++
+
+*`xref:reference/configuration-settings.adoc#config_dbms.security.procedures.roles[dbms.security.procedures.roles]`*::
+
+The `dbms.security.procedures.roles` setting provides fine-grained control over procedures and user-defined functions.
++
+.Configure roles for the execution of specific procedures and user-defined functions
+====
+
+Assume that we have the following configuration:
+
+[source, properties]
+----
+dbms.security.procedures.default_allowed=superAdmin
+dbms.security.procedures.roles=apoc.coll.*:Collector;apoc.trigger.add:TriggerHappy,superAdmin
+----
+
+This will have create the following temporary privileges:
+
+* `GRANT EXECUTE BOOSTED PROCEDURE apoc.coll.* ON DBMS TO Collector`
+* `GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.coll.* ON DBMS TO Collector`
+* `GRANT EXECUTE BOOSTED PROCEDURE apoc.trigger.add ON DBMS TO TriggerHappy, superAdmin`
+* `GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.trigger.add ON DBMS TO TriggerHappy, superAdmin`
+* `GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO superAdmin`
+* `GRANT EXECUTE BOOSTED USER DEFINED FUNCTION * ON DBMS TO superAdmin`
+* `DENY EXECUTE BOOSTED PROCEDURE apoc.coll.* ON DBMS TO superAdmin`
+* `DENY EXECUTE BOOSTED USER DEFINED FUNCTION apoc.coll.* ON DBMS TO superAdmin`
+====

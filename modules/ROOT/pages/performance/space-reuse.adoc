@@ -1,0 +1,270 @@
+[[space-reuse]]
+= Space reuse
+:description: This section describes how Neo4j handles data deletion and storage space. 
+
+Neo4j uses logical deletes to remove data from the database to achieve maximum performance and scalability.
+A logical delete means that all relevant records are marked as deleted, but the space they occupy is not immediately returned to the operating system.
+Instead, it is subsequently reused by the transactions _creating_ data.
+
+Marking a record as deleted requires writing a record update command to the xref:configuration/transaction-logs.adoc[transaction log], as when something is created or updated.
+Therefore, when deleting large amounts of data, this leads to a storage usage growth of that particular database, because Neo4j writes records for
+all deleted nodes, their properties, and relationships to the transaction log.
+
+[NOTE]
+====
+Keep in mind that when doing `DETACH DELETE` on many nodes, those deletes can take up more space in the in-memory transaction state and the transaction log than you might expect.
+====
+
+Transactions are eventually pruned out of the xref:configuration/transaction-logs.adoc[transaction log], bringing the storage usage of the log back down to the expected level.
+The store files, on the other hand, do not shrink when data is deleted.
+The space that the deleted records take up is kept in the store files.
+Until the space is reused, the store files are sparse and fragmented, but the performance impact of this is usually minimal.
+
+[[space-reuse-id-files]]
+== ID files
+
+Neo4j uses _.id_ files for managing the space that can be reused.
+These files contain the set of IDs for all the deleted records in their respective files.
+The ID of the record uniquely identifies it within the store file.
+For instance, the `neostore.nodestore.db.id` contains the IDs of all deleted nodes.
+
+These _.id_ files are maintained as part of the write transactions that interact with them.
+When a write transaction commits a deletion, the record's ID is buffered in memory.
+The buffer keeps track of all overlapping unfinished transactions.
+When they complete, the ID becomes available for reuse.
+
+The buffered IDs are flushed to the _.id_ files as part of the checkpointing.
+Concurrently, the _.id_ file changes (the ID additions and removals) are inferred from the transaction commands.
+This way, the recovery process ensures that the _.id_ files are always in-sync with their store files.
+The same process also ensures that clustered databases have precise and transactional space reuse.
+
+[WARNING]
+====
+If you want to shrink the size of your database, do not delete the _.id_ files.
+The store files must _only_ be modified by the Neo4j database and the `neo4j-admin` tools.
+====
+
+[[space-reuse-reclaim-space]]
+== Reclaim unused space
+
+You can use the xref:backup-restore/copy-database.adoc[`neo4j-admin copy`] command to create a defragmented copy of your database.
+The `copy` command creates and entirely new and independent database.
+If you want to run that database in a cluster, you have to re-seed the existing cluster, or xref:clustering/seed.adoc#causal-clustering-seed-from-backups[seed] a new cluster from that copy.
+
+.Example of database compaction using `neo4j-admin copy`
+====
+The following is a detailed example on how to check your database store usage and how to reclaim space.
+
+Let's use the Cypher Shell command-line tool to add 100k nodes and then see how much store they occupy.
+
+. In a running Neo4j standalone instance, log in to the Cypher Shell command-line tool with your credentials.
++
+[source, shell]
+----
+$neo4j-home/bin$> ./cypher-shell -u neo4j -p <password>
+----
++
+[queryresult]
+----
+Connected to Neo4j at neo4j://localhost:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+----
++
+. Add 100k nodes to the `neo4j` database using the following command:
++
+[source, cypher]
+----
+neo4j@neo4j> foreach (x in range (1,100000) | create (n:testnode1 {id:x}));
+----
++
+[queryresult]
+----
+0 rows available after 1071 ms, consumed after another 0 ms
+Added 100000 nodes, Set 100000 properties, Added 100000 labels
+----
++
+. Check the allocated ID range:
++
+[source, cypher]
+----
+neo4j@neo4j> MATCH (n:testnode1) RETURN ID(n) as ID order by ID limit 5;
+----
++
+[queryresult]
+----
++----+
+| ID |
++----+
+| 0  |
+| 1  |
+| 2  |
+| 3  |
+| 4  |
++----+
+
+5 rows available after 171 ms, consumed after another 84 ms
+----
++
+. Run xref:reference/procedures.adoc#procedure_db_checkpoint[`call db.checkpoint()`] procedure to force a checkpoint.
++
+[source, shell]
+----
+neo4j@neo4j> call db.checkpoint();
+----
++
+[queryresult]
+----
++-----------------------------------+
+| success | message                 |
++-----------------------------------+
+| TRUE    | "Checkpoint completed." |
++-----------------------------------+
+
+1 row available after 18 ms, consumed after another 407 ms
+----
++
+. In Neo4j Browser, run `:sysinfo` to check the total store size of `neo4j`.
++
+The reported output for the store size is 791.92 KiB, ID Allocation: Node ID 100000, Property ID 100000.
++
+. Delete the above created nodes.
++
+[source, cypher]
+----
+neo4j@neo4j> Match (n) detach delete n;
+----
++
+. Run `call db.checkpoint()` procedure again.
++
+[source, shell]
+----
+neo4j@neo4j> call db.checkpoint();
+----
++
+[queryresult]
+----
++-----------------------------------+
+| success | message                 |
++-----------------------------------+
+| TRUE    | "Checkpoint completed." |
++-----------------------------------+
+
+1 row available after 18 ms, consumed after another 407 ms
+----
++
+. In Neo4j Browser, run `:sysinfo` to check the total store size of `neo4j`.
++
+The reported output for the store size is 31.01 MiB, ID Allocation: Node ID 100000, Property ID 100000.
++
+[NOTE]
+By default, a checkpoint flushes any cached updates in pagecache to store files.
+Thus, the allocated IDs remain unchanged, and the store size increases or does not alter (if the instance restarts) despite the deletion.
+In a production database, where numerous load/deletes are frequently performed, the result is a significant unused space occupied by store files.
+
+To reclaim that unused space, you can use the xref:backup-restore/copy-database.adoc[neo4j-admin copy] command to create a defragmented copy of your database.
+Use the `system` database and stop the `neo4j` database before running the command.
+
+. Invoke the `neo4j-admin copy` command to create a copy of your `neo4j` database.
++
+[source, shell]
+----
+$neo4j-home/bin$> ./neo4j-admin copy --to-database=neo4jcopy1 --from-database=neo4j --force --verbose
+----
++
+[queryresult]
+----
+Starting to copy store, output will be saved to: $neo4j_home/logs/neo4j-admin-copy-2020-11-04.11.30.57.log
+2020-10-23 11:40:00.749+0000 INFO [StoreCopy] ### Copy Data ###
+2020-10-23 11:40:00.750+0000 INFO [StoreCopy] Source: $neo4j_home/data/databases/neo4j (page cache 8m) (page cache 8m)
+2020-10-23 11:40:00.750+0000 INFO [StoreCopy] Target: $neo4j_home/data/databases/neo4jcopy1 (page cache 8m)
+2020-10-23 11:40:00.750+0000 INFO [StoreCopy] Empty database created, will start importing readable data from the source.
+2020-10-23 11:40:02.397+0000 INFO [o.n.i.b.ImportLogic] Import starting
+Nodes, started 2020-11-04 11:31:00.088+0000
+[*Nodes:?? 7.969MiB---------------------------------------------------------------------------] 100K ∆ 100K
+Done in 632ms
+Prepare node index, started 2020-11-04 11:31:00.735+0000
+[*DETECT:7.969MiB-----------------------------------------------------------------------------]    0 ∆    0
+Done in 79ms
+Relationships, started 2020-11-04 11:31:00.819+0000
+[*Relationships:?? 7.969MiB-------------------------------------------------------------------]    0 ∆    0
+Done in 37ms
+Node Degrees, started 2020-11-04 11:31:01.162+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 12ms
+Relationship --> Relationship 1/1, started 2020-11-04 11:31:01.207+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 0ms
+RelationshipGroup 1/1, started 2020-11-04 11:31:01.232+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 10ms
+Node --> Relationship, started 2020-11-04 11:31:01.245+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 10ms
+Relationship <-- Relationship 1/1, started 2020-11-04 11:31:01.287+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 0ms
+Count groups, started 2020-11-04 11:31:01.549+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 0ms
+Node --> Group, started 2020-11-04 11:31:01.579+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 1ms
+Node counts and label index build, started 2020-11-04 11:31:01.986+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 11ms
+Relationship counts, started 2020-11-04 11:31:02.034+0000
+[*>:??----------------------------------------------------------------------------------------]    0 ∆    0
+Done in 0ms
+
+IMPORT DONE in 3s 345ms.
+Imported:
+  0 nodes
+  0 relationships
+  0 properties
+Peak memory usage: 7.969MiB
+2020-11-04 11:31:02.835+0000 INFO [o.n.i.b.ImportLogic] Import completed successfully, took 3s 345ms. Imported:
+  0 nodes
+  0 relationships
+  0 properties
+2020-11-04 11:31:03.330+0000 INFO [StoreCopy] Import summary: Copying of 100704 records took 5 seconds (20140 rec/s). Unused Records 100704 (100%) Removed Records 0 (0%)
+2020-11-04 11:31:03.330+0000 INFO [StoreCopy] ### Extracting schema ###
+2020-11-04 11:31:03.330+0000 INFO [StoreCopy] Trying to extract schema...
+2020-11-04 11:31:03.338+0000 INFO [StoreCopy] ... found 0 schema definitions.
+----
++
+The example resulted in a compact and consistent store (any inconsistent nodes, properties, relationships are not copied over to the newly created store).
++
+. Use the `system` database and create the `neo4jcopy1` database.
++
+[source, cypher]
+----
+neo4j@system> create database neo4jcopy1;
+----
++
+[queryresult]
+----
+0 rows available after 60 ms, consumed after another 0 ms
+----
++
+. Verify that the `neo4jcopy1` database is online.
++
+[source, cypher]
+----
+neo4j@system> show databases;
++-------------------------------------------------------------------------------------------------------------------------------------+
+| name         | aliases | access       | address          | role         | requestedStatus | currentStatus | error | default | home  |
++-------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"      | []      | "read-write" | "localhost:7687" | "standalone" | "offline"       | "offline"     | ""    | TRUE    | TRUE  |
+| "neo4jcopy1" | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "system"     | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
++-------------------------------------------------------------------------------------------------------------------------------------+
+
+3 rows available after 2 ms, consumed after another 1 ms
+----
++
+. In Neo4j Browser, run `:sysinfo` to check the total store size of `neo4jcopy1`.
++
+The reported output for the store size after the compaction is 800.68 KiB, ID Allocation: Node ID 0, Property ID 0.
+
+====
