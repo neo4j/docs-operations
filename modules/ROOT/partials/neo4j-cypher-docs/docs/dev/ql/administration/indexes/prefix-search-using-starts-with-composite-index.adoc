@@ -1,0 +1,32 @@
+[[administration-indexes-prefix-search-using-starts-with-composite-index]]
+== Prefix search using `STARTS WITH` (composite index) ==
+The `STARTS WITH` predicate on `person.firstname` in the following query will use the `Person(firstname,surname)` index, if it exists. Any (non-existence check) predicate on `person.surname` will be rewritten as existence check with a filter. However, if the predicate on `person.firstname` is a equality check then a `STARTS WITH` on `person.surname` would also use the index (without rewrites). More information about how the rewriting works can be found in <<administration-indexes-single-vs-composite-index, composite index limitations>>.
+
+.Query
+include::includes/administration-indexes-prefix-search-using-starts-with-composite-index.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                             | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                                              |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |               +-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +NodeIndexSeek  | BTREE INDEX person:Person(firstname, surname) WHERE firstname STARTS WITH $autostring_0 AND surname |              1 |    1 |       2 |            112 |                    3/0 |     0.566 | Fused in Pipeline 0 |
+|                 | IS NOT NULL                                                                                         |                |      |         |                |                        |           |                     |
++-----------------+-----------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 2, total allocated memory: 176
+
+----

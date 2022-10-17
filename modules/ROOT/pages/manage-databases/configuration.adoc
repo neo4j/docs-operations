@@ -1,0 +1,183 @@
+[[manage-databases-configuration]]
+= Administration and configuration
+:description: How to manage multiple active databases. 
+
+
+[[manage-databases-administration]]
+== Administrative commands
+
+[NOTE]
+====
+Administrative commands should not be used during a rolling upgrade.
+For more information, see link:{upgrade-current-uri}/upgrade/upgrade-4.4/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
+
+For detailed information on Cypher administrative commands, see link:/docs/cypher-manual/4.4/databases[Cypher Manual -> Database management].
+====
+
+Before using administrative commands, it is important to understand the difference between stopped databases, and dropped databases:
+
+* Databases that are stopped with the `STOP` command are completely shutdown, and may be started again through the `START` command.
+In a Causal Cluster, as long as a database is in a shutdown state, it can not be considered available to other members of the cluster.
+It is not possible to do online backups against shutdown databases and they need to be taken into special consideration during disaster recovery, as they do not have a running Raft machine while shutdown.
+* Dropped databases are completely removed and are not intended to be used again at all.
+
+The following Cypher commands are used on the `system` database to manage multiple databases:
+
+[options="header" cols="m,a"]
+|===
+| Command
+| Description
+
+| CREATE DATABASE name
+| Create and start a new database. label:enterprise-edition[]
+
+| DROP DATABASE name
+| Drop (remove) an existing database. label:enterprise-edition[]
+
+| ALTER DATABASE name
+| Alter (modify) an existing database. label:enterprise-edition[]
+
+| START DATABASE name
+| Start a database that has been stopped.
+
+| STOP DATABASE name
+| Shut down a database.
+
+| SHOW DATABASE name
+| Show the status of a specific database.
+
+| SHOW DATABASES
+| Show the name and status of all the databases.
+
+| SHOW DEFAULT DATABASE
+| Show the name and status of the default database.
+
+| SHOW HOME DATABASE
+| Show the name and status of the home database for the current user.
+|===
+
+
+Naming rules for databases are as follows:
+
+* Length must be between 3 and 63 characters.
+* The first character of a name must be an ASCII alphabetic character.
+* Subsequent characters must be ASCII alphabetic or numeric characters, dots or dashes; `[a..z][0..9].-`
+* Names are case-insensitive and normalized to lowercase.
+* Names that begin with an underscore and with the prefix `system` are reserved for internal use.
+
+[NOTE]
+====
+All of the above commands are executed as Cypher commands, and the database name is subject to the link:/docs/cypher-manual/4.4/syntax/naming[standard Cypher restrictions on valid identifiers].
+In particular, the `-` (dash) and `.` (dot) characters are not legal in Cypher variables, and therefore names with dashes must be enclosed within back-ticks.
+For example, `CREATE DATABASE ++`main-db`++`.
+Database names are the only identifier for which dots don't need to be escaped.
+For example, `main.db` is a valid database name.
+====
+
+It is possible to create an alias to refer to an existing database to avoid these restrictions.
+For more information, see link:/docs/cypher-manual/4.4/aliases#alias-management-create-database-alias[Cypher Manual -> Creating database aliases]
+
+For detailed information on Cypher administrative commands, see link:/docs/cypher-manual/4.4/access-control[Cypher Manual -> Access Control].
+
+For examples of using the Cypher administrative commands to manage multiple active databases, see xref:manage-databases/queries.adoc[Queries].
+
+
+[[manage-databases-parameters]]
+== Configuration parameters
+
+Configuration parameters are defined in the xref:configuration/neo4j-conf.adoc[neo4j.conf] file.
+
+The following configuration parameters are applicable for managing databases:
+
+[options="header", cols="40,60"]
+|===
+| Parameter name
+| Description
+
+| xref:reference/configuration-settings.adoc#config_dbms.default_database[`dbms.default_database`]
+a|
+Name of the default database for the Neo4j instance.
+The database is created if it does not exist when the instance starts.
+
+*Default value:* `neo4j`
+
+[NOTE]
+====
+In a clustered setup, the value of `dbms.default_database` is only used to set the initial default database.
+To change the default database at a later point, see xref:manage-databases/causal-cluster.adoc#manage-databases-cc-default[Change the default database].
+====
+
+| xref:reference/configuration-settings.adoc#config_dbms.max_databases[`dbms.max_databases`]
+a|
+Maximum number of databases that can be used in a Neo4j single instance or Causal Cluster.
+The number includes all the online and offline databases.
+The value is an integer with a minimum value of 2.
+label:enterprise-edition[]
+
+*Default value:* `100`
+
+[NOTE]
+====
+Once the limit has been reached, it is not possible to create any additional databases.
+Similarly, if the limit is changed to a number lower than the total number of existing databases, no additional databases can be created.
+====
+
+| xref:reference/configuration-settings.adoc#config_dbms.databases.default_to_read_only[`dbms.databases.default_to_read_only`]
+a|
+Default mode of all databases.
+If this setting is set to `true` all existing and new databases will be in read only mode, and so will prevent write queries.
+
+*Default value:* `false`
+
+| xref:reference/configuration-settings.adoc#config_dbms.databases.read_only[`dbms.databases.read_only`]
+a|
+List of database names for which to prevent write queries.
+This set can contain also not yet existing databases, but not the `system` database.
+
+[NOTE]
+====
+Regardless of settings of `dbms.databases.default_to_read_only`, `dbms.databases.read_only` and `dbms.databases.writable` the `system` database will never will be read-only and will always accept write queries.
+====
+
+[NOTE]
+====
+Another way of preventing writes is to set the database access to read-only using the link:/docs/cypher-manual/4.4/databases#administration-databases-alter-database[ALTER DATABASE] command.
+====
+
+
+Example configuration:
+[source, example, role="noheader"]
+----
+dbms.databases.read_only=["foo", "bar"]
+----
+
+| xref:reference/configuration-settings.adoc#config_dbms.databases.writable[`dbms.databases.writable`]
+a|
+List of database names for which to accept write queries.
+This set can contain also not yet existing databases. +
+The value of this setting is ignored if `dbms.databases.default_to_read_only` is set to `false`. +
+If a database name is present in both sets, the database will be read-only and prevent write queries.
+
+[[config-param-note-3]]
+[TIP]
+====
+If most of your databases would read-only with a few exceptions, it can be easier to set `config_dbms.databases.default_to_read_only` to `true`, and then put the names of the non read-only databases into `dbms.databases.writeable`.
+====
+
+Example configuration:
+[source, example, role="noheader"]
+----
+dbms.databases.writable=["foo", "bar"]
+----
+|===
+
+[NOTE]
+====
+Although it is possible to achieve the same goal, i.e. set a database to read-only, both by using the Cypher command `ALTER DATABASE` and by using configuration parameters in `neo4j.conf`, it is important to understand the difference between the two.
+`ALTER DATABASE foo SET ACCESS READ ONLY` effectively sets the database `foo` to read-only _across the entire DBMS_.
+
+Using configuration parameters is more subtle and allows you to configure access on each instance separately, in case of a cluster for example.
+If you use `dbms.databases.default_to_read_only` _all databases on that instance_ are set to read-only.
+
+If both the Cypher command and the configuration parameters are used and they contain conflicting information, the database in question is set to read-only.
+====

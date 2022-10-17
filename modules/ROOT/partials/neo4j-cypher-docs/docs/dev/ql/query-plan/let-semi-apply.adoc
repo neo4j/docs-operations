@@ -1,0 +1,55 @@
+[[query-plan-let-semi-apply]]
+== Let Semi Apply ==
+The `LetSemiApply` operator tests for the presence of a pattern predicate, and is a variation of the <<query-plan-apply, Apply>> operator.
+When a query contains multiple pattern predicates separated with `OR`, `LetSemiApply` will be used to evaluate the first of these.
+It will record the result of evaluating the predicate but will leave any filtering to another operator.
+In the example, `LetSemiApply` will be used to check for the presence of the `FRIENDS_WITH`
+relationship from each person.
+
+.Query
+include::includes/query-plan-let-semi-apply.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version 4.4
+
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults    | `other.name`                            |             13 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +Projection        | other.name AS `other.name`              |             13 |   14 |      14 |                    1/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +SelectOrSemiApply | anon_9                                  |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_7:Location                         |             14 |    0 |      12 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_6:WORKS_IN]->(anon_7)     |             14 |   12 |      26 |                   24/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |   12 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +LetSemiApply      |                                         |             14 |   14 |       0 |                    0/0 |
+| |\                 +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Filter          | anon_5:Person                           |              2 |    0 |       2 |                    0/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)     | (other)-[anon_4:FRIENDS_WITH]->(anon_5) |              2 |    2 |      33 |                   28/0 |
+| | |                +-----------------------------------------+----------------+------+---------+------------------------+
+| | +Argument        | other                                   |             14 |   14 |       0 |                    0/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +Filter            | other:Person                            |             14 |   14 |      35 |                    1/0 |
+| |                  +-----------------------------------------+----------------+------+---------+------------------------+
+| +AllNodesScan      | other                                   |             35 |   35 |      36 |                    1/0 |
++--------------------+-----------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 158, total allocated memory: 64
+
+----

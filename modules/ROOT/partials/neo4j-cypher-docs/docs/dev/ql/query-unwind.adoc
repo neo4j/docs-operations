@@ -1,0 +1,348 @@
+[[query-unwind]]
+= UNWIND
+
+[abstract]
+--
+`UNWIND` expands a list into a sequence of rows.
+--
+
+* <<query-unwind-introduction, Introduction>>
+* <<unwind-unwinding-a-list, Unwinding a list>>
+* <<unwind-creating-a-distinct-list, Creating a distinct list>>
+* <<unwind-using-unwind-with-any-expression-returning-a-list, Using `UNWIND` with any expression returning a list>>
+* <<unwind-using-unwind-with-a-list-of-lists, Using `UNWIND` with a list of lists>>
+* <<unwind-using-unwind-with-an-empty-list, Using `UNWIND` with an empty list>>
+* <<unwind-using-unwind-with-an-expression-that-is-not-a-list, Using `UNWIND` with an expression that is not a list>>
+* <<unwind-creating-nodes-from-a-list-parameter, Creating nodes from a list parameter>>
+
+[[query-unwind-introduction]]
+== Introduction
+
+With `UNWIND`, you can transform any list back into individual rows.
+These lists can be parameters that were passed in, previously `collect` -ed result or other list expressions.
+
+One common usage of unwind is to create distinct lists.
+Another is to create data from parameter lists that are provided to the query.
+
+`UNWIND` requires you to specify a new name for the inner values.
+
+[[unwind-unwinding-a-list]]
+== Unwinding a list
+
+We want to transform the literal list into rows named `x` and return them.
+
+
+.Query
+[source, cypher]
+----
+UNWIND [1, 2, 3, null] AS x
+RETURN x, 'val' AS y
+----
+
+Each value of the original list -- including `null` -- is returned as an individual row.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +x+ | +y+
+| +1+ | +"val"+
+| +2+ | +"val"+
+| +3+ | +"val"+
+| +<null>+ | +"val"+
+2+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+UNWIND [1, 2, 3, null] AS x
+RETURN x, 'val' AS y
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[unwind-creating-a-distinct-list]]
+== Creating a distinct list
+
+We want to transform a list of duplicates into a set using `DISTINCT`.
+
+
+.Query
+[source, cypher]
+----
+WITH [1, 1, 2, 2] AS coll
+UNWIND coll AS x
+WITH DISTINCT x
+RETURN collect(x) AS setOfVals
+----
+
+Each value of the original list is unwound and passed through `DISTINCT` to create a unique set.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +setOfVals+
+| +[1,2]+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+WITH [1, 1, 2, 2] AS coll
+UNWIND coll AS x
+WITH DISTINCT x
+RETURN collect(x) AS setOfVals
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[unwind-using-unwind-with-any-expression-returning-a-list]]
+== Using `UNWIND` with any expression returning a list
+
+Any expression that returns a list may be used with `UNWIND`.
+
+
+.Query
+[source, cypher]
+----
+WITH
+  [1, 2] AS a,
+  [3, 4] AS b
+UNWIND (a + b) AS x
+RETURN x
+----
+
+The two lists -- _a_ and _b_ -- are concatenated to form a new list, which is then operated upon by `UNWIND`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +x+
+| +1+
+| +2+
+| +3+
+| +4+
+1+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+WITH
+  [1, 2] AS a,
+  [3, 4] AS b
+UNWIND (a + b) AS x
+RETURN x
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[unwind-using-unwind-with-a-list-of-lists]]
+== Using `UNWIND` with a list of lists
+
+Multiple `UNWIND` clauses can be chained to unwind nested list elements.
+
+
+.Query
+[source, cypher]
+----
+WITH [[1, 2], [3, 4], 5] AS nested
+UNWIND nested AS x
+UNWIND x AS y
+RETURN y
+----
+
+The first `UNWIND` results in three rows for `x`, each of which contains an element of the original list (two of which are also lists); namely, `[1, 2]`, `[3, 4]` and `5`.
+The second `UNWIND` then operates on each of these rows in turn, resulting in five rows for `y`.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +y+
+| +1+
+| +2+
+| +3+
+| +4+
+| +5+
+1+d|Rows: 5
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+WITH [[1, 2], [3, 4], 5] AS nested
+UNWIND nested AS x
+UNWIND x AS y
+RETURN y
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[unwind-using-unwind-with-an-empty-list]]
+== Using `UNWIND` with an empty list
+
+Using an empty list with `UNWIND` will produce no rows, irrespective of whether or not any rows existed beforehand, or whether or not other values are being projected.
+
+Essentially, `UNWIND []` reduces the number of rows to zero, and thus causes the query to cease its execution, returning no results.
+This has value in cases such as `UNWIND v`, where `v` is a variable from an earlier clause that may or may not be an empty list -- when it is an empty list, this will behave just as a `MATCH` that has no results.
+
+
+.Query
+[source, cypher]
+----
+UNWIND [] AS empty
+RETURN empty, 'literal_that_is_not_returned'
+----
+
+.Result
+[role="queryresult",options="footer",cols="2*<m"]
+|===
+2+|(empty result)
+2+d|Rows: 0
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+UNWIND [] AS empty
+RETURN empty, 'literal_that_is_not_returned'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+To avoid inadvertently using `UNWIND` on an empty list, `CASE` may be used to replace an empty list with a `null`:
+
+[source, cypher]
+----
+WITH [] AS list
+UNWIND
+  CASE
+    WHEN list = [] THEN [null]
+    ELSE list
+  END AS emptylist
+RETURN emptylist
+----
+
+[[unwind-using-unwind-with-an-expression-that-is-not-a-list]]
+== Using `UNWIND` with an expression that is not a list
+
+Using `UNWIND` on an expression that does not return a list, will return the same result as using `UNWIND` on a list that just contains that expression.
+As an example, `UNWIND 5` is effectively equivalent to  `UNWIND[5]`.
+The exception to this is when the expression returns `null` -- this will reduce the number of rows to zero, causing it to cease its execution and return no results.
+
+
+.Query
+[source, cypher]
+----
+UNWIND null AS x
+RETURN x, 'some_literal'
+----
+
+.Result
+[role="queryresult",options="footer",cols="2*<m"]
+|===
+2+|(empty result)
+2+d|Rows: 0
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+UNWIND null AS x
+RETURN x, 'some_literal'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[[unwind-creating-nodes-from-a-list-parameter]]
+== Creating nodes from a list parameter
+
+Create a number of nodes and relationships from a parameter-list without using `FOREACH`.
+
+
+.Parameters
+[source,javascript]
+----
+{
+  "events" : [ {
+    "year" : 2014,
+    "id" : 1
+  }, {
+    "year" : 2014,
+    "id" : 2
+  } ]
+}
+----
+
+
+.Query
+[source, cypher]
+----
+UNWIND $events AS event
+MERGE (y:Year {year: event.year})
+MERGE (y)<-[:IN]-(e:Event {id: event.id})
+RETURN e.id AS x ORDER BY x
+----
+
+Each value of the original list is unwound and passed through `MERGE` to find or create the nodes and relationships.
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +x+
+| +1+
+| +2+
+1+d|Rows: 2 +
+Nodes created: 3 +
+Relationships created: 2 +
+Properties set: 3 +
+Labels added: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+none
+]]></database><command><![CDATA[
+UNWIND $events AS event
+MERGE (y:Year {year: event.year})
+MERGE (y)<-[:IN]-(e:Event {id: event.id})
+RETURN e.id AS x ORDER BY x
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+

@@ -1,0 +1,38 @@
+[[query-plan-sort]]
+== Sort ==
+The `Sort` operator sorts rows by a provided key.
+In order to sort the data, all data from the source operator needs to be pulled in eagerly and kept in the query state, which will lead to increased memory pressure in the system.
+
+.Query
+include::includes/query-plan-sort.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++-----------------+--------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| Operator        | Details            | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Ordered by | Other               |
++-----------------+--------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +ProduceResults | p                  |             14 |   14 |       0 |                |                    2/0 |     0.249 | p.name ASC | In Pipeline 1       |
+| |               +--------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +Sort           | `p.name` ASC       |             14 |   14 |       0 |           2592 |                    0/0 |     0.286 | p.name ASC | In Pipeline 1       |
+| |               +--------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+| +Projection     | p.name AS `p.name` |             14 |   14 |      14 |                |                        |           |            | Fused in Pipeline 0 |
+| |               +--------------------+----------------+------+---------+----------------+                        |           +------------+---------------------+
+| +Filter         | p:Person           |             14 |   14 |       0 |                |                        |           |            | Fused in Pipeline 0 |
+| |               +--------------------+----------------+------+---------+----------------+                        |           +------------+---------------------+
+| +AllNodesScan   | p                  |             35 |   35 |      36 |            112 |                    2/0 |     1.047 |            | Fused in Pipeline 0 |
++-----------------+--------------------+----------------+------+---------+----------------+------------------------+-----------+------------+---------------------+
+
+Total database accesses: 50, total allocated memory: 2672
+
+----

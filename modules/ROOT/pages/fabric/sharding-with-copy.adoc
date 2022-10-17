@@ -1,0 +1,105 @@
+[[sharding-with-copy]]
+= Sharding data with the `copy` command
+:description: This section provides an example of how to use `neo4j-admin copy` to filter out data for Fabric. 
+
+The `copy` command can be used to filter out data for a xref:fabric/index.adoc[Fabric installation].
+In the following example, a sample database is separated into 3 shards.
+
+.Use the `copy` command to filter out data for a Fabric installation.
+====
+The sample database contains the following data:
+[source, cypher]
+----
+(p1 :Person :S2 {id:123, name: "Ava"})
+(p2 :Person :S2 {id:124, name: "Bob"})
+(p3 :Person :S3 {id:125, name: "Cat", age: 54})
+(p4 :Person :S3 {id:126, name: "Dan"})
+(t1 :Team :S1 :SAll {id:1, name: "Foo", mascot: "Pink Panther"})
+(t2 :Team :S1 :SAll {id:2, name: "Bar", mascot: "Cookie Monster"})
+(d1 :Division :SAll {name: "Marketing"})
+(p1)-[:MEMBER]->(t1)
+(p2)-[:MEMBER]->(t2)
+(p3)-[:MEMBER]->(t1)
+(p4)-[:MEMBER]->(t2)
+----
+The data has been prepared using queries to add the labels `:S1`,`:S2`, `:S3`, and `:SAll`, which denotes the target shard.
+_Shard 1_ contains the team data.
+_Shard 2_ and _Shard 3_ contain person data.
+
+. Create _Shard 1_ with:
++
+[source, shell]
+----
+$neo4j-home> bin/neo4j-admin copy --from-database=neo4j \
+   --to-database=shard1 \
+   --keep-only-nodes-with-labels=S1,SAll \ #<1>
+   --skip-labels=S1,S2,S3,SAll #<2>
+----
++
+<1> The `--keep-only-node-with-labels` property is used to filter out everything that does not have the label `:S1` or `:SAll`. +
+<2> The `--skip-labels` property is used to exclude the temporary labels you created for the sharding process.
++
+The resulting shard contains the following:
++
+[source, cypher, role=nocopy noplay]
+----
+(t1 :Team {id:1, name: "Foo", mascot: "Pink Panther"})
+(t2 :Team {id:2, name: "Bar", mascot: "Cookie Monster"})
+(d1 :Division {name: "Marketing"})
+----
+
+. Create _Shard 2_:
++
+[source, shell]
+----
+$neo4j-home> bin/neo4j-admin copy --from-database=neo4j \
+   --to-database=shard2 \
+   --keep-only-nodes-with-labels=S2,SAll \
+   --skip-labels=S1,S2,S3,SAll \
+   --keep-only-node-properties=Team.id
+----
++
+In _Shard 2_, you want to keep the `:Team` nodes as proxy nodes, to be able to link together information from the separate shards.
+The nodes will be included since they have the label `:SAll`, but you specify `--keep-only-node-properties` so as to not duplicate the team information from _Shard 1_.
++
+[source, cypher, role=nocopy noplay]
+----
+(p1 :Person {id:123, name: "Ava"})
+(p2 :Person {id:124, name: "Bob"})
+(t1 :Team {id:1})
+(t2 :Team {id:2})
+(d1 :Division {name: "Marketing"})
+(p1)-[:MEMBER]->(t1)
+(p2)-[:MEMBER]->(t2)
+----
++
+Observe that `--keep-only-node-properties` did not filter out `Person.name` since the `:Person` label was not mentioned in the filter.
+
+. Create _Shard 3_, but with the filter `--skip-node-properties`, instead of `--keep-only-node-properties`.
++
+[source, shell]
+----
+$neo4j-home> bin/neo4j-admin copy --from-database=neo4j \
+   --to-database=shard3 \
+   --keep-only-nodes-with-labels=S3,SAll \
+   --skip-labels=S1,S2,S3,SAll \
+   --skip-node-properties=Team.name,Team.mascot
+----
++
+The result is:
++
+[source, cypher, role=nocopy noplay]
+----
+(p3 :Person {id:125, name: "Cat", age: 54})
+(p4 :Person {id:126, name: "Dan"})
+(t1 :Team {id:1})
+(t2 :Team {id:2})
+(d1 :Division {name: "Marketing"})
+(p3)-[:MEMBER]->(t1)
+(p4)-[:MEMBER]->(t2)
+----
++
+As demonstrated, you can achieve the same result with both `--skip-node-properties` and `--keep-only-node-properties`.
+In this example, it is easier to use `--keep-only-node-properties` because only one property should be kept.
+The relationship property filters works in the same way.
+====

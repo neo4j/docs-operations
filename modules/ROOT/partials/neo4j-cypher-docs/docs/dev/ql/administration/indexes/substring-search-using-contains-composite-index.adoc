@@ -1,0 +1,34 @@
+[[administration-indexes-substring-search-using-contains-composite-index]]
+== Substring search using `CONTAINS` (composite index) ==
+The `CONTAINS` predicate on `person.country` in the following query will use the `Person(country,age)` index, if it exists. However, it will be rewritten as existence check and a filter due to the index not supporting actual suffix searches for composite indexes, this is still faster than not using an index in the first place. Any (non-existence check) predicate on `person.age` will also be rewritten as existence check with a filter. More information about how the rewriting works can be found in <<administration-indexes-single-vs-composite-index, composite index limitations>>.
+
+.Query
+include::includes/administration-indexes-substring-search-using-contains-composite-index.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                                               |              2 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +Filter         | cache[person.country] CONTAINS $autostring_0                                                         |              2 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +NodeIndexScan  | BTREE INDEX person:Person(country, age) WHERE country IS NOT NULL AND age IS NOT NULL, cache[person. |            303 |  303 |     304 |            112 |                    5/0 |     3.836 | Fused in Pipeline 0 |
+|                 | country]                                                                                             |                |      |         |                |                        |           |                     |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 304, total allocated memory: 176
+
+----

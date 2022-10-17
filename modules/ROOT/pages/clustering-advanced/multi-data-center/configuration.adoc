@@ -1,0 +1,231 @@
+[role=enterprise-edition]
+[[multi-dc-configuration]]
+= Multi-data center operations
+:description: This section shows how to configure Neo4j servers so that they are topology/data center-aware. It describes the precise configuration needed to achieve a scalable multi-data center deployment. 
+
+This section describes the following:
+
+* xref:clustering-advanced/multi-data-center/configuration.adoc#multi-dc-configuration-enable-multi-data-center-operations[Enable multi-data center operations]
+* xref:clustering-advanced/multi-data-center/configuration.adoc#causal-clustering-multi-dc-server-groups[Server groups]
+* xref:clustering-advanced/multi-data-center/configuration.adoc#multi-dc-configuration-strategy-plugins[Strategy plugins]
+** xref:clustering-advanced/multi-data-center/configuration.adoc#programmatically-specify-rules[Configuring upstream selection strategy using pre-defined strategies]
+** xref:clustering-advanced/multi-data-center/configuration.adoc#configuration-user-defined-strategy[Configuring user-defined strategies]
+** xref:clustering-advanced/multi-data-center/configuration.adoc#build-your-own-strategy-plugin[Building upstream strategy plugins using Java]
+** xref:clustering-advanced/multi-data-center/configuration.adoc#favoring-data-centers[Favoring data centers]
+
+
+[[multi-dc-configuration-enable-multi-data-center-operations]]
+== Enable multi-data center operations
+
+Before doing anything else, we must enable the multi-data center functionality.
+This is described in xref:clustering-advanced/multi-data-center/index.adoc#multi-dc-licensing[Licensing for multi-data center operations].
+
+[NOTE]
+.Licensing for multi-data center
+====
+The multi-data center functionality is separately licensed and must be specifically enabled.
+====
+
+[[causal-clustering-multi-dc-server-groups]]
+== Server groups
+
+In order to optimize the use of our Causal Cluster servers according to our specific requirements, we sort them into _Server Groups_.
+Server Group membership can map to data centers, availability zones, or any other significant topological elements from the operator's domain.
+Server Groups can also overlap.
+
+Server Groups are defined as a key that maps onto a set of servers in a Causal Cluster.
+Server Group membership is defined on each server using the  `xref:reference/configuration-settings.adoc#config_causal_clustering.server_groups[causal_clustering.server_groups]` parameter in _neo4j.conf_.
+Each server in a Causal Cluster can belong to zero or more server groups.
+
+.Definition of Server Group membership
+====
+
+The membership of a server group or groups can be set in _neo4j.conf_ as in the following examples:
+
+[source, properties]
+----
+# Add the current instance to the groups `us` and `us-east`
+causal_clustering.server_groups=us,us-east
+----
+
+[source, properties]
+----
+# Add the current instance into the group `london`
+causal_clustering.server_groups=london
+----
+[source, properties]
+----
+# Add the current instance into the group `eu`
+causal_clustering.server_groups=eu
+----
+
+We must be aware that membership of each server group is explicit.
+For example, a server in the `gb-london` group is not automatically part of some `gb` or `eu` group unless that server is explicitly added to those groups.
+That is, any (implied) relationship between groups is reified only when those groups are used as the basis for requesting data from upstream systems.
+====
+
+Server Groups are not mandatory, but unless they are present, we cannot set up specific upstream transaction dependencies for servers.
+In the absence of any specified server groups, the cluster defaults to its most pessimistic fall-back behavior: each Read Replica will catch up from a random Core Server.
+
+
+[[multi-dc-configuration-strategy-plugins]]
+== Strategy plugins
+
+_Strategy plugins_ are sets of rules that define how Read Replicas contact servers in the cluster in order to synchronize transaction logs.
+Neo4j comes with a set of pre-defined strategies, and also provides a Design Specific Language, _DSL_, to flexibly create user-defined strategies.
+Finally, Neo4j supports an API which advanced users may use to enhance upstream recommendations.
+
+
+Once a strategy plugin resolves a satisfactory upstream server, it is used for pulling transactions to update the local Read Replica for a single synchronization.
+For subsequent updates, the procedure is repeated so that the most preferred available upstream server is always resolved.
+
+
+[[programmatically-specify-rules]]
+=== Configuring upstream selection strategy using pre-defined strategies
+
+Neo4j ships with the following pre-defined strategy plugins.
+These provide coarse-grained algorithms for choosing an upstream instance:
+
+[options="header",width="100%",cols="1,1"]
+|===
+| Plugin name                                          | Resulting behavior
+| `connect-to-random-core-server`                      | Connect to any *Core Server* selecting at random from those currently available.
+| `typically-connect-to-random-read-replica`           | Connect to any available *Read Replica*, but around 10% of the time connect to any random Core Server.
+| `connect-randomly-to-server-group`                   | Connect at random to any available *Read Replica* in any of the server groups specified in the comma-separated list `causal_clustering.connect-randomly-to-server-group`.
+| `leader-only`                                        | Connect only to the current Raft leader of the Core Servers.
+| [deprecated]#`connect-randomly-within-server-group`# | [deprecated]#Connect at random to any available *Read Replica* in any of the server groups to which this server belongs.
+                                                         Deprecated, please use `connect-randomly-to-server-group`.#
+|===
+
+Pre-defined strategies are used by configuring the xref:reference/configuration-settings.adoc#config_causal_clustering.upstream_selection_strategy[`causal_clustering.upstream_selection_strategy`] option.
+Doing so allows us to specify an ordered preference of strategies to resolve an upstream provider of transaction data.
+We provide a comma-separated list of strategy plugin names with preferred strategies earlier in that list.
+The upstream strategy is chosen by asking each of the strategies in list-order whether they can provide an upstream server from which transactions can be pulled.
+
+.Define an upstream selection strategy
+====
+Consider the following configuration example:
+
+[source, properties]
+----
+causal_clustering.upstream_selection_strategy=connect-randomly-to-server-group,typically-connect-to-random-read-replica
+----
+
+With this configuration the instance will first try to connect to any other instance in the group(s) specified in `causal_clustering.connect-randomly-to-server-group`.
+Should we fail to find any live instances in those groups, then we will connect to a random Read Replica.
+
+[[img-pipeline-of-strategies]]
+image::pipeline-of-strategies.svg[title="The first satisfactory response from a strategy will be used.", role="middle"]
+
+To ensure that downstream servers can still access live data in the event of upstream failures, the last resort of any instance is always to contact a random Core Server.
+This is equivalent to ending the `causal_clustering.upstream_selection_strategy` configuration with `connect-to-random-core-server`.
+
+====
+
+
+[[configuration-user-defined-strategy]]
+=== Configuring user-defined strategies
+
+Neo4j Causal Clusters support a small DSL for the configuration of xref:clustering-advanced/multi-data-center/load-balancing.adoc[client-cluster load balancing].
+This is described in detail in xref:clustering-advanced/multi-data-center/load-balancing.adoc#causal-clustering-multi-dc-policy-definitions[Policy definitions] and xref:clustering-advanced/multi-data-center/load-balancing.adoc#causal-clustering-multi-dc-filters[Filters].
+The same DSL is used to describe preferences for how an instance binds to another instance to request transaction updates.
+
+The DSL is made available by selecting the `user-defined` strategy as follows:
+
+[source, properties]
+----
+causal_clustering.upstream_selection_strategy=user-defined
+----
+
+Once the user-defined strategy has been specified, we can add configuration to the xref:reference/configuration-settings.adoc#config_causal_clustering.user_defined_upstream_strategy[`causal_clustering.user_defined_upstream_strategy`] setting based on the server groups that have been set for the cluster.
+
+We will describe this functionality with two examples:
+
+.Defining a user-defined strategy
+====
+
+For illustrative purposes we propose four regions: `north`, `south`, `east`, and `west` and within each region we have a number of data centers such as `north1` or `west2`.
+We configure our server groups so that each data center maps to its own server group.
+Additionally we will assume that each data center fails independently from the others and that a region can act as a supergroup of its constituent data centers.
+So an instance in the `north` region might have configuration like `causal_clustering.server_groups=north2,north` which puts it in two groups that match to our physical topology as shown in the diagram below.
+
+[[img-nesw-regions-and-dcs]]
+image::nesw-regions-and-dcs.svg[title="Mapping regions and data centers onto server groups", role="middle"]
+
+Once we have our server groups, our next task is to define some upstream selection rules based on them.
+For our design purposes, let's say that any instance in one of the `north` region data centers prefers to catchup within the data center if it can, but will resort to any northern instance otherwise.
+To configure that behavior we add:
+
+[source, properties]
+----
+causal_clustering.user_defined_upstream_strategy=groups(north2); groups(north); halt()
+----
+
+The configuration is in precedence order from left to right.
+The `groups()` operator yields a server group from which to catch up.
+In this case only if there are no servers in the `north2` server group will we proceed to the `groups(north)` rule which yields any server in the `north` server group.
+Finally, if we cannot resolve any servers in any of the previous groups, then we will stop the rule chain via `halt()`.
+
+Note that the use of `halt()` will end the rule chain explicitly.
+If we don't use `halt()` at the end of the rule chain, then the `all()` rule is implicitly added.
+`all()` is expansive: it offers up all servers and so increases the likelihood of finding an available upstream server.
+However `all()` is indiscriminate and the servers it offers are not guaranteed to be topologically or geographically local, potentially increasing the latency of synchronization.
+
+====
+
+The example above shows a simple hierarchy of preferences.
+But we can be more sophisticated if we so choose.
+For example we can place conditions on the server groups from which we catch up.
+
+.User-defined strategy with conditions
+====
+
+In this example we wish to roughly qualify cluster health before choosing from where to catch up.
+For this we use the `min()` filter as follows:
+
+[source, properties]
+----
+causal_clustering.user_defined_upstream_strategy=groups(north2)->min(3), groups(north)->min(3); all();
+----
+
+`groups(north2)\->min(3)` states that we want to catch up from the `north2` server group if it has three available machines, which we here take as an indicator of good health.
+If `north2` can't meet that requirement (is not healthy enough) then we try to catch up from any server across the `north` region provided there are at least three of them available as per `groups(north)\->min(3)`.
+Finally, if we cannot catch up from a sufficiently healthy `north` region, then we'll (explicitly) fall back to the whole cluster with `all()`.
+
+The `min()` filter is a simple but reasonable indicator of server group health.
+====
+
+
+[[build-your-own-strategy-plugin]]
+=== Building upstream strategy plugins using Java
+
+Neo4j supports an API which advanced users may use to enhance upstream recommendations in arbitrary ways: load, subnet, machine size, or anything else accessible from the JVM.
+In such cases we are invited to build our own implementations of `org.neo4j.causalclustering.readreplica.UpstreamDatabaseSelectionStrategy` to suit our own needs, and register them with the strategy selection pipeline just like the pre-packaged plugins.
+
+We have to override the `org.neo4j.causalclustering.readreplica.UpstreamDatabaseSelectionStrategy#upstreamDatabase()` method in our code.
+Overriding that class gives us access to the following items:
+
+[options="header"]
+|===
+| Resource                                               | Description
+| `org.neo4j.causalclustering.discovery.TopologyService` | This is a directory service which provides access to the addresses of all servers and server groups in the cluster.
+| `org.neo4j.kernel.configuration.Config`                | This provides the configuration from _neo4j.conf_ for the local instance.
+Configuration for our own plugin can reside here.
+| `org.neo4j.causalclustering.identity.MemberId`         | This provides the unique cluster `MemberId` of the current instance.
+|===
+
+Once our code is written and tested, we have to prepare it for deployment.
+`UpstreamDatabaseSelectionStrategy` plugins are loaded via the Java Service Loader.
+This means when we package our code into a jar file, we'll have to create a file _META-INF.services/org.neo4j.causalclustering.readreplica.UpstreamDatabaseSelectionStrategy_ in which we write the fully qualified class name(s) of the plugins, e.g. `org.example.myplugins.PreferServersWithHighIOPS`.
+
+To deploy this jar into the Neo4j server we copy it into the xref:configuration/file-locations.adoc[_plugins_] directory and restart the instance.
+
+[[favoring-data-centers]]
+=== Favoring data centers
+
+In a multi-DC scenario, while it remains a rare occurrence, it is possible to bias where writes for the specified database should be directed.
+We can apply `causal_clustering.leadership_priority_group` to specify a group of servers which should have priority when selecting the leader for a given database.
+The priority group can be set on one or multiple databases and it means that the cluster will attempt to keep the leadership for the configured database on an instance tagged with the configured server group.
+
+A database for which `leadership_priority_group` has been configured will be excluded from the automatic balancing of leaderships across a cluster.
+It is therefore recommended to not use this configuration unless it is necessary.

@@ -1,0 +1,723 @@
+[role=enterprise-edition]
+[[tutorial-fabric]]
+= Set up and use Fabric
+:description: This tutorial walks through the basics of setting up and using Neo4j Fabric. 
+
+Neo4j Fabric is a tool for storing and retrieving data in multiple databases, located in one or many Neo4j DBMS(s), with a single Cypher query.
+
+In this tutorial, you will learn how to:
+
+* xref:tutorial/fabric-tutorial.adoc#tutorial-fabric-model-data[Model your data for Fabric]
+* xref:tutorial/fabric-tutorial.adoc#tutorial-fabric-config[Configure Fabric with three databases]
+* xref:tutorial/fabric-tutorial.adoc#tutorial-fabric-import[Import data in your databases]
+* xref:tutorial/fabric-tutorial.adoc#tutorial-fabric-get-results[Retrieve data with a single Cypher query]
+
+[TIP]
+====
+For more information on how to manage multiple active databases in Neo4j, see xref:manage-databases/index.adoc[Manage databases]. +
+For more details on Fabric, see xref:fabric/index.adoc[Fabric].
+====
+
+[[tutorial-fabric-model-data]]
+== Model your data for Fabric
+
+
+[[tutorial-fabric-dataset]]
+=== Northwind data
+
+image:fabric/northwind-logo.jpeg[width=100] The example data in this tutorial is based on the Northwind dataset, created by Microsoft.
+
+It contains the sales data of a fictitious small company called “Northwind Traders”.
+The data includes customers, products, customer orders, warehouse stock, shipping, suppliers, employees, and sales territories.
+
+[TIP]
+====
+For more information on how Northwind (a relational dataset) is modeled into a graph, run `:guide northwind-graph` in Neo4j Browser to play the built-in guide Northwind Graph.
+See the link:https://neo4j.com/docs/browser-manual/current/visual-tour/#guides[Neo4j Browser documentation].
+====
+
+[[tutorial-fabric-data-model]]
+=== The model
+
+The Northwind graph model consists of the following data:
+
+* Node labels
+** `:Product`
+** `:Category`
+** `:Supplier`
+** `:Order`
+** `:Customer`
+
+*  Relationship types
+** `:SUPPLIES`
+** `:PART_OF`
+** `:ORDERS`
+** `:PURCHASED`
+
+image::fabric/northwind-datamodel.png[title="The Northwind data model", width=350]
+
+
+[[tutorial-fabric-new-data-model]]
+=== Remodeling the Northwind dataset
+
+In this scenario, you imagine that data privacy constraints require customers’ data to be stored in their original region.
+For simplicity, there are two regions: the Americas (AME) and Europe (EU).
+The first step is to remodel the Northwind dataset, so that customer data can be separated from the Product catalog, which has no privacy constraints.
+You create two graphs: one for the Product catalog, which includes `:Product`, `:Category`, `:Supplier`, `:PART_OF`, `:SUPPLIES`, and one partitioned graph in two databases for the Customer orders in EU and AME, with `:Product`, `:Order`, `:Customer`, `:PURCHASED`, and `:ORDERS`.
+
+image::fabric/northwind-fabric-datamodel.png[title="The new data model", width=800, role=middle]
+
+*Data Federation*
+
+This way, the Product and Customer data are in two *disjointed graphs*, with different labels and relationship types.
+This is called _Data Federation_.
+To query across them, you have to federate the graphs, because relationships cannot span across them.
+This is done by using a _proxy node_ modeling pattern: nodes with the `:Product` label must be present in both federated domains.
+In the Product catalog graph, nodes with the `:Product` label contain all the data related to a product, while in the Customer graphs, the same label is associated to a proxy node, which only contains `productID`.
+The `productID` property allows you to link data across the graphs in this federation.
+
+image::fabric/federation.png[title="Data Federation", width=350, role=middle]
+
+*Data Sharding*
+
+Since the Customer data is for two regions (EU and AME), you have to partition it into two databases.
+The resulting two graphs have the same model (same labels, same relationship types), but different data.
+This is called _Data Sharding_.
+
+image::fabric/sharding2.png[title="Data Sharding", width=450, role=middle]
+
+In general, there are a couple of main use cases that require sharding.
+The most common is scalability, i.e., different shards can be deployed on different servers, splitting the load on different resources.
+Another reason could be data regulations: different shards can be deployed on servers, residing in different locations, and managed independently.
+
+[[tutorial-fabric-config]]
+== Configure Fabric with three databases
+
+Now that you have a new multi-database model defined, you can start to configure the Fabric infrastructure.
+
+[NOTE]
+====
+This tutorial uses the Linux or macOS tarball installation.
+It assumes that your current work directory is the _<neo4j-home>_ directory of the tarball installation.
+====
+
+[[tutorial-fabric-create-databases]]
+=== Create three databases
+
+You need three databases: `db0` for the Product catalog, `db1` for the EU customer data, and `db2` for the AME customers.
+
+. Start the Neo4j DBMS.
++
+[source, shell, role=noplay]
+----
+bin/neo4j start
+----
+
+. Check all available databases.
++
+[source, shell, role=noplay]
+----
+ls -al /data/databases/
+----
++
+[queryresult]
+----
+total 0
+drwxr-xr-x@  5 username  staff   160  9 Jun 12:53 .
+drwxr-xr-x@  5 username  staff   160  9 Jun 12:53 ..
+drwxr-xr-x  37 username  staff  1184  9 Jun 12:53 neo4j
+-rw-r--r--   1 username  staff     0  9 Jun 12:53 store_lock
+drwxr-xr-x  38 username  staff  1216  9 Jun 12:53 system
+----
+
+. Connect to the Neo4j DBMS using `cypher-shell` with the default credentials and change the password when prompted.
+For more information about the Cypher Shell command-line interface (CLI) and how to use it, see xref:tools/cypher-shell.adoc[Cypher Shell].
++
+[source, shell, role=noplay]
+----
+bin/cypher-shell -u neo4j -p neo4j
+----
++
+[queryresult]
+----
+Password change required
+new password: *****
+Connected to Neo4j 4.1.x at neo4j://localhost:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+----
+
+. Run the command `SHOW DATABASES` to list all available databases.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------+
+| name     | aliases | access       | address          | role         | requestedStatus | currentStatus | error | default | home  |
++---------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "system" | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
++---------------------------------------------------------------------------------------------------------------------------------+
+
+2 rows available after 102 ms, consumed after another 11 ms
+----
+
+. Run the command `CREATE DATABASE <database-name>` to create  the databases.
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db0;
+----
++
+[queryresult]
+----
+0 rows available after 137 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db1;
+----
++
+[queryresult]
+----
+0 rows available after 14 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db2;
+----
++
+[queryresult]
+----
+0 rows available after 10 ms, consumed after another 0 ms
+----
+
+. Again run the command `SHOW DATABASES` to verify that the new databases have been created.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------+
+| name     | aliases | access       | address          | role         | requestedStatus | currentStatus | error | default | home  |
++---------------------------------------------------------------------------------------------------------------------------------+
+| "db0"    | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "db1"    | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "db2"    | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "neo4j"  | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "system" | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
++---------------------------------------------------------------------------------------------------------------------------------+
+
+5 rows available after 8 ms, consumed after another 7 ms
+----
+
+. Exit the Cypher Shell command-line tool.
++
+[source, cypher, role=noplay]
+----
+:exit
+----
+
+[discrete]
+[[tutorial-fabric-fabric-config]]
+=== Configure Fabric
+
+You set up Fabric by configuring the fabric database and the graph names and IDs in the _neo4j.conf_ file.
+In this example, the Fabric database is called `fabricnw`.
+
+. Navigate to the _<neo4j-home>/conf/_ folder and open the _neo4j.conf_ file.
+
+. Add the following lines and save it.
++
+----
+#********************************************************************
+# Fabric tutorial
+#********************************************************************
+
+fabric.database.name=fabricnw
+
+fabric.graph.0.uri=neo4j://localhost:7687
+fabric.graph.0.name=product
+fabric.graph.0.database=db0
+
+fabric.graph.1.uri=neo4j://localhost:7687
+fabric.graph.1.name=customerEU
+fabric.graph.1.database=db1
+
+fabric.graph.2.uri=neo4j://localhost:7687
+fabric.graph.2.name=customerAME
+fabric.graph.2.database=db2
+
+----
+
+. Navigate back to the _<neo4j-home>_ folder and restart the Neo4j DBMS.
++
+[source, shell, role=noplay]
+----
+bin/neo4j restart
+----
+
+. Connect to the Neo4j DBMS using `cypher-shell` and your credentials.
++
+[source, shell, role=noplay]
+----
+bin/cypher-shell -u neo4j -p your-password
+----
+
+. Run the command `SHOW DATABASES` to verify that the Fabric database has been configured and is `online`.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------+
+| name       | aliases | access       | address          | role         | requestedStatus | currentStatus | error | default | home  |
++-----------------------------------------------------------------------------------------------------------------------------------+
+| "db0"      | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "db1"      | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "db2"      | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "fabricnw" | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "neo4j"    | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "system"   | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
++-----------------------------------------------------------------------------------------------------------------------------------+
+
+6 rows available after 242 ms, consumed after another 18 ms
+----
+
+[[tutorial-fabric-import]]
+== Import data in your databases
+
+You can use the command `LOAD CSV WITH HEADERS FROM` to import data in the databases.
+
+[discrete]
+[[tutorial-fabric-import-product]]
+=== Load the Product catalog in db0
+
+. Run the following Cypher query to change the active database to `db0`, and add the product data.
++
+[source, cypher, role=noplay]
+----
+:use db0;
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n = row,
+n.unitPrice = toFloat(row.unitPrice),
+n.unitsInStock = toInteger(row.unitsInStock), n.unitsOnOrder = toInteger(row.unitsOnOrder),
+n.reorderLevel = toInteger(row.reorderLevel), n.discontinued = (row.discontinued <> "0");
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/categories.csv" AS row
+CREATE (n:Category)
+SET n = row;
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/suppliers.csv" AS row
+CREATE (n:Supplier)
+SET n = row;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+CREATE INDEX FOR (c:Category) ON (c.categoryID);
+CREATE INDEX FOR (s:Supplier) ON (s.supplierID);
+
+MATCH (p:Product),(c:Category)
+WHERE p.categoryID = c.categoryID
+CREATE (p)-[:PART_OF]->(c);
+
+MATCH (p:Product),(s:Supplier)
+WHERE p.supplierID = s.supplierID
+CREATE (s)-[:SUPPLIES]->(p);
+----
+
+. Press Enter.
+. Verify that the product data is loaded in `db0`.
++
+[source, cypher, role=noplay]
+----
+MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)-[:PART_OF]->(c:Category)
+RETURN s.companyName AS Supplier, p.productName AS Product, c.categoryName AS Category
+LIMIT 5;
+----
++
+[queryresult]
+----
++--------------------------------------------------------------------------+
+| Supplier                     | Product                     | Category    |
++--------------------------------------------------------------------------+
+| "Bigfoot Breweries"          | "Sasquatch Ale"             | "Beverages" |
+| "Pavlova"                    | "Outback Lager"             | "Beverages" |
+| "Bigfoot Breweries"          | "Laughing Lumberjack Lager" | "Beverages" |
+| "Bigfoot Breweries"          | "Steeleye Stout"            | "Beverages" |
+| "Aux joyeux ecclésiastiques" | "Côte de Blaye"             | "Beverages" |
++--------------------------------------------------------------------------+
+
+5 rows available after 202 ms, consumed after another 5 ms
+----
+
+[discrete]
+[[tutorial-fabric-import-customerEU]]
+=== Load EU customers and related orders in db1
+
+. Run the following Cypher query to change the active database to `db1`, and add the EU customers and orders.
++
+[source, cypher, role=noplay]
+----
+:use db1;
+
+:param europe => ['Germany', 'UK', 'Sweden', 'France', 'Spain', 'Switzerland', 'Austria', 'Italy', 'Portugal', 'Ireland', 'Belgium', 'Norway', 'Denmark', 'Finland'];
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/customers.csv" AS row
+WITH row
+WHERE row.country IN $europe
+CREATE (n:Customer)
+SET n = row;
+
+CREATE INDEX FOR (c:Customer) ON (c.customerID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/orders.csv" AS row
+WITH row
+MATCH (c:Customer)
+WHERE row.customerID = c.customerID
+CREATE (o:Order)
+SET o = row;
+
+CREATE INDEX FOR (o:Order) ON (o.orderID);
+
+MATCH (c:Customer),(o:Order)
+WHERE c.customerID = o.customerID
+CREATE (c)-[:PURCHASED]->(o);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n.productID = row.productID;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/order-details.csv" AS row
+MATCH (p:Product), (o:Order)
+WHERE p.productID = row.productID AND o.orderID = row.orderID
+CREATE (o)-[details:ORDERS]->(p)
+SET details = row, details.quantity = toInteger(row.quantity);
+----
+
+. Press Enter.
+. Verify that the EU Customer orders data is loaded in `db1`.
++
+[source, cypher, role=noplay]
+----
+MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)
+RETURN c.companyName AS Customer, c.country AS CustomerCountry, o.orderID AS Order, p.productID AS Product
+LIMIT 5;
+----
++
+[queryresult]
+----
++-------------------------------------------------------------+
+| Customer              | CustomerCountry | Order   | Product |
++-------------------------------------------------------------+
+| "Alfreds Futterkiste" | "Germany"       | "10692" | "63"    |
+| "Alfreds Futterkiste" | "Germany"       | "10835" | "77"    |
+| "Alfreds Futterkiste" | "Germany"       | "10835" | "59"    |
+| "Alfreds Futterkiste" | "Germany"       | "10702" | "76"    |
+| "Alfreds Futterkiste" | "Germany"       | "10702" | "3"     |
++-------------------------------------------------------------+
+
+5 rows available after 47 ms, consumed after another 2 ms
+----
+
+[discrete]
+[[tutorial-fabric-import-customerAME]]
+=== Load AME customers and related orders in db2
+
+. Run the following Cypher query to change the active database to `db2` and add the AME customers and orders.
++
+[source, cypher, role=noplay]
+----
+:use db2;
+
+:param americas => ['Mexico', 'Canada', 'Argentina', 'Brazil', 'USA', 'Venezuela'];
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/customers.csv" AS row
+WITH row
+WHERE row.country IN $americas
+CREATE (n:Customer)
+SET n = row;
+
+CREATE INDEX FOR (c:Customer) ON (c.customerID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/orders.csv" AS row
+WITH row
+MATCH (c:Customer)
+WHERE row.customerID = c.customerID
+CREATE (o:Order)
+SET o = row;
+
+CREATE INDEX FOR (o:Order) ON (o.orderID);
+
+MATCH (c:Customer),(o:Order)
+WHERE c.customerID = o.customerID
+CREATE (c)-[:PURCHASED]->(o);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n.productID = row.productID;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/order-details.csv" AS row
+MATCH (p:Product), (o:Order)
+WHERE p.productID = row.productID AND o.orderID = row.orderID
+CREATE (o)-[details:ORDERS]->(p)
+SET details = row,
+details.quantity = toInteger(row.quantity);
+----
+
+. Press Enter.
+. Verify that the AME Customer orders data is loaded in `db2`.
++
+[source, cypher, role=noplay]
+----
+MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)
+RETURN c.companyName AS Customer, c.country AS CustomerCountry, o.orderID AS Order, p.productID AS Product
+LIMIT 5;
+----
++
+[queryresult]
+----
++----------------------------------------------------------------------------+
+| Customer                             | CustomerCountry | Order   | Product |
++----------------------------------------------------------------------------+
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10759" | "32"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "72"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "13"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "19"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "11"    |
++----------------------------------------------------------------------------+
+
+5 rows available after 42 ms, consumed after another 1 ms
+
+----
+
+
+[[tutorial-fabric-get-results]]
+== Retrieve data with a single Cypher query
+
+Fabric allows you to retrieve data from all your databases with a single Cypher query.
+
+As the databases `db0`, `db1`, `db2` in this tutorial are part of the same Neo4j DBMS, you can also access them directly, using their database names.
+This is especially useful when you want to set up Fabric locally for development or testing purposes.
+In this case,  you only have to add `fabric.database.name=fabricnw` to the _neo4j.conf_ file, and use queries as the following one.
+
+[source, cypher, role=noplay]
+----
+:use fabricnw
+----
+
+[source, cypher, role=noplay]
+----
+USE db1
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+  UNION
+USE db2
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+LIMIT 5;
+----
+
+[queryresult]
+----
++---------------------+
+| name    | country   |
++---------------------+
+| "ALFKI" | "Germany" |
+| "AROUT" | "UK"      |
+| "ANATR" | "Mexico"  |
+| "ANTON" | "Mexico"  |
++---------------------+
+
+4 rows available after 404 ms, consumed after another 1 ms
+----
+
+However, if your databases `db0`, `db1`, `db2` are located in other Neo4j DBMSs, on completely different servers for example, then you must update the URI settings to connect to them.
+
+In this tutorial, you will try the Fabric capabilities as if the data is deployed on different servers.
+
+[discrete]
+[[tutorial-fabric-query-product]]
+=== Query a single database
+
+You can retrieve data from a single database by using the cypher clause `USE` and the name of the Fabric graph.
+When querying a single database, you do not have to change the active database to Fabric.
+
+[source, cypher, role=noplay]
+----
+USE fabricnw.product
+MATCH (p:Product)
+RETURN p.productName AS product
+LIMIT 5;
+----
+
+[queryresult]
+----
++--------------------------------+
+| product                        |
++--------------------------------+
+| "Chai"                         |
+| "Chang"                        |
+| "Aniseed Syrup"                |
+| "Chef Anton's Cajun Seasoning" |
+| "Chef Anton's Gumbo Mix"       |
++--------------------------------+
+
+5 rows available after 6 ms, consumed after another 21 ms
+----
+
+[discrete]
+[[tutorial-fabric-query-shards]]
+=== Query across multiple shards
+Use Fabric to query both shards and get customers whose name starts with A.
+
+When you want to retrieve data from multiple databases, you have to change the active database to `fabricnw`.
+
+[source, cypher, role=noplay]
+----
+:use fabricnw
+----
+
+[source, cypher, role=noplay]
+----
+USE fabricnw.customerAME
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+  UNION
+USE fabricnw.customerEU
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+LIMIT 5;
+----
+
+[queryresult]
+----
++---------------------+
+| name    | country   |
++---------------------+
+| "ANATR" | "Mexico"  |
+| "ANTON" | "Mexico"  |
+| "ALFKI" | "Germany" |
+| "AROUT" | "UK"      |
++---------------------+
+
+4 rows available after 25 ms, consumed after another 56 ms
+----
+
+Or, using a more common Fabric idiom:
+
+[source, cypher, role=noplay]
+----
+UNWIND [1,2]AS gid
+CALL {
+	USE fabricnw.graph(gid)
+	MATCH (c:Customer)
+	WHERE c.customerID STARTS WITH 'A'
+	RETURN c.customerID AS name, c.country AS country
+}
+RETURN name, country
+LIMIT 5;
+----
+
+[queryresult]
+----
++---------------------+
+| name    | country   |
++---------------------+
+| "ANATR" | "Mexico"  |
+| "ANTON" | "Mexico"  |
+| "ALFKI" | "Germany" |
+| "AROUT" | "UK"      |
++---------------------+
+
+4 rows available after 61 ms, consumed after another 8 ms
+----
+
+[discrete]
+[[tutorial-fabric-query-all-dbs]]
+=== Query across federation and shards
+
+Finally, a more complex query that uses all 3 databases to find all customers who have bought discontinued products in the Meat/Poultry category.
+
+[source, cypher, role=noplay]
+----
+CALL {
+USE fabricnw.product
+MATCH (p:Product{discontinued:true})-[:PART_OF]->(c:Category{categoryName:'Meat/Poultry'})
+              RETURN COLLECT(p.productID) AS pids
+}
+WITH *, [g IN fabricnw.graphIds() WHERE g<>0] AS gids
+UNWIND gids AS gid
+CALL {
+	USE fabricnw.graph(gid)
+	WITH pids
+	UNWIND pids as pid
+	MATCH (p:Product{productID:pid})<-[:ORDERS]-(:Order)<-[:PURCHASED]-(c:Customer)
+	RETURN DISTINCT c.customerID AS customer, c.country AS country
+}
+RETURN customer, country
+LIMIT 20;
+----
+
+[queryresult]
+----
++--------------------------+
+| customer | country       |
++--------------------------+
+| "RICSU"  | "Switzerland" |
+| "PERIC"  | "Mexico"      |
+| "WARTH"  | "Finland"     |
+| "WELLI"  | "Brazil"      |
+| "DRACD"  | "Germany"     |
+| "RATTC"  | "USA"         |
+| "HUNGO"  | "Ireland"     |
+| "QUEDE"  | "Brazil"      |
+| "SEVES"  | "UK"          |
+| "ANTON"  | "Mexico"      |
+| "BERGS"  | "Sweden"      |
+| "SAVEA"  | "USA"         |
+| "AROUT"  | "UK"          |
+| "FAMIA"  | "Brazil"      |
+| "WANDK"  | "Germany"     |
+| "WHITC"  | "USA"         |
+| "ISLAT"  | "UK"          |
+| "LONEP"  | "USA"         |
+| "QUICK"  | "Germany"     |
+| "HILAA"  | "Venezuela"   |
++--------------------------+
+
+20 rows available after 51 ms, consumed after another 2 ms
+----
+
+[TIP]
+First, `fabricnw` calls database `db0` to retrieve all discontinued products in the Meat/Poultry category.
+Then, using the returned product IDs, it queries both `db1` and `db2` *in parallel* and gets the customers who have purchased these products and their country.
+
+
+[discrete]
+[[tutorial-fabric-end]]
+== The end
+
+You have just learned how to store and retrieve data from multiple databases using a single Cypher query. +
+For more details on the Neo4j Fabric, see xref:fabric/index.adoc[Fabric].

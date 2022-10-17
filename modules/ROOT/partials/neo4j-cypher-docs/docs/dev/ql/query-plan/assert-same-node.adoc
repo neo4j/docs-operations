@@ -1,0 +1,44 @@
+[[query-plan-assert-same-node]]
+== Assert Same Node ==
+The `AssertSameNode` operator is used to ensure that no unique constraints are violated in the slotted and interpreted runtime.
+The example looks for the presence of a team with the supplied name and id, and if one does not exist,
+it will be created. Owing to the existence of two unique constraints
+on `:Team(name)` and `:Team(id)`, any node that would be found by the `UniqueIndexSeek`
+must be the very same node, or the constraints would be violated.
+        
+
+.Query
+include::includes/query-plan-assert-same-node.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version 4.4
+
++---------------------------------+-------------------------------------------------------+----------------+------+---------+------------------------+
+| Operator                        | Details                                               | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++---------------------------------+-------------------------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults                 |                                                       |              1 |    0 |       0 |                    0/0 |
+| |                               +-------------------------------------------------------+----------------+------+---------+------------------------+
+| +EmptyResult                    |                                                       |              1 |    0 |       0 |                    0/0 |
+| |                               +-------------------------------------------------------+----------------+------+---------+------------------------+
+| +Merge                          | CREATE (t:Team {name: $autostring_0, id: $autoint_1}) |              1 |    1 |       0 |                    0/0 |
+| |                               +-------------------------------------------------------+----------------+------+---------+------------------------+
+| +AssertSameNode                 | t                                                     |              0 |    1 |       0 |                    0/0 |
+| |\                              +-------------------------------------------------------+----------------+------+---------+------------------------+
+| | +NodeUniqueIndexSeek(Locking) | UNIQUE t:Team(id) WHERE id = $autoint_1               |              1 |    1 |       1 |                    0/1 |
+| |                               +-------------------------------------------------------+----------------+------+---------+------------------------+
+| +NodeUniqueIndexSeek(Locking)   | UNIQUE t:Team(name) WHERE name = $autostring_0        |              0 |    1 |       1 |                    0/1 |
++---------------------------------+-------------------------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 2, total allocated memory: 64
+
+----

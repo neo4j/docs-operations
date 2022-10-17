@@ -1,0 +1,45 @@
+[[query-plan-semi-apply]]
+== Semi Apply ==
+The `SemiApply` operator tests for the presence of a pattern predicate, and is a variation of the <<query-plan-apply, Apply>> operator.
+If the right-hand side operator yields at least one row, the row from the left-hand side operator is yielded by the `SemiApply` operator.
+This makes `SemiApply` a filtering operator, used mostly for pattern predicates in queries.
+
+.Query
+include::includes/query-plan-semi-apply.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime SLOTTED
+
+Runtime version 4.4
+
++-----------------+-------------------------------------+----------------+------+---------+------------------------+
+| Operator        | Details                             | Estimated Rows | Rows | DB Hits | Page Cache Hits/Misses |
++-----------------+-------------------------------------+----------------+------+---------+------------------------+
+| +ProduceResults | `p.name`                            |             11 |    2 |       0 |                    0/0 |
+| |               +-------------------------------------+----------------+------+---------+------------------------+
+| +Projection     | p.name AS `p.name`                  |             11 |    2 |       2 |                    1/0 |
+| |               +-------------------------------------+----------------+------+---------+------------------------+
+| +SemiApply      |                                     |             11 |    2 |       0 |                    0/0 |
+| |\              +-------------------------------------+----------------+------+---------+------------------------+
+| | +Filter       | anon_3:Person                       |              2 |    0 |       2 |                    0/0 |
+| | |             +-------------------------------------+----------------+------+---------+------------------------+
+| | +Expand(All)  | (p)-[anon_2:FRIENDS_WITH]->(anon_3) |              2 |    2 |      33 |                   28/0 |
+| | |             +-------------------------------------+----------------+------+---------+------------------------+
+| | +Argument     | p                                   |             14 |   14 |       0 |                    0/0 |
+| |               +-------------------------------------+----------------+------+---------+------------------------+
+| +Filter         | p:Person                            |             14 |   14 |      35 |                    1/0 |
+| |               +-------------------------------------+----------------+------+---------+------------------------+
+| +AllNodesScan   | p                                   |             35 |   35 |      36 |                    1/0 |
++-----------------+-------------------------------------+----------------+------+---------+------------------------+
+
+Total database accesses: 108, total allocated memory: 64
+
+----

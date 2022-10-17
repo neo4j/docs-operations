@@ -1,0 +1,1192 @@
+[[alias-management]]
+= Database alias management
+
+[abstract]
+--
+This chapter explains how to use Cypher to manage database aliases in Neo4j.
+--
+
+There are two kinds of aliases, local database aliases and remote database aliases.
+A local database alias can only target a database within the same DBMS.
+A remote alias may target a database from another Neo4j DBMS.
+When a query is run against an alias, it will be redirected to the target database.
+The home database for users can be set to an alias, which will be resolved to the target database on use.
+        
+
+A local alias can be used in all other Cypher commands in place of the target database.
+Please note that the local alias will be resolved while executing the command.
+Privileges are defined on the database, and not the local alias.
+        
+
+A remote alias can be used for connecting to a database of a remote Neo4j DBMS, use clauses, setting a user's home database and defining the
+access privileges to the remote database. Remote aliases requires configuration to safely connect to the remote target, which is described in
+<<operations-manual#manage-remote-aliases, Connecting remote databases>>. It is not possible to impersonate a user on the remote database or to
+execute an administration command on the remote database via a remote alias.
+        
+
+Aliases can be created and managed using a set of Cypher administration commands executed against the `system` database.
+The required privileges are described <<cypher-manual#access-control-dbms-administration-alias-management, here>>.
+When connected to the DBMS over bolt, administration commands are automatically routed to the `system` database.
+
+include::alias/alias-command-syntax.adoc[]
+
+include::alias/alias-driver-settings-table.adoc[]
+
+[NOTE]
+====
+If transaction modifies an alias, other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+ This prevents issues such as a transaction executing against multiple target databases
+      for the same alias.
+
+
+====
+
+[role=enterprise-edition]
+[[alias-management-show-alias]]
+== Listing database aliases
+
+Available database aliases can be seen using `SHOW ALIASES FOR DATABASE`.
+           The required privileges are described <<cypher-manual#access-control-dbms-administration-alias-management, here>>.
+           `SHOW ALIASES FOR DATABASE` will produce a table of database aliases with the following columns:
+          
+
+include::alias/show-database-alias-columns.adoc[]
+
+A summary of all available databases alias can be displayed using the command `SHOW ALIASES FOR DATABASE`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+
+| +"films"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+
+| +"motion pictures"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+
+| +"movie scripts"+ | +"scripts"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+
+5+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+The detailed information for a particular database alias can be displayed using the command `SHOW ALIASES FOR DATABASE YIELD *`.
+When a `YIELD *` clause is provided, the full set of columns is returned.
+
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD *
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+ | +driver+
+| +"films"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+ | +<null>+
+| +"motion pictures"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+ | +<null>+
+| +"movie scripts"+ | +"scripts"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+ | +{connection_pool_max_size -> 10, connection_pool_idle_test -> PT2M, connection_pool_acquisition_timeout -> PT1M, connection_max_lifetime -> PT1H, logging_level -> "INFO", ssl_enforced -> true, connection_timeout -> PT5S}+
+6+d|Rows: 3
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE YIELD *
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The number of database aliases can be seen using a `count()` aggregation with `YIELD` and `RETURN`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD * RETURN count(*) as count
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| +count+
+| +3+
+1+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE YIELD * RETURN count(*) as count
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD name, url, database ORDER BY database WHERE name CONTAINS 'e'
+----
+
+In this example:
+
+* The number of columns returned has been reduced with the `YIELD` clause.
+* The order of the returned columns has been changed.
+* The results have been filtered to only show database alias names containing 'e'.
+* The results are ordered by the 'database' column using `ORDER BY`.
+
+It is also possible to use `SKIP` and `LIMIT` to paginate the results.
+
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+|===
+| +name+ | +url+ | +database+
+| +"motion pictures"+ | +<null>+ | +"movies"+
+| +"movie scripts"+ | +"neo4j+s://location:7687"+ | +"scripts"+
+3+d|Rows: 2
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE YIELD name, url, database ORDER BY database WHERE name CONTAINS 'e'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[alias-management-create-database-alias]]
+== Creating database aliases
+
+Aliases can be created using `CREATE ALIAS`. The required privileges are described <<cypher-manual#access-control-dbms-administration-alias-management, here>>.
+
+include::alias/alias-management-syntax-create-alias.adoc[]
+
+This command is optionally idempotent, with the default behavior to fail with an error if the database alias already exists.
+Inserting `IF NOT EXISTS` after the alias name ensures that no error is returned and nothing happens should a database alias with that name already exist.
+Adding `OR REPLACE` to the command will result in any existing database alias being deleted and a new one created.
+`CREATE OR REPLACE ALIAS` will fail if there is an existing database with the same name.
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
+
+
+====
+
+[NOTE]
+====
+Alias names are subject to the <<cypher-manual#cypher-naming, standard Cypher restrictions on valid identifiers>>.
+The following naming rules apply:
+
+
+* A name is a valid identifier, additionally allowing dots e.g. `main.alias` for local aliases.
+* Name length can be up to 65534 characters.
+* Names cannot end with dots.
+* Names that begin with an underscore or with the prefix `system` are reserved for internal use.
+* Non-alphabetic characters, including numbers, symbols and whitespace characters, can be used in names, but must be escaped using backticks.
+
+
+
+====
+
+[role=enterprise-edition]
+[[database-management-create-local-database-alias]]
+=== Creating local database aliases
+
+Local aliases are created with a target database.
+
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When a local database alias has been created, it will show up in the aliases column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
+
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE `northwind`
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"northwind-graph-2021"+ | +["northwind"]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW DATABASE `northwind`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE WHERE name = 'northwind'
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+
+| +"northwind"+ | +"northwind-graph-2021"+ | +"local"+ | +<null>+ | +<null>+
+5+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE WHERE name = 'northwind'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Adding a local alias with the same name as an existing local or remote alias will do nothing with the `IF NOT EXISTS` clause but fail without it.
+
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `northwind` IF NOT EXISTS FOR DATABASE `northwind-graph-2020` 
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+CREATE ALIAS `northwind` IF NOT EXISTS FOR DATABASE `northwind-graph-2020` 
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is also possible to replace an alias. The old alias may be either local or remote.
+
+
+.Query
+[source, cypher]
+----
+CREATE OR REPLACE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 2
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+CREATE OR REPLACE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+This is equivalent to running ``DROP ALIAS `northwind` IF EXISTS FOR DATABASE`` followed by ``CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2020` ``.
+
+[role=enterprise-edition]
+[[database-management-create-remote-database-alias]]
+=== Creating remote database aliases
+
+Database aliases can also point to remote databases by providing an url and the credentials of a user on the remote Neo4j DBMS.
+See <<operations-manual#manage-remote-aliases, Connecting remote databases>> for the necessary configurations.
+
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `remote-northwind` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password'
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+CREATE ALIAS `remote-northwind` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+It is possible to override the default driver settings per alias, which are used for connecting to the remote database.
+The full list of supported driver settings can be seen <<remote-alias-driver-settings, here>>.
+
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `remote-with-driver-settings` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password'
+DRIVER { connection_timeout: duration({ minutes: 1 }), connection_pool_max_size: 10 }
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+CREATE ALIAS `remote-with-driver-settings` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password'
+DRIVER { connection_timeout: duration({ minutes: 1 }), connection_pool_max_size: 10 }
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When a database alias pointing to a remote database has been created, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE WHERE name = 'remote-northwind'
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+
+| +"remote-northwind"+ | +"northwind-graph-2020"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+
+5+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE WHERE name = 'remote-northwind'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD * WHERE name = 'remote-with-driver-settings'
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+ | +driver+
+| +"remote-with-driver-settings"+ | +"northwind-graph-2020"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+ | +{connection_pool_max_size -> 10, connection_timeout -> PT1M}+
+6+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE YIELD * WHERE name = 'remote-with-driver-settings'
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Creating remote aliases also allows `IF NOT EXISTS` and `OR REPLACE` clauses.
+Both check for any remote or local database aliases.
+
+[role=enterprise-edition]
+[[alias-management-alter-database-alias]]
+== Altering database aliases
+
+Aliases can be altered using `ALTER ALIAS` to change its database target, url, user credentials, or driver settings.
+The required privileges are described <<cypher-manual#access-control-dbms-administration-alias-management, here>>.
+Only the clauses used will be altered.
+
+include::alias/alias-management-syntax-alter-alias.adoc[]
+
+[NOTE]
+====
+Local aliases can not be altered to remote aliases or vice versa.
+
+
+====
+
+Example of altering a local alias target.
+
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `northwind` SET DATABASE TARGET `northwind-graph-2021`
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+ALTER ALIAS `northwind` SET DATABASE TARGET `northwind-graph-2021`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Example of altering a remote alias target.
+
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `remote-northwind` SET DATABASE TARGET `northwind-graph-2020` AT "neo4j+s://other-location:7687"
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+ALTER ALIAS `remote-northwind` SET DATABASE TARGET `northwind-graph-2020` AT "neo4j+s://other-location:7687"
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Example of altering a remote alias credentials and driver settings.
+
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `remote-with-driver-settings` SET DATABASE USER bob PASSWORD 'newPassword'
+DRIVER { connection_timeout: duration({ minutes: 1 }), logging_level: "debug" }
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+[NOTE]
+====
+All driver settings are replaced by the new ones.
+In this case, by not repeating the driver setting `connection_pool_max_size` the value will be deleted and fallback to the default value.
+
+
+====
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+ALTER ALIAS `remote-with-driver-settings` SET DATABASE USER bob PASSWORD 'newPassword'
+DRIVER { connection_timeout: duration({ minutes: 1 }), logging_level: "debug" }
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+Example of altering a remote alias to remove all custom driver settings.
+
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `movie scripts` SET DATABASE DRIVER { }
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+ALTER ALIAS `movie scripts` SET DATABASE DRIVER { }
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When a local database alias has been altered, it will show up in the aliases column for the target database provided by the command `SHOW DATABASES`.
+
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE `northwind`
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"northwind-graph-2021"+ | +["northwind"]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW DATABASE `northwind`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+The changes for all database aliases will show up in the `SHOW ALIASES FOR DATABASE` command.
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD * WHERE name in ['northwind', 'remote-northwind', 'remote-with-driver-settings', 'movie scripts']
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="6*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+ | +driver+
+| +"movie scripts"+ | +"scripts"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+ | +{}+
+| +"northwind"+ | +"northwind-graph-2021"+ | +"local"+ | +<null>+ | +<null>+ | +<null>+
+| +"remote-northwind"+ | +"northwind-graph-2020"+ | +"remote"+ | +"neo4j+s://other-location:7687"+ | +"alice"+ | +{}+
+| +"remote-with-driver-settings"+ | +"northwind-graph-2020"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"bob"+ | +{logging_level -> "DEBUG", connection_timeout -> PT1M}+
+6+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE YIELD * WHERE name in ['northwind', 'remote-northwind', 'remote-with-driver-settings', 'movie scripts']
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+This command is optionally idempotent, with the default behavior to fail with an error if the alias does not exist.
+Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the alias not exist.
+
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `no-alias` IF EXISTS SET DATABASE TARGET `northwind-graph-2021`
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+ALTER ALIAS `no-alias` IF EXISTS SET DATABASE TARGET `northwind-graph-2021`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+[role=enterprise-edition]
+[[alias-management-drop-database-alias]]
+== Deleting database aliases
+
+Both local and remote aliases can be deleted using the `DROP ALIAS` command.
+The required privileges are described <<cypher-manual#access-control-dbms-administration-alias-management, here>>.
+
+
+.Query
+[source, cypher]
+----
+DROP ALIAS `northwind` FOR DATABASE
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+DROP ALIAS `northwind` FOR DATABASE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+DROP ALIAS `remote-northwind` FOR DATABASE
+----
+
+[role="statsonlyqueryresult"]
+0 rows, System updates: 1
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+DROP ALIAS `remote-northwind` FOR DATABASE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+When a database alias has been deleted, it will no longer show up in the aliases column provided by the command `SHOW DATABASES` or in the `SHOW ALIASES FOR DATABASE` command.
+
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE `northwind-graph-2021`
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="10*<m"]
+|===
+| +name+ | +aliases+ | +access+ | +address+ | +role+ | +requestedStatus+ | +currentStatus+ | +error+ | +default+ | +home+
+| +"northwind-graph-2021"+ | +[]+ | +"read-write"+ | +"localhost:7687"+ | +"standalone"+ | +"online"+ | +"online"+ | +""+ | +false+ | +false+
+10+d|Rows: 1
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW DATABASE `northwind-graph-2021`
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="5*<m"]
+|===
+| +name+ | +database+ | +location+ | +url+ | +user+
+| +"films"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+
+| +"motion pictures"+ | +"movies"+ | +"local"+ | +<null>+ | +<null>+
+| +"movie scripts"+ | +"scripts"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"alice"+
+| +"remote-with-driver-settings"+ | +"northwind-graph-2020"+ | +"remote"+ | +"neo4j+s://location:7687"+ | +"bob"+
+5+d|Rows: 4
+|===
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+SHOW ALIASES FOR DATABASE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+
+This command is optionally idempotent, with the default behavior to fail with an error if the alias does not exist.
+Inserting IF EXISTS after the alias name ensures that no error is returned and nothing happens should the alias not exist.
+
+
+.Query
+[source, cypher]
+----
+DROP ALIAS `northwind` IF EXISTS FOR DATABASE
+----
+
+[role="statsonlyqueryresult"]
+0 rows
+
+ifndef::nonhtmloutput[]
+[subs="none"]
+++++
+<formalpara role="cypherconsole">
+<title>Try this query live</title>
+<para><database><![CDATA[
+CREATE DATABASE `movies`
+CREATE ALIAS `films` FOR DATABASE `movies`
+CREATE ALIAS `motion pictures` FOR DATABASE `movies`
+CREATE DATABASE `northwind-graph-2020`
+CREATE DATABASE `northwind-graph-2021`
+CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password" DRIVER {
+    ssl_enforced: true,
+    connection_timeout: duration({seconds: 5}),
+    connection_max_lifetime: duration({hours: 1}),
+    connection_pool_acquisition_timeout: duration({minutes: 1}),
+    connection_pool_idle_test: duration({minutes: 2}),
+    connection_pool_max_size: 10,
+    logging_level: 'info'
+}
+
+]]></database><command><![CDATA[
+DROP ALIAS `northwind` IF EXISTS FOR DATABASE
+]]></command></para></formalpara>
+++++
+endif::nonhtmloutput[]
+

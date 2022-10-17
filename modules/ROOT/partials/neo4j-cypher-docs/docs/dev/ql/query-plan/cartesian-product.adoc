@@ -1,0 +1,41 @@
+[[query-plan-cartesian-product]]
+== Cartesian Product ==
+The `CartesianProduct` operator produces a cartesian product of the two inputs -- each row coming from the left child operator will be combined with all the rows from the right child operator.
+`CartesianProduct` generally exhibits bad performance and ought to be avoided if possible.
+        
+
+.Query
+include::includes/query-plan-cartesian-product.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++-------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator          | Details  | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults   | p, t     |            140 |  140 |       0 |                |                    2/0 |     2.684 | In Pipeline 2       |
+| |                 +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +CartesianProduct |          |            140 |  140 |       0 |           3656 |                        |     0.497 | In Pipeline 2       |
+| |\                +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Filter         | t:Team   |             10 |   10 |       0 |                |                        |           | Fused in Pipeline 1 |
+| | |               +----------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +AllNodesScan   | t        |             35 |   35 |      36 |            128 |                    0/0 |     0.215 | Fused in Pipeline 1 |
+| |                 +----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter           | p:Person |             14 |   14 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |                 +----------+----------------+------+---------+----------------+                        |           +---------------------+
+| +AllNodesScan     | p        |             35 |   35 |      36 |            112 |                    1/0 |     0.203 | Fused in Pipeline 0 |
++-------------------+----------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 72, total allocated memory: 3736
+
+----

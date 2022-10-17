@@ -1,0 +1,72 @@
+[[bolt-thread-pool-configuration]]
+= Bolt thread pool configuration
+:description: This section discusses the thread pool infrastructure built into Bolt connectors, and how it can be configured. 
+
+The Bolt connector is backed by a thread pool on the server side.
+The thread pool is constructed as part of the server startup process.
+
+
+== How thread pooling works
+
+The Bolt thread pool has a minimum and a maximum capacity.
+It starts with a minimum number of threads available, and grows up to the maximum count depending on the workload.
+Threads that sit idle for longer than a specified time period are stopped and removed from the pool in order to free up resources.
+However, the size of the pool will never go below the minimum.
+
+Each connection being established is assigned to the connector's thread pool.
+Idle connections do not consume any resources on the server side, and they are monitored against messages arriving from the client.
+Each message arriving on a connection triggers the scheduling of a connection on an available thread in the thread pool.
+If all the available threads are busy, and there is still space to grow, a new thread is created and the connection is handed over to it for processing.
+If the pool capacity is filled up, and no threads are available to process, the job submission is rejected and a failure message is generated to notify the client of the problem.
+
+The default values assigned to the Bolt thread pool will fit most workloads, so it is generally not necessary to configure the connection pool explicitly.
+If the maximum pool size is set too low, an exception will be thrown with an error message indicating that there are no available threads to serve.
+The message will also be written to xref:configuration/file-locations.adoc[_neo4j.log_]. 
+
+[CAUTION]
+--
+Any connection with an active explicit, or implicit, transaction will stick to the thread that starts the transaction, and will not return that thread to the pool until the transaction is closed.
+Therefore, in applications that are making use of explicit transactions, it is important to close the transactions appropriately.
+To learn more about transactions, refer to the link:{docs-base-uri}[Neo4j Driver manuals].
+--
+
+
+== Configuration options
+
+The following configuration options are available for configuring the Bolt connector:
+
+.Thread pool options
+[options="header"]
+|===
+| Option name | Default | Description
+| `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.thread_pool_min_size[dbms.connector.bolt.thread_pool_min_size]`      | `5` | The minimum number of threads that will always be up even if they are idle.
+| `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.thread_pool_max_size[dbms.connector.bolt.thread_pool_max_size]`     | `400` | The maximum number of threads that will be created by the thread pool.
+| `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.thread_pool_keep_alive[dbms.connector.bolt.thread_pool_keep_alive]` | `5m` | The duration that the thread pool will wait before killing an idle thread from the pool.
+However, the number of threads will never go below `dbms.connector.bolt.thread_pool_min_size`.
+|===
+
+
+== How to size your Bolt thread pool
+
+Select values for thread pool sizing based on your workload.
+Since each active transaction will borrow a thread from the pool until the transaction is closed, it is basically the minimum and maximum active transaction at any given time that determine the values for pool configuration options.
+You can use the monitoring capabilities (see xref:monitoring/index.adoc[Monitoring]) of the database to discover more about your workload.
+
+Configure `dbms.connector.bolt.thread_pool_min_size` based on your minimum or average workload.
+Since there will always be this many amount of threads in the thread pool, sticking with lower values may be more resource-friendly than having too many idle threads waiting for job submissions.
+
+Configure `dbms.connector.bolt.thread_pool_max_size` based on your maximum workload.
+This should basically be set after the maximum number of active transactions that is expected on the server.
+You should also account for non-transaction operations that will take place on the thread pool, such as connection and disconnection of clients.
+
+.Configure the thread pool for a Bolt connector
+====
+In this example we configure the Bolt thread pool to be of minimum size `5`, maximum size `100`, and have a keep-alive time of `10 minutes`.
+
+[source, properties]
+----
+dbms.connector.bolt.thread_pool_min_size=10
+dbms.connector.bolt.thread_pool_max_size=100
+dbms.connector.bolt.thread_pool_keep_alive=10m
+----
+====

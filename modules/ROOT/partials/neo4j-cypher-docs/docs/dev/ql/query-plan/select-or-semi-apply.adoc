@@ -1,0 +1,49 @@
+[[query-plan-select-or-semi-apply]]
+== Select Or Semi Apply ==
+The `SelectOrSemiApply` operator tests for the presence of a pattern predicate and evaluates a predicate,
+and is a variation of the <<query-plan-apply, Apply>> operator.
+This operator allows for the mixing of normal predicates and pattern predicates
+that check for the presence of a pattern.
+First, the normal expression predicate is evaluated, and, only if it returns `false`, is the costly pattern predicate evaluated.
+
+.Query
+include::includes/query-plan-select-or-semi-apply.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator           | Details                                 | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults    | `other.name`                            |             11 |    2 |       0 |                |                        |           | Fused in Pipeline 2 |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +Projection        | other.name AS `other.name`              |             11 |    2 |       4 |                |                        |           | Fused in Pipeline 2 |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +SelectOrSemiApply | other.age > $autoint_0                  |             14 |    2 |       0 |           4200 |                    0/0 |     0.192 | Fused in Pipeline 2 |
+| |\                 +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| | +Limit           | 1                                       |             14 |    2 |       0 |            752 |                        |           | Fused in Pipeline 1 |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Filter          | anon_3:Person                           |              2 |    2 |       2 |                |                        |           | Fused in Pipeline 1 |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Expand(All)     | (other)-[anon_2:FRIENDS_WITH]->(anon_3) |              2 |    2 |      32 |                |                        |           | Fused in Pipeline 1 |
+| | |                +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| | +Argument        | other                                   |             14 |   14 |       0 |           2160 |                    2/0 |     0.564 | Fused in Pipeline 1 |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +Filter            | other:Person                            |             14 |   14 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |                  +-----------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +AllNodesScan      | other                                   |             35 |   35 |      36 |            112 |                    1/0 |     0.192 | Fused in Pipeline 0 |
++--------------------+-----------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 74, total allocated memory: 5040
+
+----

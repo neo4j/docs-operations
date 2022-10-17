@@ -1,0 +1,32 @@
+[[administration-indexes-spatial-bounding-box-searches-composite-index]]
+== Spatial bounding box searches (composite index) ==
+The ability to do index seeks on bounded ranges works even with the 2D and 3D spatial `Point` types. Any following (non-existence check) predicates (here on property `p.firstname` for index `:Person(place,firstname)`) will be rewritten as existence check with a filter. For index `:Person(firstname,place)`, if the predicate on `firstname` is equality or list membership then the bounded range is handled as a range itself. If the predicate on `firstname` is anything else then the bounded range is rewritten to existence and filter.
+
+.Query
+include::includes/administration-indexes-spatial-bounding-box-searches-composite-index.query.adoc[]
+
+
+
+.Query Plan
+[source]
+----
+Compiler CYPHER 4.4
+
+Planner COST
+
+Runtime PIPELINED
+
+Runtime version 4.4
+
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| Operator        | Details                                                                                              | Estimated Rows | Rows | DB Hits | Memory (Bytes) | Page Cache Hits/Misses | Time (ms) | Other               |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+| +ProduceResults | person                                                                                               |              1 |    1 |       0 |                |                        |           | Fused in Pipeline 0 |
+| |               +------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+                        |           +---------------------+
+| +NodeIndexSeek  | BTREE INDEX person:Person(place, firstname) WHERE point.withinBBox(place, point($autodouble_0, $auto |              1 |    1 |       2 |            112 |                    6/0 |     1.193 | Fused in Pipeline 0 |
+|                 | double_1), point($autodouble_2, $autodouble_3)) AND firstname IS NOT NULL                            |                |      |         |                |                        |           |                     |
++-----------------+------------------------------------------------------------------------------------------------------+----------------+------+---------+----------------+------------------------+-----------+---------------------+
+
+Total database accesses: 2, total allocated memory: 176
+
+----

@@ -1,0 +1,157 @@
+= Importing CSV files with Cypher
+
+//file:movies.csv
+//file:roles.csv
+//file:persons.csv
+
+[abstract]
+This tutorial shows how to import data from CSV files using `LOAD CSV`.
+
+In this example, there are three CSV files: a list of people, a list of movies, and a list of which role was played by some of these people in each movie.
+
+CSV files can be stored on the database server and then be accessed using a `file://` URL.
+Alternatively, `LOAD CSV` also supports accessing CSV files via `HTTPS`, `HTTP`, and `FTP`.
+`LOAD CSV` follows `HTTP` redirects, but for security reasons, it will not follow redirects that changes the protocol (for example, if the redirect is going from `HTTPS` to `HTTP`).
+
+For more details, see <<cypher-manual#query-load-csv>>.
+
+By using the following Cypher queries, you will create a node for each person, a node for each movie and a relationship between the two with a property denoting the role.
+You can also keep track of the country in which each movie was made through these same queries.
+
+//console
+
+Start with importing the people:
+
+[source, cypher, subs=attributes+]
+----
+LOAD CSV WITH HEADERS FROM "persons.csv" AS csvLine
+CREATE (p:Person {id: toInteger(csvLine.id), name: csvLine.name})
+----
+
+The CSV file in use looks like this:
+
+.persons.csv
+[source]
+----
+include::../../graphgists/import/persons.csv[]
+----
+
+[source, querytest]
+----
+Nodes created: 5
+Properties set: 10
+----
+
+Now import the movies.
+This time, you will also create a relationship to the country in which the movie was made.
+If you are storing your data in a SQL database, this is a one-to-many relationship type.
+
+Use `MERGE` to create nodes that represent countries.
+This avoids creating duplicate country nodes when multiple movies were made in the same country.
+
+[IMPORTANT]
+When using `MERGE` or `MATCH` with `LOAD CSV`, make sure you have an index (see <<cypher-manual#administration-indexes-search-performance>>) or a unique constraint (see <<cypher-manual#administration-constraints>>) on the property to be merged.
+This will ensure the query executes in efficiently.
+
+Before running the query to connect movies and countries, create an index for the name property on the `Country` label.
+This will ensure the query runs as fast as it can.
+
+[source, cypher]
+----
+CREATE INDEX FOR (c:Country) ON (c.name)
+----
+
+[source, cypher, subs=attributes+]
+----
+LOAD CSV WITH HEADERS FROM "movies.csv" AS csvLine
+MERGE (country:Country {name: csvLine.country})
+CREATE (movie:Movie {id: toInteger(csvLine.id), title: csvLine.title, year:toInteger(csvLine.year)})
+CREATE (movie)-[:MADE_IN]->(country)
+----
+
+.movies.csv
+[source]
+----
+include::../../graphgists/import/movies.csv[]
+----
+
+
+[source, querytest]
+----
+Nodes created: 4
+Relationships created: 3
+Properties set: 10
+----
+
+Lastly, create the relationships between the people and the movies.
+Since these are many-to-many relationships, one actor can participate in many movies as well as one movie has many actors in it.
+This data is available in a separate file.
+
+Index the `id` property on `Person` and `Movie` nodes.
+The `id` property is a temporary property used to look up the appropriate nodes for a relationship, when importing the third file.
+By indexing the `id` property, node lookup (e.g. by `MATCH`) will be much faster.
+Since it is expected that the ids are unique in each set, you should create a unique constraint.
+This avoids the incidence of invalid data errors, since constraint creation will fail if there are multiple nodes with the same id property.
+Creating a unique constraint also creates a unique index, which turns out to be faster than a regular index.
+
+[source, cypher]
+----
+CREATE CONSTRAINT person FOR (person:Person) REQUIRE person.id IS UNIQUE
+----
+
+[source, cypher]
+----
+CREATE CONSTRAINT movie FOR (movie:Movie) REQUIRE movie.id IS UNIQUE
+----
+
+Now importing the relationships is a matter of finding the nodes and then creating relationships between them.
+
+For this query, use `USING PERIODIC COMMIT` (see <<cypher-manual#query-using-periodic-commit-hint>>).
+It is helpful for queries that operate on large CSV files.
+However, this addition might make the query build up inordinate amounts of transaction state.
+For this reason, you might need to commit the clause periodically.
+In this case, a limit to `500` rows per commit was set:
+
+[source, cypher-periodic, subs=attributes+]
+----
+USING PERIODIC COMMIT 500
+LOAD CSV WITH HEADERS FROM "roles.csv" AS csvLine
+MATCH (person:Person {id: toInteger(csvLine.personId)}),(movie:Movie {id: toInteger(csvLine.movieId)})
+CREATE (person)-[:PLAYED {role: csvLine.role}]->(movie)
+----
+
+.roles.csv
+[source]
+----
+include::../../graphgists/import/roles.csv[]
+----
+
+[source, querytest]
+----
+Relationships created: 6
+Properties set: 6
+----
+
+Finally, as the `id` property was only necessary to import the relationships, you can `DROP` the constraints and the `id` property from all `Movie` and `Person` nodes:
+
+[source, cypher]
+----
+DROP CONSTRAINT person
+----
+
+[source, cypher]
+----
+DROP CONSTRAINT movie
+----
+
+[source, cypher]
+----
+MATCH (n)
+WHERE n:Person OR n:Movie
+REMOVE n.id
+----
+
+[source, querytest]
+----
+Properties set: 8
+----
