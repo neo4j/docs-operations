@@ -1,0 +1,95 @@
+[role=enterprise-edition]
+[[multi-dc-recovery]]
+= Data center disaster recovery
+:description: This section describes how to recover your Neo4j Causal Cluster following a data center failure. Specifically it covers safely turning a small number of surviving instances from a read-only state back into a fully operational cluster of read/write instances. 
+
+This section describes the following:
+
+* xref:clustering-advanced/multi-data-center/disaster-recovery.adoc#multi-dc-recovery-data-center-loss-scenario[Data center loss scenario]
+* xref:clustering-advanced/multi-data-center/disaster-recovery.adoc#multi-dc-recovery-procedure-for-recovering-from-data-center-loss[Procedure for recovering from data center loss]
+
+
+[[multi-dc-recovery-data-center-loss-scenario]]
+== Data center loss scenario
+
+This section describes how to recover a multi-data center deployment which owing to external circumstances has reduced the cluster below half of its members.
+It is most easily typified by a 2x2 deployment with 2 data centers each containing two instances.
+This deployment topology can either arise because of other data center failures, or be a deliberate choice to ensure the geographic survival of data for catastrophe planning.
+However, by distributing an instance over three data centers instead, you could avoid having the cluster lose quorum through a single data center failure.
+For example, in a _1x1x1_ deployment.
+
+Under normal operation this provides a stable majority quorum where the fastest three out of four machines will execute users' transactions, as we see highlighted in xref:clustering-advanced/multi-data-center/disaster-recovery.adoc#img-dc-recovery-1[Two Data Center Deployment with Four Core Instances", role="middle].
+
+[[img-dc-recovery-1]]
+image::dc-recovery-1.svg[title="Two Data Center Deployment with Four Core Instances", role="middle"]
+
+However if an entire data center becomes offline because of some disaster, then a _majority quorum_ cannot be formed in this case.
+
+[NOTE]
+====
+Neo4j Core clusters are based on the Raft consensus protocol for processing transactions.
+The Raft protocol requires a majority of cluster members to agree in order to ensure the safety of the cluster and data.
+As such, the loss of a majority quorum results in a read-only situation for the remaining cluster members.
+====
+
+When data center is lost abruptly in a disaster rather than having the instances cleanly shut down, the surviving members still believe that they are part of a larger cluster.
+This is different from even the case of rapid failures of individual instances in a live data center which can often be detected by the underlying cluster middleware, allowing the cluster to automatically reconfigure.
+
+Conversely if we lose a data center, there is no opportunity for the cluster to automatically reconfigure.
+The loss appears instantaneous to other cluster members.
+However, because each remaining machine has only a partial view of the state of the cluster (its own), it is not safe to allow any individual machine to make an arbitrary decision to reform the cluster.
+
+In this case we are left with two surviving machines which cannot form a quorum and thus make progress.
+
+[[img-dc-recovery-2]]
+image::dc-recovery-2.svg[title="Data Center Loss Requires Guided Recovery", role="middle"]
+
+But, from a birds's eye view, it's clear we have surviving machines which are sufficient to allow a non-fault tolerant cluster to form under operator supervision.
+
+[NOTE]
+====
+Groups of individual cluster members (e.g. those in a single data center) may become isolated from the cluster during network partition for example.
+If they arbitrarily reformed a new, smaller cluster there is a risk of _split-brain_.
+That is from the clients' point of view there may be _two_ or more smaller clusters that are available for reads and writes depending on the nature of the partition.
+Such situations lead to divergence that is tricky and laborious to reconcile and so best avoided.
+====
+
+To be safe, an operator or other out-of-band agent (e.g. scripts triggered by well-understood, trustworthy alerts) that has a trusted view on the whole of the system estate must make that decision.
+In the surviving data center, the cluster can be rebooted into a smaller configuration whilst retaining all data committed to that point.
+While end users may experience unavailability during the switch over, no committed data will be lost.
+
+
+[[multi-dc-recovery-procedure-for-recovering-from-data-center-loss]]
+== Procedure for recovering from data center loss
+
+The following procedure for performing recovery of a data center should not be done lightly.
+It assumes that we are completely confident that a disaster has occurred and our previously data center-spanning cluster has been reduced to a read-only cluster in a single data center, where there is no possible way to repair a  connection to the lost instances.
+Further it assumes that the remaining cluster members are fit to provide a seed from which a new cluster can be created from a data quality point of view.
+
+Having acknowledged the above, the procedure for returning the cluster to full availability following catastrophic loss of all but one data centers can be done using one of the following options, depending on your infrastructure.
+
+Please note that the main difference between the options is that Option 2 will allow read-availability during recovery.
+
+.Option 1.
+If you are unable to add instances to the current data-center, and can only use the current read-only cluster, the following steps are recommended:
+
+. Verify that a catastrophe has occurred, and that access to the surviving members of the cluster in the surviving data center is possible.
+Then for each instance:
+.. Stop the instance with `bin/neo4j stop` or shut down the service.
+.. Change the configuration in _neo4j.conf_ such that the `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering.initial_discovery_members]` property contains the DNS names or IP addresses of the other surviving instances.
+.. Optional: you may need to update `xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[causal_clustering.minimum_core_cluster_size_at_formation]`, depending on the current size of the cluster (in the current example, two cores).
+.. Unbind the instance using `neo4j-admin unbind`.
+.. Start the instance with `bin/neo4j start` or start the `neo4j` service.
+
+.Option 2.
+If it is possible to create a new cluster while the previous read-only cluster is still running, then the following steps will enable you to keep read-availability during recovery:
+
+ . Verify that a catastrophe has occurred, and that access to the surviving members of the cluster in the surviving data center is possible.
+. Perform an online backup of the currently running, read-only, cluster.
+. Seed a new cluster (in the current example, two new cores) using the backup from the read-only cluster, as described in xref:clustering/seed.adoc[Seed a cluster].
+. When the new cluster is up, load balance your workload over to the new cluster.
+. Shutdown the old, read-only, cluster.
+
+Once your chosen recovery procedure is completed for each instance, they will form a cluster that is available for reads and writes.
+It recommended at this point that other cluster members are incorporated into the cluster to improve its load handling and fault tolerance.
+See xref:clustering/deploy.adoc[Deploy a cluster] for details of how to configure instances to join the cluster from scratch.

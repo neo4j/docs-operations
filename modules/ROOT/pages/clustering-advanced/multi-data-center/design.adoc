@@ -1,0 +1,203 @@
+[role=enterprise-edition]
+[[multi-dc-design]]
+= Multi-data center design
+:description: This section describes common patterns for multi-data center deployments that can act as building blocks for your own multi-data center production environments. 
+
+This section describes the following:
+
+* xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-design-introduction[Introduction]
+* xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-core-server-deployment-scenarios[Core Server deployment scenarios]
+* xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-allowing-read-replicas-to-catch-up-from-other-read-replicas[Allowing Read Replicas to catch up from other Read Replicas]
+** xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-hierarchical-read-replica-deployment[Hierarchical Read Replica deployment]
+** xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-catch-up-from-peer-read-replicas[Catch up (mostly) from peer Read Replicas]
+** xref:clustering-advanced/multi-data-center/design.adoc#multi-dc-maintaining-causal-consistency-in-scale-out-topologies[Maintaining causal consistency in scale-out topologies]
+
+
+[[multi-dc-design-introduction]]
+== Introduction
+
+This section is based on a series of examples to illustrate the different considerations we should take into account when designing our Causal Cluster for a multi-data center environment.
+We'll come to understand the weaknesses and benefits of common multi-data center deployment scenarios.
+Each scenario is presented at a high architectural level for clarity.
+In subsequent sections we will go into more detail on how such deployments are configured.
+
+
+[[multi-dc-core-server-deployment-scenarios]]
+== Core Server deployment scenarios
+
+We will start with the conceptually simplest multi-data center scenario where we deploy the same number and kind of instances into each DC.
+This is a _homogeneous_ deployment because each data center is identical to the other.
+
+.Homogeneous three data center deployment
+====
+
+[[img-3-dc-homogeneous]]
+image::3-dc-homogeneous.svg[title="Homogeneous deployment across three data centers with one Core instance in each",  role="middle"]
+
+In diagram above we have three data centers, each identically equipped with a single Core Server and a small number of Read Replicas.
+
+Since Raft only requires a majority of the instances to acknowledge a write before it is safely committed, the latency of the commit path for this pattern involves only the two fastest data centers.
+As such the cost of committing to this setup is two WAN messages: one to send the transaction and one ACK message.
+In a non-failure case the other data center will not be far behind and will apply the transaction as well.
+
+Within each of the data centers we can increase machine-level redundancy by adding more Core instances.
+For example we could add two more machines in each data center so that we can tolerate the spontaneous loss of up to four machines anywhere in the cluster or a single data center as a whole.
+
+
+[[img-3-dc-homogeneous-3-core]]
+image::3-dc-homogeneous-3-core.svg[title="Homogeneous deployment across three data centers with three Core instances in each", role="middle"]
+
+To recap the strengths and weaknesses of this deployment pattern:
+
+* We can lose an entire data center without losing availability and, depending on the number of machines in each data center, we may still be able to tolerate the loss of individual servers regardless of which data center they are in.
+* The commit path for transactions is short, just two WAN messages exchanged.
+* While the loss of majority data centers will xref:clustering-advanced/multi-data-center/disaster-recovery.adoc[need to be recovered], the  operational procedure is identical irrespective of which of the data centers are lost.
+
+====
+
+As will be shown in xref:clustering-advanced/multi-data-center/configuration.adoc[the section on multi-data center configuration] the Read Replicas can be biased to catchup from their data center-local Core Servers to minimize catchup latency.
+Data center-local client applications would also likely be routed to those same Read Replicas both for topological locality and scaling.
+More details are available in the xref:clustering-advanced/multi-data-center/load-balancing.adoc[section on multi-data center load balancing].
+
+In the two data center case, our first instinct is to balance the available servers for operational consistency.
+An example of a homogeneous deployment across two data centers with two Core instances in each is illustrated in the diagram below:
+
+[[example-homogeneous-two-data-center-deployment]]
+.Homogeneous two data center deployment
+====
+
+[[img-2-dc-homogeneous-2-core]]
+image::2-dc-homogeneous-2-core.svg[title="Homogeneous deployment across two data centers", role="middle"]
+
+The problem with this configuration is that while architecturally simple, it does not play to the strengths of the Raft protocol which is based on majority consensus.
+In the non-failure case, we incur two WAN messages to commit any transaction because a majority commit implies at least one response from the non-local data center instances.
+Worse, if we lose either data center the cluster will become read-only because it is impossible to achieve a majority.
+====
+
+As seen in the example above, the homogeneous deployment over two data centers does not take full advantage of the strengths of Causal Clustering.
+However it guarantees that the full Raft log will be present in either data center in the case of total data center loss.
+
+The opposite of spreading Core Servers around our data centers, is to have them all hosted in a single one.
+This may be for technical or governance reasons, but either way has the advantage of LAN commit latencies for writes.
+
+While our Core Servers are colocated, we spread out our Read Replicas close to the client applications to enable fan-out scaling.
+
+.Core Servers and Read Replicas segregated by data center
+====
+
+The diagram below shows an example of a heterogeneous deployment directing writes to one data center, and reads to all.
+This pattern provides high survivability for data because of geo-replication.
+It also provides locality for client applications.
+However, if the Core Server data center is lost, we must immediately instigate xref:clustering-advanced/multi-data-center/disaster-recovery.adoc[recovery] and turn one of the remaining Read Replica data centers into a new Core cluster.
+
+It is possible that none of the Read Replicas have received all of the confirmed transactions prior to losing Data Center 1.
+While this is a convenient pattern for geo-replication, its semantics are best-effort.
+Cluster designers must take this aspect under consideration when deciding on recovery strategy.
+
+[[img-3-dc-heterogeneous]]
+image::3-dc-heterogeneous.svg[title="Heterogeneous deployment separating Read Replicas from the Core cluster",  role="middle"]
+
+An operational tweak to this approach would be to host a Core Server in Data Center 2 and 3 as the starting point for recovery.
+During normal operations, these extra Core Servers should be configured with xref:reference/configuration-settings.adoc#config_causal_clustering.refuse_to_be_leader[`causal_clustering.refuse_to_be_leader=true`].
+Should we lose Data Center 1, then we can use one of these Core Servers to quickly bootstrap a new Core cluster and return to full service rapidly.
+
+To recap the strengths of this deployment pattern:
+
+* Core Servers commit at LAN latencies if using the setup with Core Servers exclusively in one data center.
+* Read Replicas provide scale and locality for client applications.
+* Geo-replication provides high survivability for data.
+
+====
+
+
+[[multi-dc-allowing-read-replicas-to-catch-up-from-other-read-replicas]]
+== Allowing Read Replicas to catch up from other Read Replicas
+
+With an understanding of the basic multi-data center patterns at our disposal, we can refine our deployment models to embrace local catchup within data centers.
+This means that any server, including Read Replicas, can act as a source of transactions for Read Replica server.
+// (caveat: Core Servers will always Raft transactions between themselves).
+When catching up from data center-local instances we aim to amortize the cost of WAN traffic catchup across many local replications.
+
+Allowing Read Replicas to choose a data center-local Core Server or even another Read Replica gives us a great deal of design freedom, and importantly allows us to scale to truly huge numbers of Read Replicas.
+Using this feature we might choose to fan-out Read Replicas so that the catchup load on the Core Servers grows (approximately) logarithmically rather than linearly.
+
+
+[[multi-dc-hierarchical-read-replica-deployment]]
+=== Hierarchical Read Replica deployment
+
+The primary motivation for Read Replicas catching up from other Read Replicas is to allow for fan-out scale.
+To achieve a fan-out we arrange the Read Replicas in a hierarchy, with each layer of the hierarchy being broader than the one above.
+
+[[img-hierarchical-read-replicas]]
+image::hierarchical-read-replicas.svg[title="Fan out from Core Servers for scale at log cost", role="middle"]
+
+An illustrative hierarchy is presented in the diagram above.
+The Core Servers supply transactions to a relatively small number of Read Replicas at the first tier.
+This results in a relatively modest load on the Core Servers, freeing up resources to focus on the commit path.
+Those Read Replicas in the first tier in turn feed a larger number of Read Replicas in the second tier.
+This pattern can be reasonably extended to several tiers to provide enormous fan-out.
+
+At each tier we expand the scalability of the Read Replicas, but we add another level of catchup latency.
+By careful measurement we can ascertain the appropriate depth and breadth of the hierarchy to match the application requirements.
+
+We should also take care that each tier in the hierarchy has sufficient redundancy so that failures do not compromise transmission of data from the Core Servers.
+A strategy for keeping Read Replicas current in the presence of failures is to occasionally have them subvert the hierarchy.
+That is, if a given Read Replica occasionally goes to its grandparents or even directly to the Core Servers then we can avoid pathologically high replication latencies under fault conditions.
+
+
+[[multi-dc-catch-up-from-peer-read-replicas]]
+=== Catch up (mostly) from peer Read Replicas
+
+Another strategy for Read Replica catchup is to treat them all as peers and have peer-to-peer catchup.
+This avoids the need to manage tiers of replicas to maintain availability since the Read Replicas catch up from one another in a mesh.
+
+[[img-peer-to-peer-read-replicas]]
+image::peer-to-peer-read-replicas.svg[title="Peer-to-peer Read Replica catchup", role="middle"]
+
+Having a reduced load on the Core Servers allows us to scale out.
+For example if only one in ten catchup requests goes to the Core Servers, we could expand the number of Read Replicas by approximately a factor of 10.
+
+To avoid groups of orphans in the mesh, Read Replicas will occasionally catch up directly from Core Servers.
+Having Read Replicas catch up with Core Servers ensures that no Read Replica is left behind indefinitely, placing an upper bound on replication latency.
+While this places some load on the Core Servers, it is far less than if all catch up attempts from Read Replicas were directed to a Core Server.
+
+The upper bound on replication latency for this mode of operation is the number of catchup attempts served by Read Replicas before trying core.
+The average replication latency will be half the number of attempts to replicate.
+This is because on average half the Read Replicas will be ahead and half behind any given Read Replica.
+
+[NOTE]
+====
+Connecting to a random Core Server on failure to retrieve updates from other sources is the default behavior of Read Replicas.
+====
+
+
+[[multi-dc-maintaining-causal-consistency-in-scale-out-topologies]]
+=== Maintaining causal consistency in scale-out topologies
+
+Causal consistency is always maintained, even in extreme situations with chains of Read Replicas catching up from other upstream Read Replicas.
+The key trade-off to understand, as so often in distributed systems, is that of latency for scale.
+
+In xref:clustering-advanced/multi-data-center/design.adoc#img-hierarchical-read-replicas[Fan out from Core Servers for scale at log cost", role="middle] we see that number of hops required for a transaction to propagate to the lowest tier is 2: the highest latency in this topology.
+Equally we see how the bottommost tier has far more members than any other tier giving it scale advantages.
+
+Correspondingly, in the middle tier we have better latency (one hop) but less scale.
+At the top most tier (Core Servers) we have very little latency (just the Raft commit path) but the fewest available servers.
+This means we should target queries at the most appropriate tier based on latency, scale, and locality.
+
+
+*Summary on latency versus scalability:*
+
+* Issuing read queries to a Core Server generally has the lowest latency in principle but may have the highest contention.
+* Issuing read queries to a Read Replica topologically closest to Core Servers typically has higher latency but also higher scalability.
+* Issuing read queries to a Read Replica topologically further from Core Servers typically has the highest latency but also the highest scalability.
+
+In large systems like xref:clustering-advanced/multi-data-center/design.adoc#img-hierarchical-read-replicas[the scale-out hierarchy above], we are conventionally used to having relaxed or _eventual_ consistency semantics.
+With Neo4j multi-data center setups, that is also possible.
+Where we don't care about causality we can read from any Read Replica and accept that we might see older values.
+However the xref:clustering/introduction.adoc#causal-consistency-explained[causal consistency semantics] are maintained.
+
+[[img-many-hop-causal-consistency]]
+image::many-hop-causal-consistency.svg[title="Each tier in the Read Replicas is further behind the source of truth, but offers greater scale-out", role="middle"]
+
+As we can see in diagram above, even if the client binds to a Read Replica that is multiple hops/data centers away from the source of truth, causal consistency is maintained.
+While the query may be suspended while the necessary transaction propagates to the Read Replica, the benefit is that there will be more Read Replicas available and so overall client throughput is higher than with a single-tier configuration.

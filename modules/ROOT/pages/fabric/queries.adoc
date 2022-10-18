@@ -1,0 +1,221 @@
+[role=enterprise-edition]
+[[fabric-queries]]
+= Queries
+:description: Examples of Cypher queries and commands that can be used with Neo4j Fabric. 
+
+
+In this section we will look at a few example queries that show how to perform a range of different tasks.
+//Make an image that sets up the example?
+//The query examples assume that we have a setup similar to that in <<example-create-a-single-instance-fabric-setup>>.
+
+The examples in this section make use of the two Cypher clauses: `USE` and `CALL {}`.
+The syntax is explained in detail in the Cypher Manual:
+
+* See link:/docs/cypher-manual/4.4/clauses/call-subquery[Cypher Manual -> CALL {}] for details about the `CALL {}` clause.
+* See link:/docs/cypher-manual/4.4/clauses/use[Cypher Manual -> USE] for details about the `USE` clause.
+
+
+[[fabric-query-single-graph]]
+== Query a single graph
+
+.Reading and returning data from a single graph.
+====
+
+[source, cypher]
+----
+USE example.graphA
+MATCH (movie:Movie)
+RETURN movie.title AS title
+----
+====
+
+The `USE` clause at the beginning of the query causes the rest of the query to execute against the `example.graphA` graph.
+
+
+[[fabric-query-multiple-graphs]]
+== Query multiple graphs
+
+.Reading and returning data from two named graphs
+====
+
+[source, cypher]
+----
+USE example.graphA
+MATCH (movie:Movie)
+RETURN movie.title AS title
+  UNION
+USE example.graphB
+MATCH (movie:Movie)
+RETURN movie.title AS title
+----
+====
+
+The first part of the `UNION` query executes against the `example.graphA` graph and the second part executes against the `example.graphB` graph.
+
+
+[[fabric-query-all-graphs]]
+== Query all graphs
+
+.Reading and returning data from all graphs
+====
+
+[source, cypher]
+----
+UNWIND example.graphIds() AS graphId
+CALL {
+  USE example.graph(graphId)
+  MATCH (movie:Movie)
+  RETURN movie.title AS title
+}
+RETURN title
+----
+====
+We call the built-in function `example.graphIds()` to get the graph IDs for all remote graphs in our Fabric setup.
+We `UNWIND` the result of that function to get one record per graph ID. The `CALL {}` subquery is executed once per incoming record.
+We use a `USE` clause in the subquery with a dynamic graph lookup, causing the subquery to execute once against each remote graph.
+At the end of the main query we simply `RETURN` the title variable.
+
+
+[[fabric-query-result-aggregation]]
+== Query result aggregation
+
+.Getting the earliest release year of all movies in all graphs
+
+====
+
+[source, cypher]
+----
+UNWIND example.graphIds() AS graphId
+CALL {
+  USE example.graph(graphId)
+  MATCH (movie:Movie)
+  RETURN movie.released AS released
+}
+RETURN min(released) AS earliest
+----
+====
+
+From each remote graph we return the released property of each movie.
+At the end of the main query we aggregate across the full result to calculate the global minimum.
+
+
+[[fabric-correlated-subquery]]
+== Correlated subquery
+
+.Correlated subquery
+====
+Assume that `graphA` contains American movies and `graphB` contains European movies.
+Find all European movies released in the same year as the latest released American movie:
+
+[source, cypher]
+----
+CALL {
+  USE example.graphA
+  MATCH (movie:Movie)
+  RETURN max(movie.released) AS usLatest
+}
+CALL {
+  USE example.graphB
+  WITH usLatest
+  MATCH (movie:Movie)
+  WHERE movie.released = usLatest
+  RETURN movie
+}
+RETURN movie
+----
+====
+
+We query the `example.graphA` and return the release year of the latest release.
+We then query the `example.graphB`.
+`WITH usLatest` is an import clause which lets us refer to the `usLatest` variable inside the subquery.
+We find all the movies in this graph that fulfill our condition and return them.
+
+It is not possible to switch the current graph in a nested query.
+For example, the following query is illegal:
+
+.Illegal correlated subquery
+====
+[source, cypher]
+----
+USE example.graphA
+MATCH (movie:Movie)
+WITH movie.title AS title
+CALL {
+  USE example.graphB // Cannot swicth from example.graphA
+  WITH title
+  MATCH (otherMovie:Movie)
+  WHERE otherMovie.title STARTS WITH title
+  RETURN otherMovie.title AS otherTitle
+}
+RETURN title, otherTitle
+----
+====
+
+This limitation can be circumvented by having subqueries after one another, but without nesting them.
+
+[[fabric-updating-query]]
+== Updating query
+
+.Create a new movie node
+
+====
+
+[source, cypher]
+----
+USE example.graphB
+CREATE (m:Movie)
+SET m.title = ‘Léon: The Professional’
+SET m.tagline = ‘If you want the job done right, hire a professional.’
+SET m.released = 1994
+----
+====
+
+
+[[fabric-query-mapping-functions]]
+== Mapping functions
+
+Mapping functions are a common Fabric usage pattern.
+In the previous examples, graphs were identified by providing static graph names in the query.
+Fabric may be used in scenarios where graphs are identified by a mapping mechanism that can, for example, identify a key of an object contained in a graph. This can be achieved by using user-defined functions or other functions that may be already available. These functions ultimately return the ID of a graph in Fabric.
+
+Mapping functions are commonly used in sharding scenarios. In Fabric, shards are associated to graphs, hence mapping functions are used to identify a graph, i.e. a shard.
+
+[NOTE]
+Refer to link:/docs/java-reference/4.4/extending-neo4j/functions#extending-neo4j-functions[Java Reference -> User-defined functions] for details on how to create user-defined functions.
+
+Let’s assume that Fabric is setup in order to store and retrieve data associated to nodes with the label `user`. User nodes are partitioned in several graphs (shards) in Fabric.
+Each `user` has a numerical `userId`, which is unique in all Fabric.
+We decide on a simple scheme where each `user` is located on a graph determined by taking the `userId` modulo the number of graphs.
+We create a link:/docs/java-reference/4.4/extending-neo4j/functions#extending-neo4j-functions[user-defined function] which implements the following pseudo code:
+
+`sharding.userIdToGraphId(userId) = userId % NUM_SHARDS`
+
+Assuming we have supplied a query parameter `$userId` with the specific userId that we are interested in, we use our function in this way:
+
+[source, cypher]
+
+----
+USE example.graph( sharding.userIdToGraphId($userId) )
+MATCH (u:User) WHERE u.userId = $userId
+RETURN u
+----
+
+
+[[fabric-built-in-functions]]
+== Fabric built-in functions
+
+Fabric functions are located in a namespace corresponding to a Fabric database in which they are used.
+The following table provides a description of Fabric built-in functions:
+
+.Fabric built-in functions
+[options="header", cols="m,"]
+|===
+| Function
+| Explanation
+| <fabric database name>.graphIds()
+| Provides a list of IDs of all remote graph configured for the given Fabric database.
+| <fabric database name>.graph(graphId)
+| Maps a graph ID to a Graph.
+  It accepts a graph ID as a parameter and returns a graph representation accepted by USE clause.
+  This function is supported only in `USE` clauses
+|===

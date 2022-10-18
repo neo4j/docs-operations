@@ -1,0 +1,177 @@
+[[show-databases-monitoring]]
+= Monitor individual database states
+:description: This section covers the use of `SHOW DATABASES`, and other related Cypher commands. 
+
+In addition to the system-wide metrics and logs described in previous sections, operators may wish to monitor the state of individual databases being hosted within a Neo4j instance.
+The `SHOW DATABASES` command may be used for this purpose.
+
+
+[[show-databases-monitoring-listing]]
+== Listing Databases
+
+First ensure that you are executing queries against the `system` database, either by running the command `:use system` (if using the xref:tools/cypher-shell.adoc[Cypher shell] or Neo4j Browser) or by creating a session against the `system` database using a Neo4j driver.
+Subsequently, run the `SHOW DATABASES` command.
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name            | Type         | Description
+| name            | String       | The human-readable name of the database.
+| aliases         | List<String> | The names of any aliases the database may have.
+| access          | String       | The database access mode, either `read-write` or `read-only`.
+| address         | String       | The bolt address of the Neo4j instance hosting the database.
+| role            | String       | The cluster role which the Neo4j instance fulfils for this database.
+| requestedStatus | String       | The state that an operator has requested the database to be in.
+| currentStatus   | String       | The state the database is actually in on this Neo4j instance.
+| error           | String       | Error encountered by the Neo4j instance when transitioning the database to `requestedStatus`, if any.
+| default         | Boolean      | Whether this database is the default for this DBMS.
+| home            | Boolean      | Whether this database is the home database for this user.
+|===
+
+.Listing databases in standalone Neo4j
+====
+When executing `SHOW DATABASES` against a standalone instance of Neo4j, you should see output like the following:
+
+[options="header"]
+|===
+| `name`     | `aliases` | `access`       | `address`          | `role`         | `requestedStatus` | `currentStatus` | `error` | `default` | `home`
+| "neo4j"    | []        | "read-write"   | "localhost:7687"   | "standalone"   | "online"          | "online"        | ""      | true      | true
+| "system"   | []        | "read-write"   | "localhost:7687"   | "standalone"   | "online"          | "online"        | ""      | false     | false
+|===
+
+Note that the `role` and `address` columns are primarily intended to distinguish between the states of a given database, across multiple Neo4j instances deployed in a xref:clustering/introduction.adoc[Causal Cluster].
+In a standalone deployment where you have a single Neo4j instance, your `address` field should be the same for every database, and your `role` field should always be "standalone".
+
+If an error occurred whilst creating (or stopping, dropping etc.) a database, you should see output like the following:
+
+[options="header"]
+|===
+| `name`     | `aliases` | `access`       | `address`          | `role`         | `requestedStatus` | `currentStatus` | `error`                                           | `default` | `home`
+| "neo4j"    | []        | "read-write"   | "localhost:7687"   | "standalone"   | "online"          | "online"        | ""                                                | true      | true
+| "system"   | []        | "read-write"   | "localhost:7687"   | "standalone"   | "online"          | "online"        | ""                                                | false     | false
+| "foo"      | []        | "read-write"   | "localhost:7687"   | "standalone"   | "online"          | "offline"       | "An error occurred! Unable to start database ..." | false     | false
+|===
+
+Note that for failed databases, the `currentStatus` and `requestedStatus` are different.
+This can imply an error.
+For example:
+
+* a database may take a while to transition from "offline" to "online", due to performing recovery.
+* during normal operation, the `currentStatus` of a database may be transiently different from its `requestedStatus`, due to a necessary automatic process, such as one Neo4j instance copying store files from another.
+
+The possible statuses are "initial", "online", "offline", "store copying", and "unknown".
+====
+
+.Listing databases in a Neo4j Causal Cluster
+====
+When running `SHOW DATABASES` against a Neo4j Causal Cluster you might see output like the following:
+
+[options="header"]
+|===
+| `name`   | `aliases` | `access`       | `address`         | `role`         | `requestedStatus` | `currentStatus` | `error` | `default` | `home`
+| "neo4j"  | []        | "read-write"   | "localhost:20031" | "follower"     | "online"          | "online"        | ""      | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20010" | "follower"     | "online"          | "online"        | ""      | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20005" | "leader"       | "online"          | "online"        | ""      | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20034" | "read_replica" | "online"          | "online"        | ""      | true      | true
+| "system" | []        | "read-write"   | "localhost:20031" | "follower"     | "online"          | "online"        | ""      | false     | false
+| "system" | []        | "read-write"   | "localhost:20010" | "follower"     | "online"          | "online"        | ""      | false     | false
+| "system" | []        | "read-write"   | "localhost:20005" | "leader"       | "online"          | "online"        | ""      | false     | false
+| "system" | []        | "read-write"   | "localhost:20034" | "read_replica" | "online"          | "online"        | ""      | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20031" | "leader"       | "online"          | "online"        | ""      | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20010" | "follower"     | "online"          | "online"        | ""      | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20005" | "follower"     | "online"          | "online"        | ""      | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20034" | "read_replica" | "online"          | "online"        | ""      | false     | false
+|===
+
+Note that `SHOW DATABASES` does **not** return 1 row per database.
+Instead, it returns 1 row per database, per Neo4j instance in the cluster.
+Therefore, if you have a 4-instance cluster, hosting 3 databases, you will have 12 rows.
+
+If an error occurred whilst creating (or stopping, dropping etc.) a database, you should see output like the following:
+
+[options="header"]
+|===
+| `name`   | `aliases` | `access`       | `address`         | `role`         | `requestedStatus` | `currentStatus` | `error`                                           | `default` | `home`
+| "neo4j"  | []        | "read-write"   | "localhost:20031" | "follower"     | "online"          | "online"        | ""                                                | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20010" | "follower"     | "online"          | "online"        | ""                                                | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20005" | "leader"       | "online"          | "online"        | ""                                                | true      | true
+| "neo4j"  | []        | "read-write"   | "localhost:20034" | "read_replica" | "online"          | "online"        | ""                                                | true      | true
+| "system" | []        | "read-write"   | "localhost:20031" | "follower"     | "online"          | "online"        | ""                                                | false     | false
+| "system" | []        | "read-write"   | "localhost:20010" | "follower"     | "online"          | "online"        | ""                                                | false     | false
+| "system" | []        | "read-write"   | "localhost:20005" | "leader"       | "online"          | "online"        | ""                                                | false     | false
+| "system" | []        | "read-write"   | "localhost:20034" | "read_replica" | "online"          | "online"        | ""                                                | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20031" | "unknown"      | "online"          | "initial"       | "An error occurred! Unable to start database ..." | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20010" | "leader"       | "online"          | "online"        | ""                                                | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20005" | "follower"     | "online"          | "online"        | ""                                                | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20034" | "unknown"      | "online"          | "initial"       | "An error occurred! Unable to start database ..." | false     | false
+|===
+
+Note that different instances may have different roles for each database.
+
+If a database is offline on a particular Neo4j instance, either because it was stopped by an operator or an error has occurred, its cluster `role` is "unknown".
+This is because the cluster role of a given instance/database combination cannot be assumed in advance.
+This differs from standalone Neo4j instances, where the role of that instance for each database can always be assumed to be "standalone".
+
+The possible roles are "standalone", "leader", "follower", "read_replica", and "unknown".
+====
+
+
+[[show-databases-monitoring-listing-single]]
+== Listing a single database
+
+The number of rows returned by `SHOW DATABASES` can be quite large, especially when run in a cluster.
+You can filter the rows returned by database name (e.g. "foo") by using the command `SHOW DATABASE foo`.
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW DATABASE databaseName
+----
+
+*Arguments:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name           | Type   | Description
+| databaseName   | String | The name of the database whose status to report
+|===
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name             | Type         | Description
+| name             | String       | The human-readable name of the database.
+| aliases          | List<String> | The names of any aliases the database may have.
+| access           | String       | The database access mode, either `read-write` or `read-only`.
+| address          | String       | The bolt address of the Neo4j instance hosting the database.
+| role             | String       | The cluster role which the Neo4j instance fulfils for this database.
+| requestedStatus  | String       | The state that an operator has requested the database to be in.
+| currentStatus    | String       | The state the database is actually in on this Neo4j instance.
+| error            | String       | Error encountered by Neo4j instance when transitioning the database to `requestedStatus`, if any.
+| default          | Boolean      | Whether this database is the default for this DBMS.
+| home             | Boolean      | Whether this database is the home database for this user.
+|===
+
+.Listing statuses for database _foo_
+====
+When running `SHOW DATABASE foo` in a Neo4j Causal Cluster, you should see output like the following:
+
+[options="header"]
+|===
+| `name`   | `aliases` | `access`       | `address`         | `role`         | `requestedStatus` | `currentStatus` | `error`                                           | `default` | `home`
+| "foo"    | []        | "read-write"   | "localhost:20031" | "unknown"      | "online"          | "initial"       | "An error occurred! Unable to start database ..." | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20010" | "leader"       | "online"          | "online"        | ""                                                | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20005" | "follower"     | "online"          | "online"        | ""                                                | false     | false
+| "foo"    | []        | "read-write"   | "localhost:20034" | "unknown"      | "online"          | "initial"       | "An error occurred! Unable to start database ..." | false     | false
+|===
+====

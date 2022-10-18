@@ -1,0 +1,395 @@
+[role=enterprise-edition]
+[[online-backup]]
+= Back up an online database
+:description: This section describes how to back up an online database. 
+
+[CAUTION]
+====
+Remember to xref:backup-restore/planning.adoc[plan your backup] carefully and to back up each of your databases, including the `system` database.
+====
+
+[[online-backup-command]]
+== Command
+
+A Neo4j database can be backed up in **online mode** using the `backup` command of `neo4j-admin`.
+The command must be invoked as the `neo4j` user to ensure the appropriate file permissions.
+
+[[backup-command-usage]]
+=== Usage
+
+The `neo4j-admin backup` command can be used for performing both xref:backup-restore/modes.adoc#full-backup[full] and xref:backup-restore/modes.adoc#incremental-backup[incremental] backups of an **online** database.
+The command can be run both locally and remotely.
+By default, `neo4j-admin backup` also checks the database consistency at the end of every backup operation.
+However, it uses a significant amount of resources, such as memory and CPU.
+Therefore, it is recommended to perform the backup on a separate dedicated machine.
+The `neo4j-admin backup` command also supports SSL/TLS.
+For more information, see xref:backup-restore/online-backup.adoc#online-backup-configurations[Online backup configurations].
+
+[NOTE]
+====
+`neo4j-admin backup` is not supported in https://neo4j.com/cloud/aura/[Neo4j Aura].
+
+`neo4j-admin backup` is not supported for use on the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
+It must be run directly on the databases that are part of the Fabric setup.
+====
+
+[[backup-command-syntax]]
+=== Syntax
+
+[source,role=noheader]
+----
+neo4j-admin backup  --backup-dir=<path>
+                   [--verbose]
+                   [--expand-commands]
+                   [--from=<host:port>]
+                   [--database=<database>]
+                   [--fallback-to-full=<true/false>]
+                   [--pagecache=<size>]
+                   [--check-consistency=<true/false>]
+                   [--report-dir=<path>]
+                   [--check-graph=<true/false>]
+                   [--check-indexes=<true/false>]
+                   [--check-index-structure=<true/false>]
+                   [--check-label-scan-store=<true/false>]
+                   [--check-property-owners=<true/false>]
+                   [--additional-config=<path>]
+                   [--include-metadata=<all/users/roles>]
+                   [--prepare-restore=<true/false>]
+                   [--parallel-recovery=<true/false>]
+----
+
+[NOTE]
+====
+Please note that the following options have been deprecated:
+
+[source,role=noheader]
+----
+[--check-label-scan-store=<true/false>]
+[--check-property-owners=<true/false>]
+----
+
+Values for these settings will be ignored.
+====
+
+
+[[backup-command-options]]
+=== Options
+
+[options="header",cols="m,m,a"]
+|===
+| Option
+| Default
+| Description
+
+| --backup-dir
+|
+| Target directory.
+
+| --verbose
+|
+| Enable verbose output.
+
+| --expand-commands
+|
+| Allow command expansion in config value evaluation.
+
+| --from
+| localhost:6362
+| Host and port of Neo4j.
+
+| --database
+| neo4j
+| Name of the remote database to back up.
+
+The value can contain `*` and `?` for globbing, in which cases, all matching databases will be backed up.
+
+[TIP]
+====
+With a single `*` as a value, you can back up all the databases of the DBMS.
+====
+
+| --fallback-to-full
+| true
+| If an incremental backup fails, backup will move the old backup to `<name>.err.<N>` and fallback on a full backup instead.
+
+| --pagecache
+| 8m
+| The size of the page cache to use for the backup process.
+
+| --check-consistency
+| true
+| Run a consistency check against the database backup.
+
+| --report-dir
+| .
+| Directory where consistency report will be written.
+
+| --check-graph
+| true
+| Perform consistency checks between nodes, relationships, properties, types, and tokens.
+
+| --check-indexes
+| true
+| Perform consistency checks on indexes.
+
+| --check-index-structure
+| true
+| Perform structure checks on indexes.
+
+| [deprecated]#--check-label-scan-store#
+| true
+| This option is deprecated, and its value is ignored.
+
+| [deprecated]#--check-property-owners#
+| false
+| This option is deprecated, and its value is ignored.
+
+| --additional-config
+|
+| Configuration file to provide additional or override the existing configuration settings in the _neo4j.conf_ file.
+
+| --include-metadata
+|
+| Include metadata in the backup. Metadata contains security settings related to the database.
+Cannot be used for backing up the `system` database.
+
+- `roles` - commands to create the roles and privileges (for both database and graph) that affect the use of the database.
+- `users` - commands to create the users that can use the database and their role assignments.
+-  `all` - include roles and users.
+
+The metadata script can be found in the backup directory `<database>/tools/metadata_script.cypher`.
+
+| --prepare-restore
+| true
+| Perform the recovery of the backup store by applying the latest pulled transactions.
+If disabled, the backup will be faster, but a recovery of the backup store will be required at a later time before restoring the data.
+
+For more information on how to do that, see xref:backup-restore/prepare-restore.adoc[Prepare a database for restoring].
+
+[NOTE]
+====
+If `--prepare-restore` is set to `false`, `--check-consistency` is implicitly set to `false`, because the consistency of a non-recovered store cannot be checked.
+====
+
+| --parallel-recovery
+| false
+| Allow multiple threads to apply transactions to a backup in parallel.
+For some databases and workloads, this may reduce execution times significantly.
+
+[NOTE]
+====
+`parallel-recovery` is an experimental option.
+Consult Neo4j support before use.
+====
+|===
+
+[[backup-command-exit-codes]]
+=== Exit codes
+
+Depending on whether the backup was successful or not, `neo4j-admin backup` exits with different codes.
+The error codes include details of what error was encountered.
+
+.Neo4j Admin backup exit codes when backing up one database
+[cols="<1,<5", options="header"]
+|===
+| Code | Description
+| `0`  | Success.
+| `1`  | Backup failed.
+| `2`  | Backup succeeded but consistency check failed.
+| `3`  | Backup succeeded but consistency check found inconsistencies.
+|===
+
+.Neo4j Admin backup exit codes when backing multiple databases
+[cols="m,a", options="header"]
+|===
+| Code | Description
+| 0  | All databases are backed up successfully.
+| 1  | One or several backup failed.
+|===
+
+[[online-backup-configurations]]
+== Online backup configurations
+
+[[backup-server-configuration]]
+=== Server configuration
+
+The table below lists the basic server parameters relevant to backups.
+Note that, by default, the backup service is enabled but only listens on localhost (127.0.0.1).
+This needs to be changed if backups are to be taken from another machine.
+
+[WARNING]
+====
+Make this change only if you need the remote backup. 
+If your network is not adequately isolated, this change might expose your system to threats.
+====
+
+[[table-backup-introduction-options-standalone-parameters]]
+.Server parameters for backups
+[options="header"]
+|===
+| Parameter name | Default value | Description
+| `xref:reference/configuration-settings.adoc#config_dbms.backup.enabled[dbms.backup.enabled]` | `true` | Enable support for running online backups.
+| `xref:reference/configuration-settings.adoc#config_dbms.backup.listen_address[dbms.backup.listen_address]` | `127.0.0.1:6362` | Listening server for online backups.
+|===
+
+[NOTE]
+====
+It is not recommended to use an NFS mount for backup purposes as this is likely to corrupt and slow down the backup.
+====
+
+[NOTE]
+====
+Make sure to follow the link:https://neo4j.com/docs/operations-manual/current/backup-restore/online-backup/#online-backup-ssl[Security Configurations] in order to prevent unauthorized users from accessing the DBMS by having access to the backup server.
+====
+
+[[online-backup-memory]]
+=== Memory configuration
+
+The following options are available for configuring the memory allocated to the backup client:
+
+Configure heap size for the backup::
+
+`HEAP_SIZE` configures the maximum heap size allocated for the backup process.
+This is done by setting the environment variable `HEAP_SIZE` before starting the operation.
+If not specified, the Java Virtual Machine chooses a value based on the server resources.
+
+Configure page cache for the backup::
+
+The page cache size can be configured by using the `--pagecache` option of the `neo4j-admin backup` command.
+If not explicitly defined, the page cache defaults to `8MB`.
++
+[TIP]
+====
+You should give the Neo4J page cache as much memory as possible, as long as it satisfies the following constraint:
+
+--
+Neo4J page cache + OS page cache < available RAM, where 2 to 4GB should be dedicated to the operating system’s page cache.
+--
+
+For example, if your current database has a `Total mapped size` of `128GB` as per the _debug.log_, and you have enough free space (meaning you have left aside 2 to 4 GB for the OS), then you can set `--pagecache` to `128GB`.
+====
+
+[[online-backup-resources]]
+=== Computational resources configurations
+
+Consistency checking::
+Checking the consistency of the backup is a major operation which may consume significant computational resources, such as, memory, CPU, I/O.
+When backing up an online database, the consistency checker is invoked at the end of the process by default.
+Therefore, it is highly recommended to perform the backup and consistency check on a dedicated machine, which has sufficient free resources, to avoid adversely affecting the running server.
++
+Alternatively, you can decouple the backup operation from the consistency check (using the `neo4j-admin backup` option `--check-consistency=false`) and schedule that part of the workflow to happen at a later point in time, on a dedicated machine.
+Consistency checking a backup is vital for safeguarding and ensuring the quality of the data, and should not be underestimated.
++
+[TIP]
+====
+To avoid running out of resources on the running server, it is recommended to perform the backup on a separate dedicated machine.
+====
+
+Transaction log files::
+The xref:configuration/transaction-logs.adoc[transaction log files], which keep track of recent changes, are rotated and pruned based on a provided configuration.
+For example, setting `dbms.tx_log.rotation.retention_policy=3` files keeps 3 transaction log files in the backup.
+Because recovered servers do not need all of the transaction log files that have already been applied, it is possible to further reduce storage size by reducing the size of the files to the bare minimum.
+This can be done by setting `dbms.tx_log.rotation.size=1M` and `dbms.tx_log.rotation.retention_policy=3` files.
+You can use the `--additional-config` parameter to override the configurations in the _neo4j.conf_ file.
++
+[WARNING]
+====
+Removing transaction logs manually can result in a broken backup.
+====
+
+[[online-backup-ssl]]
+=== Security configurations
+
+Securing your backup network communication with an SSL policy and a firewall protects your data from unwanted intrusion and leakage.
+When using the `neo4j-admin backup` command, you can configure the backup server to require SSL/TLS, and the backup client to use a compatible policy.
+For more information on how to configure SSL in Neo4j, see xref:security/ssl-framework.adoc[SSL framework].
+
+[NOTE]
+====
+For a detailed list of recommendations regarding security in Neo4j, see xref:security/checklist.adoc[Security checklist].
+====
+
+The following table provides details on how the configured SSL policies map to the configured ports.
+
+.Mapping backup configurations to SSL policies
+[options="header" cols="20s,30m,20m,20m,10m"]
+|===
+| Topology
+| Backup target address on database server
+| SSL policy setting on database server
+| SSL policy setting on backup client
+| Default port
+
+| Standalone instance
+| dbms.backup.listen_address
+| dbms.ssl.policy.backup
+| dbms.ssl.policy.backup
+| 6362
+
+| Causal cluster
+| dbms.ssl.policy.cluster
+
+causal_clustering.transaction_listen_address
+| dbms.ssl.policy.cluster
+| dbms.ssl.policy.backup
+| 6000
+|===
+
+[NOTE]
+====
+It is very important to ensure that there is no external access to the port specified by the setting `dbms.backup.listen_address`.
+Failing to protect this port may leave a security hole open by which an unauthorized user can make a copy of the database onto a different machine.
+In production environments, external access to the backup port should be blocked by a firewall.
+====
+
+[[online-backup-cluster]]
+=== Cluster configurations
+
+In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup.
+These ports are configured by `dbms.backup.listen.address` and `causal_clustering.transaction_listen_address` respectively.
+Functionally, they are equivalent for backups, but separating them can allow some operational flexibility, while using just a single port can simplify the configuration.
+It is generally recommended to select Read Replicas to act as backup servers, since they are more numerous than Core members in typical cluster deployments.
+Furthermore, the possibility of performance issues on a Read Replica, caused by a large backup, will not affect the performance or redundancy of the Core members.
+If a Read Replica is not available, then a Core can be selected based on factors, such as its physical proximity, bandwidth, performance, and liveness.
+
+[NOTE]
+====
+To avoid taking a backup from a cluster member that is lagging behind, you can look at the transaction IDs by exposing Neo4j metrics or via Neo4j Browser.
+To view the latest processed transaction IDs (and other metrics) in Neo4j Browser, type `:sysinfo` at the prompt.
+====
+
+[[online-backup-example]]
+== Examples
+
+The following are examples of how to back up a single database, e.g., the default database `neo4j`, and multiple databases, using the `neo4j-admin backup` command.
+The target directory _/mnt/backups/neo4j_ must exist before calling the command and the database(s) must be online.
+
+.Use `neo4j-admin backup` to back up a single database.
+====
+[source,shell]
+----
+bin/neo4j-admin backup --backup-dir=/mnt/backups/neo4j --database=neo4j
+----
+====
+
+To backup several databases that match database pattern you can use name globbing.
+For example, to backup all databases that start with *n* you should run:
+
+.Use `neo4j-admin backup` to back up multiple databases.
+====
+[source, shell]
+----
+neo4j-admin backup --from=192.168.1.34 --backup-dir=/mnt/backups/neo4j --database=n* --pagecache=4G
+----
+====
+
+[TIP]
+====
+For a detailed example on how to back up and restore a database in a Causal cluster, see xref:tutorial/causal-backup-restore-db.adoc[Back up and restore a database in Causal Cluster].
+====
+
+// TODO: Where do these images fit now?.
+//image::backup-separate-server.svg[role="middle"]
+//image::backup-local_server.svg[role="middle"]
+//image::backup-backup_address.svg[title="Settings and arguments for `dbms.ssl.policy.backup`", role="middle"]
+//image::backup-causal_clustering.transaction.svg[title="Settings and arguments for `dbms.ssl.policy.cluster`", role="middle"]
