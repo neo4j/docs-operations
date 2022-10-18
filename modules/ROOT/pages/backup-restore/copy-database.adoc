@@ -1,0 +1,282 @@
+[role=enterprise-edition]
+[[copy-database]]
+= Copy a database store
+:description: This section describes how to copy the data store of an existing offline database to a new database. 
+
+A user database or backup can be copied to a Neo4j instance using the `copy` command of `neo4j-admin`.
+
+[NOTE]
+====
+`neo4j-admin copy` is not supported for use on the `system` database.
+
+In Fabric deployments, `neo4j-admin copy` cannot be applied to the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
+It must be run directly on the databases that are part of the Fabric setup.
+====
+
+
+[WARNING]
+====
+It is important to note that `neo4j-admin copy` is an IOPS-intensive process.
+Using this process for upgrading or migration purposes can have significant performance implications, depending on your disc specification.
+It is therefore not appropriate for all use cases.
+
+
+Estimating the processing time::
++
+--
+Estimations for how long the `neo4j-admin copy` command will take can be made based upon the following:
+
+* Neo4j, like many other databases, do IO in 8K pages.
+* Your disc manufacturer will have a value for the maximum IOPS it can process.
+
+For example, if your disc manufacturer has provided a maximum of 5000 IOPS, you can reasonably expect up to 5000 such page operations a second.
+Therefore, the maximal theoretical throughput you can expect is 40MB/s (or 144 GB/hour) on that disc.
+You may then assume that the best-case scenario for running `neo4j-admin copy` on that 5000 IOPS disc is that it will take at least 1 hour to process a 144 GB database. footnote:[The calculations are based on `MB/s = (IOPS * B) ÷ 10^6`,
+where `B` is the block size in bytes; in the case of Neo4j, this is `8000`. GB/hour can then be calculated from `(MB/s * 3600) ÷ 1000`.]
+
+However, it is important to remember that the process must read 144 GB from the source database, and must also write to the target store (assuming the target store is of comparable size).
+Additionally, there are internal processes during the copy that will read/modify/write the store multiple times.
+Therefore, with an additional 144 GB of both read and write, the best-case scenario for running `neo4j-admin copy` on a 5000 IOPS disc is that it will take *at least 3 hours to process a 144 GB database*.
+
+Finally, it is also important to consider that in almost all Cloud environments, the published IOPS value may not be the same as the actual value, or be able to continuously maintain the maximum possible IOPS.
+The real processing time for this example _could_ be well above that estimation of 3 hours.
+--
+
+For detailed information about supported methods of upgrade and migration, see the https://neo4j.com/docs/upgrade-migration-guide/current/[Neo4j Upgrade and Migration Guide].
+====
+
+[[copy-database-command]]
+== Command
+
+`neo4j-admin copy` copies the _data store_ of an existing **offline** database to a new database.
+
+[[copy-database-usage]]
+=== Usage
+
+The `neo4j-admin copy` command can be used to clean up database inconsistencies, compact stores, and do a direct migration from Neo4j 3.5 to any 4.x version.
+It can process an optional set of filters, which you can use to remove any unwanted data before copying the database.
+The command also reclaims the unused space of a database and creates a defragmented copy of that database or backup in the destination Neo4j instance.
+
+[NOTE]
+====
+`neo4j-admin copy` copies the _data store_ without the _schema_ (indexes and constraints).
+However, if the database has a schema defined, the command will output Cypher statements, which you can run to recreate the indexes and constraints.
+====
+
+[TIP]
+====
+For a detailed example of how to reclaim unused space, see xref:performance/space-reuse.adoc#space-reuse-reclaim-space[Reclaim unused space]. +
+For a detailed example of how to back up a 3.5 database and use the `neo4j-admin copy` command to compact its store and migrate it to a 4.x Neo4j standalone instance, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/migration/migrate-to-4.any/online-backup-copy-database/[Upgrade and Migration Guide -> Tutorial: Back up and copy a database in a standalone instance].
+====
+
+[WARNING]
+====
+`neo4j-admin copy` preserves the node IDs; however, the relationships get new IDs.
+====
+
+[[copy-database-syntax]]
+=== Syntax
+
+[source,role=noheader]
+----
+neo4j-admin copy  [--verbose]
+                  [--from-database=<database>]
+                  [--from-path=<path>]
+                  [--from-path-tx=<path>]
+                   --to-database=<database>
+                  [--neo4j-home-directory=<path>]
+                  [--force]
+                  [--compact-node-store]
+                  [--to-format=<format>]
+                  [--delete-nodes-with-labels=<label>[,<label>...]]
+                  [--keep-only-node-properties=<label.property>[,<label.property>...]]
+                  [--keep-only-nodes-with-labels=<label>[,<label>...]]
+                  [--keep-only-relationship-properties=<relationship.property>[,<relationship.property>...]]
+                  [--skip-labels=<label>[,<label>...]]
+                  [--skip-node-properties=<label.property>[,<label.property>...]]
+                  [--skip-properties=<property>[,<property>...]]
+                  [--skip-relationship-properties=<relationship.property>[,<relationship.property>...]]
+                  [--skip-relationships=<relationship>[,<relationship>...]]
+                  [--from-pagecache=<size>]
+                  [--to-pagecache=<size>]
+----
+
+[[copy-database-command-options]]
+=== Options
+
+[options="header", cols="2m,3a"]
+|===
+| Option
+| Description
+
+| --verbose
+| Enable verbose output.
+
+| --from-database
+| The database name to copy from.
+
+| --from-path
+| The path to the database to copy from.
+
+It can be used to target databases outside of the installation, e.g., backups.
+
+| --from-path-tx
+| The path to the transaction log files.
+Use if the command cannot determine where they are located.
+
+| --to-database
+| The destination database name.
+
+| --neo4j-home-directory=<path>
+| Path to the home directory for the copied database.
+
+Default: The same as the database copied from.
+
+| --force
+| Force the command to proceed even if the integrity of the database can not be verified.
+
+| --compact-node-store
+| Enforce node store compaction.
+
+By default, the node store is not compacted on copy since it changes the node IDs.
+
+| --to-format
+| Set the format for the new database.
+
+Valid values are `same`, `standard`, `high_limit`, and `aligned`. The `high_limit` format is only available in Enterprise Edition.
+If you go from `high_limit` to `standard`, there is no validation that the data will fit.
+
+Default: The format of the source database.
+
+| --delete-nodes-with-labels
+| A comma-separated list of labels.
+
+All nodes that have ANY of the specified labels will be deleted.
+Any node matching any of the labels will be ignored during copy.
+
+| --keep-only-node-properties
+|  A list of property keys to keep for nodes with the specified label.
+
+Any labels not explicitly mentioned will keep their properties.
+Cannot be combined with `--skip-properties` or `--skip-node-properties`.
+
+| --keep-only-nodes-with-labels
+| A list of labels.
+
+All nodes that have any of the specified labels will be kept.
+Cannot be combined with `--delete-nodes-with-labels`.
+
+| --keep-only-relationship-properties
+| A list of property keys to keep for relationships with the specified type.
+
+Any relationship types not explicitly mentioned will keep their properties.
+
+Cannot be combined with `--skip-properties` or `--skip-relationship-properties`.
+
+| --skip-labels
+| A comma-separated list of labels to ignore during the copy.
+
+| --skip-node-properties
+| A list of property keys to ignore for nodes with the specified label.
+
+Cannot be combined with `--skip-properties` or `--keep-only-node-properties`.
+
+| --skip-properties
+| A comma-separated list of property keys to ignore during the copy.
+
+Cannot be combined with `--skip-node-properties`, `--keep-only-node-properties`, `--skip-relationship-properties`, and `--keep-only-relationship-properties`.
+
+| --skip-relationships
+| A comma-separated list of relationship types to ignore during the copy.
+
+| --skip-relationship-properties
+| A list of property keys to ignore for relationships with the specified type.
+
+Cannot be combined with `--skip-properties` or `--keep-only-relationship-properties`.
+
+| --from-pagecache
+| The size of the page cache to use for reading.
+
+| --to-pagecache
+| The size of the page cache to use for writing.
+|===
+
+[TIP]
+====
+You can use the `--from-pagecache` and `--to-pagecache` options to speed up the copy operation by specifying how much cache to allocate when reading the source and writing the destination.
+As a rule of thumb, `--to-pagecache` should be around `1-2GB` since it mostly does sequential writes.
+The `--from-pagecache` should then be assigned whatever memory you can spare since Neo4j does random reads from the source.
+====
+
+[[copy-database-examples]]
+== Examples
+
+.Use `neo4j-admin copy` to copy the data store of the database `neo4j`.
+====
+. Stop the database named `neo4j`:
++
+[source, cypher]
+----
+STOP DATABASE neo4j
+----
+
+. Copy the data store from `neo4j` to a new database called `copy`:
++
+[source, shell]
+----
+bin/neo4j-admin copy --from-database=neo4j --to-database=copy
+----
+
+. Run the following command to verify that database has been successfully copied.
++
+[source, shell]
+----
+ls -al ../data/databases
+----
++
+[NOTE]
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Create the copied database.
++
+[source, cypher]
+----
+CREATE DATABASE copy
+----
+
+. Verify that the `copy` database is online.
++
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+. If your original database has a schema defined, change your active database to `copy` and recreate the schema using the `neo4j-admin copy` output.
++
+[TIP]
+The console output is saved to _logs/neo4j-admin-copy-<timestamp>.log_.
+
+====
+
+.Use `neo4j-admin copy` to filter the data you want to copy.
+====
+The command can perform some basic forms of processing.
+You can filter the data that you want to copy by removing nodes, labels, properties, and relationships.
+
+[source, shell]
+----
+bin/neo4j-admin copy --from-database=neo4j --to-database=copy --delete-nodes-with-labels="Cat,Dog"
+----
+
+The command creates a copy of the database `neo4j` but without the nodes with the labels `:Cat` and `:Dog`.
+
+[NOTE]
+Labels are processed independently, i.e., the filter deletes any node with a label `:Cat`, `:Dog`, or both.
+
+====
+
+[NOTE]
+====
+For a detailed example of how to use `neo4j-admin copy` to filter out data for a Fabric installation, see xref:fabric/sharding-with-copy.adoc[Sharding data with the `copy` command].
+====

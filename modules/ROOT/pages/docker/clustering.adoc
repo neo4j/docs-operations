@@ -1,0 +1,368 @@
+[role=enterprise-edition]
+[[docker-cc]]
+= Clustering
+:description: How to deploy a Causal Cluster setup in a containerized environment without an orchestration tool. 
+
+[NOTE]
+====
+The examples on this page make use of both command expansion and DNS discovery method.
+For more information, see:
+
+* xref:configuration/neo4j-conf.adoc#neo4j-conf-expand-commands[Command expansion]
+* xref:clustering/discovery.adoc#causal-clustering-discovery-dns[Discovery using DNS with multiple records]
+====
+
+
+[[docker-cc-setup-dockercompose]]
+== Deploy a Causal Cluster with Docker Compose
+
+You can deploy a Causal Cluster using Docker Compose.
+Docker Compose is a management tool for Docker containers.
+You use a YAML file to define the infrastructure of all your Causal Cluster members in one file.
+Then, by running the single command `docker-compose up`, you create and start all the members without the need to invoke each of them individually.
+For more information about Docker Compose, see the https://docs.docker.com/compose/[Docker Compose official documentation].
+
+*Prerequisites*
+
+* Verify that you have installed Docker Compose.
+For more information, see the https://docs.docker.com/compose/install/[Install Docker Compose official documentation].
+
+*Procedure*
+
+. Create a configuration file `neo4j.conf` which will be shared across core and replica members and make it readable and writable for the user (eg. `chmod 640 neo4j.conf`)
++
+====
+[source, shell, subs="attributes+, +macros"]
+----
+# Setting that specifies how much memory Neo4j is allowed to use for the page cache.
+dbms.memory.pagecache.size=100M
+
+# Setting that specifies the initial JVM heap size.
+dbms.memory.heap.initial_size=100M
+
+# Strategy that the instance will use to determine the addresses of other members.
+causal_clustering.discovery_type=DNS
+
+# The network addresses of an initial set of Core cluster members that are available to bootstrap this Core or Read Replica instance.
+# If the DNS strategy is used, the addresses are fetch using the DNS A records.
+causal_clustering.initial_discovery_members=neo4j-network:5000
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for discovery protocol messages from other members of the cluster.
+causal_clustering.discovery_advertised_address=$(hostname -i)
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for Raft messages within the Core cluster.
+causal_clustering.raft_advertised_address=$(hostname)
+
+ # Address (the public hostname/IP address of the machine)
+ # and port setting that specifies where this instance advertises for requests for transactions in the transaction-shipping catchup protocol.
+causal_clustering.transaction_advertised_address=$(hostname)
+
+# Enable server side routing
+dbms.routing.enabled=true
+
+# Use server side routing for neo4j:// protocol connections.
+dbms.routing.default_router=SERVER
+
+# The advertised address for the intra-cluster routing connector.
+dbms.routing.advertised_address=$(hostname)
+----
+====
+. Prepare your _docker-compose.yml_ file using the following example.
+For more information, see the https://docs.docker.com/compose/compose-file/#service-configuration-reference[Docker Compose official Service configuration reference].
++
+.Example _docker-compose.yml_ file
+====
+[source, shell, subs="attributes+, +macros"]
+----
+version: '3.8'
+
+# Custom top-level network
+networks:
+  neo4j-internal:
+
+services:
+
+  core1:
+    # Docker image to be used
+    \image: $\{NEO4J_DOCKER_IMAGE}
+
+    # Hostname
+    hostname: core1
+
+    # Service-level network, which specifies the networks, from the list of the top-level networks (in this case only neo4j-internal), that the server will connect to.
+    # Adds a network alias (used in neo4j.conf when configuring the discovery members)
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+
+    # The ports that will be accessible from outside the container - HTTP (7474) and Bolt (7687).
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+    # Uncomment the volumes to be mounted to make them accessible from outside the container.
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf # This is the main configuration file.
+      - ./data/core1:/var/lib/neo4j/data
+      - ./logs/core1:/var/lib/neo4j/logs
+      - ./conf/core1:/var/lib/neo4j/conf
+      - ./import/core1:/var/lib/neo4j/import
+      #- ./metrics/core1:/var/lib/neo4j/metrics
+      #- ./licenses/core1:/var/lib/neo4j/licenses
+      #- ./ssl/core1:/var/lib/neo4j/ssl
+
+    # Passes the following environment variables to the container
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_dbms_mode=CORE
+
+    # Simple check testing whether the port 7474 is opened.
+    # If so, the instance running inside the container is considered as "healthy".
+    # This status can be checked using the "docker ps" command.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+
+    # Set up the user
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  core2:
+    \image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: core2
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/core2:/var/lib/neo4j/data
+      - ./logs/core2:/var/lib/neo4j/logs
+      - ./conf/core2:/var/lib/neo4j/conf
+      - ./import/core2:/var/lib/neo4j/import
+      #- ./metrics/core2:/var/lib/neo4j/metrics
+      #- ./licenses/core2:/var/lib/neo4j/licenses
+      #- ./ssl/core2:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_dbms_mode=CORE
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  core3:
+    \image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: core3
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7476:7474"
+      - "7689:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/core3:/var/lib/neo4j/data
+      - ./logs/core3:/var/lib/neo4j/logs
+      - ./conf/core3:/var/lib/neo4j/conf
+      - ./import/core3:/var/lib/neo4j/import
+      #- ./metrics/core3:/var/lib/neo4j/metrics
+      #- ./licenses/core3:/var/lib/neo4j/licenses
+      #- ./ssl/core3:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_dbms_mode=CORE
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  readreplica1:
+    \image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: replica1
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7477:7474"
+      - "7690:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/replica1:/var/lib/neo4j/data
+      - ./logs/replica1:/var/lib/neo4j/logs
+      - ./conf/replica1:/var/lib/neo4j/conf
+      - ./import/replica1:/var/lib/neo4j/import
+      #- ./metrics/replica1:/var/lib/neo4j/metrics
+      #- ./licenses/replica1:/var/lib/neo4j/licenses
+      #- ./ssl/replica1:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_dbms_mode=READ_REPLICA
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+----
+====
++
+. Set up the environment variables:
+   - `export USER_ID="$(id -u)"`
+   - `export GROUP_ID="$(id -g)"`
+   - `export NEO4J_DOCKER_IMAGE=neo4j:{neo4j-version}-enterprise`
+   - `export NEO4J_EDITION=docker_compose`
+   - `export EXTENDED_CONF=yes`
+   - `export NEO4J_ACCEPT_LICENSE_AGREEMENT=yes`
+   - `export NEO4J_AUTH=neo4j/your_password`
+. Deploy your Causal Cluster by running `docker-compose up` from your project folder.
+. Open _core1_ at http://core1-public-address:7474[http://core1-public-address:7474^].
+. Authenticate with the default `neo4j/your_password` credentials.
+. Check the status of the cluster by running the following in Neo4j Browser:
++
+[source, cypher]
+----
+:sysinfo
+----
+
+
+[[docker-cc-setup-env-variables]]
+== Deploy a Causal Cluster using environment variables
+
+You can set up containers in a cluster to talk to each other using environment variables.
+Each container must have a network route to each of the others, and the `+NEO4J_causal__clustering_expected__core__cluster__size+` and `+NEO4J_causal__clustering_initial__discovery__members+` environment variables must be set for Cores.
+Read Replicas only need to define `+NEO4J_causal__clustering_initial__discovery__members+`.
+
+[role=enterprise-edition]
+[[docker-enterprise-edition-environment-variables]]
+=== Causal Cluster environment variables
+
+The following environment variables are specific to Causal Clustering, and are available in the Neo4j Enterprise Edition:
+
+* `NEO4J_dbms_mode`: the database mode, defaults to `SINGLE`, set to `CORE` or `READ_REPLICA` for Causal Clustering.
+* `+NEO4J_causal__clustering_expected__core__cluster__size+`: the initial cluster size (number of Core instances) at startup.
+* `+NEO4J_causal__clustering_initial__discovery__members+`: the network addresses of an initial set of Core cluster members.
+* `+NEO4J_causal__clustering_discovery__advertised__address+`: hostname/IP address and port to advertise for member discovery management communication.
+* `+NEO4J_causal__clustering_transaction__advertised__address+`: hostname/IP address and port to advertise for transaction handling.
+* `+NEO4J_causal__clustering_raft__advertised__address+`: hostname/IP address and port to advertise for cluster communication.
+
+See xref:clustering/settings.adoc[Settings reference] for more details of Neo4j Causal Clustering settings.
+
+
+[[docker-cc-setup-single]]
+=== Set up a Causal Cluster on a single Docker host
+
+Within a single Docker host, you can use the default ports for HTTP, HTTPS, and Bolt.
+For each container, these ports are mapped to a different set of ports on the Docker host.
+
+Example of a `docker run` command for deploying a cluster with 3 COREs:
+
+[source, shell, subs="attributes"]
+----
+docker network create --driver=bridge cluster
+
+docker run --name=core1 --detach --network=cluster \
+    --publish=7474:7474 --publish=7473:7473 --publish=7687:7687 \
+    --hostname=core1 \
+    --env NEO4J_dbms_mode=CORE \
+    --env NEO4J_causal__clustering_expected__core__cluster__size=3 \
+    --env NEO4J_causal__clustering_initial__discovery__members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_dbms_connector_bolt_advertised__address=localhost:7687 \
+    --env NEO4J_dbms_connector_http_advertised__address=localhost:7474 \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=core2 --detach --network=cluster \
+    --publish=8474:7474 --publish=8473:7473 --publish=8687:7687 \
+    --hostname=core2 \
+    --env NEO4J_dbms_mode=CORE \
+    --env NEO4J_causal__clustering_expected__core__cluster__size=3 \
+    --env NEO4J_causal__clustering_initial__discovery__members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_dbms_connector_bolt_advertised__address=localhost:8687 \
+    --env NEO4J_dbms_connector_http_advertised__address=localhost:8474 \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=core3 --detach --network=cluster \
+    --publish=9474:7474 --publish=9473:7473 --publish=9687:7687 \
+    --hostname=core3 \
+    --env NEO4J_dbms_mode=CORE \
+    --env NEO4J_causal__clustering_expected__core__cluster__size=3 \
+    --env NEO4J_causal__clustering_initial__discovery__members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_dbms_connector_bolt_advertised__address=localhost:9687 \
+    --env NEO4J_dbms_connector_http_advertised__address=localhost:9474 \
+    neo4j:{neo4j-version-exact}-enterprise
+----
+
+Additional instances can be added to the cluster in an ad-hoc fashion.
+
+Example of a `docker run` command for adding a Read Replica to the cluster:
+
+[source, shell, subs="attributes"]
+----
+docker run --name=read-replica1 --detach --network=cluster \
+         --publish=10474:7474 --publish=10473:7473 --publish=10687:7687 \
+         --hostname=read-replica1 \
+         --env NEO4J_dbms_mode=READ_REPLICA \
+         --env NEO4J_causal__clustering_initial__discovery__members=core1:5000,core2:5000,core3:5000 \
+         --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+         --env NEO4J_dbms_connector_bolt_advertised__address=localhost:10687 \
+         --env NEO4J_dbms_connector_http_advertised__address=localhost:10474 \
+         neo4j:{neo4j-version-exact}-enterprise
+----
+
+
+[[docker-cc-setup-multiple]]
+=== Set up a Causal Cluster on multiple Docker hosts
+
+To get the Causal Cluster high-availability characteristics, however, it is more sensible to put the cluster nodes on different physical machines.
+
+When each container is running on its own physical machine, and the Docker network is not used, you have to define the advertised addresses to enable the communication between the physical machines.
+Each container must also bind to the host machine's network.
+For more information about container networking, see the https://docs.docker.com/config/containers/container-networking/[Docker official documentation].
+
+Example of a `docker run` command for invoking a cluster member:
+
+[source, shell, subs="attributes"]
+----
+docker run --name=neo4j-core --detach \
+         --network=host \
+         --publish=7474:7474 --publish=7687:7687 \
+         --publish=5000:5000 --publish=6000:6000 --publish=7000:7000 \
+         --hostname=public-address \
+         --env NEO4J_dbms_mode=CORE \
+         --env NEO4J_causal__clustering_expected__core__cluster__size=3 \
+         --env NEO4J_causal__clustering_initial__discovery__members=core1-public-address:5000,core2-public-address:5000,core3-public-address:5000 \
+         --env NEO4J_causal__clustering_discovery__advertised__address=public-address:5000 \
+         --env NEO4J_causal__clustering_transaction__advertised__address=public-address:6000 \
+         --env NEO4J_causal__clustering_raft__advertised__address=public-address:7000 \
+         --env NEO4J_dbms_connectors_default__advertised__address=public-address \
+         --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+         --env NEO4J_dbms_connector_bolt_advertised__address=public-address:7687 \
+         --env NEO4J_dbms_connector_http_advertised__address=public-address:7474 \
+         neo4j:{neo4j-version-exact}-enterprise
+----
++
+Where `public-address` is the public hostname or ip-address of the machine.
+
+[NOTE]
+====
+Please note that if you are starting a Read Replica as above, you must publish the discovery port.
+For example, `--publish=5000:5000`.
+
+In versions prior to Neo4j 4.0, this was only necessary with Core servers.
+====

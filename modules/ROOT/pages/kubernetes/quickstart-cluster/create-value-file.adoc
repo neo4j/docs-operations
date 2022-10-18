@@ -1,0 +1,135 @@
+[role=enterprise-edition]
+[[cc-create-value-file]]
+= Create Helm deployment values files
+
+You create a Helm deployment YAML file for each Neo4j cluster member with all the configuration settings and the disk you have created for each particular member in xref:kubernetes/quickstart-cluster/create-pv.adoc[Create a persistent volume for each cluster member].
+
+[[cc-config-parameters]]
+== Important configuration parameters
+
+`neo4j.name`::
+All Neo4j cluster members (cores or read-replicas) are linked together by the value of the parameter `neo4j.name`.
+When installed via the Neo4j Helm Charts, they will join the cluster identified by `neo4j.name`. +
+`neo4j.name` is different from the Helm _release name_, which is used to reference a specific cluster member elsewhere in Kubernetes. +
+All other names and labels of K8s objects created by the helm charts derive from both `neo4j.name` and _release name_.
+If no name is specified, the cluster gets the default name `neo4j-cluster`.
+
+`neo4j.resources`::
+The size of a Neo4j cluster member is defined by the values of the `neo4j.resources.cpu` and `neo4j.resources.memory` parameters.
+The minimum for a Neo4j instance is `0.5` CPU and `2GB` memory.
+If invalid or less than the minimum values are provided, Helm will throw an error, for example:
++
+[source, role=noheader]
+----
+Error: template: neo4j-cluster-core/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum. 
+ cpu value cannot be less than 0.5 or 500m
+----
++
+For more information, see xref:kubernetes/configuration.adoc#configure-resources[Configure resource allocation].
+
+`neo4j.password`:: 
+The password for the `neo4j` user. 
+The same password must be set on all cluster members. +
+If you do not provide a password, the Neo4j Helm Chart will automatically generate one for you.
+(Make a note of it.)
++
+[NOTE]
+====
+You cannot use `neo4j` as the initial password as this is the default password.
+====
+
+`neo4j.edition` and `neo4j.acceptLicenseAgreement`::
+By default, the cluster Helm Charts install Neo4j Enterprise Edition since clusters are not available in Community Edition. 
+This means that you do not have to explicitly set the configuration parameter `edition:` to `"enterprise"`, as it would be the case if you want to install a standalone server of Neo4j Enterprise Edition.
+However, you must acknowledge license compliance by setting `neo4j.acceptLicenseAgreement` to `"yes"`.
+For more information on how to obtain a valid license for Neo4j Enterprise Edition, see https://neo4j.com/licensing/ or write to licensing@neo4j.com.
+
+`volumes.data`::
+The `volumes.data` parameter maps the `data` volume mount of each cluster member to the persistent volume that you have created for that member.
+See xref:kubernetes/quickstart-cluster/create-pv.adoc[Create persistent volumes].
++
+[NOTE]
+====
+For details of all Neo4j Helm Chart configuration options, see xref:kubernetes/configuration.adoc[Configure a Neo4j Helm deployment].
+====
+
+[[cc-core-values-yaml]]
+== Create a values.yaml file for each cluster member 
+
+Select the tab as per your Kubernetes environment and using the provided example, create a YAML file for each of your cluster members (both cores and the read replica) with all the configuration settings and the disk you have created for that particular member in xref:kubernetes/quickstart-cluster/create-pv.adoc[Create a persistent volume for each cluster member].
+
+
+This guide assumes that the YAML files are named _core-1.values.yaml_, _core-2.values.yaml_, _core-3.values.yaml_, and _rr-1.values.yaml_.
+
+[.tabbed-example]
+=====
+[.include-with-gke]
+======
+[source, yaml]
+----
+neo4j:
+  name: "my-cluster" 
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+  password: "my-password"
+  acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: "volume"
+    volume:
+      gcePersistentDisk:
+        # The name of the gcePersistentDisk volume you have created for this cluster member.
+        pdName: "core-disk-1"
+----
+======
+[.include-with-aws]
+======
+[source, yaml]
+----
+neo4j:
+  name: "my-cluster"
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+  password: "my-password"
+  acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: "volume"
+    volume:
+      awsElasticBlockStore:
+        # The ID of the awsElasticBlockStore volume you have created for this cluster member.
+        volumeID: "<volume id>"
+        fsType: ext4
+
+----
+======
+
+[.include-with-azure]
+======
+[source, yaml]
+----
+neo4j:
+  name: "my-cluster"
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+  password: "my-password"
+  acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: "volume"
+    volume:
+      azureDisk:
+        # The name and the ID of the azureDisk volume you have created for this cluster member.
+        diskName: "core-disk-1"
+        diskURI: "<disk id>"
+        kind: Managed
+
+----
+======
+=====

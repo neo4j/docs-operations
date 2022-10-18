@@ -1,0 +1,100 @@
+[[query-management]]
+= Manage queries
+:description: This section describes facilities for query management. 
+
+
+[[query-management-list-queries]]
+== List all running queries
+
+The procedure for listing queries, `dbms.listQueries()`, is replaced by the command for listing transactions, `SHOW TRANSACTIONS`.
+This command returns information about the currently executing query in the transaction.
+For more information on the command, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/transaction-clauses#query-listing-transactions[Cypher manual -> `SHOW TRANSACTIONS` command].
+
+
+[[query-management-list-active-locks]]
+== List all active locks for a query
+
+An xref:authentication-authorization/terminology.adoc#term-administrator[administrator] is able to view all active locks held by the transaction executing the query with the `queryId`.
+
+*Syntax:*
+
+`CALL dbms.listActiveLocks(queryId)`
+
+*Returns:*
+
+[options="header"]
+|===
+| Name                   | Type    | Description
+| `mode`                 | String  | Lock mode corresponding to the transaction.
+| `resourceType`         | String  | Resource type of the locked resource
+| `resourceId`           | Integer | Resource id of the locked resource .
+|===
+
+.Viewing active locks for a query
+====
+The following example shows the active locks held by transaction executing query with id `query-614`
+
+[source, cypher]
+----
+CALL dbms.listActiveLocks( "query-614" )
+----
+
+[queryresult]
+----
+╒════════╤══════════════╤════════════╕
+│"mode"  │"resourceType"│"resourceId"│
+╞════════╪══════════════╪════════════╡
+│"SHARED"│"SCHEMA"      │0           │
+└────────┴──────────────┴────────────┘
+1 row
+----
+
+The following example shows the active locks for all currently executing queries by yielding the `queryId` from `dbms.listQueries` procedure
+
+[source, cypher]
+----
+CALL dbms.listQueries() YIELD queryId, query, database
+CALL dbms.listActiveLocks( queryId ) YIELD resourceType, resourceId, mode
+RETURN queryId, query, resourceType, resourceId, mode, database
+----
+
+[queryresult]
+----
+╒════════════╤══════════════════════════════╤══════════════╤════════════╤════════╤════════════╕
+│"queryId"   │"query"                       │"resourceType"│"resourceId"│"mode"  │"database"  │
+╞════════════╪══════════════════════════════╪══════════════╪════════════╪════════╪════════════╡
+│"query-614" │"match (n), (m), (o), (p), (q)│"SCHEMA"      │0           │"SHARED"│"myDb"      │
+│            │ return count(*)"             │              │            │        │            │
+├────────────┼──────────────────────────────┼──────────────┼────────────┼────────┼────────────┤
+│"query-684" │"CALL dbms.listQueries() YIELD│"SCHEMA"      │0           │"SHARED"│"myOtherDb" │
+│            │ .."                          │              │            │        │            │
+└────────────┴──────────────────────────────┴──────────────┴────────────┴────────┴────────────┘
+2 rows
+----
+====
+
+
+[[query-management-terminate-queries]]
+== Terminate queries
+
+The procedures for terminating queries, `dbms.killQueries(queryIds)` and `dbms.killQuery(queryId)`, are replaced by the command for terminating transactions, `TERMINATE TRANSACTIONS transactionIds`.
+These commands use the transactionId instead of the queryId, which can be found using the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/transaction-clauses#query-listing-transactions[`SHOW TRANSACTIONS` command].
+
+The link:/docs/cypher-manual/4.4/access-control/database-administration#access-control-database-administration-transaction[`TERMINATE TRANSACTION` privilege] determines what transactions can be terminated.
+However, the xref:authentication-authorization/terminology.adoc#term-current-user[current user] can always terminate all of their own transactions.
+
+*Syntax:*
+
+`TERMINATE TRANSACTIONS transactionIds`
+
+*Argument:*
+
+[options="header"]
+|===
+| Name | Type | Description
+| `transactionIds` | Comma-separated strings | The IDs of all the transactions to be terminated.
+| `transactionIds` | Single string parameter | The ID of the transaction to be terminated.
+| `transactionIds` | List parameter | The IDs of all the transactions to be terminated.
+|===
+
+For more information on the command, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/transaction-clauses#query-terminate-transactions[Cypher manual -> `TERMINATE TRANSACTIONS` command].

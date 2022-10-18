@@ -1,0 +1,197 @@
+:description: Troubleshooting information that can help you diagnose and correct a problem.
+[[kubernetes-troubleshooting]]
+= Troubleshooting
+:description: Troubleshooting information that can help you diagnose and correct a problem. 
+
+[[troubleshooting-locate-problems]]
+== Locate and investigate problems with the Neo4j Helm Chart
+
+The rollout of the Neo4j Helm Chart in Kubernetes can be thought of in these approximate steps:
+
+. _Neo4j Pod_ is created.
+. Neo4j Pod is scheduled to run on a specific Kubernetes Node.
+. All _Containers_ in the Neo4j Pod are created.
+. _InitContainers_ in the Neo4j Pod is run.
+. _Containers_ in the Neo4j Pod are run.
+. `Startup` and `Readiness` probes are checked.
+
+After all these steps are completed successfully, the Neo4j StatefulSet, Pod, and Services must be in a `ready` state.
+You should be able to connect to and use your Neo4j database.
+
+If the Neo4j Helm Chart is installed successfully, but Neo4j is not starting and reaching a `ready` state in Kubernetes, then troubleshooting has two steps:
+
+. Check the state of resources in Kubernetes using `kubectl get` commands.
+This will identify which step has failed.
+. Collect the information relevant to that step.
+
+Depending on the failed step, you can collect information from Kubernetes (e.g., using `kubectl describe`) and from the Neo4j process (e.g., checking the Neo4j debug log).
+
+The following table provides simple steps to get started investigating problems with the Neo4j Helm Chart rollout.
+For more information on how to debug applications in Kubernetes, see the link:https://kubernetes.io/docs/tasks/debug-application-cluster/debug-application/[Kubernetes documentation].
+
+[[troubleshooting-table]]
+.Investigating problems with the Neo4j Helm Chart rollout
+[cols=3*]
+|===
+|Step
+|Diagnosis
+|Further investigation
+
+|Neo4j Pod created
+|If `kubectl get pod <release-name>-0` does not return a single Pod result, there is a problem with the pod creation.
+|Describe the Neo4j StatefulSet -- check the output of `kubectl describe statefulset <release-name>`.
+
+|Neo4j Pod scheduled
+|If the state, shown in `kubectl get pod  <release-name>-0`, is stuck in `Pending`, there is a problem with pod scheduling.
+|Describe the Neo4j Pod `kubectl describe pod <release-name>-0` and check the output.
+
+|Containers in the Neo4j Pod created
+|If the state, shown in `kubectl get pod  <release-name>-0`, is stuck in `Waiting`, there is a problem with creating or starting containers.
+|Describe the Neo4j Pod -- check the output of `kubectl describe pod <release-name>-0`, paying particular attention to `Events`.
+
+|InitContainers in the Neo4j Pod
+|If the state, shown in `kubectl get pod  <release-name>-0`, is stuck in `Init:` (e.g.,`Init:CrashLoopBackOff`, `Init:Error` etc.), there is a problem with `InitContainers`. +
+Note that if the pod `Status` is `PodInitializing` or `Running`, then `InitContainers` have already finished successfully.
+|Describe the Neo4j Pod -- check the output of `kubectl describe pod <release-name>-0`, paying particular attention to `InitContainer` (note the `InitContainer` names) and `Events`.
+Fetch `InitContainer` logs using `kubectl logs <pod-name> -c <init-container-name>`.
+
+|Containers in the Neo4j Pod running
+|If the state, shown in `kubectl get pod <release-name>-0`, does NOT match any of the states listed above, but the Pod still does not reach `Running`, then there is a problem running containers in the Neo4j Pod.
+|Describe the Neo4j Pod -- check the output of `kubectl describe pod <release-name>-0`, paying particular attention to the `Container` state (note the `Container` names) and `Events`.
+Fetch `Container` logs using `kubectl logs <pod-name> -c <init-container-name>`.
+If the Neo4j `Container` is starting but exits unexpectedly (e.g., the state is `CrashLoopBackOff`), follow the instructions for xref:kubernetes/troubleshooting.adoc#troubleshooting-neo4j-crashes[Neo4j crashes or restarts unexpectedly].
+
+|Startup and Readiness Probes
+|If the state, shown in `kubectl get pod <release-name>-0`, is `Running`, but the pod does not become `ready`, there is a problem with `Startup` or `Readiness` probes.
+|Describe the Neo4j Pod -- check the output of `kubectl describe pod <release-name>-0`, paying particular attention to `Events` and probes.
+Check the pod log `kubectl logs <release-name>-0`, the Neo4j log `kubectl exec <release-name>-0  \-- tail -n 100 /logs/neo4j.log`, and the Neo4j debug log `kubectl exec <release-name>-0 \-- tail -n 500 /logs/debug.log`.
+|===
+
+
+[[troubleshooting-neo4j-crashes]]
+== Neo4j crashes or restarts unexpectedly
+
+If the Neo4j Pod starts but then crashes or restarts unexpectedly, there are a range of possible causes.
+Known causes include:
+
+* An invalid or incorrect configuration of Neo4j, causing it to shut down shortly after the container is started.
+* The Neo4j Java process runs out of memory and exits with `OutOfMemoryException`.
+* There has been some disruption affecting the Kubernetes Node where the Neo4j Pod is scheduled, e.g., it is being shut drained or has shut down.
+* Containers in the Neo4j Pod are shut down by the operating system for using more memory than the resource limit configured for the container (`OOMKilled`).
+* Very long Garbage Collection pauses cause the Neo4j Pod `LivenessProbe` to fail, causing Kubernetes to restart Neo4j.
+
+
+[NOTE]
+====
+`OOMKILLED` and `OutOfMemoryException` appear very similar, but they appear in different places and have different fixes.
+It is important to be aware of this and be sure of which you are dealing with.
+====
+
+Here are some checks to help troubleshoot crashes and unexpected restarts:
+
+[[describe-pod]]
+=== Describe the Neo4j Pod
+
+Use `kubectl` to describe the Neo4j Pod:
+
+[source, shell]
+----
+kubectl describe pod <release-name>-0`
+----
+
+==== Check the Neo4j Container state
+
+Check the `State` and `Last State` of the container.
+This shows how the `Last State` of a container that has restarted after being `OOMKilled` appears:
+
+[source, shell]
+----
+$ kubectl describe pod neo4j-0
+----
+
+[source, role=noheader]
+----
+  State:          Running
+    Started:      Mon, 1 Jan 2021 00:02:00 +0000
+  Last State:     Terminated
+    Reason:       OOMKilled
+    Exit Code:    137
+    Started:      Mon, 1 Jan 2021 00:00:00 +0000
+    Finished:     Mon, 1 Jan 2021 00:01:00 +0000
+----
+
+[NOTE]
+====
+`Exit Code: 137` is indicative of `OOMKilled` if it appears here or in other logs, even if the `"OOMKilled"` string is not present.
+====
+
+==== Check recent `Events`
+
+The `kubectl describe` output shows older events at the top and more recent events at the bottom.
+Generally, you can ignore older events.
+
+.A `Killing` event that shows that the Neo4j container was killed by the Kubernetes `kubelet`:
+[source]
+----
+$ kubectl describe pod neo4j-0
+----
+
+[source, role=noheader]
+----
+Events:
+Type    Reason       Age      From                  Message
+----    ------       ----     ----                  -------
+Normal  Scheduled    6m30s    default-scheduler     Successfully assigned default/neo4j-0 to k8s-node-a
+...
+Normal  Killing        56s    kubelet, k8s-node-a   Killing container with id docker://neo4j-0-neo4j:Need to kill Pod
+----
+
+It is not clear from this event log alone _why_ Kubernetes decided that the Neo4j container should be killed.
+
+The next steps in this example could be to check:
+
+ * if the container was `OOMKilled`.
+ * if the container failed `Liveness` or `Startup` probes.
+ * investigate the node to see if there was some reason why it might kill the container, e.g.,`kubectl describe node <k8s node>`.
+
+[[check-logs-metrics]]
+=== Check Neo4j logs and metrics
+
+The Neo4j Helm Chart configures Neo4j to persist logs and metrics on provided volumes.
+If no volume is explicitly configured for logs or metrics, they are stored persistently on the Neo4j _data_ volume.
+This ensures that the logs and metrics outputs from a Neo4j instance that crashes or shuts down unexpectedly are preserved.
+
+==== Collect data from a running Neo4j Pod
+
+* Download all Neo4j logs from a pod using `kubectl cp` commands:
++
+[source, shell]
+----
+kubectl cp <neo4j-pod-name>:/logs neo4j-logs/
+----
+
+* If CSV metrics collection is enabled for Neo4j (the default), download all Neo4j metrics from a pod using:
++
+[source, shell]
+----
+kubectl cp <neo4j-pod-name>:/metrics neo4j-metrics/
+----
+
+==== Collect data from a not running Neo4j Pod
+
+If the Neo4j Pod is not running or is crashing so frequently that `kubectl cp` is not feasible, the Neo4j deployment should be put into xref:kubernetes/maintenance.adoc#offline-maintenance[offline maintenance mode] to collect logs and metrics.
+
+[[check-container-logs]]
+=== Check container logs
+
+The logs for the main Neo4j DBMS process are persisted to disk and can be accessed as described in xref:kubernetes/troubleshooting.adoc#check-logs-metrics[Check Neo4j logs and metrics].
+However, the logs for Neo4j startup and logs for other Containers in the Neo4j Pod are sent to the container's `stdout` and `stderr` streams.
+These container logs can be viewed using `kubectl logs <pod name> -c <container name>`.
+
+Unfortunately, if the container has restarted following a crash or unexpected shutdown, typically, `kubectl logs` shows the logs for the new container instance (following the restart), and the logs for the previous container instance (the instance that shut down unexpectedly) are not available via `kubectl logs`.
+
+To capture the logs for a crashing container, you can try:
+
+* View the container logs in a log collector/aggregator that is connected to your Kubernetes cluster, e.g., Stackdriver, Cloudwatch Logs, Logstash, etc.
+If you are using a managed Kubernetes platform, this is usually enabled by default.
+* Use `kubectl logs --follow` to stream the logs of a running container until it crashes again.

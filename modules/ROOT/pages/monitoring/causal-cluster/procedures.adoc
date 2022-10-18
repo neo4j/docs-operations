@@ -1,0 +1,156 @@
+[[causal-clustering-monitoring-procedures]]
+= Procedures for monitoring a Causal Cluster
+:description: This section covers procedures for monitoring a Neo4j Causal Cluster. 
+
+A number of procedures are available that provide information about a cluster.
+
+
+[[dbms.cluster.role]]
+== Find out the role of a cluster member
+
+The procedure `dbms.cluster.role(databaseName)` can be called on every instance in a Causal Cluster to return the role of the instance.
+Each instance holds multiple databases and participates in multiple independent Raft groups.
+The role returned by the procedure is for the database denoted by the `databaseName` parameter.
+
+
+*Syntax:*
+
+`CALL dbms.cluster.role(databaseName)`
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name           | Type   | Description
+| `databaseName` | String | The name of the database to get the cluster role for.
+|===
+
+*Returns:*
+
+[options="header"]
+|===
+| Name  | Type      | Description
+| `role`  | String | This is the role of the current instance, which can be `LEADER`, `FOLLOWER`, or `READ_REPLICA`.
+|===
+
+*Considerations:*
+
+* While this procedure is useful in and of itself, it serves as basis for more powerful monitoring procedures.
+
+.Check the role of this instance
+====
+The following example shows how to find out the role of the current instance for database `neo4j`, which in this case is `FOLLOWER`.
+
+[source, cypher]
+----
+CALL dbms.cluster.role("neo4j")
+----
+
+[options="header"]
+|===
+| role
+| FOLLOWER
+|===
+====
+
+
+[[dbms.cluster.overview]]
+== Gain an overview over the instances in the cluster
+
+The procedure `dbms.cluster.overview()` provides an overview of cluster topology by returning details on all the instances in the cluster.
+
+*Syntax:*
+
+`CALL dbms.cluster.overview()`
+
+*Returns:*
+
+[options="header"]
+|===
+| Name        | Type   | Description
+| `id`        | String | This is id of the instance.
+| `addresses` | List   | This is a list of all the addresses for the instance.
+| `groups`    | List   | This is a list of all the xref:clustering-advanced/multi-data-center/configuration.adoc#causal-clustering-multi-dc-server-groups[server groups] which an instance is part of.
+| `databases` | Map    | This is a map of all databases with corresponding roles which the instance is hosting.
+The keys in the map are database names. The values are roles of this instance in the corresponding Raft groups, which can be `LEADER`, `FOLLOWER`, or `READ_REPLICA`.
+|===
+
+.Get an overview of the cluster
+====
+The following example shows how to explore the cluster topology.
+
+[source, cypher]
+----
+CALL dbms.cluster.overview()
+----
+
+[options="header"]
+|===
+| id                                   | addresses                                                        | groups | databases
+| 08eb9305-53b9-4394-9237-0f0d63bb05d5 | [+bolt://neo20:7687+, +http://neo20:7474+, +https://neo20:7473+] |   []   | {system: LEADER, neo4j: FOLLOWER}
+| cb0c729d-233c-452f-8f06-f2553e08f149 | [+bolt://neo21:7687+, +http://neo21:7474+, +https://neo21:7473+] |   []   | {system: FOLLOWER, neo4j: FOLLOWER}
+| ded9eed2-dd3a-4574-bc08-6a569f91ec5c | [+bolt://neo22:7687+, +http://neo22:7474+, +https://neo22:7473+] |   []   | {system: FOLLOWER, neo4j: LEADER}
+| 00000000-0000-0000-0000-000000000000 | [+bolt://neo34:7687+, +http://neo34:7474+, +https://neo34:7473+] |   []   | {system: READ_REPLICA, neo4j: READ_REPLICA}
+| 00000000-0000-0000-0000-000000000000 | [+bolt://neo28:7687+, +http://neo28:7474+, +https://neo28:7473+] |   []   | {system: READ_REPLICA, neo4j: READ_REPLICA}
+| 00000000-0000-0000-0000-000000000000 | [+bolt://neo31:7687+, +http://neo31:7474+, +https://neo31:7473+] |   []   | {system: READ_REPLICA, neo4j: READ_REPLICA}
+|===
+====
+
+
+[[dbms.routing.getRoutingTable]]
+== Get routing recommendations
+
+From the application point of view it is not interesting to know about the role a member plays in the cluster.
+Instead, the application needs to know which instance can provide the wanted service.
+The procedure `dbms.routing.getRoutingTable(routingContext, databaseName)` provides this information.
+
+*Syntax:*
+
+`CALL dbms.routing.getRoutingTable(routingContext, databaseName)`
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name             | Type   | Description
+| `routingContext` | Map    | The routing context used for multi-data center deployments.
+It should be used in combination with xref:clustering-advanced/multi-data-center/load-balancing.adoc[multi-data center load balancing].
+| `databaseName`   | String | The name of the database to get the routing table for.
+|===
+
+.Get routing recommendations
+====
+The following example shows how discover which instances in the cluster can provide which services for database `neo4j`.
+
+[source, cypher]
+----
+CALL dbms.routing.getRoutingTable({}, "neo4j")
+----
+
+The procedure returns a map between a particular service, `READ`, `WRITE` and `ROUTE`, and the addresses of instances that provide this service.
+It also returns a Time To Live (TTL) in seconds as a suggestion on how long the client could cache the response.
+
+The result is not primarily intended for human consumption.
+Expanding it this is what it looks like.
+
+[source, json]
+----
+{
+    "ttl": 300,
+    "servers": [
+        {
+            "addresses": ["neo20:7687"],
+            "role": "WRITE"
+        },
+        {
+            "addresses": ["neo21:7687", "neo22:7687", "neo34:7687", "neo28:7687", "neo31:7687"],
+            "role": "READ"
+        },
+        {
+            "addresses": ["neo20:7687", "neo21:7687", "neo22:7687"],
+            "role": "ROUTE"
+        }
+    ]
+}
+----
+====

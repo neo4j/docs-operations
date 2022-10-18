@@ -1,0 +1,357 @@
+[role=enterprise-edition]
+[[tutorial-cc-backup-restore-db]]
+= Back up and restore a database in Causal Cluster
+:description: This tutorial provides a detailed example of how to back up and restore a database in a running Causal Cluster. 
+
+The following example assumes that you want to restore a database backup, which has users and roles associated with it, in a running Causal Cluster with three core servers.
+For more information on how to set up a Causal Cluster with three cores, see xref:tutorial/local-causal-cluster.adoc[Set up a local Causal Cluster].
+
+[NOTE]
+====
+In a Neo4j DBMS, every database is backed up individually.
+Therefore, it is very important to plan your backup strategy for each of them.
+For more detailed information on how to design an appropriate backup strategy for your setup, see xref:backup-restore/index.adoc[Backup and restore].
+====
+
+[[tutorial-prepare-to-backup]]
+== Prepare to back up your database
+
+Before you perform the backup, it is good to take a note of the data and metadata of the database that you want to restore.
+You can use this information to later verify that the restore is successful and to recreate the database users and roles.
+In this example, the database is called `movies1` and uses the Movie Graph dataset from the Neo4j Browser -> Favorites -> Example Graphs.
+
+[NOTE]
+====
+This tutorial uses the Linux or macOS tarball installation.
+It assumes that your current work directory is the _<neo4j-home>_ directory of the tarball installation.
+====
+
+. In the Neo4j instance, where the database is running, log in to the Cypher Shell command-line console with your credentials.
+For more information about the Cypher Shell command-line interface (CLI) and how to use it, see xref:tools/cypher-shell.adoc[Cypher Shell].
++
+[source, shell, role=noplay]
+----
+bin/cypher-shell -u neo4j -p <password>
+----
++
+[queryresult]
+----
+Connected to Neo4j at neo4j://localhost:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+----
++
+. Change the active database to `movies1`.
++
+[source, cypher, role=noplay]
+----
+:use movies1
+----
+
+. Run a query to count the number of nodes in the database.
++
+[source, cypher, role=noplay]
+----
+MATCH (n) RETURN count(n) AS countNode;
+----
++
+[queryresult]
+----
++-----------+
+| countNode |
++-----------+
+| 171       |
++-----------+
+
+1 row available after 22 ms, consumed after another 1 ms
+----
++
+. Run a query to count the number of relationships.
++
+[source, cypher, role=noplay]
+----
+MATCH (n)-[r]->() RETURN count(r) AS countRelationships;
+----
++
+[queryresult]
+----
++--------------------+
+| countRelationships |
++--------------------+
+| 253                |
++--------------------+
+
+1 row available after 29 ms, consumed after another 0 ms
+----
++
+. Change the active database to `system`, and run a query to see if there are any custom roles, associated with this database, and their privileges.
++
+[source, cypher, role=noplay]
+----
+SHOW ALL PRIVILEGES AS COMMANDS;
+----
++
+[queryresult]
+----
++-------------------------------------------------------------+
+| command                                                     |
++-------------------------------------------------------------+
+| "GRANT ACCESS ON HOME DATABASE TO `PUBLIC`"                 |
+| "GRANT EXECUTE FUNCTION * ON DBMS TO `PUBLIC`"              |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO `PUBLIC`"             |
+| "GRANT ACCESS ON DATABASE * TO `admin`"                     |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `admin`"              |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin`"      |
+| "GRANT WRITE ON GRAPH * TO `admin`"                         |
+| "GRANT NAME MANAGEMENT ON DATABASE * TO `admin`"            |
+| "GRANT INDEX MANAGEMENT ON DATABASE * TO `admin`"           |
+| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin`"      |
+| "GRANT START ON DATABASE * TO `admin`"                      |
+| "GRANT STOP ON DATABASE * TO `admin`"                       |
+| "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin`" |
+| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`"              |
+| "GRANT ACCESS ON DATABASE * TO `architect`"                 |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `architect`"          |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `architect`"  |
+| "GRANT WRITE ON GRAPH * TO `architect`"                     |
+| "GRANT NAME MANAGEMENT ON DATABASE * TO `architect`"        |
+| "GRANT INDEX MANAGEMENT ON DATABASE * TO `architect`"       |
+| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `architect`"  |
+| "GRANT ACCESS ON DATABASE * TO `publisher`"                 |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `publisher`"          |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `publisher`"  |
+| "GRANT WRITE ON GRAPH * TO `publisher`"                     |
+| "GRANT NAME MANAGEMENT ON DATABASE * TO `publisher`"        |
+| "GRANT ACCESS ON DATABASE * TO `editor`"                    |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `editor`"             |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `editor`"     |
+| "GRANT WRITE ON GRAPH * TO `editor`"                        |
+| "GRANT ACCESS ON DATABASE * TO `reader`"                    |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `reader`"             |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `reader`"     |
+| "GRANT ACCESS ON DATABASE * TO `myrole`"                    |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `myrole`"             |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `myrole`"     |
+| "GRANT WRITE ON GRAPH movies1 TO `myrole`"                  |
++-------------------------------------------------------------+
+
+39 rows available after 868 ms, consumed after another 80 ms
+----
+The result shows that there is one custom role `myrole`.
++
+. Run a query to see all users associated with this role.
++
+[source, cypher, role=noplay]
+----
+SHOW USERS;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------+
+| user    | roles                | passwordChangeRequired | suspended |
++---------------------------------------------------------------------+
+| "neo4j" | ["admin", "PUBLIC"]  | FALSE                  | FALSE     |
+| "user1" | ["myrole", "PUBLIC"] | TRUE                   | FALSE     |
++---------------------------------------------------------------------+
+
+2 rows available after 36 ms, consumed after another 2 ms
+----
+. Exit the Cypher Shell command-line console.
++
+[source, shell, role=noplay]
+----
+:exit
+----
+
+[[tutorial-backup-database]]
+== Back up your database
+
+Now you are ready to back up the database.
+
+Run the following command to back up the database in your targeted folder.
+If the folder where you want to place your backup does not exist, you have to create it.
+In this example, it is called _/tmp/{neo4j-version-exact}_.
+
+To perform the backup, run the following command:
+
+[source, shell, subs=attributes, role=noplay]
+----
+bin/neo4j-admin backup --backup-dir=/tmp/{neo4j-version-exact} --database=movies1 --include-metadata=all
+----
+
+The option `--include-metadata=all` creates a cypher script, which you can later use to restore the database's users, roles, and privileges.
+
+For details on performing a backup and the different command options, see xref:backup-restore/online-backup.adoc[Back up an online database].
+
+[[tutorial-drop-database]]
+== Delete the database that you want to replace
+
+Before you restore the database backup, you have to delete the database that you want to replace with that backup.
+If you want to restore the backup as an _additional_ database in your DBMS, then you can proceed to xref:tutorial/causal-backup-restore-db.adoc#tutorial-restore-database[Restore the database backup on all cluster members] directly.
+
+On one of the cluster members, run the Cypher command `DROP DATABASE` to delete the database that you want to replace.
+The command is automatically routed to the leader and from there to the other cluster members.
+
+[WARNING]
+====
+Dropping a database also deletes the users and roles associated with it.
+====
+
+. In the Cypher Shell command-line console on one of the cluster members, change the active database to `system`, and run the command `DROP DATABASE` to delete the database that you want to replace.
+In this example, the database is called `movies`.
++
+[source, cypher, role=noplay]
+----
+DROP DATABASE movies;
+----
++
+[queryresult]
+----
+0 rows available after 82 ms, consumed after another 0 ms
+----
++
+[WARNING]
+====
+If you are unable to delete the database (e.g., because Neo4j is not running), you must run `neo4j-admin unbind` first instead.
+If you fail to do this, the store files you have (post restore) will be out of sync with the cluster state you have for that database, leading to logical corruption.
+====
++
+. You can run `SHOW DATABASES` to verify that the database `movies` does not exist.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++-------------------------------------------------------------------------------------------------------------------------------+
+| name     | aliases | access       | address          | role       | requestedStatus | currentStatus | error | default | home  |
++-------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | []      | "read-write" | "localhost:7687" | "follower" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "neo4j"  | []      | "read-write" | "localhost:7688" | "leader"   | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "neo4j"  | []      | "read-write" | "localhost:7689" | "follower" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "system" | []      | "read-write" | "localhost:7687" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "system" | []      | "read-write" | "localhost:7688" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "system" | []      | "read-write" | "localhost:7689" | "leader"   | "online"        | "online"      | ""    | FALSE   | FALSE |
++-------------------------------------------------------------------------------------------------------------------------------+
+
+6 rows available after 7 ms, consumed after another 3 ms
+----
+
+. Exit the Cypher Shell command-line console.
++
+[source, shell, role=noplay]
+----
+:exit
+----
+
+[[tutorial-restore-database]]
+== Restore the database backup on all cluster members
+
+On each cluster member, run the following command to restore the database backup.
+For details on performing a restore and the different command options, see xref:backup-restore/restore-backup.adoc[Restore a database backup].
+
+[source, shell, subs=attributes, role=noplay]
+----
+bin/neo4j-admin restore --from=/tmp/{neo4j-version-exact}/movies1 --database=movies1
+----
+
+[queryresult]
+----
+You need to execute $HOME/path/to/core-member/data/scripts/movies1/restore_metadata.cypher. To execute the file use cypher-shell command with parameter `movies1`
+restorePath=/tmp/{neo4j-version-exact}/movies1, restoreStatus=successful, reason=
+----
+
+Then, on each cluster member, run the following command to verify that the database `movies1` exists:
+
+[source, shell, role=noplay]
+----
+ls -al data/databases
+----
+
+[queryresult]
+----
+total 0
+drwxr-xr-x@  7 username  staff   224 17 Nov 15:50 .
+drwxr-xr-x@  8 username  staff   256 17 Nov 15:50 ..
+drwxr-xr-x  40 username  staff  1280 17 Nov 15:50 movies1
+drwxr-xr-x  37 username  staff  1184 16 Nov 15:00 neo4j
+-rw-r--r--   1 username  staff     0 16 Nov 15:00 store_lock
+drwxr-xr-x  38 username  staff  1216 16 Nov 15:00 system
+----
+
+However, restoring a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` in Cypher Shell or Neo4j Browser.
+
+[[tutorial-create-database]]
+== Create the database backup on the cluster leader
+
+You create the database backup *only on one of your cluster members* using the command `CREATE DATABASE`.
+The command is automatically routed to the leader and from there to the other cluster members.
+
+. In the Cypher Shell command-line console on one of the cluster members, use the `system` database and create the database `movies1`.
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE movies1;
+----
++
+[queryresult]
+----
+0 rows available after 132 ms, consumed after another 0 ms
+----
++
+. Verify that the `movies1` database is online on all members.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++--------------------------------------------------------------------------------------------------------------------------------+
+| name      | aliases | access       | address          | role       | requestedStatus | currentStatus | error | default | home  |
++--------------------------------------------------------------------------------------------------------------------------------+
+| "movies1" | []      | "read-write" | "localhost:7688" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "movies1" | []      | "read-write" | "localhost:7687" | "leader"   | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "movies1" | []      | "read-write" | "localhost:7689" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "neo4j"   | []      | "read-write" | "localhost:7688" | "leader"   | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "neo4j"   | []      | "read-write" | "localhost:7687" | "follower" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "neo4j"   | []      | "read-write" | "localhost:7689" | "follower" | "online"        | "online"      | ""    | TRUE    | TRUE  |
+| "system"  | []      | "read-write" | "localhost:7688" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "system"  | []      | "read-write" | "localhost:7687" | "leader"   | "online"        | "online"      | ""    | FALSE   | FALSE |
+| "system"  | []      | "read-write" | "localhost:7689" | "follower" | "online"        | "online"      | ""    | FALSE   | FALSE |
++--------------------------------------------------------------------------------------------------------------------------------+
+
+9 rows available after 3 ms, consumed after another 1 ms
+----
+
+. Exit the Cypher Shell command-line console.
++
+[source, shell, role=noplay]
+----
+:exit
+----
+
+[[tutorial-recreate-roles-privileges]]
+== Recreate the database users and roles
+
+On one of the cluster members, run the restore cypher script _restore_metadata.cypher_ to create the database and recreate all users and roles of the database backup.
+The command is automatically routed to the leader and from there to the other cluster members.
+
+*Using `cat` (UNIX)*
+[source, shell, role=noplay]
+----
+cat data/scripts/movies1/restore_metadata.cypher | bin/cypher-shell -u neo4j -p password -a localhost:7688 -d system --param "database => 'movies1'"
+----
+
+*Using `type` (Windows)*
+[source, shell, role=noplay]
+----
+type data\scripts\movies1\restore_metadata.cypher | bin\cypher-shell.bat -u neo4j -p password -a localhost:7688 -d system --param "database => 'movies1'"
+----
+
+Follow the steps from 1 to 6 of section xref:tutorial/causal-backup-restore-db.adoc#tutorial-prepare-to-backup[Prepare to back up your database] to verify that all data and metadata of the database backup have been successfully restored on all cluster members.
