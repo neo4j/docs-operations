@@ -1,11 +1,6 @@
 [[neo4j-conf]]
 = The neo4j.conf file
-:description: Introduction of the _neo4j.conf_ file, and its syntax. 
-
-[TIP]
-====
-For a complete reference of Neo4j configuration settings, see xref:reference/configuration-settings.adoc[Configuration settings].
-====
+:description: Introduction of the _neo4j.conf_ file, syntax, and configuration settings. 
 
 [[neo4j-conf-introduction]]
 == Introduction
@@ -14,29 +9,77 @@ The _neo4j.conf_ file is the main source of configuration settings in Neo4j and 
 The location of the _neo4j.conf_ file in the different configurations of Neo4j is listed in xref:configuration/file-locations.adoc#table-file-locations[Default file locations].
 
 Most of the configuration settings in the _neo4j.conf_ file apply directly to Neo4j itself, but there are also other settings related to the Java Runtime (the JVM) on which Neo4j runs.
-For more information, see the xref:configuration/neo4j-conf.adoc#neo4j-conf-JVM[JVM specific configuration settings] below.
-Many of the configuration settings are also used by the `neo4j` launcher scripts.
+For more information, see the xref:configuration/neo4j-conf.adoc#neo4j-conf-JVM[JVM specific configuration settings].
+Many of the configuration settings are also used by `neo4j` launcher scripts.
 
 
 [[neo4j-conf-syntax]]
-== Syntax
+== `neo4j.conf` conventions
+
+The syntax in the `neo4j.conf` file follows the following conventions:
 
 * The equals sign (`=`) maps configuration setting keys to configuration values.
 * Lines that start with the number sign (`#`) are handled as comments.
 * Empty lines are ignored.
-* Configuring a setting in _neo4j.conf_ will overwrite any default values.
-In case a setting can define a list of values, and you wish to amend the default values with custom values, you will have to explicitly list the default values along with the new values.
-* There is no order for configuration settings, and each setting in the _neo4j.conf_ file must be uniquely specified.
-If you have multiple configuration settings with the same key, but different values, this can lead to unpredictable behavior.
+* Configuring a setting in _neo4j.conf_ overwrites any default values.
+If you want to amend the default values with custom ones, you must explicitly list the default values along with the new ones.
+* The configuration settings are not ordered.
+* The configuration settings have strict validation enabled by default.
+It prevents Neo4j from starting if the _neo4j.conf_ file contains _typos_, _incorrect information_, or _duplicates_ (except for `server.jvm.additional`).
+If you set more than one value for xref:reference/configuration-settings.adoc#config_server.jvm.additional[`server.jvm.additional`], each setting value adds another custom JVM argument to the `java` launcher.
 +
-The only exception to this is xref:reference/configuration-settings.adoc#config_dbms.jvm.additional[`dbms.jvm.additional`].
-If you set more than one value for xref:reference/configuration-settings.adoc#config_dbms.jvm.additional[`dbms.jvm.additional`], then each setting value will add another custom JVM argument to the `java` launcher.
+To disable the strict validation, set `server.config.strict_validation.enabled=false`.
 
+== Configuration settings
+
+=== General synopsis
+
+Neo4j configuration settings have the following general synopsis:
+
+`<prefix>.<scope>.<component>....<component>.<name>`
+
+Prefix::
+Prefixes are reserved for denoting two special cases (most settings do not have a prefix):
++
+* `initial` -- Settings that are only used during the initialization but are ignored thereafter.
+For example, `initial.server.mode_constraint`, `initial.dbms.default_database`, etc.
+* `internal` -- The prefix replaces the terms `unsupported` and `experimental` used in previous versions.
+This namespace is dedicated to features that are used internally and may change without notice.
+
+Scope::
+All configuration settings fall into one of the following scopes that behave differently:
++
+* `db` settings can be varied between each database but must be consistent across all configuration files in a cluster/DBMS.
+* `dbms` settings must be consistent across all configuration files in a cluster/DBMS.
+* `server` settings apply only to the specific server and can be varied between configuration files across a cluster/DBMS.
+* `browser` settings apply only to Neo4j Browser.
+* `client` settings apply only to the client.
++
+[NOTE]
+====
+In Neo4j 5, the `fabric` scope is no longer available.
+All configuration settings identified by the `fabric` namespace in the `neo4j.conf` file are moved into the `system` database.
+The Cypher surface is extended to support the Fabric configuration.
+
+For more information, see xref:composite-databases/index.adoc[Composite databases].
+====
+Component::
+Component namespaces are used to group settings that affect similar systems.
+
+Name::
+The name of the setting.
+It may contain common verb and unit patterns, such as `size`, `enabled`, etc.
+Words are separated by an underscore.
+
+[TIP]
+====
+For a complete reference of Neo4j configuration settings, see xref:reference/configuration-settings.adoc[Configuration settings].
+====
 
 [[neo4j-conf-JVM]]
-== JVM-specific configuration settings
+=== JVM-specific configuration settings
 
-A Java virtual machine (JVM) is a virtual machine that enables a computer to run Java programs as well as programs written in other languages that are also compiled to Java bytecode.
+A Java virtual machine (JVM) is a virtual machine that enables a computer to run Java programs and programs written in other languages that are also compiled to Java bytecode.
 The Java heap is where the objects of a Java program live.
 Depending on the JVM implementation, the JVM heap size often determines how and for how long time the virtual machine performs xref:performance/gc-tuning.adoc[garbage collection].
 
@@ -47,25 +90,26 @@ Depending on the JVM implementation, the JVM heap size often determines how and 
 | Setting
 | Description
 
-| `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.initial_size[dbms.memory.heap.initial_size]`
+| `xref:reference/configuration-settings.adoc#config_server.memory.heap.initial_size[server.memory.heap.initial_size]`
 | Sets the initial heap size for the JVM.
 By default, the JVM heap size is calculated based on the available system resources.
 
-| `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.max_size[dbms.memory.heap.max_size]`
+| `xref:reference/configuration-settings.adoc#config_server.memory.heap.initial_size[server.memory.heap.initial_size]`
 | Sets the maximum size of the heap for the JVM.
 By default, the maximum JVM heap size is calculated based on the available system resources.
 
-| `xref:reference/configuration-settings.adoc#config_dbms.jvm.additional[dbms.jvm.additional]`
+| `xref:reference/configuration-settings.adoc#config_server.jvm.additional[server.jvm.additional]`
 | Sets additional options for the JVM.
 The options are set as a string and can vary depending on JVM implementation.
 |===
 
 [NOTE]
+====
 If you want to have good control of the system behavior, it is recommended to set the heap size parameters to the same value to avoid unwanted full garbage collection pauses.
-
+====
 
 [[neo4j-conf-current-settings]]
-== List currently active settings
+=== List currently active settings
 
 You can use the procedure `dbms.listConfig()` to list the currently active configuration settings and their values.
 
@@ -84,23 +128,27 @@ LIMIT 3;
 
 [queryresult]
 ----
-+-------------------------------------------------+
-| name                              | value       |
-+-------------------------------------------------+
-| "dbms.default_advertised_address" | "localhost" |
-| "dbms.default_database"           | "neo4j"     |
-| "dbms.default_listen_address"     | "localhost" |
-+-------------------------------------------------+
++---------------------------------------------------+
+| name                                | value       |
++---------------------------------------------------+
+| "server.default_advertised_address" | "localhost" |
+| "initial.dbms.default_database"     | "neo4j"     |
+| "server.default_listen_address"     | "localhost" |
++---------------------------------------------------+
 ----
 ====
 
-See also xref:configuration/dynamic-settings.adoc[Dynamic settings] for information about dynamic settings.
+[TIP]
+====
+For information about dynamic settings, see xref:configuration/dynamic-settings.adoc[Dynamic settings].
 
+For a complete reference of Neo4j configuration settings, see xref:reference/configuration-settings.adoc[Configuration settings].
+====
 
 [[neo4j-conf-expand-commands]]
 == Command expansion
 
-Command expansion provides an additional capability to configure Neo4j by allowing you to specify scripts that set values sourced from external files. 
+Command expansion provides an additional capability to configure Neo4j by allowing you to specify scripts that set values sourced from external files.
 This is especially useful for:
 
 * avoiding setting sensitive information, such as usernames, passwords, keys, etc., in the _neo4j.conf_ file in plain text.
@@ -109,7 +157,7 @@ This is especially useful for:
 === How it works
 
 The scripts are specified in the _neo4j.conf_ file with a `$` prefix and the script to execute within brackets (), i.e., `dbms.setting=$(script_to_execute)`. +
-The configuration accepts any command that can be executed within a child process by the user who owns and executes the Neo4j server. 
+The configuration accepts any command that can be executed within a child process by the user who owns and executes the Neo4j server.
 This also means that, in the case of Neo4j set as a service, the commands are executed within the service.
 
 A generic example would be:
@@ -119,7 +167,7 @@ A generic example would be:
 neo4j.configuration.example=$(/bin/bash echo "expanded value")
 ----
 
-By providing such a configuration in the _neo4j.conf_ file upon server start with command expansion enabled, Neo4j will evaluate the script and retrieve the value of the configuration settings prior to the instantiation of Neo4j. 
+By providing such a configuration in the _neo4j.conf_ file upon server start with command expansion enabled, Neo4j evaluates the script and retrieves the value of the configuration settings prior to the instantiation of Neo4j.
 The values are then passed to the starting Neo4j instance and kept in memory, in the running instance.
 
 [NOTE]
@@ -130,7 +178,7 @@ For example, you can apply an extra level of security by replacing any sensitive
 
 Scripts are run by the Neo4j process and are expected to exit with code `0` within a reasonable time.
 The script output should be of a valid type for the setting.
-Failure to do so will prevent Neo4j from starting.
+Failure to do so prevents Neo4j from starting.
 
 [NOTE]
 ====
@@ -146,10 +194,10 @@ The Neo4j startup script and the `neo4j` service can expand and execute the exte
 bin/neo4j start --expand-commands
 ----
 
-If the startup script does not receive the `--expand-commands` argument, commands in the configuration file will be treated as invalid settings.
+If the startup script does not receive the `--expand-commands` argument, commands in the configuration file are treated as invalid settings.
 
 Neo4j performs the following basic security checks on the _neo4j.conf_ file.
-If they fail, Neo4j will not evaluate the script commands in _neo4j.conf_, and the Neo4j process will not start.
+If they fail, Neo4j does not evaluate the script commands in _neo4j.conf_, and the Neo4j process does not start.
 
 On Unix (both Linux and Mac OS)::
 
@@ -171,7 +219,7 @@ On Windows::
 
 === Logging
 
-The execution of scripts is logged in _neo4j.log_. 
+The execution of scripts is logged in _neo4j.log_.
 For each setting that requires the execution of an external command, Neo4j adds an entry into the log file that contains information, for example:
 
 [source, role=noheader]
@@ -184,7 +232,7 @@ For each setting that requires the execution of an external command, Neo4j adds 
 The scripts' execution may generate two types of errors:
 
 * Errors during the execution -- These errors are reported in the _debug.log_, with a code returned from the external execution.
-In this case, the execution will stop and the server will not start.
+In this case, the execution stops and the server does not start.
 
 * Errors for incorrect values -- The returned value is not the one expected for the setting.
-In this case, the server will not start.
+In this case, the server does not start.

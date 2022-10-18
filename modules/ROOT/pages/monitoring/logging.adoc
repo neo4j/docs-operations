@@ -1,16 +1,23 @@
-[role=enterprise-edition]
 [[logging]]
 = Logging
 :description: This section describes the logging mechanisms in Neo4j, including general log files, error messages, and severity levels. 
 
-[role=enterprise-edition]
 [[general-logging]]
-== Log files
+== Logging framework
 
 Neo4j provides logs for monitoring purposes.
-The root directory where the general log files are located is configured by xref:reference/configuration-settings.adoc#config_dbms.directories.logs[`dbms.directories.logs`].
-The default format of the log files is configured by xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`].
-For more information on where files are located, see xref:configuration/file-locations.adoc[File locations].
+As of Neo4j 5.0, Neo4j uses https://logging.apache.org/log4j/2.x/[Log4j 2] for logging.
+Log4j 2 can be configured using the two XML files _conf/server-logs.xml_ and _conf/user-log.xml_.
+The XML files are passed to Log4j.
+
+Neo4j supports all default Log4j components.
+You can also add plugins to Log4j by dropping them in the _plugin_ directory.
+For more advanced usages, see the https://logging.apache.org/log4j/2.x/manual/configuration.html[Log4j official documentation].
+
+The following is a description of how a default Neo4j installation behaves and some typical examples of configuring it to use Log4j.
+
+== Log files
+By default, the directory where the general log files are located is configured by xref:reference/configuration-settings.adoc#config_server.directories.logs[`server.directories.logs`].
 
 The following table describes the Neo4j general log files and the information they contain.
 
@@ -40,253 +47,400 @@ Not written for Debian and RPM packages.
 
 | _query.log_
 | The _query log_
-| Logs information about queries that run longer than a specified threshold. label:Enterprise[]
+| label:Enterprise[]Logs information about queries that run longer than a specified threshold.
 
 | _security.log_
 | The _security log_
-| Logs information about security events. label:Enterprise[]
+| label:Enterprise[]Logs information about security events.
+
+| _service-out.log_
+| The _windows service log_
+| label:Windows[]Log of the console output when installing or running the Windows service.
 
 | _service-error.log_
 | The _windows service log_
-| Logs information about errors encountered when installing or running the Windows service. label:Windows[]
+| label:Windows[]Logs information about errors encountered when installing or running the Windows service.
 |===
 
+== Logging configuration file anatomy
 
-.Log paths
+The logging configuration is done using a Log4j 2 XML configuration file.
+
+Neo4j has two different configuration files, one for the _neo4j.log_, which contains general information about Neo4j, and one configuration file for all other types of logging (except _gc.log_, see xref:monitoring/logging.adoc#garbage-collection-log-file-configuration[GC Logging]).
+
+Where the files are located and which logs are enabled or disabled is managed via the _neo4j.conf_ file.
+
+.Log configuration settings in _neo4j.conf_
 [cols="2m,1m,3a", options="header"]
 |===
 | Configuration setting
 | Default value
 | Description
 
-| xref:reference/configuration-settings.adoc#config_dbms.directories.logs[`dbms.directories.logs`]
-| logs
-| Path to the logs directory.
+| xref:reference/configuration-settings.adoc#config_server.logs.config[`server.logs.config`]
+| `conf/server-logs.xml`
+| Path to the XML configuration file for _debug.log_, _http.log_, _query.log_, and _security.log_.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.path[`dbms.logs.user.path`]
-| neo4j.log
-| Path to the _user log_ file.
+| xref:reference/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config`]
+| `conf/user-logs.xml`
+| Path to the XML configuration file for _neo4j.log_ file.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.path[`dbms.logs.debug.path`]
-| debug.log
-| Path to the _debug log_ file.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.http.path[`dbms.logs.http.path`]
-| http.log
-| Path to the _HTTP log_ file.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.path[`dbms.logs.query.path`]
-| query.log
-| Path to the _query log_ file.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.path[`dbms.logs.security.path`]
-| security.log
-| Path to the _security log_ file.
-
-|===
-
-
-[[general-logging-log-format]]
-== Log format
-
-.Log formats
-[cols="2m,2a,3a", options="header"]
-|===
-| Configuration setting
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`]
-| `PLAIN`
-a|
-The default log format for all logs.
-Valid options are `PLAIN` and `JSON`.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.format[`dbms.logs.user.format`]
-| Inherits from `dbms.logs.default_format`
-a|
-The log format for the _user log_.
-Valid options are `PLAIN` and `JSON`.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.format[`dbms.logs.query.format`]
-| Inherits from `dbms.logs.default_format`
-a|
-The log format for the _query log_.
-Valid options are `PLAIN` and `JSON`.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.format[`dbms.logs.debug.format`]
-| Inherits from `dbms.logs.default_format`
-a|
-The log format for the _debug log_.
-Valid options are `PLAIN` and `JSON`.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.format[`dbms.logs.security.format`]
-| Inherits from `dbms.logs.default_format`
-a| The log format for the _security log_.
-Valid options are `PLAIN` and `JSON`.
-
-//HTTP log format?
-|===
-
-== Log configurations
-
-There are a number of configuration options to enable/disable logging, decide how to rotate the logs, and how many of the logs to keep around.
-
-[[user-log-file-configuration]]
-=== User log (_neo4j.log_)
-
-._User log_ configurations
-[cols="3m,2a,3", options="header"]
-|===
-| The _user log_ configuration
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.format[`dbms.logs.user.format`]
-| Inherits from xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`]
-| The log format for the _user log_.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.rotation.delay[`dbms.logs.user.rotation.delay`]
-| `5m`
-| The minimum time interval after the last rotation of the _user log_ before it may be rotated again.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.rotation.keep_number[`dbms.logs.user.rotation.keep_number`]
-| `7`
-| The maximum number of history files for the _user log_.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.rotation.size[`dbms.logs.user.rotation.size`]
-| `0B`
-|
-The threshold size for rotation of the _user log_.
-If set to `0`, the log rotation is disabled.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.user.stdout_enabled[`dbms.logs.user.stdout_enabled`]
+| xref:reference/configuration-settings.adoc#config_server.logs.debug.enabled[`server.logs.debug.enabled`]
 | `true`
-|
-Send user logs to the process stdout.
-If disabled, the logs are sent to the _user log_.
+| Enable/disable the _debug.log_.
+It is highly recommended to keep it enabled.
+
+| xref:reference/configuration-settings.adoc#config_dbms.logs.http.enabled[`dbms.logs.http.enabled`]
+| `false`
+| Enable/disable the _http.log_.
+
+| xref:reference/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`]
+| `VERBOSE`
+| Must be one of `OFF`, `INFO`, or `VERBOSE`.
+`INFO` produces less output than `VERBOSE`, while `OFF` completely disables the _query.log_.
 |===
 
 
-The following information is available in the JSON format:
+The Log4j 2 XML configuration file consists of 3 major components:
 
-.JSON format log entries
-[cols="1m,3a", options="header"]
+* _Appenders_ -- define output locations, for example, a file, the console, network socket, etc.
+* _Layouts_ -- define how the output is formatted, for example, plain text, JSON, CSV, etc.
+* _Loggers_ -- route log events to one or several appenders.
+
+You can also configure filters to determine if and what log events to be published and how.
+For more information, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Filters[Log4j official documentation].
+
+.An illustrative Log4j 2 configuration file
+[source%linenums,xml,options="nowrap"]
+----
+<Configuration monitorInterval="30" packages="org.neo4j.logging.log4j">
+    <Appenders>
+        <RollingFile name="DebugLog" fileName="${config:server.directories.logs}/debug.log"
+                     filePattern="${config:server.directories.logs}/debug.log.%02i">
+            <Neo4jDebugLogLayout
+                pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+2} %-5p [%c{1.}] %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+        </RollingFile>
+
+        <RollingFile name="HttpLog" fileName="${config:server.directories.logs}/http.log"
+                     filePattern="${config:server.directories.logs}/http.log.%02i">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="5"/>
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="DebugLog"/>
+        </Root>
+
+        <Logger name="HttpLogger" level="INFO" additivity="false">
+            <AppenderRef ref="HttpLog"/>
+        </Logger>
+    </Loggers>
+</Configuration>
+----
+
+
+.Breakdown of the illustrative Log4j 2 configuration file line per line
+[cols="8h,~", options="header"]
 |===
-| Name
+| Line(s)
 | Description
 
-| time
-| The timestamp of the log message.
+| 1
+| Configuration tag with a `monitorInterval` of 30 seconds and a package namespace of `org.neo4j.logging.log4j`. +
+The monitor interval tells Log4j to periodically check the XML file for changes and reload the file if a change is detected. +
+The package namespace gives access to the Neo4j configuration lookup with `${config:<setting>}`.
 
-| level
-| The log level.
+| 3, 13
+| Defines two `<RollingFile>` appenders.
+  One writes to _debug.log_ and one to _http.log_.
+  The `name` must be unique and is used later when referencing the appender.
 
-| message
-| The log message.
+| 4, 14
+| Specifies a `filePattern` to be used when the file is rolled.
+  The pattern renames the files to _debug.log.01_ and _http.log.01_ when they reach the defined trigger.
 
-| stacktrace
-| Included when there is a stacktrace associated with the log message.
+| 5
+| Defines the layout to use for the `DebugLog` appender, in this case with the `GMT+2` timezone.
 
+| 8, 17
+| Defines a size-based trigger.
+When the size of the files reaches 20 MB, the files are renamed according to the `filePattern`, and the log files start over.
+
+| 10
+| Defines a rollover strategy, keeping 7 files as history.
+`fileIndex=min` implies that the minimum/the lowest number is the most recent one.
+
+| 24, 25
+| Defines a root logger with log level `INFO`.
+The root logger is a "catch-all" logger that captures everything that is not captured by the other loggers.
+Everything caught is sent to the appender with the name `DebugLog`.
+
+| 28, 29
+| Defines a logger that matches log events with the `HttpLogger` target with a log level of `INFO` or above.
+The `additivity="false"` is set to fully consume the log event.
+If `additivity="true"` is set, which is the default, the log event is also sent to the root logger.
 |===
 
+[[general-logging-appenders]]
+=== Appenders
+An appender represents a destination for log events.
+All Log4j standard appenders are available in Neo4j.
+For more details, see the https://logging.apache.org/log4j/2.x/manual/appenders.html[Log4j official documentation].
+A few of the most common appenders are `<Console>`, `<RollingFile>`, and `<RollingRandomAccessFile>`.
 
-[[debug-log-file-configuration]]
-=== Debug log
+==== `<Console>` appender
+The console appender outputs log events to _stdout_ or _stderr_.
 
-The _debug log_ logs problems, errors, stacktraces, etc.
-//New in 4.3?
-//https://github.com/neo-technology/neo4j/pull/10360
-//For security reasons, Cypher queries are not written to the _debug log_.
-//Instead the query ID is written that can then be cross referenced in the _query log_.
+.An example of a console appender
+[source,xml]
+----
+<Console name="console" target="SYSTEM_OUT"> <!-- or SYSTEM_ERR -->
+  <PatternLayout pattern="%m%n"/>
+</Console>
+----
 
-._Debug log_ configurations
-[cols="3m,2a,3", options="header"]
+==== `<RollingFile>` appender
+A rolling file appender writes log events to a file.
+It rolls when certain criteria are met.
+A standard scheme is to keep one log file daily or roll a log file once a specific size is reached.
+
+.An example of a rolling file appender with one new log file each day
+[source,xml]
+----
+<RollingFile name="myLog" fileName="${config:server.directories.logs}/my.log"
+                       filePattern="${config:server.directories.logs}/my-%d{yyyy-MM-dd}.log">
+  <!-- Layout -->
+  <Policies>
+      <TimeBasedTriggeringPolicy />
+  </Policies>
+</RollingFile>
+----
+
+The rolling also supports compression of rolled-out files.
+Adding one of `.gz`, `.zip`, `.bz2`, `.deflate`, or `.pack200` as a suffix to the `filePattern` attribute causes the file to be compressed with the appropriate compression scheme.
+
+.An example of a rolling file appender with zip compression
+[source,xml]
+----
+<RollingFile name="myLog" fileName="${config:server.directories.logs}/my.log"
+                       filePattern="${config:server.directories.logs}/my.%i.log.zip">
+  <!-- Layout -->
+  <Policies>
+      <SizeBasedTriggeringPolicy size="20 MB"/>
+  </Policies>
+</RollingFile>
+----
+
+==== `<RollingRandomAccessFile>` appender
+The `<RollingRandomAccessFile>` is almost identical to the `<RollingFile`, with one major exception - all writes are buffered.
+
+The drawback of using this appender is that log events might *not* be visible immediately and can be lost in case of a system crash.
+If these drawbacks are acceptable, switching to `<RollingRandomAccessFile>` can increase the performance of the logging.
+
+[[general-logging-log-layout]]
+=== Log layouts
+The log files can be written in a lot of different ways, referred to as layouts.
+Neo4j comes bundled with all the default layouts of Log4j 2, as well as a few Neo4j-specific ones.
+For more details on the default Log4j 2 layouts, see the https://logging.apache.org/log4j/2.x/manual/layouts.html[Log4j official documentation].
+
+[[general-logging-pattern-layout]]
+==== `<PatternLayout>`
+The most common layout.
+The pattern layout is a flexible layout configurable with a pattern string.
+The pattern consists of different converters that are prefixed with `%`.
+An example pattern could be
+
+[source,xml]
+----
+<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p [%c{1.}] %m%n"/>
+----
+It contains the following converters:
+
+.Example pattern layout converters
+[cols="2", options="header"]
 |===
-| The _debug log_ configuration
-| Default value
+| Converter
 | Description
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.level[`dbms.logs.debug.level`]
-| `INFO`
-| Log level threshold for the _debug log_.
+a| `%d{_date-pattern_}{_timezone_}`
+| Date of the log event.
+ The time zone is optional.
+ If omitted, the system time is used.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.format[`dbms.logs.debug.format`]
-| Inherits from xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`]
-| The log format for the _debug log_.
+a| `%p`
+a| The log level of the event.
+  Can be `DEBUG`, `INFO`, `WARN`, or `ERROR`.
+  Adding `-5` between the `%` symbol and the `p` pads the level to be exactly 5 characters long.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.rotation.delay[`dbms.logs.debug.rotation.delay`]
-| `5m`
-| The minimum time interval after the last rotation of the _debug log_ before it may be rotated again.
+a| `%c`
+a| The class where the log event originated from.
+  Adding `{1.}` after compacts the package names, e.g. `org.apache.commons.Foo` will become `o.a.c.Foo`.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.rotation.keep_number[`dbms.logs.debug.rotation.keep_number`]
-| `7`
-| The maximum number of history files for the _debug log_.
+a| `%m`
+| The log message of the log event.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.debug.rotation.size[`dbms.logs.debug.rotation.size`]
-| `20M`
-| The threshold size for rotation of the _debug log_.
+a| `%n`
+| System-specific new line.
 |===
 
+These are just a few examples.
+For all available converters, consult the https://logging.apache.org/log4j/2.x/manual/layouts.html#PatternLayout[Log4j 2 Pattern Layout documentation].
 
-The following table lists all message types raised by Neo4j and their severity level:
+[[general-logging-debug-log-pattern]]
+==== `<Neo4jDebugLogLayout>`
+The Neo4j debug log layout is essentially the same as the xref:monitoring/logging.adoc#general-logging-pattern-layout[`PatternLayout`].
+The main difference is that a header is injected at the start of the log file with diagnostic information useful for Neo4j developers.
+This layout should typically only be used for the _debug.log_ file.
 
-.Message types
+.An example usage of the Neo4j debug log layout
+[source,xml]
+----
+<Neo4jDebugLogLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p [%c{1.}] %m%n"/>
+----
+
+[[general-logging-json-template-layout]]
+==== `<JsonTemplateLayout>`
+The `<JsonTemplateLayout>` is equivalent to the pattern layout.
+For more information, see the https://logging.apache.org/log4j/2.x/manual/json-template-layout.html[Log4j official documentation].
+
+The JSON template layout takes an event template, which can be a file residing on the file system, for example:
+
+[source,xml]
+----
+<JsonTemplateLayout eventTemplateUri="file://path/to/template.json"/>
+----
+
+Alternatively, you can embed it right into the XML:
+
+[source%linenums,xml,highlight=4..12]
+----
+<JsonTemplateLayout>
+  <eventTemplate>
+    <![CDATA[
+      {
+        "time": { "$resolver": "timestamp",
+          "pattern": { "format": "yyyy-MM-dd HH:mm:ss.SSSZ", "timeZone": "UTC" }
+        },
+        "level": { "$resolver": "level", "field": "name" },
+        "message": { "$resolver": "message" },
+        "includeFullMap": { "$resolver": "map", "flatten": true },
+        "stacktrace": { "$resolver": "exception", "field": "message" }
+      }
+    ]]>
+  </eventTemplate>
+</JsonTemplateLayout>
+----
+There are also a couple of built-in templates available from the classpath, for example:
+[source,xml]
+----
+<JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredJsonLayout.json"/>
+----
+
+.Available built-in templates
+[cols="3m,3a", options="header"]
+|===
+| _eventTemplateUri_
+| Description
+
+| classpath:org/neo4j/logging/StructuredJsonLayout.json
+| Layout for structured log messages.
+  Only applicable to the _query.log_ and _security.log_.
+
+| classpath:org/neo4j/logging/StructuredLayoutWithMessage.json
+| Generic layout for logging JSON messages.
+  Can be used for any log file.
+
+| classpath:org/neo4j/logging/QueryLogJsonLayout.json
+| Backward compatible JSON layout that will match the Neo4j 4.x query log.
+
+| classpath:LogstashJsonEventLayoutV1.json
+| https://github.com/logstash/log4j-jsonevent-layout[Logstash `json_event` pattern for Log4j]
+
+| classpath:GelfLayout.json
+| https://docs.graylog.org/en/3.1/pages/gelf.html#gelf-payload-specification[Graylog Extended Log Format (GELF) payload specification] with additional `_thread` and `_logger` fields.
+
+| classpath:GcpLayout.json
+| https://cloud.google.com/logging/docs/structured-logging[Google Cloud Platform structured logging] with additional `_thread`, `_logger`, and `_exception` fields.
+
+| classpath:JsonLayout.json
+| Same layout as the less flexible `<JsonLayout>`.
+|===
+
+=== Loggers
+
+Loggers forward log events to appenders.
+There can be an arbitrary number of `<Logger>` elements but only one `<Root>` logger element.
+Loggers have the possibility of being additive.
+An additive logger forwards a log event to its appender(s) and then passes the log event to the next matching logger.
+A non-additive logger forwards a log event to its appender(s) and then drops the event.
+The root logger is a special logger that matches everything, so if another logger does not pick up a log event, the root logger will.
+Therefore, it is best practice always to include a root logger so that no log events are missed.
+
+.Configuration of loggers
+[source%linenums,xml,options="nowrap"]
+----
+<Configuration>
+    <!-- Appenders -->
+    <Loggers>
+        <Root level="WARN">
+            <AppenderRef ref="DebugLog"/>
+        </Root>
+
+        <Logger name="HttpLogger" level="INFO" additivity="false">
+            <AppenderRef ref="HttpLog"/>
+        </Logger>
+    </Loggers>
+</Configuration>
+----
+
+A logger has a `level` that filters log events.
+A level can also include levels of different severity.
+For example, a logger with `level="INFO"` forwards log events with `INFO`, `WARN`, and `ERROR`.
+A logger with `level="WARN"` only logs `WARN` and `ERROR` events.
+
+The following table lists all log levels raised by Neo4j and their severity level:
+
+.Log levels
 [cols="1m,1,3", options="header"]
 |===
 | Message type
 | Severity level
 | Description
 
-| `INFO`
-| Low severity
-| Report status information and errors that are not severe.
-
-| `DEBUG`
+a| `DEBUG`
 | Low severity
 | Report details on the raised errors and possible solutions.
 
-| `WARN`
+a| `INFO`
+| Low severity
+| Report status information and errors that are not severe.
+
+a| `WARN`
 | Low severity
 | Report errors that need attention but are not severe.
 
-| `ERROR`
+a| `ERROR`
 | High severity
-| Report errors that prevent the Neo4j server from running and must be addressed immediately.
+| Reports errors that prevent the Neo4j server from running and must be addressed immediately.
 |===
 
 
-To set the log level threshold for the _debug log_, use the configuration setting xref:reference/configuration-settings.adoc#config_dbms.logs.debug.level[`dbms.logs.debug.level`].
-
-
-The following information is available in the JSON format:
-
-.JSON format log entries
-[cols="1m,3a", options="header"]
-|===
-| Name
-| Description
-
-| time
-| The timestamp of the log message.
-
-| level
-| The log level.
-
-| category
-| The class the message was logged from.
-
-| message
-| The log message.
-
-| stacktrace
-| Included when there is a stacktrace associated with the log message.
-
-|===
-
+For more details on loggers, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Loggers[Log4j official documentation -> Configuring Loggers].
 
 [[garbage-collection-log-file-configuration]]
 === Garbage collection log
+The garbage collection log, or GC log for short, is special and cannot be configured with Log4j 2.
+The GC log is handled by the Java Virtual Machine(JVM) and must be passed directly to the command line.
+To simplify this process, Neo4j exposes the following settings in _neo4j.conf_:
 
 ._Garbage collection log_ configurations
 [cols="3,1,3", options="header"]
@@ -295,100 +449,39 @@ The following information is available in the JSON format:
 | Default value
 | Description
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.gc.enabled[`dbms.logs.gc.enabled`]
+| xref:reference/configuration-settings.adoc#config_server.logs.gc.enabled[`server.logs.gc.enabled`]
 | `false`
 | Enable garbage collection logging.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.gc.options[`dbms.logs.gc.options`]
-|
+| xref:reference/configuration-settings.adoc#config_server.logs.gc.options[`server.logs.gc.options`]
+a| `-Xlog:gc*,safepoint,age*=trace`
 | Garbage collection logging options.
+For available options, consult the documentation of the JVM distribution used.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.gc.rotation.keep_number[`dbms.logs.gc.rotation.keep_number`]
-| `0`
+| xref:reference/configuration-settings.adoc#config_server.logs.gc.rotation.keep_number[`server.logs.gc.rotation.keep_number`]
+| `5`
 | The maximum number of history files for the garbage collection log.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.gc.rotation.size[`dbms.logs.gc.rotation.size`]
-|
+| xref:reference/configuration-settings.adoc#config_server.logs.gc.rotation.size[`server.logs.gc.rotation.size`]
+| `20MB`
 | The threshold size for rotation of the garbage collection log.
 
 |===
-
-
-[[general-logging-http-request-log-file-configuration]]
-=== HTTP log
-
-._HTTP log_ configurations
-[cols="3,1,3", options="header"]
-|===
-| The _HTTP log_ configuration
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.http.enabled[`dbms.logs.http.enabled`]
-| `false`
-| Enable HTTP logging.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.http.rotation.keep_number[`dbms.logs.http.rotation.keep_number`]
-| `5`
-| The maximum number of history files for the _HTTP log_.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.http.rotation.size[`dbms.logs.http.rotation.size`]
-| `20M`
-| The threshold size for rotation of the _HTTP log_.
-
-|===
-
 
 [role=enterprise-edition]
 [[security-events-logging]]
 === Security log
 
 Neo4j provides security event logging that records all security events.
+The security log is enabled automatically when the configuration xref:reference/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] is set to `true`.
 
 For native user management, the following actions are recorded:
 
 * Login attempts -- by default, both successful and unsuccessful logins are recorded.
 * All xref:authentication-authorization/access-control.adoc#auth-access-control-security[administration commands] run against the `system` database.
-* All xref:deprecated-security-procedures/enterprise-edition.adoc[security procedures] run against the `system` database.
 * Authorization failures from role-based access control.
 
-Rotation of the security events log can be configured in the _neo4j.conf_ configuration file.
-
-The following configuration settings are available for the _security log_:
-
-._Security log_ configurations
-[cols="3a,2a,3", options="header"]
-|===
-| The _security log_ configuration
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.level[`dbms.logs.security.level`]
-| `INFO`
-| Security log level threshold.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.format[`dbms.logs.security.format`]
-| Inherits from xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`]
-| The log format for the _security log_.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.path[`dbms.logs.security.path`]
-| `security.log`
-| The name of the _security log_ file.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.rotation.size[`dbms.logs.security.rotation.size`]
-| `20M`
-| The file size at which the security event log auto-rotates.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.rotation.delay[`dbms.logs.security.rotation.delay`]
-| `300s`
-| The minimum time interval after the last _security log_ rotation occurred before the _security log_ may be rotated again.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.security.rotation.keep_number[`dbms.logs.security.rotation.keep_number`]
-| `7`
-| The number of historical log files kept.
-|===
-
-If using LDAP as the authentication method, some cases of LDAP misconfiguration are also logged, as well as LDAP server communication events and failures.
+If using LDAP as the authentication method, some cases of LDAP misconfiguration will also be logged, as well as the LDAP server communication events and failures.
 
 If many programmatic interactions are expected, it is advised to disable the logging of successful logins by setting the xref:reference/configuration-settings.adoc#config_dbms.security.log_successful_authentication[`dbms.security.log_successful_authentication`] parameter in the _neo4j.conf_ file:
 
@@ -397,67 +490,25 @@ If many programmatic interactions are expected, it is advised to disable the log
 dbms.security.log_successful_authentication=false
 ----
 
-The following information is available in the JSON format:
-
-.JSON format log entries
-[cols="1m,3a", options="header"]
-|===
-| Name
-| Description
-
-| time
-| The timestamp of the log message.
-
-| level
-| The log level.
-
-| type
-| It is always `security`.
-
-| source
-| Connection details.
-
-| database
-| The database name the command is executed on.
-
-| username
-| The user connected to the security event.
-This field is deprecated by `executingUser`.
-
-| executingUser
-| The name of the user triggering the security event.
-Either same as `authenticatedUser` or an impersonated user.
-
-| authenticatedUser
-| The name of the user who authenticated and is connected to the security event.
-
-| message
-| The log message.
-
-| stacktrace
-| Included if there is a stacktrace associated with the log message.
-
-|===
-
-Example of the security log in plain format:
+An example of the security log in a plain format:
 
 [source, plain format, role="noheader"]
 ----
-2019-12-09 13:45:00.796+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: logged in
-2019-12-09 13:47:53.443+0000 ERROR [AsyncLog @ 2019-12-09 ...]  [johndoe]: failed to log in: invalid principal or credentials
-2019-12-09 13:48:28.566+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: CREATE USER janedoe SET PASSWORD '******' CHANGE REQUIRED
-2019-12-09 13:48:32.753+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: CREATE ROLE custom
-2019-12-09 13:49:11.880+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: GRANT ROLE custom TO janedoe
-2019-12-09 13:49:34.979+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: GRANT TRAVERSE ON GRAPH * NODES A, B (*) TO custom
-2019-12-09 13:49:37.053+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith]: DROP USER janedoe
-2019-12-09 13:52:24.685+0000 INFO  [AsyncLog @ 2019-12-09 ...]  [johnsmith:alice]: impersonating user alice logged in
+2019-12-09 13:45:00.796+0000 INFO  [johnsmith]: logged in
+2019-12-09 13:47:53.443+0000 ERROR [johndoe]: failed to log in: invalid principal or credentials
+2019-12-09 13:48:28.566+0000 INFO  [johnsmith]: CREATE USER janedoe SET PASSWORD '******' CHANGE REQUIRED
+2019-12-09 13:48:32.753+0000 INFO  [johnsmith]: CREATE ROLE custom
+2019-12-09 13:49:11.880+0000 INFO  [johnsmith]: GRANT ROLE custom TO janedoe
+2019-12-09 13:49:34.979+0000 INFO  [johnsmith]: GRANT TRAVERSE ON GRAPH * NODES A, B (*) TO custom
+2019-12-09 13:49:37.053+0000 INFO  [johnsmith]: DROP USER janedoe
+2019-12-09 13:52:24.685+0000 INFO  [johnsmith:alice]: impersonating user alice logged in
 ----
 
 [role=enterprise-edition]
 [[query-logging]]
 === Query log
 
-Query logging is enabled by default and is controlled by the setting xref:reference/configuration-settings.adoc#config_dbms.logs.query.enabled[`dbms.logs.query.enabled`].
+Query logging is enabled by default and is controlled by the setting xref:reference/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`].
 It helps you analyze long-running queries and does not impact system performance.
 The default is to log all queries, but it is recommended to log for queries exceeding a certain threshold.
 
@@ -475,18 +526,13 @@ The following configuration settings are available for the _query log_:
 | `INFO`
 a|
 Log at the end of queries that have either succeeded or failed.
-The xref:reference/configuration-settings.adoc#config_dbms.logs.query.threshold[`dbms.logs.query.threshold`] parameter is used to determine the threshold for logging a query.
+The xref:reference/configuration-settings.adoc#config_db.logs.query.threshold[`db.logs.query.threshold`] parameter is used to determine the threshold for logging a query.
 If the execution of a query takes longer than this threshold, the query is logged.
 Setting the threshold to `0s` results in all queries being logged.
 
 | `VERBOSE`
-a| Log all queries at both start and finish, regardless of xref:reference/configuration-settings.adoc#config_dbms.logs.query.threshold[`dbms.logs.query.threshold`]. label:default[]
+a| label:default[]Log all queries at both start and finish, regardless of xref:reference/configuration-settings.adoc#config_db.logs.query.threshold[`db.logs.query.threshold`].
 |===
-
-The name of the query log file is _query.log_ by default.
-For more information, see xref:reference/configuration-settings.adoc#config_dbms.logs.query.path[`dbms.logs.query.path`].
-
-You can configure the rotation of the query log in the _neo4j.conf_ file.
 
 The following configuration settings are available for the query log file:
 
@@ -497,31 +543,18 @@ The following configuration settings are available for the query log file:
 | Default value
 | Description
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.allocation_logging_enabled[`dbms.logs.query.allocation_logging_enabled`]
-| `true`
-a| Log allocated bytes for the executed queries being logged.
-The logged number is cumulative over the duration of the query.
-That means the value may be larger for memory intense or long-running queries than the current memory allocation.
-Requires xref:reference/configuration-settings.adoc#config_dbms.track_query_allocation[`dbms.track_query_allocation=true`].
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.early_raw_logging_enabled[`dbms.logs.query.early_raw_logging_enabled`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.early_raw_logging_enabled[`db.logs.query.early_raw_logging_enabled`]
 | `false`
 a|
 Log query text and parameters without obfuscating passwords.
 This allows queries to be logged earlier before parsing starts.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.enabled[`dbms.logs.query.enabled`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`]
 | `VERBOSE`
 | Log executed queries.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.format[`dbms.logs.query.format`]
-| Inherits from xref:reference/configuration-settings.adoc#config_dbms.logs.default_format[`dbms.logs.default_format`]
-a|
-The log format for the _query log_.
-For logging detailed time information requires xref:reference/configuration-settings.adoc#config_dbms.track_query_cpu_time[`dbms.track_query_cpu_time=true`].
-
 //New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.max_parameter_length[`dbms.logs.query.max_parameter_length`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.max_parameter_length[`db.logs.query.max_parameter_length`]
 | `2147483647`
 a|
 This configuration option allows you to set a maximum parameter length to include in the log.
@@ -529,7 +562,7 @@ Parameters exceeding this length will be truncated and appended with `+...+`.
 This applies to each parameter in the query.
 
 //New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.obfuscate_literals[`dbms.logs.query.obfuscate_literals`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.obfuscate_literals[`db.logs.query.obfuscate_literals`]
 | `false`
 a|
 If `true`, obfuscates all query literals before writing to the log.
@@ -543,27 +576,16 @@ Therefore, if you want the switch to have an immediate effect, you must also cle
 [WARNING]
 ====
 This does not obfuscate literals in parameters.
-If parameter values are not required in the log, set `dbms.logs.query.parameter_logging_enabled=false`.
+If parameter values are not required in the log, set xref:reference/configuration-settings.adoc#config_db.logs.query.parameter_logging_enabled[`db.logs.query.parameter_logging_enabled=false`].
 ====
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.page_logging_enabled[`dbms.logs.query.page_logging_enabled`]
-| `false`
-| Log page hits and page faults for the executed queries being logged.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.parameter_full_entities[`dbms.logs.query.parameter_full_entities`]
-| `false`
-a|
-Log complete parameter entities including ID, labels or relationship type, and properties.
-If `false`, only the entity ID is logged.
-This only takes effect if xref:reference/configuration-settings.adoc#config_dbms.logs.query.parameter_logging_enabled[`dbms.logs.query.parameter_logging_enabled=true`].
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.parameter_logging_enabled[`dbms.logs.query.parameter_logging_enabled`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.parameter_logging_enabled[`db.logs.query.parameter_logging_enabled`]
 | `true`
 | Log parameters for the executed queries being logged.
 You can disable this configuration setting if you do not want to display sensitive information.
 
 //New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.plan_description_enabled[`dbms.logs.query.plan_description_enabled`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.plan_description_enabled[`db.logs.query.plan_description_enabled`]
 | `false`
 a|
 This configuration option allows you to log the query plan for each query.
@@ -577,57 +599,30 @@ Enabling this option has a performance impact on the database due to the cost of
 It is not recommended for everyday use.
 ====
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.rotation.keep_number[`dbms.logs.query.rotation.keep_number`]
-| `7`
-| The maximum number of history files for the _query log_.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.rotation.size[`dbms.logs.query.rotation.size`]
-| `20M`
-| The file size in bytes at which the _query log_ auto-rotates.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.runtime_logging_enabled[`dbms.logs.query.runtime_logging_enabled`]
-| `true`
-| Logs which runtime that was used to run the query.
-
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.threshold[`dbms.logs.query.threshold`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.threshold[`db.logs.query.threshold`]
 | `0s`
 a|
 If the query execution takes longer than this threshold, the query is logged once completed (provided query logging is set to `INFO`).
 A threshold of `0` seconds logs all queries.
 
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.time_logging_enabled[`dbms.logs.query.time_logging_enabled`]
-| `false`
-a|
-Log detailed time information for the executed queries being logged, such as `(planning: 92, waiting: 0)`.
-Eanbling xref:reference/configuration-settings.adoc#config_dbms.track_query_cpu_time[`dbms.track_query_cpu_time=true`] as well, adds the CPU time used by current transaction in milliseconds, e.g., `(planning: 95, cpu: 96, waiting: 0)`.
 //New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.transaction.enabled[`dbms.logs.query.transaction.enabled`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.transaction.enabled[`db.logs.query.transaction.enabled`]
 | `OFF`
 a|
 Track the start and end of a transaction within the query log.
 Log entries are written to the _query log_.
 They include the transaction ID for a specific query and the start and end of a transaction.
 You can also choose a level of logging (`OFF`, `INFO`, or `VERBOSE`).
-If `INFO` is selected, you must exceed the time before the log is written (`dbms.logs.query.transaction.threshold`).
+If `INFO` is selected, you must exceed the time before the log is written (`db.logs.query.transaction.threshold`).
 
 //New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.transaction.threshold[`dbms.logs.query.transaction.threshold`]
+| xref:reference/configuration-settings.adoc#config_db.logs.query.transaction.threshold[`db.logs.query.transaction.threshold`]
 | `0s`
 a|
 If the transaction is open for longer than this threshold (duration of time), the transaction is logged once completed, provided transaction logging is set to `INFO`.
 Defaults to `0` seconds, which means all transactions are logged.
 This can be useful when identifying where there is a significant time lapse after query execution and transaction commits, especially in performance analysis around locking.
-
-//New in 4.3
-| xref:reference/configuration-settings.adoc#config_dbms.logs.query.transaction_id.enabled[`dbms.logs.query.transaction_id.enabled`]
-| `false`
-a|
-This configuration option allows the administrator to request the transaction ID is included with the query ID in all query log entries.
-Queries are run as part of a transaction.
-For simple queries, there is usually a 1:1 correlation.
-In application usage, however, a transaction can include many queries, especially if retries are required in the event of connection instability.
 |===
-
 
 .Configure for simple query logging
 ====
@@ -636,10 +631,10 @@ In this example, the query logging is set to `INFO`, and all other query log par
 
 [source, properties, role="noheader"]
 ----
-dbms.logs.query.enabled=INFO
+db.logs.query.enabled=INFO
 ----
 
-Below is an example of the query log with this basic configuration:
+The following is an example of the query log with this basic configuration:
 
 [source, plain format, role="noheader"]
 ----
@@ -660,12 +655,9 @@ In this example, the query log is enabled, as well as some additional logging:
 
 [source, properties, role="noheader"]
 ----
-dbms.logs.query.enabled=INFO
-dbms.logs.query.allocation_logging_enabled=true
-dbms.logs.query.page_logging_enabled=true
-dbms.logs.query.parameter_logging_enabled=true
-dbms.logs.query.time_logging_enabled=true
-dbms.logs.query.threshold=<appropriate value>
+db.logs.query.enabled=INFO
+db.logs.query.parameter_logging_enabled=true
+db.logs.query.threshold=<appropriate value>
 ----
 
 The following sample query is run on the Movies database:
@@ -716,16 +708,16 @@ If it is relatively small and fits in a single round-trip, the client receives a
 Meanwhile, if the result set is large, the client-side processing time will affect the overall time, as it is directly connected to when new data is requested from the server.
 
 `13792 B`::
-The allocated bytes for the executed queries being logged.
+The logged allocated bytes for the executed queries.
 This is the amount of HEAP memory used during the life of the query.
-The logged number is cumulative over the duration of the query, i.e., for memory intense or long-running queries the value may be larger than the current memory allocation.
+The logged number is cumulative over the duration of the query, i.e., for memory-intense or long-running queries, the value may be larger than the current memory allocation.
 
 `15 page hits`::
 Page hit means the result was returned from page cache as opposed to disk.
-In this case, page cache was hit 15 times.
+In this case, the page cache was hit 15 times.
 
 `0 page faults`::
-Page fault means that the query result data was not in the `dbms.memory.pagecache`, and therefore, had to be fetched from the file system.
+Page fault means that the query result data was not in the `dbms.memory.pagecache` and, therefore, had to be fetched from the file system.
 In this case, query results were returned entirely from the 8 page cache hits mentioned above, so there were 0 hits on the disk required.
 
 `bolt-session`::
@@ -790,6 +782,13 @@ These examples use the MovieGraph dataset from the link:https://neo4j.com/docs/b
 
 .Using `cypher-shell`, attach metadata to a transaction
 ====
+
+[NOTE]
+====
+Cypher Shell always adds metadata that follows the convention by default.
+In this example, the defaults are overridden.
+====
+
 [source, shell, role=noplay,nocopy]
 ----
 neo4j@neo4j> :begin
@@ -866,9 +865,39 @@ MATCH (n:Person) RETURN n LIMIT 5
 In Neo4j Browser and Bloom, the user-provided metadata is always replaced by the system metadata.
 ====
 
-==== JSON format
+=== JSON format
+The query log can use a JSON layout.
+In order to change the format, the layout for the `QueryLogger` must be changed from using the `PatternLayout`:
 
-The following information is available in the JSON format:
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+                     filePattern="${config:server.directories.logs}/query.log.%02i"
+             createOnDemand="true">
+    <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+    <Policies>
+        <SizeBasedTriggeringPolicy size="20 MB"/>
+    </Policies>
+    <DefaultRolloverStrategy fileIndex="min" max="7"/>
+</RollingRandomAccessFile>
+----
+
+to using the `JsonTemplateLayout`:
+
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+                     filePattern="${config:server.directories.logs}/query.log.%02i"
+             createOnDemand="true">
+    <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/QueryLogJsonLayout.json"/>
+    <Policies>
+        <SizeBasedTriggeringPolicy size="20 MB"/>
+    </Policies>
+    <DefaultRolloverStrategy fileIndex="min" max="7"/>
+</RollingRandomAccessFile>
+----
+
+The `QueryLogJsonLayout.json` template mimics the 4.x layout and contains the following information:
 
 .JSON format log entries
 [cols="1m,3a", options="header"]
@@ -903,44 +932,34 @@ If the type of the log entry is `query`, these additional fields are available:
 
 | id
 | The query ID.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.enabled[`dbms.logs.query.enabled`] is `VERBOSE`.
+Included when xref:reference/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`] is `VERBOSE`.
 
 | elapsedTimeMs
 | The elapsed time in milliseconds.
 
 | planning
 | Milliseconds spent on planning.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.time_logging_enabled[`dbms.logs.query.time_logging_enabled`] is `true`.
 
 | cpu
 | Milliseconds spent actively executing on the CPU.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.time_logging_enabled[`dbms.logs.query.time_logging_enabled`] and xref:reference/configuration-settings.adoc#config_dbms.track_query_cpu_time[`dbms.track_query_cpu_time=true`] are `true`.
 
 | waiting
 | Milliseconds spent waiting on locks or other queries, as opposed to actively running this query.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.time_logging_enabled[`dbms.logs.query.time_logging_enabled`] is `true`.
 
 | allocatedBytes
 | Number of bytes allocated by the query.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.allocation_logging_enabled[`dbms.logs.query.allocation_logging_enabled`] is `true`.
 
 | pageHits
 | Number of page hits.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.page_logging_enabled[`dbms.logs.query.page_logging_enabled`] is `true`.
 
 | pageFaults
 | Number of page faults.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.page_logging_enabled[`dbms.logs.query.page_logging_enabled`] is `true`.
 
 | source
 | Connection details.
 
 | database
 | The database name on which the query is run.
-
-| username
-| The user running the query.
-This field is deprecated by `executingUser`.
 
 | executingUser
 | The name of the user executing the query.
@@ -954,11 +973,10 @@ Either same as `authenticatedUser` or an impersonated user.
 
 | queryParameters
 | The query parameters.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.parameter_logging_enabled[`dbms.logs.query.parameter_logging_enabled`] is `true`.
+Included when xref:reference/configuration-settings.adoc#config_db.logs.query.parameter_logging_enabled[`db.logs.query.parameter_logging_enabled`] is `true`.
 
 | runtime
 | The runtime used to run the query.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.runtime_logging_enabled[`dbms.logs.query.runtime_logging_enabled`] is `true`.
 
 | annotationData
 | Metadata attached to the transaction.
@@ -969,11 +987,10 @@ Included when applicable.
 
 | transactionId
 | The transaction ID of the running query.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.transaction_id.enabled[`dbms.logs.query.transaction_id.enabled`] is `true`.
 
 | queryPlan
 | The query plan.
-Included when xref:reference/configuration-settings.adoc#config_dbms.logs.query.plan_description_enabled[`dbms.logs.query.plan_description_enabled`] is `true`.
+Included when xref:reference/configuration-settings.adoc#config_db.logs.query.plan_description_enabled[`db.logs.query.plan_description_enabled`] is `true`.
 
 |===
 
@@ -990,10 +1007,6 @@ If the type of the log entry is `transaction`, the following additional fields a
 
 | database
 | The database name on which the transaction is run.
-
-| username
-| The user connected to the transaction.
-This field is deprecated by `executingUser`.
 
 | executingUser
 | The name of the user connected to the transaction.

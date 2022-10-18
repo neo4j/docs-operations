@@ -1,0 +1,258 @@
+:description: This section describes how to manage databases in a cluster.
+[role=enterprise-edition]
+[[database-management]]
+= Managing databases in a cluster
+
+The number of both primary and secondary servers to host a database can be set when the database is created and altered after creation.
+The command `CREATE DATABASE` can be used to specify the initial topology and `ALTER DATABASE` can be used to change the topology once the database is created.
+If a database is no longer needed, the command `DROP DATABASE` deletes the database from the cluster.
+
+== `CREATE DATABASE`
+
+The command to create a database in a cluster is not significantly different from the command to create a database in a non-clustered environment (see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/databases[Cypher Manual -> Database management] for more information on database management on single servers).
+The difference in a clustered environment is that the topology can be specified, i.e. how many primaries and secondaries are desired for the database.
+To create a database `foo` with 3 servers hosting the database in primary mode and 2 servers in secondary mode, the command looks like this:
+
+[source, cypher]
+----
+CREATE DATABASE foo TOPOLOGY 3 PRIMARIES 2 SECONDARIES
+----
+
+The command can only be executed successfully if the cluster's servers are able to satisfy the specified topology.
+If they are not, the command results in an error.
+For example, if the cluster's servers are set up with mode constraints to contain two primaries and three secondaries, or if only four servers exist, the command fails with an error.
+
+== `ALTER DATABASE`
+
+To alter the topology of or read/write access to a database after it has been created, use the command `ALTER DATABASE`.
+
+=== Alter topology
+
+To change the topology of the database `foo` from the previous example, the command can look like this:
+
+[source, cypher]
+----
+ALTER DATABASE foo SET TOPOLOGY 2 PRIMARIES 1 SECONDARY
+----
+
+Like the `CREATE DATABASE` command, this command results in an error if the cluster does not contain sufficient servers to satisfy the requested topology.
+
+When there is more than one possible permutation of the specified topology, Neo4j uses an allocator to decide how to spread the database across the cluster.
+This normally happens when the cluster is configured with more servers than the sum of the number of primaries and secondaries for any one database.
+
+It is not possible to automatically transition to or from a topology with a single primary host.
+This limitation is due to a non-existing Raft replication when only a single server is running, i.e. the server is running in _standalone_ or _single mode_.
+Attempting to do so results in an error.
+
+However, it is possible to _manually_ do this transition.
+The first step is to back up the database, see xref:backup-restore/index.adoc[Backup and restore] for more information.
+Once the database is backed up, the next step is to drop the database, see xref:manage-databases/configuration.adoc#manage-databases-administration[Administrative commands] for more information.
+The last step is to either seed a cluster from the backup with the new topology, or to restore the backup on a single server.
+See xref:clustering/databases.adoc#cluster-seed[Seed a cluster] further on for information on seeding.
+
+// This part can be added back once it has been implemented.
+// The allocation approach can be specified with the setting `initial.dbms.database_allocator`.
+// The available options are:
+//
+// * `EQUAL_NUMBERS`
+// * `OPTIMAL_DISC_USAGE`
+// * `ALL`
+
+=== Alter access
+
+To alter the access to the database `foo`, the syntax looks like this:
+
+[source, cypher]
+----
+ALTER DATABASE foo SET ACCESS {READ ONLY | READ WRITE}
+----
+
+By default, a newly created database has both read and write access.
+
+[[cluster-seed]]
+== Seed a cluster
+
+There are two different ways to seed a cluster with data.
+The first option is to use a _designated seeder_, where a designated server is used to create a backed-up database on other servers in the cluster.
+The other options is to seed the cluster from URI, where all servers to host a database are seeded with an identical seed from an external source specified by the URI.
+Keep in mind that using a designated seeder can be problematic in some situations as it is not known in advance how a database is going to be allocated to the servers in a cluster.
+Also, this method relies on the seed already existing on one of the servers.
+
+
+[[cluster-designated-seeder]]
+=== Designated seeder
+
+In order to designate a server in the cluster as a seeder, a database backup is transferred to that server using the xref:backup-restore/restore-backup.adoc[`neo4j-admin database restore`] command.
+Subsequently, that server is used as the source for other cluster members to copy the backed-up database from.
+
+This example creates a user database called `foo`, hosted on three servers in primary mode.
+The `foo` database *should not* previously exist on any of the servers in the cluster.
+
+If a database with the same name as your backup already exists, use the command `DROP DATABASE` to delete it and all users and roles associated with it.
+
+. Restore the `foo` database on one server.
+In this example, the `server01` member is used.
++
+[source, shell]
+----
+neo4j@neo4j$ ./bin/neo4j-admin database restore --from-path=/path/to/foo-backup-dir foo
+----
+. Find the server ID of `server01` by logging in to Cypher Shell and running `SHOW SERVERS`.
+Use any database to connect.
++
+[source, cypher, role=noplay]
+----
+SHOW SERVERS;
+----
++
+[queryresult]
+----
++------------------------------------------------------------------------------------------------------------+
+| name                                   | address          | state     | health      | hosting              |
++------------------------------------------------------------------------------------------------------------+
+| "25a7efc7-d063-44b8-bdee-f23357f89f01" | "localhost:7689" | "Enabled" | "Available" | ["system",  "neo4j"] |
+| "782f0ee2-5474-4250-b905-4cd8b8f586ba" | "localhost:7688" | "Enabled" | "Available" | ["system",  "neo4j"] |
+| "8512c9b9-d9e8-48e6-b037-b15b0004ca18" | "localhost:7687" | "Enabled" | "Available" | ["system",  "neo4j"] |
++------------------------------------------------------------------------------------------------------------+
+----
+. On one of the servers, use the `system` database and create the database `foo` using the server ID of `server01`.
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE foo OPTIONS {existingData: 'use', existingDataSeedInstance: '8512c9b9-d9e8-48e6-b037-b15b0004ca18'};
+----
+. Verify that the `foo` database is online on the desired number of servers, in the desired roles.
+If the `foo` database is of considerable size, the execution of the command can take some time.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASE foo;
+----
++
+[queryresult]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name  | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo" | "standard" | []      | "read-write" | "localhost:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "foo" | "standard" | []      | "read-write" | "localhost:7688" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "foo" | "standard" | []      | "read-write" | "localhost:7689" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+9 rows available after 3 ms, consumed after another 1 ms
+----
+
+[[cluster-seed-uri]]
+=== Seed from URI
+
+This method seeds all servers with an identical seed from an external source, specified by the URI.
+The seed can be either a backup or a dump from an existing database.
+
+The mechanism is pluggable, allowing new sources of seeds to be supported.
+These are called _seed providers_.
+The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server and Amazon S3.
+The `URLConnectionSeedProvider` supports the following:
+
+** file:
+** ftp:
+** http:
+** https:
+** URIs
+
+Accordingly, the `S3SeedProviders` supports:
+
+** S3:
+** URIs
+
+The URI of the seed is specified when the `CREATE DATABASE` command is issued:
+
+[source, cypher, role="noplay"]
+----
+CREATE DATABASE foo OPTIONS {existingData: 'use', seedURI:'s3:/myBucket/myBackup,backup'}
+----
+
+Download and validation of the seed is only performed as the new database is started.
+If it fails, the database is not available and it has the `statusMessage`: `Unable to start database` of the `SHOW DATABASES` command.
+
+[source, cypher, role="noplay"]
+----
+neo4j@neo4j> SHOW DATABASES;
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name    | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage                                            | default | home  | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "seed3" | "standard" | []      | "read-write" | "localhost:7682" | "unknown" | FALSE  | "online"        | "offline"     | "Unable to start database `DatabaseId{3fe1a59b[seed3]}`" | FALSE   | FALSE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+To determine the cause of the problem, it is recommended to look at the `debug.log`.
+
+Certain seed providers, such as S3, may require additional configuration.
+This is specified with the `seedConfig` option.
+This option expects a comma-separated list of configurations.
+Each configuration value is specified as a name followed by `=` and the value, as such:
+
+[source, cypher, role="noplay"]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup,backup’, seedConfig: 'region=eu-west-1' }
+----
+
+Some seed providers may also want to pass credentials into the provider.
+These are specified with the `seedCredentials` option.
+Seed credentials are securely passed from the Cypher command to each server hosting the database.
+For this to work, Neo4j on each server in the cluster must be configured with identical keystores.
+This is identical to the configuration required by remote aliases, see xref:manage-databases/remote-alias.adoc#remote-alias-config-DBMS_admin-A[Configuration of DBMS with remote database alias].
+If this configuration is not performed, the `seedCredential` option fails.
+
+==== Seed provider reference
+
+[cols="1,2,2",options="header"]
+|===
+| URL scheme
+| Seed provider
+| URI example
+
+| `file:`
+| `URLConnectionSeedProvider`
+| `file:/tmp/backup1.backup`
+
+| `ftp:`
+| `URLConnectionSeedProvider`
+| `ftp:://myftp.com/backups/backup1.backup`
+
+| `http:`
+| `URLConnectionSeedProvider`
+| `\http://myhttp.com/backups/backup1.backup`
+
+| `https:`
+| `URLConnectionSeedProvider`
+| `\https://myhttp.com/backups/backup1.backup`
+
+| `S3:`
+| `S3SeedProvider`
+| `s3://mybucket/backups/backup1.backup`
+|===
+
+[[cluster-allow-deny-db]]
+== Controlling locations with allowed/denied databases
+
+A database can by default be allocated to run on any server in a cluster.
+However, it is possible to constrain the servers that specific databases are hosted on.
+This is done with `ENABLE SERVER` and `ALTER SERVER`, described in xref:clustering/servers.adoc[Managing servers in a cluster].
+The following options are available:
+
+** `allowedDatabases` - a set of databases that are allowed to be hosted on a server.
+** `deniedDatabases` - a set of databases that are denied to be hosted on a server.
+Allowed and denied are mutually exclusive.
+** `modeConstraint` - controls in what mode (primary, secondary, or none) databases can be hosted on a server.
+If not set, there are no mode constraints on the server.
+
+[[cluster-default-database]]
+== Change the default database
+
+You can use the procedure <<procedure_dbms.setDefaultDatabase, `dbms.setDefaultDatabase("newDefaultDatabaseName")`>> to change the default database for a DBMS.
+
+. Ensure that the database to be set as default exists, otherwise create it using the command `CREATE DATABASE <database-name>`.
+. Show the name and status of the current default database by using the command `SHOW DEFAULT DATABASE`.
+. Stop the current default database using the command `STOP DATABASE <database-name>`.
+. Run `CALL dbms.setDefaultDatabase("newDefaultDatabaseName")` against the `system` database to set the new default database.
+. Optionally, you can start the previous default database as non-default by using `START DATABASE <database-name>`.

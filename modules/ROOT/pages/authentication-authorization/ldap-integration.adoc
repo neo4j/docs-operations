@@ -11,6 +11,7 @@
 ** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-uid[Configure Neo4j to support LDAP user ID authentication]
 ** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-sysaccount[Configure Neo4j to support attribute authentication]
 ** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-nosysaccount[Configure Neo4j to support `sAMAccountName` authentication by setting `user_dn_template`]
+** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-nested-groups[Configure Neo4j to perform nested group lookup]
 * xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-openldap[Configure Neo4j to use OpenLDAP]
 * xref:authentication-authorization/ldap-integration.adoc#auth-ldap-search[Verify the LDAP configuration]
 * xref:authentication-authorization/ldap-integration.adoc#auth-ldap-clear-auth-cache[The auth cache]
@@ -55,8 +56,13 @@ Altering any of these settings clears the authentication and authorization cache
 
 | xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_membership_attributes[dbms.security.ldap.authorization.group_membership_attributes]
 | `memberOf`
-| List attribute names on a user object that contains groups to be used for mapping to roles.
+| List attribute names of a user object that contains groups to be used for mapping to roles.
 Common values: `memberOf` and `gidNumber`.
+
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.nested_groups_enabled[dbms.security.ldap.authorization.nested_groups_enabled]
+| `false`
+| This setting determines whether multiple LDAP search results will be processed. 
+This must be set to `true` in order to resolve nested group membership.
 
 | xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_to_role_mapping[dbms.security.ldap.authorization.group_to_role_mapping]
 |
@@ -114,7 +120,7 @@ dbms.security.ldap.authorization.group_to_role_mapping=\
 <3> Mapping of two LDAP groups to a Neo4j built-in role.
 <4> Mapping of an LDAP group to a custom-defined role.
 Custom-defined roles, such as `rolename`, must be explicitly created using the `CREATE ROLE rolename` command before they can be used to grant privileges.
-See link:/docs/cypher-manual/4.4/access-control/manage-users[the Cypher Manual -> Creating roles].
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/manage-users[the Cypher Manual -> Creating roles].
 ====
 
 [[auth-ldap-configure-provider-ad]]
@@ -212,11 +218,6 @@ dbms.security.ldap.authentication.attribute=myattribute
 dbms.security.ldap.authorization.access_permitted_group=cn=Neo4j Access,cn=users,dc=example,dc=com
 ----
 
-[NOTE]
-Earlier Neo4j versions only supported `samaccountname` as a search attribute.
-This could be configured with `dbms.security.ldap.authentication.use_samaccountname`.
-That setting has been deprecated and replaced by `dbms.security.ldap.authentication.search_for_attribute`.
-
 [[auth-ldap-configure-provider-ad-nosysaccount]]
 === Configure Neo4j to support `sAMAccountName` authentication by setting `user_dn_template`
 
@@ -250,6 +251,59 @@ For more information, see xref:authentication-authorization/ldap-integration.ado
 
 [NOTE]
 The setting `dbms.security.ldap.authentication.search_for_attribute` should be set to the default value of false.
+
+[[auth-ldap-configure-nested-groups]]
+=== Configure Neo4j to perform nested group lookup
+
+When a user is a member of a group (e.g. `engineers`) and that group is a member of another group (e.g. `employees`), Active Directory can be configured to perform a nested search such that a user in the group `engineers` would also be a member of the group `employees`. 
+This in turn means that it is possible to configure a xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[group to role mapping] for `employees` which will transitively apply to `engineers`.
+
+Active Directory facilitates nested search via the extensible match operator `LDAP_MATCHING_RULE_IN_CHAIN` (whose Object Identifier is 1.2.840.113556.1.4.1941). 
+This operator walks the chain of ancestry in objects all the way to the root.
+
+To set up nested search in the _neo4j.conf_ file, configure the following settings:
+
+. Enable nested groups.
++
+[source, properties]
+----
+dbms.security.ldap.authorization.nested_groups_enabled=true
+----
+
+. Provide details on the user structure of the LDAP directory:
++
+[source, properties]
+----
+dbms.security.ldap.authentication.user_dn_template=cn={0},cn=users,dc=example,dc=com
+dbms.security.ldap.authorization.user_search_base=dc=example,dc=com
+dbms.security.ldap.authorization.user_search_filter=(&(objectClass=*)(uid={0}))
+----
+
+. Provide the nested groups search filter. +
+This is the filter which will be used to perform the nested lookup of the user's groups. 
+It should contain the placeholder token `{0}`, which will be substituted with the user's Distinguished Name (which is found for the specified user principle using `dbms.security.ldap.authorization.user_search_filter`). +
+This example features Active Directory's `LDAP_MATCHING_RULE_IN_CHAIN` (aka `1.2.840.113556.1.4.1941`) implementation:
+
++
+[source, properties]
+----
+dbms.security.ldap.authorization.nested_groups_search_filter=(&(objectclass=group)(member:1.2.840.113556.1.4.1941:={0}))
+----
+
+. Provide group to role mappings, including ancestor groups if required:
++
+[source, properties]
+----
+dbms.security.ldap.authorization.group_to_role_mapping=\
+"cn=engineers,cn=users,dc=example,dc=com"=procedures;\
+"cn=employees,cn=users,dc=example,dc=com"=reader
+----
+
+[NOTE]
+In contrast to a non-nested-LDAP lookup, a nested group lookup does not perform an attribute-based lookup on the user object. 
+Instead, the `dbms.security.ldap.authorization.group_membership_attributes` setting is ignored and the `dbms.security.ldap.authorization.user_search_filter` is only used to determine the Distinguished Name of the user. 
+This is then substituted into the `dbms.security.ldap.authorization.nested_groups_search_filter` to perform a separate, nested lookup of the user's groups.
+
 
 [[auth-ldap-configure-provider-openldap]]
 == Configure Neo4j to use OpenLDAP
@@ -428,13 +482,13 @@ dbms.security.ldap.host=ldaps://myactivedirectory.example.com:636
 Production environments should always use an SSL certificate issued by a Certificate Authority for secure access to the LDAP server.
 However, there are scenarios, for example in test environments, where you may want to use an SSL certificate on the LDAP server.
 
-To configure an SSL certificate on LDAP server, enter the details of the certificate using `dbms.jvm.additional` in _neo4j.conf_.
+To configure an SSL certificate on LDAP server, enter the details of the certificate using `server.jvm.additional` in _neo4j.conf_.
 The path to the certificate file `MyCert.jks` is an absolute path to the Neo4j server.
 
 [source, properties]
 ----
-dbms.jvm.additional=-Djavax.net.ssl.keyStore=/path/to/MyCert.jks
-dbms.jvm.additional=-Djavax.net.ssl.keyStorePassword=mypasword
-dbms.jvm.additional=-Djavax.net.ssl.trustStore=/path/to/MyCert.jks
-dbms.jvm.additional=-Djavax.net.ssl.trustStorePassword=mypasword
+server.jvm.additional=-Djavax.net.ssl.keyStore=/path/to/MyCert.jks
+server.jvm.additional=-Djavax.net.ssl.keyStorePassword=mypasword
+server.jvm.additional=-Djavax.net.ssl.trustStore=/path/to/MyCert.jks
+server.jvm.additional=-Djavax.net.ssl.trustStorePassword=mypasword
 ----

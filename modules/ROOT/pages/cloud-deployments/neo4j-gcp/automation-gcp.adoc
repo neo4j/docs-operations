@@ -13,7 +13,7 @@ Automate Neo4j deployment when you want to integrate Neo4j into your CI/CD pipel
 
 == Google Cloud Deployment Manager
 
-Neo4j provides Deployment Manager templates for Neo4j Causal Cluster (highly available clusters), and VM images for Neo4j Enterprise standalone.
+Neo4j provides Deployment Manager templates for Neo4j cluster (highly available clusters), and VM images for Neo4j Enterprise standalone.
 Deployment Manager is a recipe that tells GCP how to deploy a whole set of interrelated resources.
 By deploying all of this as a stack you can keep all of your resources together, and delete just one thing when you are done.
 
@@ -34,64 +34,64 @@ This warning can be ignored, because the underlying OS will recognize any disk s
 * `PROJECT` - the project ID you want to deploy on GCP.
 
 
-== Deploying Neo4j Enterprise Edition with a Causal Cluster
-
-To deploy Neo4j Enterprise Edition with a Causal Cluster, use the Causal Cluster template.
-[NOTE]
-You indicate how many core servers and read replicas you want in your cluster by configuring the `CORES` and `READ_REPLICAS` parameters.
-
-[source, shell, subs="attributes+"]
---
-#!/bin/bash
-export NAME=neo4j-cluster
-PROJECT=my-gcp-project-ID
-MACHINE=n1-standard-2
-DISK_TYPE=pd-ssd
-DISK_SIZE=64
-ZONE=us-east1-b
-CORES=3
-READ_REPLICAS=0
-NEO4J_VERSION={neo4j-version-exact}
-TEMPLATE_URL=https://storage.googleapis.com/neo4j-deploy/$NEO4J_VERSION/causal-cluster/neo4j-causal-cluster.jinja
-OUTPUT=$(gcloud deployment-manager deployments create $NAME \
-   --project $PROJECT \
-   --template "$TEMPLATE_URL" \
-   --properties "zone:'$ZONE',clusterNodes:'$CORES',readReplicas:'$READ_REPLICAS',bootDiskSizeGb:$DISK_SIZE,bootDiskType:'$DISK_TYPE',machineType:'$MACHINE'")
-echo $OUTPUT
-PASSWORD=$(echo $OUTPUT | perl -ne 'm/password\s+([^\s]+)/; print $1;')
-IP=$(echo $OUTPUT | perl -ne 'm/vm1URL\s+https:\/\/([^\s]+):/; print $1; ')
-echo NEO4J_URI=bolt+routing://$IP
-echo NEO4J_PASSWORD=$PASSWORD
-echo STACK_NAME=$NAME
---
-
-After you configure the parameters of what you are deploying, you call to `gcloud deployment-manager deployments create` to do the work.
-The variable `OUTPUT` contains all the information about your deployment.
-Then, you use `perl` to pull out the password and IP address of your new deployment, because it will have a strong randomly assigned password.
-
-[TIP]
-This command blocks and does not succeed until the entire stack is deployed and ready.
-This means that by the time you get the IP address back, your Neo4j is up.
-If you lose these stack outputs (IP, password, and so on), you can find them in your Deployment Manager window within the GCP console.
-
-To delete your deployment, take note of the `STACK_NAME` and use the utility script:
-
-[source, shell]
---
-#!/bin/bash
-PROJECT=my-google-project-id
-if [ -z $1 ] ; then
-   echo "Usage: call me with deployment name"
-   exit 1
-fi
-gcloud -q deployment-manager deployments delete $1 --project $PROJECT
-# OPTIONAL!  Destroy the disk
-# gcloud --quiet compute disks delete $(gcloud compute disks list --project $PROJECT --filter="name~'$1'" --uri)
---
-
-[NOTE]
-When you delete Neo4j stacks on GCP, the GCP disks are left behind, to make it hard for you to accidentally destroy your valuable data.
-To completely clean up your disks, uncomment the last line of the script.
+// == Deploying Neo4j Enterprise Edition with a Causal Cluster
+//
+// To deploy Neo4j Enterprise Edition with a Causal Cluster, use the Causal Cluster template.
+// [NOTE]
+// You indicate how many core servers and read replicas you want in your cluster by configuring the `CORES` and `READ_REPLICAS` parameters.
+//
+// [source, shell, subs="attributes+"]
+// --
+// #!/bin/bash
+// export NAME=neo4j-cluster
+// PROJECT=my-gcp-project-ID
+// MACHINE=n1-standard-2
+// DISK_TYPE=pd-ssd
+// DISK_SIZE=64
+// ZONE=us-east1-b
+// CORES=3
+// READ_REPLICAS=0
+// NEO4J_VERSION={neo4j-version-exact}
+// TEMPLATE_URL=https://storage.googleapis.com/neo4j-deploy/$NEO4J_VERSION/causal-cluster/neo4j-causal-cluster.jinja
+// OUTPUT=$(gcloud deployment-manager deployments create $NAME \
+//    --project $PROJECT \
+//    --template "$TEMPLATE_URL" \
+//    --properties "zone:'$ZONE',clusterNodes:'$CORES',readReplicas:'$READ_REPLICAS',bootDiskSizeGb:$DISK_SIZE,bootDiskType:'$DISK_TYPE',machineType:'$MACHINE'")
+// echo $OUTPUT
+// PASSWORD=$(echo $OUTPUT | perl -ne 'm/password\s+([^\s]+)/; print $1;')
+// IP=$(echo $OUTPUT | perl -ne 'm/vm1URL\s+https:\/\/([^\s]+):/; print $1; ')
+// echo NEO4J_URI=bolt+routing://$IP
+// echo NEO4J_PASSWORD=$PASSWORD
+// echo STACK_NAME=$NAME
+// --
+//
+// After you configure the parameters of what you are deploying, you call to `gcloud deployment-manager deployments create` to do the work.
+// The variable `OUTPUT` contains all the information about your deployment.
+// Then, you use `perl` to pull out the password and IP address of your new deployment, because it will have a strong randomly assigned password.
+//
+// [TIP]
+// This command blocks and does not succeed until the entire stack is deployed and ready.
+// This means that by the time you get the IP address back, your Neo4j is up.
+// If you lose these stack outputs (IP, password, and so on), you can find them in your Deployment Manager window within the GCP console.
+//
+// To delete your deployment, take note of the `STACK_NAME` and use the utility script:
+//
+// [source, shell]
+// --
+// #!/bin/bash
+// PROJECT=my-google-project-id
+// if [ -z $1 ] ; then
+//    echo "Usage: call me with deployment name"
+//    exit 1
+// fi
+// gcloud -q deployment-manager deployments delete $1 --project $PROJECT
+// # OPTIONAL!  Destroy the disk
+// # gcloud --quiet compute disks delete $(gcloud compute disks list --project $PROJECT --filter="name~'$1'" --uri)
+// --
+//
+// [NOTE]
+// When you delete Neo4j stacks on GCP, the GCP disks are left behind, to make it hard for you to accidentally destroy your valuable data.
+// To completely clean up your disks, uncomment the last line of the script.
 
 
 == Deploying Neo4j Enterprise (or Community) Edition in standalone mode

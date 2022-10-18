@@ -1,0 +1,137 @@
+:description: This section describes leadership, routing and load balancing in a cluster.
+[role=enterprise-edition]
+[[clustering-routing-load-balancing]]
+= Leadership, routing and load balancing
+
+[[clustering-elections-and-leadership]]
+== Elections and leadership
+
+The servers in a cluster use the Raft protocol to ensure consistency and safety.
+//See <<causal-clustering-lifecycle-core-membership, Advanced Causal Clustering>> for more information on the Raft protocol.
+An implementation detail of Raft is that it uses a _Leader_ role to impose an ordering on an underlying log with other instances acting as _Followers_ which replicate the leader's state.
+Specifically in Neo4j, this means that writes to the database are ordered by the server currently playing the _Leader_ role for the respective database.
+
+Only servers hosting a database in primary mode can be elected leaders for that database, provided that the cluster contains more than one primary server.
+If a Neo4j DBMS cluster contains multiple databases, each one of those databases operates within a logically separate Raft group, and therefore each has an individual leader.
+This means that a server may act both as _Leader_ for some databases, and as _Follower_ for other databases.
+
+If a follower has not heard from the leader for a while, then it can initiate an election and attempt to become the new leader.
+The follower makes itself a _Candidate_ and asks other servers to vote for it.
+If it can get a majority of the votes, then it assumes the leader role.
+Servers do not vote for a candidate which is less up-to-date than itself.
+There can only be one leader at any time per database, and that leader is guaranteed to have the most up-to-date log.
+
+Elections are expected to occur during the normal running of a cluster and they do not pose an issue in and of itself.
+If you are experiencing frequent re-elections and they are disturbing the operation of the cluster then you should try to figure out what is causing them.
+Some common causes are environmental issues (e.g. a flaky networking) and work overload conditions (e.g. more concurrent queries and transactions than the hardware can handle).
+
+
+[[clustering-leadership-balancing]]
+== Leadership balancing
+
+Write transactions are always routed to the leader for the respective database.
+As a result, unevenly distributed leaderships may cause write queries to be disproportionately directed to a subset of servers.
+By default, Neo4j avoids this by automatically transferring database leaderships so that they are evenly distributed throughout the cluster.
+Additionally, Neo4j automatically transfers database leaderships away from instances where those databases are configured to be read-only using xref:reference/configuration-settings.adoc#config_server.databases.read_only[server.databases.read_only] or similar.
+
+
+[[clustering-routing]]
+== Server-side routing
+
+Server-side routing is a complement to the client-side routing, performed by a Neo4j Driver.
+
+In a cluster deployment of Neo4j, Cypher queries may be directed to a cluster member that is unable to run the given queries.
+With server-side routing enabled, such queries are rerouted internally to a cluster member that is expected to be able to run them.
+This situation can occur for write-transaction queries when they address a database for which the receiving cluster member is not the leader.
+
+The cluster role for cluster members is per database.
+Thus, if a write-transaction query is sent to a cluster member that is not the leader for the specified database (specified either via the Bolt Protocol or by the Cypher syntax: link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE` clause]), server-side routing is performed if properly configured.
+
+Server-side routing is enabled by the DBMS, by setting xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled=true`] for each cluster member.
+The listen address (xref:reference/configuration-settings.adoc#config_server.routing.listen_address[`server.routing.listen_address`]) and advertised address (xref:reference/configuration-settings.adoc#config_server.routing.advertised_address[`server.routing.advertised_address`]) also need to be configured for server-side routing communication.
+
+Client connections need to state that server-side routing should be used and this is available for Neo4j Drivers and HTTP API.
+
+[NOTE]
+====
+Neo4j Drivers can only use server-side routing when the `neo4j://` URI scheme is used.
+The Drivers do not perform any routing when the `bolt://` URI scheme is used, instead connecting directly to the specified host.
+
+On the cluster-side you must fulfill the following prerequisites to make server-side routing available:
+
+* Set `dbms.routing.enabled=true` on each member of the cluster.
+* Configure `server.routing.listen_address`, and provide the advertised address using `server.routing.advertised_address` on each member.
+* Optionally, you can set `dbms.routing.default_router=SERVER` on each member of the cluster.
+
+The last prerequisite enforces server-side routing on the clients by sending out a routing table with exactly one entry to the client.
+Therefore, `dbms.routing.default_router=SERVER` configures a cluster member to make its routing table behave like a standalone instance.
+The implication is that if a Neo4j Driver connects to this cluster member, then the Neo4j Driver sends all requests to that cluster member.
+Please note that the default configuration for `dbms.routing.default_router` is `dbms.routing.default_router=CLIENT`.
+See xref:reference/configuration-settings.adoc#config_dbms.routing.default_router[`dbms.routing.default_router`] for more information.
+
+The HTTP-API of each member benefits from these settings automatically.
+====
+
+// The table shows the criteria by which server-side routing is performed:
+//
+// .Server-side routing criteria IS THIS STILL ACCURATE?
+// [options="header", cols="^2,^1,^1,^1,^3,^1,^1"]
+// |===
+// 4+^| CLIENT - Neo4j Driver (Bolt Protocol)
+// 3+^| SERVER - Neo4j cluster member
+//
+// h|URI scheme
+// h|Client-side routing
+// h|Request server-side routing
+// h|Transaction type
+// h|Server - Instance > Role (per database)
+// h|Server-side routing enabled
+// h|Routes the query
+//
+// | `neo4j://` | {check-mark} | {check-mark} | write | Primary - Single     | {check-mark} | {cross-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Single     | {check-mark} | {cross-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | write | Primary - Core > leader | {check-mark} | {cross-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Core > leader | {check-mark} | {cross-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | write | Primary - Core > follower       | {check-mark} | {check-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Core > follower       | {check-mark} | {cross-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | write | Secondary - Read Replica        | {check-mark} | {check-mark}
+// | `neo4j://` | {check-mark} | {check-mark} | read  | Secondary - Read Replica        | {check-mark} | {cross-mark}
+//
+// | `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Single     | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Single     | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Core > leader | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Core > leader | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Core > follower       | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Core > follower       | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| write | Secondary - Read Replica        | {check-mark} | {cross-mark}
+// | `bolt://` | {cross-mark} | {cross-mark}| read  | Secondary - Read Replica        | {check-mark} | {cross-mark}
+// |===
+
+
+Server-side routing connector configuration::
+Rerouted queries are communicated over the link:https://7687.org[Bolt Protocol] using a designated communication channel.
+The receiving end of the communication is configured using the following settings:
++
+* xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled`]
+* xref:reference/configuration-settings.adoc#config_server.routing.listen_address[`server.routing.listen_address`]
+* xref:reference/configuration-settings.adoc#config_server.routing.advertised_address[`server.routing.advertised_address`]
+
+Server-side routing driver configuration::
+Server-side routing uses the Neo4j Java driver to connect to other cluster members.
+This driver is configured with settings of the format:
++
+* <<config_dbms.routing.driver.api, `dbms.routing.driver.*`>>
++
+[NOTE]
+====
+The configuration options described in _Configuration_ in the link:{neo4j-docs-base-uri}[Neo4j Driver manuals] have an equivalent in the server-side routing configuration.
+====
+
+Server-side routing encryption::
+Encryption of server-side routing communication is configured by the cluster SSL policy.
+For more information, see xref:clustering/setup/encryption.adoc[Cluster Encryption].
+
+// [[clustering-multi-data-center]]
+// == Multi-data center
+//
+// Need some general guidelines for multi-data centers here and then a link to rewritten section in Appendix.

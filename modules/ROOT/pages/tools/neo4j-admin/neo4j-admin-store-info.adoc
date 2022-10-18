@@ -1,115 +1,74 @@
 [[neo4j-admin-store-info]]
 = Display store information
-:description: This chapter describes the `neo4j-admin store-info` command. 
+:description: This chapter describes the `neo4j-admin database info` command. 
 
-// database store - path to a given database
-// store format - this is the format that is used to store data on disk
-// record format - this is not used and is a bug, use store format
+You can use the `neo4j-admin database info` command to get the following information about the _store format_ of a given _database store_:
 
-The `neo4j-admin store-info` command outputs information about the _store format_ for a given _database store_.
+* The store format version.
+* When the store format version was introduced.
+* Whether the store format needs to be migrated to a newer version.
 
-. The store format version.
-. When the store format version was introduced.
-. Whether the store format needs to be migrated to a newer version.
-
-The store format can be set with the xref:reference/configuration-settings.adoc#config_dbms.record_format[`dbms.record_format`] configuration setting.
-
-The store formats are:
-
-* `aligned`
-* `standard`
-* `high_limit` label:enterprise-edition[]
-
+The `neo4j-admin database info` command is located in the xref:configuration/file-locations.adoc[_bin_] directory.
 
 [[neo4j-admin-store-info-syntax]]
 == Syntax
 
-The `neo4j-admin store-info` command is located in the xref:configuration/file-locations.adoc[_bin_] directory.
-It is invoked against an *offline* database store or a backup as follows:
+The `neo4j-admin database info` command should be invoked against an *offline* database store or a backup and has the following syntax:
 
 ----
-neo4j-admin store-info [--all] [--structured] [--verbose] <path>
+neo4j-admin database info [--verbose] [--format=text|json] [--from-path=<path>] [<database>]
+
 ----
 
-`<path>` -- Path to database store, or databases directory if `--all` option is used.
+`<database>` -- Name of the database to show info for. Can contain * and ? for globbing.
 
 == Options
 
+The `neo4j-admin database info` command has the following options:
+
 .Options
-[options="header"]
+[options="header", cols="1m,3a"]
 |===
 | Name | Description
 
 | `--verbose`
 | Enable verbose output.
 
-| `--structured`
-| Return result structured as JSON.
+| `--format`
+| The format to use for the returned information: 'text' or 'json'
 
-| `--all`
-| Return store format info for all databases at provided path.
+| `--from-path`
+| Path to databases directory.
 |===
 
 
 == Examples
 
-
-.Invoke `neo4j-admin store-info` against a database store
+.Invoke `neo4j-admin database info` against a database store
 ====
 [source, shell]
 ----
-bin/neo4j-admin store-info data/databases/mygraph.db
+bin/neo4j-admin database info mygraph.db
 ----
 
 Output:
 
 ----
-Store format version:         SF4.0.0
-Store format introduced in:   4.0.0
+Store format version:         record-aligned-1.1
+Store format introduced in:   5.0.0
 ----
-====
-
-
-[role=enterprise-edition]
-.Invoke `neo4j-admin store-info` against a database backup
-====
-You can run the `store-info` command to see if the store format of the backup that you want to restore, is compatible with your running Neo4j instance.
-For example, if you want to restore the database backup _/tmp/3518/mygraph.db_ into a 4.x Neo4j instance:
-
-[source, shell]
-----
-bin/neo4j-admin store-info /tmp/3518/mygraph.db
-----
-
-Output:
-
-----
-Store format version:         vE.H.4    #<1>
-Store format introduced in:   3.4.0     #<2>
-Store format superseded in:   4.0.0     #<3>
-----
-
-<1> The store format version reveals that the database is configured to use the `high_limit`, see xref:reference/configuration-settings.adoc#config_dbms.record_format[`dbms.record_format`].
-<2> The store format version was introduced in `Neo4j 3.4.0`.
-<3> The store format of the current instance is 4.0.0, which means that a format migration must be performed if you want to restore this backup into the current instance.
-====
-
-
-[NOTE]
-====
-For more information on how to migrate a single database, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/migration/migrate-to-4.any/online-backup-copy-database/[Upgrade and Migration Guide -> Tutorial: Back up and copy a database in a standalone instance].
 ====
 
 [role=enterprise-edition]
-.Invoke `neo4j-admin store-info` against a root containing several databases
+.Invoke `neo4j-admin database info` against all databases
 ====
-The command can also be invoked against a root directory containing several databases, as follows:
+The command can also be invoked against all databases, as follows:
 
-`neo4j-admin store-info <path> --all`
+`neo4j-admin database info --from-path=<databases-directory>`
 
 [source, shell]
 ----
-bin/neo4j-admin store-info data/databases --all
+bin/neo4j-admin database info data/databases
 ----
 
 Output:
@@ -117,8 +76,8 @@ Output:
 ----
 Database name:                 foo
 Database in use:               false
-Store format version:          SF4.0.0
-Store format introduced in:    4.0.0
+Store format version:          record-aligned-1.1
+Store format introduced in:    5.0.0
 Last committed transaction id:2
 Store needs recovery:          true
 
@@ -134,15 +93,15 @@ When the command is invoked against several databases, if some are *online* they
 
 
 [role=enterprise-edition]
-.Invoke `neo4j-admin store-info` against a database and output JSON
+.Invoke `neo4j-admin database info` against a database and output JSON
 ====
 
-If you are parsing the results of this command you may use the `--structured` option to receive the output as JSON.
+If you are parsing the results of this command you may use the `--format=json` option to receive the output as JSON.
 All the same fields are included and all values are strings.
 
 [source, shell]
 ----
-bin/neo4j-admin store-info data/databases/foo --structured
+bin/neo4j-admin database info --from-path data/databases --format=json foo
 ----
 
 Output:
@@ -150,29 +109,43 @@ Output:
 ----
 {"databaseName":"foo",
 "inUse":"false",
-"storeFormat”:"SF4.0.0",
-"storeFormatIntroduced”:"4.0.0",
+"storeFormat”:"record-aligned-1.1",
+"storeFormatIntroduced”:"5.0.0",
 "lastCommittedTransaction":"2",
 "recoveryRequired":"true"}
 ----
 ====
 
+== Store formats and entity limits
+
+The store formats are:
+
+* `aligned`
+* `standard`
+* `high_limit` label:enterprise-edition[]
 
 [[neo4j-admin-store-aligned]]
-== Store format -- `aligned`
+=== Aligned
 
 .Store versions -- `aligned`
 [options="header"]
 |===
-| Store Format Name | Store Format Version | Neo4j Version
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `ALIGNED_V5_0`
+| `record-aligned-1.1`
+| `5.0.0`
+|
 
 | `ALIGNED_V4_3`
 | `AF4.3.0`
 | `4.3.0`
+| `5.0.0`
 
 | `ALIGNED_V4_1`
 | `AF4.1.a`
 | `4.1.0`
+| `5.0.0`
 |===
 
 
@@ -206,25 +179,33 @@ Output:
 
 
 [[neo4j-admin-store-standard]]
-== Store format -- `standard`
+=== Standard
 
 
 .Store versions -- `standard`
 [options="header"]
 |===
-| Store Format Name | Store Format Version | Neo4j Version
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `STANDARD_V5_0`
+| `record-standard-1.1`
+| `5.0.0`
+|
 
 | `STANDARD_V4_3`
 | `SF4.3.0`
 | `4.3.0`
+| `5.0.0`
 
 | `STANDARD_V4_0`
 | `SF4.0.0`
 | `4.0.0`
+| `5.0.0`
 
 | `STANDARD_V3_4`
 | `v0.A.9`
 | `3.4.0`
+| `5.0.0`
 |===
 
 
@@ -258,41 +239,53 @@ Output:
 
 [role=enterprise-edition]
 [[neo4j-admin-store-high-limit]]
-== Store format -- `high_limit`
+=== High_limit
 
 
 .Store versions -- `high_limit`
 [options="header"]
 |===
-| Store Format Name | Store Format Version | Neo4j Version
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `HIGH_LIMIT_V5_0`
+| `record-high_limit-1.1`
+| `5.0.0`
+|
 
 | `HIGH_LIMIT_V4_3_0`
 | `HL4.3.0`
 | `4.3.0`
+| `5.0.0`
 
 | `HIGH_LIMIT_V4_0_0`
 | `HL4.0.0`
 | `4.0.0`
+| `5.0.0`
 
 | `HIGH_LIMIT_V3_4_0`
 | `vE.H.4`
 | `3.4.0`
+| `5.0.0`
 
 | `HIGH_LIMIT_V3_2_0`
 | `vE.H.3`
 | `3.2.0`
+| `5.0.0`
 
 | `HIGH_LIMIT_V3_1_0`
 | `vE.H.2`
 | `3.1.0`
+| `5.0.0`
 
 | `HIGH_LIMIT_V3_0_6`
 | `vE.H.0b`
 | `3.0.6`
+| `5.0.0`
 
 | `HIGH_LIMIT_V3_0_0`
 | `vE.H.0`
 | `3.0.0`
+| `5.0.0`
 |===
 
 

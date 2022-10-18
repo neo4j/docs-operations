@@ -1,0 +1,129 @@
+:description: This section covers the use of `SHOW SERVERS` Cypher commands.
+[role=enterprise-edition]
+[[show-servers-monitoring]]
+= Monitor servers
+
+To monitor the state of individual servers in a cluster, use the `SHOW SERVERS` command.
+
+
+[[show-servers-monitoring-listing]]
+== Listing Servers
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW SERVERS
+----
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name            | Type         | Description
+| name            | String       | The friendly name of the server, or its UUID if no name is set.
+| address         | String       | The address of the Bolt port for the server. May be `null`.
+| state           | String       | The state of the server in the topology.
+| health          | String       | The current availability of the server.
+| hosting         | List<String> | Databases that this server is currently running.
+|===
+
+=== Possible values of `state`
+* `Free` - server has been started, but not added to the cluster. It needs to be added with `ENABLE SERVER`.
+* `Enabled` - server is part of cluster and can have database allocated to it.
+* `Cordoned` - server may be hosting databases, but cannot have any more allocated to it.
+* `Deallocating` - server is in the process of removing its databases.
+This may take some time, because it does not stop its copy of a database, if in primary mode, until another server has fully started its copy, to preserve the requested number of primaries.
+* `Dropped` - server has been removed from the cluster, but the process has not exited.
+
+=== Possible values of `health`
+* `Available` - server has recently been in contact with the cluster member executing `SHOW SERVERS`.
+* `Unavailable` - server has not had successful network communication with the cluster for a while.
+
+[NOTE]
+====
+`Unavailable` does not necessarily mean the server is not running, just that there are network problems connecting to it.
+====
+
+
+.Listing servers in a cluster
+====
+When running `SHOW SERVERS` against a cluster, expect similar output to the following:
+
+[source,queryresults,role=noplay]
+----
++------------------------------------------------------------------------------------------------------+
+| name                                 | address        | state   | health    | hosting                |
++------------------------------------------------------------------------------------------------------+
+|"f4ae1895-26f1-4b93-bd31-6f482be80d3d"|"localhost:7681"|"Enabled"|"Available"|["system","foo","neo4j"]|
+|"ffa55a5b-2aca-45fc-be09-2a894067025c"|"localhost:7682"|"Enabled"|"Available"|["system","foo","neo4j"]|
+|"server3"                             |"localhost:7683"|"Enabled"|"Available"|["system","neo4j"]      |
++------------------------------------------------------------------------------------------------------+
+----
+====
+
+
+[[show-servers-monitoring-listing-extended]]
+=== Listing more details of servers
+
+If more details about the servers are needed, `SHOW SERVERS` can be appended with `YIELD *`.
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW SERVERS YIELD *
+----
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name             | Type         | Description
+| serverId         | String       | The UUID of the server
+| name             | String       | The friendly name of the server, or its UUID if no name is set.
+| address          | String       | The address of the Bolt port for the server.
+May be `null`.
+| httpAddress      | String       | The address of the HTTP port for the server.
+May be `null`.
+| httpsAddress     | String       | The address of the HTTPS port for the server. May be `null`.
+| state            | String       | The state of the server in the topology.
+| health           | String       | The current availability of the server.
+| hosting          | List<String> | Databases that this server is currently running.
+| requestedHosting | List<String> | Databases that this server is supposed to be running.
+May be fewer databases if the server is in the process of safely stopping one, or more databases if the server is in the process of starting one up.
+| tags             | List<String> | Tags applied to this server.
+Used for routing policies.
+| allowedDatabases | List<String> | A list of the only databases that are allowed on this server.
+Empty means all are allowed.
+| deniedDatabases  | List<String> | A list of databases that may not be hosted on this server.
+Empty means all are allowed.
+| modeConstraint   | String       | A limit on what modes (i.e. `primary` or `secondary`) a database can be in on this server.
+| version          | String       | The version of Neo4j this server is running.
+|===
+
+[NOTE]
+====
+Only one of `allowedDatabases` and `deniedDatabases` can be set as they are mutually exclusive.
+====
+
+=== Possible values of `modeConstraint`
+* `NONE` - any modes can be allocated to this server.
+* `PRIMARY` - only primary modes can be allocated to this server. These may be the target of writes for the database.
+* `SECONDARY` - only secondary modes can be allocated to this server. These will never write to the database, only read.
+
+.Listing more details about servers in a cluster
+====
+When running `SHOW SERVERS YIELD *` in a cluster, expect similar output to the following:
+
+[source,queryresults,role=noplay]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| serverId                             | name                                 | address        | httpAddress    | httpsAddress | state   | health    | hosting                | requestedHosting       | tags | allowedDatabases| deniedDatabases| modeConstraint| version        |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|"f4ae1895-26f1-4b93-bd31-6f482be80d3d"|"f4ae1895-26f1-4b93-bd31-6f482be80d3d"|"localhost:7681"|"localhost:7471"|null          |"Enabled"|"Available"|["system","foo","neo4j"]|["system","foo","neo4j"]|[]    |[]               |[]              |"NONE"         |"5.0.0-SNAPSHOT"|
+|"ffa55a5b-2aca-45fc-be09-2a894067025c"|"ffa55a5b-2aca-45fc-be09-2a894067025c"|"localhost:7682"|"localhost:7472"|null          |"Enabled"|"Available"|["system","foo","neo4j"]|["system","foo","neo4j"]|[]    |[]               |[]              |"NONE"         |"5.0.0-SNAPSHOT"|
+|"72bd3d0f-c1d1-4d39-9da7-015f5656e40b"|"server3"                             |"localhost:7683"|"localhost:7473"|null          |"Enabled"|"Available"|["system","neo4j"]      |["system","neo4j"]      |[]    |[]               |[]              |"NONE"         |"5.0.0-SNAPSHOT"|
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+====

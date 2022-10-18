@@ -1,103 +1,95 @@
+:description: Introduction to the Neo4j Clustering architecture.
 [role=enterprise-edition]
-[[causal-clustering-introduction]]
+[[clustering-introduction]]
 = Introduction
-:description: Introduction to the Neo4j Causal Clustering architecture. 
 
-
-[[causal-clustering-introduction-overview]]
+[[clustering-introduction-overview]]
 == Overview
 
-Neo4j's Causal Clustering provides three main features:
+Neo4j's clustering provides these main features:
 
-. *Safety:* Core Servers provide a fault tolerant platform for transaction processing which will remain available while a simple majority of those Core Servers are functioning.
-. *Scale:* Read Replicas provide a massively scalable platform for graph queries that enables very large graph workloads to be executed in a widely distributed topology.
-. *Causal consistency:* when invoked, a client application is guaranteed to read at least its own writes.
+. *Safety:* Servers hosting databases in primary mode provide a fault tolerant platform for transaction processing which remains available while a simple majority of those Primary Servers are functioning.
+. *Scale:* Servers hosting databases in secondary mode provide a massively scalable platform for graph queries that enables very large graph workloads to be executed in a widely distributed topology.
+. *Causal consistency:* When invoked, a client application is guaranteed to read at least its own writes.
+. *Operability:* Database management is separated from server management.
 
 Together, this allows the end-user system to be fully functional and both read and write to the database in the event of multiple hardware and network failures and makes reasoning about database interactions straightforward.
+Additionally, the administration of a cluster is uncomplicated, including scaling the size of the cluster and distributing and balancing the available resources.
 
-In the remainder of this section we will provide an overview of how causal clustering works in production, including both operational and application aspects.
+The remainder of this section contains an overview of how clustering works in production, including both operational and application aspects.
 
 [[clustering-introduction-operational]]
 == Operational view
 
-From an operational point of view, it is useful to view the cluster as being composed of servers with two different roles, referred to as _Primary_ and _Secondary_ servers.
+From an operational point of view, it is useful to view the cluster as a homogenous pool of servers which run a number of databases.
+The servers have two different database-hosting capabilities, referred to as _Primary_ and _Secondary_ modes.
+A server can simultaneously act as a primary host for one or more databases and as a secondary host for other databases.
+Similarly, it is possible for a database to be hosted on only one server, even when that server is part of a cluster.
+In such cases, the server is always hosting that database in primary mode.
 
-image::cluster-architecture.png[title="Causal Cluster Architecture",role="middle"]
+image::operational-view.svg[title="Cluster Architecture",role="middle"]
 
-The two roles are foundational in any production deployment but are managed at different scales from one another and undertake different roles in managing the fault tolerance and scalability of the overall cluster.
+The two modes are foundational in any production deployment but are managed at different scales from one another and undertake different roles in managing the fault tolerance and scalability of the overall cluster.
 
-[[clustering-primary-servers]]
-== Primary servers
 
-The Primary servers are based on two types on instances:
+[[clustering-primary-mode]]
+== Primary mode
 
-* **Single instance** is an instance that operates without redundancy within the set of Primary servers and allows read and write operations.
-Redundancy is achieved by adding Secondary servers, which guarantee causal consistency but they **do not** safeguard data as Primary servers do.
-Therefore, clusters based on a Single instance as Primary server are good for read scalability, but they are not fault tolerant.
-If a fault occurs on the Single instance, there is a potential risk of data loss: it is the responsibility of the application or of the tooling around the cluster to eliminate or minimize such risk.
+A server hosting a database in primary mode allows read and write operations.
+A database can be hosted by one or more primary hosts.
 
-* **Core instance** is an instance that allows read and write operations and its main responsibility is to safeguard data.
-Core instances do so by replicating all transactions using the Raft protocol.
-Raft ensures that the data is safely durable before confirming a transaction commit to the end user application.
-In practice, this means once a majority of Core instances in a cluster (N/2+1) have accepted the transaction, it is safe to acknowledge the commit to the end user application.
-+
+To achieve high availability, a database should be created with multiple primaries.
+If high availability is not required, then a database may be created with a single primary for minimum write latency.
+The remainder of this section assumes a database has multiple primaries.
 
-The safety requirement has an impact on write latency.
-Implicitly, writes are acknowledged by the fastest majority, but as the number of Core instances in the cluster grows, so does the size of the majority needed to acknowledge a write.
-+
+Database primaries achieve high availability by replicating all transactions using the Raft protocol.
+Raft ensures that the data is safely durable by waiting for a majority of primaries in a database (N/2+1) to acknowledge a transaction, before acknowledging its commit to the end user application.
+In practice, only one of the multiple primaries execute write transactions from clients.
+This writer is elected automatically from amongst a database’s primaries and may change over time.
+The writer primary synchronously replicates writes to the other primaries.
+The database secondaries replicates the writes asynchronously from more up-to-date members of the cluster.
 
-In practice, this means that there are relatively few machines in a typical Core instance cluster, enough to provide sufficient fault tolerance for the specific deployment. This is calculated with the formula M = 2F + 1, where M is the number of Core instances required to tolerate F faults.
+This synchronous replication has an impact on write transaction latency.
+Implicitly, write transactions are acknowledged by the fastest majority, but as the number of primaries of the database grows, so does the size of the majority needed to acknowledge a write.
+
+The fault tolerance for a database is calculated with the formula M = 2F + 1, where M is the number of primaries required to tolerate F faults.
 For example:
-+
-** In order to tolerate two failed Core instances, you need to deploy a cluster of five Core instances.
-** The smallest fault tolerant cluster, a cluster that can tolerate one fault, must have three Core instances.
-** It is also possible to create a Causal Cluster consisting of only two Core instances.
+
+** In order to tolerate two failed primaries, you need a topology of five servers hosting your database in primary mode.
+** The smallest fault-tolerant cluster, a cluster that can tolerate one fault, must have three database primaries.
+** It is also possible to create a cluster consisting of only two primaries.
 However, that cluster is not fault-tolerant.
 If one of the two servers fails, the remaining server becomes read-only.
+** A database with a single primary server cannot tolerate any faults either.
+Therefore it is recommended to have three or more primaries to achieve high availability.
 
 
 [NOTE]
 ====
-With Core instances, should the cluster suffer enough Core failures, it can no longer process writes and becomes read-only to preserve safety.
+With database primaries, should the database suffer enough primary failures, it can no longer process writes and becomes read-only to preserve safety.
 ====
 
-[NOTE]
-====
-In version {neo4j-version} of Neo4j Causal Cluster, Primary servers cannot be mixed: either one Single instance is the Primary server or a set of Core instances are the Primary servers.
-====
 
-[[clustering-secondary-servers]]
-== Secondary servers
+[[clustering-secondary-mode]]
+== Secondary mode
 
+Database secondaries are asynchronously replicated from primaries via transaction log shipping.
+They periodically poll an upstream server for new transactions and have these shipped over.
+Many secondaries can be fed data from a relatively small number of primaries, allowing for a large fan out of the query workload for scale.
 
-In version {neo4j-version} of Neo4j Causal Cluster, Secondary servers can only be one type of instance, called **Read Replica instances**.
+Databases can typically have relatively large numbers of secondaries.
+Losing a secondary does not impact the database's availability, aside from the loss of its fraction of graph query throughput.
+It does not affect the fault tolerance of the database.
 
-Read Replica instances are asynchronously replicated from Primary Servers via transaction log shipping.
-They will periodically poll an upstream server for new transactions and have these shipped over.
-Many Read Replicas can be fed data from a relatively small number of Primary Servers, allowing for a large fan out of the query workload for scale.
+The main responsibility of database secondaries is to scale out read workloads.
+Secondaries act like caches for the graph data and are fully capable of executing arbitrary (read-only) queries and procedures.
 
-Read Replica instances should typically be run in relatively large numbers and treated as disposable.
-Losing a Read Replica does not impact the cluster's availability, aside from the loss of its fraction of graph query throughput.
-It does not affect the fault tolerance capabilities of the cluster.
-
-[NOTE]
-====
-Read Replicas are read-only, but you should not create one (or convert the `dbms.mode` of a `CORE` to `READ_REPLICA`) if you simply desire a neo4j instance which temporarily cannot execute write queries.
-Instead you should use the `dbms.databases.default_to_read_only` config setting to prevent writes to databases on the instance in question.
-====
-
-The main responsibility of Read Replica instances is to scale out read workloads.
-Read Replica instances act like caches for the graph data and are fully capable of executing arbitrary (read-only) queries and procedures.
-
-When the Primary server is a Single instance, Secondary servers may be part of a Disaster Recovery strategy.
-Due to its asynchronous nature, Read Replica instances may not provide all transactions committed on the Primary server, but they may be set as a new Primary server in case the Single instance is no longer available.
-The change of a Read Replica instance into a Single instance is a manual operation that must be executed by a Database Administrator or by some tooling and it requires careful checks, in order to identify the most up-to-date instance and the status of the other instances.
-
+Due to its asynchronous nature, secondaries may not provide all transactions committed on the primary server(s).
 
 [[causal-consistency-explained]]
 == Causal consistency
 
-While the operational mechanics of the cluster are interesting from an application point of view, it is also helpful to think about how applications will use the database to get their work done.
+While the operational mechanics of the cluster are interesting from an application point of view, it is also helpful to think about how applications use the database to get their work done.
 In many applications, it is typically desirable to both read from the graph and write to the graph.
 Depending on the nature of the workload, it is common to want reads from the graph to take into account previous writes to ensure causal consistency.
 
@@ -109,17 +101,15 @@ Consequently, client applications are guaranteed to read their own writes, regar
 This simplifies interaction with large clusters, allowing clients to treat them as a single (logical) server.
 ====
 
-Causal consistency makes it possible to write to Core Servers (where data is safe) and read those writes from a Read Replica (where graph operations are scaled out).
-For example, causal consistency guarantees that the write which created a user account will be present when that same user subsequently attempts to log in.
+Causal consistency makes it possible to write to databases hosted on servers in primary mode (where data is safe) and read those writes from databases hosted on servers in secondary mode (where graph operations are scaled out).
+For example, causal consistency guarantees that the write which created a user account is present when that same user subsequently attempts to log in.
 
-image::causal-clustering-drivers.svg[title="Causal Cluster setup with causal consistency via Neo4j drivers", role="middle"]
+image::causal-clustering-drivers.svg[title="Cluster setup with causal consistency via Neo4j drivers", role="middle"]
 
 On executing a transaction, the client can ask for a bookmark which it then presents as a parameter to subsequent transactions.
-Using that bookmark the cluster can ensure that only servers which have processed the client's bookmarked transaction will run its next transaction.
+Using that bookmark, the cluster can ensure that only servers which have processed the client's bookmarked transaction will run its next transaction.
 This provides a _causal chain_ which ensures correct read-after-write semantics from the client's point of view.
 
 Aside from the bookmark everything else is handled by the cluster.
-The database drivers work with the cluster topology manager to choose the most appropriate Core Servers and Read Replicas to provide high quality of service.
-
-
-Since Neo4j clusters are causally consistent, in the remainder of this chapter, the terms _causal cluster_ or _cluster_ are used to denote Neo4j installations consisting of primary and secondary servers.
+The database drivers work with the cluster topology manager to choose the most appropriate servers to route queries to.
+For instance, routing reads to database secondaries and writes to database primaries.

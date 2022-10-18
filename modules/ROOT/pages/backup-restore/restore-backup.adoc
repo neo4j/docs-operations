@@ -6,16 +6,15 @@
 [[restore-backup-command]]
 == Command
 
-A database backup or an *offline* database can be restored using the `restore` command of `neo4j-admin`.
+A database backup artifact can be restored using the `restore` command of `neo4j-admin`.
 You must create the database (using `CREATE DATABASE` against the `system` database) after the restore operation finishes, unless you are replacing an existing database.
-`neo4j-admin restore` must be invoked as the `neo4j` user to ensure the appropriate file permissions.
+`neo4j-admin database restore` must be invoked as the `neo4j` user to ensure the appropriate file permissions.
 For more information, see xref:manage-databases/configuration.adoc#manage-databases-administration[Administrative commands].
 
 [NOTE]
 ====
-If the `--prepare-restore` option is disabled when backing up your database, you must first perform the `neo4j-admin prepare-restore` command before you can restore your database.
-This is to apply the latest transactions pulled at the backup time but not yet applied to the store.
-For more information, see xref:backup-restore/prepare-restore.adoc[Prepare a database for restoring].
+When restoring a backup chain, the transaction log contained in the differential backup artifacts need first to be replayed.
+This recovery operation is resource intensive and can be decoupled from the restore operation by using the xref:backup-restore/aggregate.adoc[aggregate] command.
 ====
 
 [[restore-backup-syntax]]
@@ -23,14 +22,16 @@ For more information, see xref:backup-restore/prepare-restore.adoc[Prepare a dat
 
 [source,role=noheader]
 ----
-neo4j-admin restore  --from=<path>[,<path>...]
-                    [--verbose]
-                    [--expand-commands]
-                    [--database=<database>]
-                    [--force]
-                    [--move]
-                    [--to-data-directory=<path>]
-                    [--to-data-tx-directory=<path>]
+
+neo4j-admin database restore    --from-path=<path>[,<path>...]
+                                [--overwrite-destination=<true/false>]
+                                [--restore-until=<recoveryCriteria>]
+                                [--to-path-data=<path>]
+                                [--to-path-txn=<path>]
+                                [--verbose]
+                                [--expand-commands]
+                                [--force]
+                                <database>
 ----
 
 [[restore-backup-command-options]]
@@ -42,54 +43,78 @@ neo4j-admin restore  --from=<path>[,<path>...]
 | Default
 | Description
 
-| --from
+| --from-path
 |
-| A path or multiple paths to the database backup(s) for restore.
-A path can contain asterisks or question marks in the last subpath but must not contain commas.
-Commas are used to separate multiple paths.
+| A single path or a comma-separated list of paths pointing to a backup artifact file.
+An artifact file can be 1) a full backup, in which case it is restored directly or, 2) a differential backup, in which case the command tries first to find in the folder a backup chain ending at that specific differential backup and then restores that chain.
+
+| --overwrite-destination
+|
+| Replace an existing database.
+This option is not safe on a cluster since clusters have additional state that would be inconsistent with restored database.
+In a cluster, restore to a new database to avoid this problem.
+
+| --restore-until
+|
+| Differential backup artifacts contains transaction logs that can be replayed and applied to stores contained in full backup artifacts when restoring a backup chain.
+The database applies logs until the recovery predicate is satisfied.
+Currently supported predicates are: `<transaction>` and `<date>`.
+
+- to restore a database up to a transaction id, the required transaction predicate should look like:
+`--restore-until=123`, where 123 is a provided
+transaction id.
+The restore recovers transaction logs up to - but not including - transaction 123.
+
+- to restore a database up to a specific date, the required date predicate should look like:
+`--restore-until=2021-09-11 10:15:30`, where n2021-09-11 10:15:30 is a UTC date.
+The restore recovers transactions that were committed before the provided date.
+
+| --to-path-data
+|
+| Base directory for databases.
+Usage of this option is only allowed if the `--from-path` parameter points to one directory.
+
+| --to-path-txn
+|
+| Base directory for transaction logs.
+Usage of this option is only allowed if the `--from-path` parameter points to one directory.
 
 | --verbose
 |
-| Enables verbose output.
+| Enable verbose output.
 
 | --expand-commands
 |
-| Allows command expansion in config value evaluation.
+| Allow command expansion in config value evaluation.
 
-| --database
-| neo4j
+| --additional-config
+|
+| Configuration file to provide additional or override the existing configuration settings in the _neo4j.conf_ file.
+|===
+
+[[backup-backup-command-parameters]]
+=== Parameters
+
+[options="header",cols="m,m,a"]
+|===
+| Parameter
+| Default
+| Description
+
+| <database>
+|
 | Name for the restored database.
 
-| --force
-|
-| Replaces an existing database.
-
-| --move
-|
-| Moves the backup files to the destination, rather than copying.
-This makes the restoring process faster and with no need for extra disk space.
-However, for this procedure to work properly, backup and database files must be on the same filesystem.
-In case they are not, the command will only copy the files and delete the backup, resulting in no performance benefits.
-
-| --to-data-directory
-|
-| Base directory for databases.
-Usage of this option is only allowed if the `--from` parameter points to one directory.
-
-| --to-data-tx-directory
-|
-| Base directory for transaction logs.
-Usage of this option is only allowed if the `--from` parameter points to one directory.
 |===
 
 [[restore-backup-example]]
 == Example
 
-The following is an example of how to perform an online restore of the database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database], using the `neo4j-admin restore` command.
+The following is an example of how to perform an online restore of the database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database], using the `neo4j-admin database restore` command.
 
 [source,shell]
 ----
-bin/neo4j-admin restore --from=/mnt/backups/neo4j --database=neo4j --force
+bin/neo4j-admin database restore --from-path=/mnt/backups/neo4j-2021-11-05T11-26-38.backup --overwrite-destination neo4j
 ----
 
 [NOTE]
@@ -99,7 +124,7 @@ Unless you are replacing an existing database, you must create the database (usi
 
 If you have backed up a database with the option `--include-metadata`, you can manually restore the users and roles metadata.
 
-From the _<neo4j-home>_ directory, you run the Cypher script _data/scripts/databasename/restore_metadata.cypher_, which the `neo4j-admin restore` command outputs, using xref:tools/cypher-shell.adoc[Cypher Shell]:
+From the _<neo4j-home>_ directory, you run the Cypher script _data/scripts/databasename/restore_metadata.cypher_, which the `neo4j-admin database restore` command outputs, using xref:tools/cypher-shell.adoc[Cypher Shell]:
 
 *Using `cat` (UNIX)*
 [source, shell, role=nocopy noplay]
@@ -115,11 +140,5 @@ type data\scripts\databasename\restore_metadata.cypher | bin\cypher-shell.bat -u
 
 [TIP]
 ====
-For a detailed example on how to back up and restore a database in a Causal cluster, see xref:tutorial/causal-backup-restore-db.adoc[Back up and restore a database in Causal Cluster].
-====
-
-[NOTE]
-====
-`neo4j-admin restore` cannot be applied to the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
-It must be run directly on the databases that are part of the Fabric setup.
+For a detailed example on how to back up and restore a database in a cluster, see xref:tutorial/index.adoc#tutorial-cc-backup-restore-db[Back up and restore a database in cluster].
 ====

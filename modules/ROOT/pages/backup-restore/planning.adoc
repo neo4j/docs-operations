@@ -33,10 +33,9 @@ If you have zero tolerance for downtime and data loss, you might want to conside
 * Frequency of updates to the database.
 * Type of backup and restore method (online or offline), which may depend on whether you want to:
 ** perform full backups (online or offline).
-** automatically check the consistency of a database backup (online only).
-** perform incremental backups (online only).
+** perform differential backups (online only).
 ** use SSL/TLS for the backup network communication (online only).
-** keep your databases as archive files (offline only).
+** keep your databases as archive files (online or offline).
 * How many backups you want to keep.
 * Where the backups will be stored — drive or remote server, cloud storage, different data center, different location, etc.
 +
@@ -54,20 +53,20 @@ Neo4j supports backing up and restoring both online and offline databases.
 It uses xref:tools/neo4j-admin/index.adoc[Neo4j Admin tool] commands, which can be run from a live, as well as from an offline Neo4j DBMS.
 All `neo4j-admin` commands must be invoked as the `neo4j` user to ensure the appropriate file permissions.
 
-* `neo4j-admin backup/restore` (Enterprise only) -– used for performing online backup (xref:backup-restore/modes.adoc#full-backup[full] and xref:backup-restore/modes.adoc#incremental-backup[incremental]) and restore operations.
+* `neo4j-admin database backup/restore` (Enterprise only) -– used for performing online backup (xref:backup-restore/modes.adoc#full-backup[full] and xref:backup-restore/modes.adoc#differential-backup[differential]) and restore operations.
 The database to be backed up must be in **online** mode.
 This command is suitable for production environments, where you cannot afford downtime.
 However, it is more memory intensive and is not supported in https://neo4j.com/cloud/aura/[Neo4j Aura].
 +
 [TIP]
 ====
-When using `neo4j-admin backup` in Causal Cluster, it is recommended to back up from an external instance as opposed to reuse instances that form part of the cluster.
+When using `neo4j-admin database backup` in a cluster, it is recommended to back up from an external instance as opposed to reuse instances that form part of the cluster.
 ====
-* `neo4j-admin dump/load` –- used for performing offline dump and load operations.
+* `neo4j-admin database dump/load` –- used for performing offline dump and load operations.
 The database to be dumped must be in **offline** mode.
 This dump command is suitable for environments, where downtime is not a factor.
 It is faster than the backup command, and produces an archive file, which occupies less space than a normal database structure.
-* `neo4j-admin copy` –- used for copying an offline database or backup.
+* `neo4j-admin database copy` –- used for copying an offline database or backup.
 This command can be used for cleaning up database inconsistencies, reclaiming unused space, and migrating Neo4j 3.5.any directly to any 4.x version of Neo4j, including the latest version, skipping the intermediate steps.
 For a detailed example, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/migration/migrate-to-4.any/online-backup-copy-database/[Upgrade and Migration Guide -> Tutorial: Back up and copy a database in a standalone instance].
 
@@ -76,21 +75,30 @@ For a detailed example, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/m
 File system copy-and-paste of databases is not supported.
 ====
 
+=== Considerations for backing up and restoring databases in a cluster
+
+Backing up a database in a clustered environment is not essentially different from a standalone backup, apart from the fact that you must know which server in a cluster to connect to.
+Use `SHOW DATABASE <database>` to learn which servers are hosting the database you want to back up..
+See xref:clustering/monitoring/show-databases-monitoring.adoc#show-databases-monitoring-listing-single[Listing a single database] for more information.
+
+However, _restoring_ a database in a cluster is different since it is not known in advance how a database is going to be allocated to the servers in a cluster and this method relies on the seed already existing on one of the servers.
+The recommended way to restore a database in a cluster is to xref:clustering/databases.adoc#cluster-seed-uri[seed from URI].
+
 [NOTE]
 ====
-In Fabric deployments, the Neo4j Admin commands `backup`, `restore`, `dump`, `load`, `copy`, and `check-consistency` are not supported for use on the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
-They must be run directly on the databases that are part of the Fabric setup.
+The Neo4j Admin commands `backup`, `restore`, `dump`, `load`, `copy`, and `check-consistency` are not supported for use on xref:composite-databases/introduction.adoc#composite-databases-concepts[composite databases].
+They must be run directly on the databases that are part of a composite database.
 ====
 
 .The following table describes the commands capabilities and usage.
 [cols="<,^,^,^,^,^",frame="topbot",options="header"]
 |===
 | Capability/ Usage
-| `neo4j-admin backup`
-| `neo4j-admin dump`
-| `neo4j-admin restore`
-| `neo4j-admin load`
-| `neo4j-admin copy`
+| `neo4j-admin database backup`
+| `neo4j-admin database dump`
+| `neo4j-admin database restore`
+| `neo4j-admin database load`
+| `neo4j-admin database copy`
 
 | Neo4j Edition
 | Enterprise
@@ -127,7 +135,7 @@ They must be run directly on the databases that are part of the Fabric setup.
 | {check-mark}
 | {cross-mark}
 
-| Run against the `fabric` database
+| Run against a composite databases
 | {cross-mark}
 | {cross-mark}
 | {cross-mark}
@@ -141,7 +149,7 @@ They must be run directly on the databases that are part of the Fabric setup.
 | *n/a*
 | *n/a*
 
-| Perform incremental backups
+| Perform differential backups
 | {check-mark}
 | {cross-mark}
 | *n/a*

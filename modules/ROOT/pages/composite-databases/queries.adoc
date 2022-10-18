@@ -1,0 +1,296 @@
+[role=enterprise-edition]
+[[composite-databases-queries]]
+= Querying
+:description: In this section you will find example queries that show how to perform a range of different tasks on composite databases. 
+
+
+//Make an image that sets up the example?
+//The query examples assume that we have a setup similar to that in <<example-create-a-single-instance-fabric-setup>>.
+
+The examples featured in this section make use of the two Cypher clauses: link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE`] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/call-subquery[`CALL {}`].
+
+[[composite-databases-queries-connecting]]
+== Connecting drivers and applications
+
+Drivers and client applications connect to composite databases just like standard databases.
+For more information, see _Databases and execution context_ in the link:{neo4j-docs-base-uri}[Neo4j Driver manuals].
+
+[[composite-databases-queries-graph-selection]]
+== Graph selection
+
+Queries submitted to a composite database may contain several <<query-use, `USE`>> clauses that direct different parts of the query to different constituent graphs.
+
+Each constituent graph is named after the alias that introduces it into the composite database.
+
+The examples will assume the same setup as the one created in the xref:composite-databases/introduction.adoc[Introduction]
+
+[[composite-databases-queries-single-graph]]
+=== Query a single graph
+
+.Reading and returning data from a single graph
+====
+[source, cypher]
+----
+USE cineasts.latest
+MATCH (movie:Movie)
+RETURN movie.title AS title
+----
+====
+
+The `USE` clause at the beginning of the query selects the `cineasts.latest` graph for all the subsequent clauses.
+`MATCH` is performed on that graph.
+
+[[composite-databases-queries-multiple-graphs]]
+=== Query multiple graphs
+
+.Reading and returning data from two graphs
+====
+[source, cypher]
+----
+USE cineasts.latest
+MATCH (movie:Movie)
+RETURN movie.title AS title
+  UNION
+USE cineasts.upcoming
+MATCH (movie:Movie)
+RETURN movie.title AS title
+----
+====
+
+The first part of the `UNION` query selects the `cineasts.latest` graph and the second part selects the `cineasts.upcoming` graph.
+
+
+[[composite-databases-queries-dynamic-graphs]]
+=== Dynamic graph access
+
+Queries can also select constituent graphs dynamically, using the form `USE graph.byName(graphName)`.
+
+.Reading and returning data from dynamically selected graphs
+====
+[source, cypher]
+----
+UNWIND ['cineasts.latest', 'cineasts.upcoming'] AS graphName
+CALL {
+  USE graph.byName(graphName)
+  MATCH (movie:Movie)
+  RETURN movie
+}
+RETURN movie.title AS title
+----
+====
+In the example above, the part of the query accessing graph data, `MATCH (movie:Movie)`, is wrapped in a sub-query with a dynamic `USE` clause.
+`UNWIND` is used to get the names of our graphs, each on one row.
+The `CALL {}` sub-query executes once per input row.
+In this case, once selecting `cineasts.latest`, and once selecting `cineasts.upcoming`.
+
+[[composite-databases-queries-listing-graphs]]
+=== Listing graphs
+
+The built-in function link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/query-functions#functions-graph-names[`graph.names()`] returns a list containing the names of all constituent graphs on the current composite database.
+
+.The `graph.names()` function
+====
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+RETURN graphName
+----
+----
++---------------------+
+| graphName           |
++---------------------+
+| "cineasts.latest"   |
+| "cineasts.upcoming" |
++---------------------+
+----
+====
+
+The names returned by this function can be used for dynamic graph access.
+
+.Reading and returning data from all graphs
+====
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName(graphName)
+  MATCH (movie:Movie)
+  RETURN movie
+}
+RETURN movie.title
+----
+====
+
+[[composite-databases-queries-result-aggregation]]
+=== Query result aggregation
+
+.Getting the earliest release year of all movies from all graphs
+
+====
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName(graphName)
+  MATCH (movie:Movie)
+  RETURN movie.released AS released
+}
+RETURN min(released) AS earliest
+----
+====
+
+The sub-query returns the `released` property of each movie, from each constituent graph.
+The `RETURN` at the end of the main query aggregates across the full result to calculate the global minimum.
+
+
+[[composite-databases-queries-correlated-subquery]]
+=== Correlated subqueries
+
+This query finds all movies in `cineasts.upcoming` that are to be released in the same month as the longest movie in `cineasts.latest`.
+
+.Correlated subquery
+====
+[source, cypher]
+----
+CALL {
+  USE cineasts.latest
+  MATCH (movie:Movie)
+  RETURN movie.releasedMonth AS monthOfLongest
+    ORDER BY movie.runningTime DESC
+    LIMIT 1
+}
+CALL {
+  USE cineasts.upcoming
+  WITH monthOfLongest
+  MATCH (movie:Movie)
+  WHERE movie.releasedMonth = monthOfLongest
+  RETURN movie
+}
+RETURN movie
+----
+====
+
+The first part of the query finds the movie with the longest running time from `cineasts.latest`, and returns its release month.
+The second part queries for all movies in `cineasts.upcoming` that fulfill our condition and returns them. The sub-query imports the `monthOfLongest` variable using `WITH monthOfLongest`, to make it accessible.
+
+[[composite-databases-queries-updates]]
+=== Updates
+
+Composite database queries can perform updates to constituent graphs.
+
+.Constituent graph update
+====
+[source, cypher]
+----
+USE cineasts.upcoming
+CREATE (:Movie {title: 'Dune: Part Two'})
+----
+====
+
+[NOTE]
+====
+Updates can only be performed on a single constituent graph per transaction.
+====
+
+.Multi-graph update will fail
+====
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName(graphName)
+  CREATE (:Movie {title: 'The Flash'})
+}
+----
+----
+Writing to more than one database per transaction is not allowed.
+----
+====
+
+[[composite-databases-queries-limitations]]
+=== Limitations
+
+Queries on composite databases have a few limitations.
+
+==== Graph accessing operations
+
+Consider a composite database query:
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName(graphName)
+  MATCH (movie:Movie)
+  RETURN movie
+}
+RETURN movie
+----
+Here the outer clauses, i.e. the `UNWIND`, the `CALL` itself, and the final `RETURN`, appear in the root scope of the query, without a specific chosen graph.
+Clauses or expressions in scopes where no graph has been specified must not be graph-accessing.
+
+See examples of graph-accessing operations:
+
+- `MATCH (n)`
+- `CREATE (:X)`
+- `WITH [p=()--() | p] AS paths`
+
+Examples of non-graph-accessing operations:
+
+- `RETURN 1 + 2 AS number`
+- `WITH node.property AS val`
+
+==== Nested `USE` clauses
+
+An inner scope must use the same graph as its outer scope:
+
+[source, cypher]
+----
+USE cineasts.latest
+MATCH (n)
+CALL {
+  USE cineasts.upcoming
+  MATCH (m)
+  RETURN m
+}
+RETURN n, m
+----
+----
+Nested subqueries must use the same graph as their parent query.
+Attempted to access graph cineasts.upcoming
+"    USE cineasts.upcoming"
+     ^
+----
+
+Sub-queries without a `USE` clause can be nested.
+They inherit the specified graph from the outer scope.
+
+[source, cypher]
+----
+CALL {
+  USE cineasts.upcoming
+  CALL {
+    MATCH (m:Movie)
+    RETURN m
+  }
+  RETURN m
+}
+RETURN m
+----
+
+[[composite-databases-queries-built-in-functions]]
+== Built-in graph functions
+
+Graph functions are located in the namespace `graph`.
+The following table provides a description these functions:
+
+.Built-in graph functions
+[options="header", cols="m,"]
+|===
+| Function
+| Explanation
+| graph.names()
+| Provides a list of names of all constituent graphs on the current composite database.
+| graph.byName(graphName)
+| Used with the `USE` clause to select a constituent graph by name dynamically.
+  This function is supported only with `USE` clauses.
+|===

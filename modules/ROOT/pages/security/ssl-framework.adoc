@@ -73,10 +73,23 @@ Using OpenSSL can significantly improve performance, especially for AES-GCM-cryp
 ====
 
 [[ssl-certificates]]
-== Certificates
+== Certificates and private keys
 
-The SSL configuration requires SSL xref:security/ssl-framework.adoc#term-ssl-certificate[certificates] to be issued by Certificate Authority (CA).
-All Certificates and the private key must be in `PEM` format.
+=== Certificates
+The SSL configuration requires SSL xref:security/ssl-framework.adoc#term-ssl-certificate[certificates] to be issued by a Certificate Authority (CA).
+All certificates must follow the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard and be saved in a `PEM-encoded` file.
+
+.Example public.crt file
+[source, text]
+----
+-----BEGIN CERTIFICATE-----
+MIIDojCCAoqgAwIBAgIBATANBgkqhkiG9w0BAQsFADBhMQswCQYDVQQGEwJTRTEQ
+     ...
+xsUBvcQuyxewlvWRS18YB51J+yu0Xg==
+-----END CERTIFICATE-----
+----
+
+The instructions on this page assume that you have already obtained the required certificates from the CA.
 
 [TIP]
 ====
@@ -84,7 +97,97 @@ If the same certificates are used across all instances of the cluster, make sure
 Multi-host and wildcard certificates are also supported.
 ====
 
-The instructions on this page assume that you have already obtained the required certificates from the CA.
+==== Transformations
+
+Neo4j requires all SSL certificates to be in the `PEM` format.
+If your certificate is in the binary `DER` format, you must transform it into `PEM` format.
+
+.Transform `DER` format certificate to `PEM` format
+[source, shell]
+----
+openssl x509 -in cert.der -inform der -outform pem -out cert.crt
+----
+
+
+=== Private keys
+Private keys must be in the standard format xref:security/ssl-framework.adoc#term-ssl-pkcs8[PKCS #8] and saved as a `PEM-encoded` file.
+
+.Example private.key file
+[source, text]
+----
+-----BEGIN PRIVATE KEY-----
+MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAN5D0I4bgdQK4In6
+     ...
+oaMe91ZPQ1JI
+-----END PRIVATE KEY-----
+----
+
+Private keys can also be encrypted with a passphrase according to the xref:security/ssl-framework.adoc#term-ssl-pkcs5[PKCS #5] standard.
+
+.Example private.key file with passphrase encryption
+[source, text]
+----
+-----BEGIN ENCRYPTED PRIVATE KEY-----
+MIICojAcBgoqhkiG9w0BDAEEMA4ECL3eSAoRlJ18AgIIAASCAoCj7WDyjsgcawdv
+     ...
+lYeSjVah
+-----END ENCRYPTED PRIVATE KEY-----
+----
+
+==== Transformation
+
+If the private key is encoded with the old xref:security/ssl-framework.adoc#term-ssl-pkcs1[PKCS #1] format, the file will typically start with the line:
+
+[source, text]
+----
+-----BEGIN RSA PRIVATE KEY-----
+----
+
+You can convert it to PKCS #8 format with the following command:
+
+.Convert a PKCS #1 key to a PKCS #8 key
+[source, shell]
+----
+openssl pkcs8 -topk8 -in pkcs1.key -out pkcs8.key
+----
+
+An unencrypted private key could be PKCS #1 or PKCS #8.
+It can be encrypted with the following command:
+
+.Convert an unencrypted key to an encrypted PKCS #8 key using 256bit AES in cipher-block-chaining (CBC) mode
+[source, shell]
+----
+openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA512 -in pkcs1or8.key -out pkcs8.encrypted.key
+----
+
+.Supported encryption arguments to openssl are:
+* `-v1 PBE-MD5-DES`
+* `-v1 PBE-SHA1-3DES`
+* `-v1 PBE-SHA1-RC2-40`
+* `-v1 PBE-SHA1-RC2-128`
+* `-v1 PBE-SHA1-RC4-40`
+* `-v1 PBE-SHA1-RC4-128`
+* `-v1 PBE-SHA1-2DES`
+* `-v2 aes-128-cbc -v2prf hmacWithSHA1`
+* `-v2 aes-128-cbc -v2prf hmacWithSHA224`
+* `-v2 aes-128-cbc -v2prf hmacWithSHA256`
+* `-v2 aes-128-cbc -v2prf hmacWithSHA384`
+* `-v2 aes-128-cbc -v2prf hmacWithSHA512`
+* `-v2 aes-256-cbc -v2prf hmacWithSHA1`
+* `-v2 aes-256-cbc -v2prf hmacWithSHA224`
+* `-v2 aes-256-cbc -v2prf hmacWithSHA256`
+* `-v2 aes-256-cbc -v2prf hmacWithSHA384`
+* `-v2 aes-256-cbc -v2prf hmacWithSHA512`
+
+It is highly recommended to use one of the `-v2` variants, because they offer more robust encryption.
+
+[NOTE]
+====
+Versions before Neo4j 5.0 allow keys to be stored with the old PKCS #1 standard.
+You can identify them by the line `-----BEGIN RSA PRIVATE KEY-----` at the beginning of the file.
+While Neo4j 5.0 can load and use those keys, they are considered deprecated and will be removed in a future version.
+====
+
 
 === Validate the key and the certificate
 
@@ -99,25 +202,7 @@ openssl rsa -in private.key -check
 .Validate certificate in the PEM format
 [source, shell]
 ----
-PEM - $openssl x509 -in public.crt –text –noout
-DER - $openssl x509 -in certificate.der -inform der -text -noout
-----
-
-=== Transform the certificates
-
-Neo4j requires all SSL certificates to be in the `PEM` format.
-If your certificate is in the `DER` format, you must transform it into `PEM` format.
-
-.Transform `DER` format certificate to `PEM` format
-[source, shell]
-----
-openssl x509 -in cert.crt -inform der -outform pem -out cert.pem
-----
-
-.Transform `PEM` format certificate to `DER` format
-[source, shell]
-----
-openssl x509 -in cert.crt -outform der -out cert.der
+openssl x509 -in public.crt –text –noout
 ----
 
 [[ssl-connectors]]
@@ -125,8 +210,8 @@ openssl x509 -in cert.crt -outform der -out cert.der
 
 Before enabling SSL support, you must ensure the following connector configurations to avoid errors:
 
-* Set `dbms.connector.https.enabled` to `true` when using HTTPS.
-* Set `dbms.connector.bolt.tls_level` to `REQUIRED` or `OPTIONAL` when using Bolt.
+* Set `server.https.enabled` to `true` when using HTTPS.
+* Set `server.bolt.tls_level` to `REQUIRED` or `OPTIONAL` when using Bolt.
 
 For more information on configuring connectors, see xref:configuration/connectors.adoc[Configure connectors].
 
@@ -137,7 +222,7 @@ The SSL policies are configured by assigning values to parameters of the followi
 
 `dbms.ssl.policy.<scope>.<setting-suffix>`
 
-* `scope` is the name of the communication channel, such as `bolt`, `https`, `cluster`, `backup`, and `fabric`.
+* `scope` is the name of the communication channel, such as `bolt`, `https`, `cluster`, and `backup`.
 * `setting-suffix` can be any of the following:
 +
 [options="header"]
@@ -198,7 +283,7 @@ Then, you need to configure the SSL Bolt policies in the _neo4j.conf_ file.
 +
 [source, properties]
 ----
-dbms.connector.bolt.enabled=true (default is true)
+server.bolt.enabled=true (default is true)
 ----
 
 . Set up the _bolt_ folder under _certificates_.
@@ -329,7 +414,7 @@ dbms.ssl.policy.bolt.client_auth=NONE
 +
 [source, properties]
 ----
-dbms.connector.bolt.tls_level=REQUIRED (default is DISABLED)
+server.bolt.tls_level=REQUIRED (default is DISABLED)
 ----
 +
 [TIP]
@@ -420,7 +505,7 @@ Then, you need to configure the SSL HTTPS policies in the _neo4j.conf_ file and 
 +
 [source, properties]
 ----
-dbms.connector.https.enabled=true (default is false)
+server.https.enabled=true (default is false)
 ----
 
 . Set up the _https_ folder under _certificates_.
@@ -551,7 +636,7 @@ dbms.ssl.policy.https.client_auth=NONE
 +
 [source, properties]
 ----
-dbms.connector.http.enabled=false
+server.http.enabled=false
 ----
 
 . Test the SSL connection to the specified host and HTTPS port and view the certificate:
@@ -730,7 +815,7 @@ If the intra-cluster encryption is enabled, the output should indicate the port 
 
 [TIP]
 ====
-For more details on securing the comunication between the cluster servers, see xref:clustering/intra-cluster-encryption.adoc[Intra-cluster encryption].
+For more details on securing the comunication between the cluster servers, see xref:clustering/setup/encryption.adoc[Intra-cluster encryption].
 ====
 
 [[ssl-backup-config]]
@@ -738,7 +823,7 @@ For more details on securing the comunication between the cluster servers, see x
 
 In a single instance, by default the backup communication happens on port `6362`.
 In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup.
-These ports are configured by `dbms.backup.listen.address` (port `6362`) and `causal_clustering.transaction_listen_address` (port `6000`) respectively.
+These ports are configured by `dbms.backup.listen.address` (port `6362`) and `server.cluster.listen_address` (port `6000`) respectively.
 If the intra-cluster encryption is enabled and the backup communication is using port `6000`, then your communication channels are already encrypted.
 The following steps assumes that your backup is set up on a different port.
 
@@ -963,7 +1048,7 @@ dbms.ssl.policy.bolt.enabled=true
 +
 [source, properties]
 ----
-dbms.connector.bolt.ocsp_stapling_enabled=true (default = false)
+server.bolt.ocsp_stapling_enabled=true (default = false)
 ----
 
 [[ssl-logging]]
@@ -974,7 +1059,7 @@ You can also enable additional debug logging for SSL by adding the following con
 
 [source, properties]
 ----
-dbms.jvm.additional=-Djavax.net.debug=ssl:handshake
+server.jvm.additional=-Djavax.net.debug=ssl:handshake
 ----
 
 This will log additional information in the _neo4j.log_ file.
@@ -1006,7 +1091,7 @@ The CRL is always issued by the xref:security/ssl-framework.adoc#term-ssl-certif
 
 [[term-ssl-cipher]]cipher::
 An algorithm for performing encryption or decryption.
-In the most general implementation of encryption of Neo4j communications, we make implicit use of ciphers that are included as part of the Java platform.
+In the most general implementation of encrypted communications, Neo4j makes implicit use of ciphers that are included as part of the Java platform.
 The configuration of the SSL framework also allows for the explicit declaration of allowed ciphers.
 
 [[term-ssl-channel]]communication channel::
@@ -1038,10 +1123,23 @@ Verifying that the hostname matches the certificate SAN helps prevent attacks wh
 [[term-ssl]]SSL::
 SSL is an acronym for _Secure Sockets Layer_, and is the predecessor of xref:security/ssl-framework.adoc#term-ssl-tls-protocol[TLS].
 It is common to refer to SSL/TLS as just SSL.
-However, the modern and secure version is TLS, and this is also the default in Neo4j.
+However, the modern and secure version is TLS, which is also the default in Neo4j.
 
 [[term-ssl-policy]]SSL policy::
 An SSL policy in Neo4j consists of a xref:security/ssl-framework.adoc#term-ssl-certificate[a digital certificate] and a set of configuration parameters defined in _neo4j.conf_.
+
+[[term-ssl-pkcs1]]PKCS #1::
+PKCS #1 is the first family of standards called Public-Key Cryptography Standards (PKCS).
+It provides the basic definitions and recommendations for implementing the RSA algorithm for public-key cryptography.
+It defines the mathematical properties of public and private keys, primitive operations for encryption and signatures, secure cryptographic schemes, and related ASN.1 syntax representations.
+
+[[term-ssl-pkcs5]]PKCS #5::
+PKCS #5 contains recommendations for implementating password-based cryptography, covering key derivation functions, encryption schemes, message authentication schemes, and _ASN.1_ syntax, identifying the techniques.
+
+[[term-ssl-pkcs8]]PKCS #8::
+PKCS #8 is a standard syntax for storing private key information.
+The PKCS #8 private key may be encrypted with a passphrase using the PKCS #5 standards, which support multiple ciphers.
+The main difference from xref:security/ssl-framework.adoc#term-ssl-pkcs1[PKCS #1] is that it allows more algorithms than RSA and supports stronger encryption of the private key.
 
 [[term-ssl-private-key]]private key::
 The private key ensures that encrypted messages can be deciphered only by the intended recipient.
@@ -1057,7 +1155,10 @@ This is also referred to as the xref:security/ssl-framework.adoc#term-ssl-certif
 
 [[term-ssl-tls-protocol]]TLS protocol::
 The cryptographic protocol that provides communications security over a computer network.
-The Transport Layer Security (TLS) protocol and its predecessor, the Secure Sockets Layer (SSL) protocol are both frequently referred to as "SSL".
+The Transport Layer Security (TLS) protocol and its predecessor, the Secure Sockets Layer (SSL) protocol, are both frequently referred to as "SSL".
 
 [[term-ssl-TLS-version]]TLS version::
 A version of the TLS protocol.
+
+[[term-ssl-x509]]X.509::
+X.509 is an International Telecommunication Union (ITU) standard defining the format of xref:security/ssl-framework.adoc#term-ssl-public-key[public key] certificates.

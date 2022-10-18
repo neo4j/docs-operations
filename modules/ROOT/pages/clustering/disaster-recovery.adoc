@@ -1,0 +1,141 @@
+:description: This section describes how to recover databases that have become unavailable.
+[role=enterprise-edition]
+[[cluster-recovery]]
+= Disaster recovery
+
+Databases can become unavailable for different reasons.
+For the purpose of this section, an _unavailable database_ is defined as a database that is incapable of serving writes, while still may be able to serve reads.
+Databases not performing as expected for other reasons are not considered unavailable and cannot be helped by this section.
+//Refer to <<link to error handling section, TBD>> for more information on troubleshooting.
+This section contains a step-by-step guide on how to recover databases that have become unavailable.
+By performing the actions described here, the unavailable databases are recovered and made fully operational with as little impact as possible on the other databases in the cluster.
+
+There are many reasons why a database becomes unavailable and it can be caused by issues on different levels in the system.
+For example, a data-center failover may lead to the loss of multiple serves which in turn may cause a set of databases to become unavailable.
+It is also possible for databases to become quarantined due to a critical failure in the system which may lead to unavailability even without loss of servers.
+
+[NOTE]
+====
+If *all* servers in a Neo4j cluster are lost in a data-center failover, it is not possible to recover the current cluster.
+A new cluster has to be created and the databases restored.
+See xref:clustering/setup/deploy.adoc[Deploy a basic cluster] and xref:clustering/databases.adoc#cluster-seed[Seed a database] for more information.
+====
+
+== Faults in clusters
+
+Databases in clusters follow an allocation strategy.
+This means that they are allocated differently within the cluster and may also have different numbers of primaries and secondaries.
+The consequence of this is that all servers are different in which databases they are hosting.
+Losing a server in a cluster may cause some databases to lose a member while others are unaffected.
+Consequently, in a disaster where multiple servers go down, some databases may keep running with little to no impact, while others may lose all their allocated resources.
+
+== Guide to disaster recovery
+
+The following guide defines three stages of disaster recovery.
+Always run the guide in the order it is described and only move to the next stage once the current one is validated to work properly.
+
+[NOTE]
+====
+In this section, an _offline_ server is a server that is not running but may be _restartable_.
+A _lost_ server however, is a server that is currently not running and cannot be restarted.
+====
+
+[NOTE]
+====
+Disasters may sometimes affect the routing capabilities of the driver and may prevent the use of the `neo4j` scheme for routing.
+One way to remedy this is to connect directly to the server using `bolt` instead of `neo4j`.
+See xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] for more information on the `bolt` scheme.
+====
+
+=== Restore the `system` database
+
+The first step of recovery is to ensure that the `system` database is available.
+The `system` database is required for clusters to function properly.
+
+. Start all servers that are _offline_.
+(If a server is unable to start, inspect the logs and contact support personnel.
+The server may have to be considered indefinitely lost.)
+. *Validate the `system` database's availability.*
+.. Run `SHOW DATABASE system`.
+If the response doesn't contain a writer, the `system` database is unavailable and needs to be recovered, continue to step 3.
+.. Run `CREATE USER 'temporaryUser' SET PASSWORD 'temporaryPassword'` to create a temporary user.
+... Confirm that the query was executed successfully and the temporary user was created as expected, by running `SHOW USERS`, then continue to xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
+If not, continue to step 3.
+. *Restore the `system` database.*
++
+[NOTE]
+====
+Only do the steps below if the `system` database's availability could not be validated by the first two steps in this section.
+====
++
+The following steps creates a new `system` database from a backup of the current `system` database.
+This is required since the current `system` database has lost too many members in the server failover.
+
+.. Shut down the Neo4j process on all servers.
+Note that this causes downtime for all databases in the cluster.
+.. On each server, run the following `neo4j-admin` command `neo4j-admin dbms unbind-system-db` to reset the `system` database state on the servers.
+See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[`neo4j-admin` commands] for more information.
+.. On each server, run the following `neo4j-admin` command `neo4j-admin database info system` to find out which server is most up-to-date, ie. has the highest last-committed transaction id.
+.. On the most up-to-date server, take a dump of the current `system` database by running `neo4j-admin database dump system --to-path=[path-to-dump]` and store the dump in an accessible location.
+See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[`neo4j-admin` commands] for more information.
+.. Ensure there are enough `system` database primaries to create the new `system` database with fault tolerance.
+Either:
+... Add completely new servers (see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster]) or
+... Change the `system` database mode (`server.cluster.system_database_mode`) on the current `system` database's secondary servers to allow them to be primaries for the new `system` database.
+.. On each server, run `neo4j-admin database load system --from-path=[path-to-dump] --overwrite-destination=true` to load the current `system` database dump.
+.. Ensure that `dbms.cluster.discovery.endpoints` are set correctly on all servers, see xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information.
+.. Return to step 1.
+
+[[recover-servers]]
+=== Recover servers
+
+Once the `system` database is available, the cluster can be managed.
+Following the loss of one or more servers, the cluster's view of servers must be updated, ie. the lost servers must be replaced by new servers.
+The steps here identify the lost servers and safely detach them from the cluster.
+
+. Run `SHOW SERVERS`.
+If *all* servers show health `AVAILABLE` and status `ENABLED` continue to xref:clustering/disaster-recovery.adoc#recover-databases[Recover databases].
+. On each `UNAVAILABLE` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")`.
+. On each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id`.
+. On each server that failed to deallocate with one of the following messages:
+.. `Could not deallocate server [server]. Can't move databases in single mode [database]`
++
+or
++
+`Could not deallocate server [server]. Database [database] has lost quorum of servers, only found [existing number of primaries] of [expected number of primaries]. Cannot be safely deallocated. Please drop the database before retrying.`
++
+First ensure that there is a backup for the database in question (see xref:backup-restore/online-backup.adoc[Online backup]), and then drop the database by running `DROP DATABASE database-name`.
+Return to step 3.
+.. `Could not deallocate server [server]. Cannot change allocations for database [stopped-db] because it is offline.`
++
+Try to start the offline database by running `START DATABASE stopped-db WAIT`.
+If it starts successfully, return to step 3.
+Otherwise, ensure that there is a backup for the database before dropping it with `DROP DATABASE stopped-db`.
+Return to step 3.
++
+[NOTE]
+====
+A database can be set to `READ-ONLY`-mode before it is started to avoid updates on a database that is desired to be stopped with the following:
+`ALTER DATABASE database-name SET ACCESS READ ONLY`.
+====
+
+.. `Could not deallocate server [server]. Reallocation of [database] not possible, no new target found. All existing servers: [existing-servers]. Actual allocated server with mode [mode] is [current-hostings].`
++
+Add new servers and enable them and then return to step 3, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] for more information.
+. Run `SHOW SERVERS YIELD *` once all enabled servers host the requested databases (`hosting`-field contains exactly the databases in the `requestedHosting` field), proceed to the next step.
+Note that this may take a few minutes.
+. For each deallocated server, run `DROP SERVER deallocated-server-id`.
+. Return to step 1.
+
+[[recover-databases]]
+=== Recover databases
+
+Once the `system` database is verified available, and all servers are online, the databases can be managed.
+The steps here aim to make the unavailable databases available.
+
+. If you have previously dropped databases as part of this guide, re-create each one from backup.
+See the xref:manage-databases/configuration.adoc#manage-databases-administration[Administrative commands] section for more information on how to create a database.
+. Run `SHOW DATABASES`.
+If all databases are in desired states on all servers (`requestedStatus`=`currentStatus`), disaster recovery is complete.
+// . For each database that remains unavailable, refer to <<unavailable-databases, Managing unavailable databases in a cluster>>.
+// Perform the actions required to get the database available then return to step 2.

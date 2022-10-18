@@ -47,11 +47,11 @@ The store files must _only_ be modified by the Neo4j database and the `neo4j-adm
 [[space-reuse-reclaim-space]]
 == Reclaim unused space
 
-You can use the xref:backup-restore/copy-database.adoc[`neo4j-admin copy`] command to create a defragmented copy of your database.
+You can use the xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] command to create a defragmented copy of your database.
 The `copy` command creates and entirely new and independent database.
-If you want to run that database in a cluster, you have to re-seed the existing cluster, or xref:clustering/seed.adoc#causal-clustering-seed-from-backups[seed] a new cluster from that copy.
+If you want to run that database in a cluster, you have to re-seed the existing cluster, or xref:clustering/databases.adoc#cluster-designated-seeder[seed] a new cluster from that copy.
 
-.Example of database compaction using `neo4j-admin copy`
+.Example of database compaction using `neo4j-admin database copy`
 ====
 The following is a detailed example on how to check your database store usage and how to reclaim space.
 
@@ -162,14 +162,14 @@ By default, a checkpoint flushes any cached updates in pagecache to store files.
 Thus, the allocated IDs remain unchanged, and the store size increases or does not alter (if the instance restarts) despite the deletion.
 In a production database, where numerous load/deletes are frequently performed, the result is a significant unused space occupied by store files.
 
-To reclaim that unused space, you can use the xref:backup-restore/copy-database.adoc[neo4j-admin copy] command to create a defragmented copy of your database.
+To reclaim that unused space, you can use the xref:backup-restore/copy-database.adoc[neo4j-admin database copy] command to create a defragmented copy of your database.
 Use the `system` database and stop the `neo4j` database before running the command.
 
-. Invoke the `neo4j-admin copy` command to create a copy of your `neo4j` database.
+. Invoke the `neo4j-admin database copy` command to create a copy of your `neo4j` database.
 +
 [source, shell]
 ----
-$neo4j-home/bin$> ./neo4j-admin copy --to-database=neo4jcopy1 --from-database=neo4j --force --verbose
+$neo4j-home/bin$> ./neo4j-admin database copy neo4j neo4jcopy1 --compact-node-store --verbose
 ----
 +
 [queryresult]
@@ -252,13 +252,17 @@ neo4j@system> create database neo4jcopy1;
 [source, cypher]
 ----
 neo4j@system> show databases;
-+-------------------------------------------------------------------------------------------------------------------------------------+
-| name         | aliases | access       | address          | role         | requestedStatus | currentStatus | error | default | home  |
-+-------------------------------------------------------------------------------------------------------------------------------------+
-| "neo4j"      | []      | "read-write" | "localhost:7687" | "standalone" | "offline"       | "offline"     | ""    | TRUE    | TRUE  |
-| "neo4jcopy1" | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
-| "system"     | []      | "read-write" | "localhost:7687" | "standalone" | "online"        | "online"      | ""    | FALSE   | FALSE |
-+-------------------------------------------------------------------------------------------------------------------------------------+
+----
++
+[queryresult]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name         | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"      | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "offline"       | "offline"     | ""            | TRUE    | TRUE  | []           |
+| "neo4jcopy1" | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system"     | "system"   | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 3 rows available after 2 ms, consumed after another 1 ms
 ----

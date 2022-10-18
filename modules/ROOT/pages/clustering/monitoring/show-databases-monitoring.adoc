@@ -1,0 +1,209 @@
+:description: This section covers the use of `SHOW DATABASES`, and other related Cypher commands.
+[role=enterprise-edition]
+[[show-databases-monitoring]]
+= Monitor databases
+
+In addition to the system-wide metrics and logs described in previous sections, to monitor the state of individual databases hosted in a cluster, use the `SHOW DATABASES` command.
+
+
+[[show-databases-monitoring-listing]]
+== Listing Databases
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name            | Type         | Description
+| name            | String       | The human-readable name of the database.
+| type            | String       | `standard`, `system` or `composite`.
+| aliases         | List<String> | The names of any aliases the database may have.
+| access          | String       | The database access mode, either `read-write` or `read-only`.
+| address         | String       | The bolt address of the server hosting the database.
+| role            | String       | The cluster role which the server fulfills for this database.
+| writer          | Boolean      | `true` for the database node that accepts writes.
+This node is either the leader for this database in a cluster _or_ this is a standalone server.
+| requestedStatus | String       | The state that an operator has requested the database to be in.
+| currentStatus   | String       | The state the database is actually in on this server.
+| statusMessage   | String       | A message explaining the current state of the database, which could be an error encountered by the Neo4j server when transitioning the database to `requestedStatus`, if any.
+| default         | Boolean      | Whether this database is the default for this DBMS.
+| home            | Boolean      | Whether this database is the home database for this user.
+| constituents    | List<String> | A list of alias names making up this composite database, null for non-composite databases.
+|===
+
+Note that for failed databases, `currentStatus` and `requestedStatus` are different.
+This can imply an error.
+For example:
+
+* A database may take a while to transition from "offline" to "online", due to performing recovery.
+* During normal operation, the `currentStatus` of a database may be transiently different from its `requestedStatus`, due to a necessary automatic process, such as one server copying store files from another.
+
+The possible statuses are `initial`, `offline`, `store copying`, `deallocating`, `unknown`, `dirty`, and `quarantined`.
+
+.Listing databases in standalone Neo4j
+====
+When executing `SHOW DATABASES` against a standalone server, the following output is expected:
+
+[source,queryresults,role=noplay]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name    | type      | aliases | access     | address        | role      | writer | requestedStatus | currentStatus | statusMessage | default | home | constituents |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|"neo4j"  |"standard" |[]       |"read-write"|"localhost:7687"| "primary" | true   | "online"        | "online"      | ""            |true     |true  |[]            |
+|"system" |"system"   |[]       |"read-write"|"localhost:7687"| "primary" | true   | "online"        | "online"      | ""            |false    |false |[]            |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Note that the `role`, `writer`, and `address` columns are primarily intended to distinguish between the states of a given database, across multiple servers deployed in a xref:clustering/introduction.adoc[cluster].
+In a standalone deployment with a single server, the `address` field should be the same for every database, the `role` field should always be "primary", and the `writer` field should be true.
+
+====
+
+.Listing databases in a cluster
+====
+When running `SHOW DATABASES` against a cluster, expect similar output to the following:
+
+[source,queryresults,role=noplay]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name    | type      | aliases | access     | address        | role      | writer | requestedStatus | currentStatus | statusMessage | default | home | constituents |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|"neo4j"  |"standard" |[]       |"read-write"|"localhost:7681"|"primary"  |false   |"online"         |"online"       |""             |true     |true  |[]            |
+|"neo4j"  |"standard" |[]       |"read-write"|"localhost:7682"|"primary"  |false   |"online"         |"online"       |""             |true     |true  |[]            |
+|"neo4j"  |"standard" |[]       |"read-write"|"localhost:7683"|"primary"  |true    |"online"         |"online"       |""             |true     |true  |[]            |
+|"neo4j"  |"standard" |[]       |"read-write"|"localhost:7684"|"secondary"|false   |"online"         |"online"       |""             |true     |true  |[]            |
+|"system" |"system"   |[]       |"read-write"|"localhost:7681"|"primary"  |true    |"online"         |"online"       |""             |false    |false |[]            |
+|"system" |"system"   |[]       |"read-write"|"localhost:7682"|"primary"  |false   |"online"         |"online"       |""             |false    |false |[]            |
+|"system" |"system"   |[]       |"read-write"|"localhost:7683"|"primary"  |false   |"online"         |"online"       |""             |false    |false |[]            |
+|"system" |"system"   |[]       |"read-write"|"localhost:7684"|"secondary"|false   |"online"         |"online"       |""             |false    |false |[]            |
+|"foo"    |"standard" |[]       |"read-write"|"localhost:7681"|"primary"  |true    |"online"         |"online"       |""             |false    |false |[]            |
+|"foo"    |"standard" |[]       |"read-write"|"localhost:7684"|"secondary"|false   |"online"         |"online"       |""             |false    |false |[]            |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+Note that `SHOW DATABASES` does **not** return 1 row per database.
+Instead, it returns 1 row per database, per server that hosts it in the cluster.
+Therefore, if the cluster has four servers hosting 3 databases each with 3 primaries and one secondary, 12 rows are displayed.
+In addition this means that if all the servers that host a database are offline, the database will not appear in the results of `SHOW DATABASES`.
+
+The possible roles are "primary", "secondary", and "unknown".
+
+Note that different servers may have different roles for each database, and a server may have different roles for different databases.
+
+If a database is offline on a particular server, either because it was stopped by an operator, or an error has occurred, its cluster `role` is "unknown".
+
+====
+
+
+[[show-databases-monitoring-listing-single]]
+== Listing a single database
+
+The number of rows returned by `SHOW DATABASES` can be quite large, especially when run in a cluster.
+You can filter the rows returned by database name (e.g. "foo") by using the command `SHOW DATABASE foo`.
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW DATABASE databaseName
+----
+
+*Arguments:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name           | Type   | Description
+| databaseName   | String | The name of the database whose status to report.
+|===
+
+*Returns:*
+
+[options="header", cols="m,a,a"]
+|===
+| Name             | Type         | Description
+| name             | String       | The human-readable name of the database.
+| type             | String       | `standard`, `system`, or `composite`.
+| aliases          | List<String> | The names of any aliases the database may have.
+| access           | String       | The database access mode, either `read-write` or `read-only`.
+| address          | String       | The bolt address of the server hosting the database.
+| role             | String       | The cluster role which the server fulfills for this database.
+| writer           | Boolean      | `true` for the database node that accepts writes.
+This node is either the leader for this database in a cluster _or_ this is a standalone server.
+| requestedStatus  | String       | The state that an operator has requested the database to be in.
+| currentStatus    | String       | The state the database is actually in on this server.
+| statusMessage    | String       | A message explaining the current state of the database, which could be an error encountered by the Neo4j server when transitioning the database to `requestedStatus`, if any.
+| default          | Boolean      | Whether this database is the default for this DBMS.
+| home             | Boolean      | Whether this database is the home database for this user.
+| constituents     | List<String> | A list of alias names making up this composite database, null for non-composite databases.
+|===
+
+.Listing statuses for database _foo_
+====
+When running `SHOW DATABASE foo` in a cluster, expect similar output to the following:
+
+[source,queryresult]
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|  name    |  type      | aliases   |  access      |  address         |  role     |  writer  |  requestedStatus  |  currentStatus  |  statusMessage                                    |  default  |  home  |  constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo"    | "standard" | []        | "read-write" | "localhost:7681" | "primary" | false    | "online"          | "online"        | ""                                                | true      | true   | []            |
+| "foo"    | "standard" | []        | "read-write" | "localhost:7682" | "unknown" | false    | "online"          | "dirty"         | "An error occurred! Unable to start database ..." | true      | true   | []            |
+| "foo"    | "standard" | []        | "read-write" | "localhost:7683" | "primary" | true     | "online"          | "online"        | ""                                                | true      | true   | []            |
+| "foo"    | "standard" | []        | "read-write" | "localhost:7684" | "unknown" | false    | "online"          | "dirty"         | "An error occurred! Unable to start database ..." | true      | true   | []            |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+====
+
+[[show-databases-monitoring-listing-expanded]]
+== Listing more details about databases
+
+If more details about the databases are needed, `SHOW DATABASES` can be appended with `YIELD *`.
+
+*Syntax:*
+
+[source, cypher]
+----
+SHOW DATABASES YIELD *
+----
+
+*Returns:*
+
+[options="header", cols="2,1,2,1"]
+|===
+| Name                       | Type         | Description | Example value
+| `name`                     | String       | The human-readable name of the database. | "foo"
+| `type`                     | String       | `standard`, `system` or `composite` | "standard"
+| `aliases`                  | List<String> | Aliases of the database. | "[]"
+| `access`                   | String       | `read-write` or `read-only` | "read-write"
+| `databaseID`               | String       | The ID for the database. | "CC573A1DF4...."
+| `serverID`                 | String       | The friendly name or UUID of the server hosting this database. | "server3"
+| `address`                  | String       | The Bolt address of the server hosting the database. | "localhost:7683"
+| `role`                     | String       | The cluster role which the server fulfills for this database. | "primary"
+| `writer`                   | Boolean      | Whether the database accepts writes on this server. | true
+| `requestedStatus`          | String       | The state that an operator has requested the database to be in. | "online"
+| `currentStatus`            | String       | The state the database is actually in on this server. | "online"
+| `statusMessage`            | String       | Error encountered by the server when transitioning the database to `requestedStatus`, if any. | ""
+| `default`                  | Boolean      | Whether this database is the default for this DBMS. | false
+| `home`                     | Boolean      | Whether this database is the user's home database. | true
+| `currentPrimariesCount`    | Integer      | Number of primaries for this database reported as running currently.
+It is the same as the number of rows where `role`=`primary` and `name`=this database | 3
+| `currentSecondariesCount`  | Integer      | Number of secondaries for this database reported as running currently.
+It is the same as the number of rows where `role`=`secondary` and `name`=this database | 0
+| `requestedPrimariesCount`  | Integer      | The requested number of primaries for this database.
+May be lower than current if the DBMS is currently reducing the number of copies of the database, or higher if it is currently increasing the number of copies. | 3
+| `requestedSecondariesCount`| Integer      | The requested number of secondaries for this database.
+May be lower than current if the DBMS is currently reducing the number of copies of the database, or higher if it is currently increasing the number of copies. | 1
+| `creationTime`             | Datetime     | The timestamp of the creation of this database. | "2022-09-09T12:58:21.923000000Z"
+| `lastStartTime`            | Datetime     | The timestamp of the most recent time this database was started
+It is the same as creation time unless the database has been stopped at some point. | "2022-09-09T12:58:21.923000000Z"
+| `lastStopTime`             | Datetime     | The timestamp of the most recent time this database was stopped (`STOP DATABASE`) | null
+| `store`                    | String       | The store format. | "record-aligned-1.1"
+| `lastCommittedTxn`         | Integer      | The latest committed transaction number on this database server.
+May be different between members when changes have not propagated. | 2342
+| `replicationLag`           | Integer      | The difference in transaction numbers between this server and the writer of this database.
+If this is persistently high, there may be a problem. | 1
+| `constituents`             | List<String> | A list of alias names making up this composite database, null for non-composite databases. | "[]"
+|===

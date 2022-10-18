@@ -2,76 +2,80 @@
 = Consistency checker
 :description: Describes the Neo4j consistency checker. 
 
-
-[[consistency-checker-syntax]]
-
-The consistency of a database or a backup can be checked using the `check-consistency` argument to the `neo4j-admin` tool.
-The `neo4j-admin` tool is located in the `bin` directory.
+You can use the `neo4j-admin database check` command to check the consistency of a database, a dump, or a backup.
+The `neo4j-admin` tool is located in the _/bin_ directory.
 If checking the consistency of a database, note that it has to be stopped first or else the consistency check will result in an error.
 
 [NOTE]
-It is not recommended to use an NFS to check the consistency of a database or a backup as this slows the process down significantly.
-
-
-*Syntax*
-----
-neo4j-admin check-consistency ([--database=<database>] | [--backup=<path>])
-                               [--verbose] [--additional-config=<path>]
-                               [--check-graph=<true/false>]
-                               [--check-indexes=<true/false>]
-                               [--check-index-structure=<true/false>]
-                               [--check-label-scan-store=<true/false>]
-                               [--check-property-owners=<true/false>]
-                               [--report-dir=<path>]`
-----
-
-[NOTE]
 ====
-Please note that the following options have been deprecated:
-
-[source,role=noheader]
-----
-[--check-label-scan-store=<true/false>]
-[--check-property-owners=<true/false>]
-----
-
-Values for these settings will be ignored.
+It is not recommended to use an NFS to check the consistency of a database, a dump, or a backup as this slows the process down significantly.
 ====
 
-*Options*
+== Syntax
 
-[options="header",cols=",m,a"]
+The `neo4j-admin database check` command has the following syntax:
+
+----
+neo4j-admin database check [--force] [--verbose] [--check-counts[=true|false]] [--check-graph[=true|false]]
+                           [--check-indexes[=true|false]] [--check-property-owners[=true|false]]
+                           [--additional-config=<file>] [--report-path=<path>]
+                           [[--from-path-data=<path> --from-path-txn=<path>] | [--from-path=<path> [--temp-path=<path>]]]
+                           <database>
+----
+
+`<database>` -- Name of the database to check.
+
+== Options
+
+The `neo4j-admin database check` command has the following options:
+
+[options="header",cols="m,m,a"]
 |===
-| Option                    | Default   | Description
-|  --database               | neo4j     | Name of database.
-|  --backup                 |           | Path to backup to check consistency of. Cannot be used together with --database.
-|  --additional-config      |           | Configuration file to supply additional configuration in.
-|  --verbose                | false     | Enable verbose output.
-|  --report-dir             | .         | Directory to write report file in.
-|  --check-graph            | true      | Perform checks between nodes, relationships, properties, types and tokens.
-|  --check-indexes          | true      | Perform checks on indexes by comparing content with the store.
-|  --check-index-structure  | true      | Perform physical structure check on indexes. No comparison with the store takes place.
-| [deprecated]#`--check-label-scan-store`# | true        | This option is deprecated and its value will be ignored.
-| [deprecated]#`--check-property-owners`#  | false        | This option is deprecated and its value will be ignored.
+| Option                    | Default       | Description
+|  --additional-config      |               | Path to a configuration file that contains additional configuration options.
+|  --verbose                | false         | Enable verbose output.
+|  --report-path            | .             | Path to where a consistency report will be written. Interpreted as a directory, unless it
+has an extension of _.report_.
+|  --check-graph            | true          | Perform checks between nodes, relationships, properties, types, and tokens.
+|  --check-indexes          | true          | Perform checks on indexes by comparing content with the store.
+|  --check-counts           | <check-graph> | Perform consistency checks on the counts. Requires the `check-graph` option to be `true` (which is by default) or you can specify `--check-graph/--check-graph=true`.
+|  --check-property-owners  | false         | Perform consistency checks on the ownership of properties. Requires the `check-graph` option to be `true` (which is by default) or you can specify `--check-graph/--check-graph=true`.
+|  --from-path-data         | xref:reference/configuration-settings.adoc#config_server.directories.data[`server.directories.data`]/databases
+                                            | Path to the _/databases_ directory, containing the database directory to source from.
+|  --from-path-txn          | xref:reference/configuration-settings.adoc#config_server.directories.transaction.logs.root[`server.directories.transaction.logs.root`]
+                                            | Path to the _/transactions_ directory, containing the transaction directory for the database to source from.
+|  --from-path              |               | Path to the directory containing dump/backup artifacts whose consistency will be checked.
+|  --temp-path              | <from-path>   | Path to a directory to be used as a staging area to extract dump/backup artifacts if needed.
+|  --force                  | false         | Force a consistency check to be run, overriding resource checks.
 |===
 
 
-*Output*
+== Output
 
-If the consistency checker does not find errors, it will exit cleanly and not produce a report.
-If the consistency checker finds errors, it will exit with an exit code of `1` and write a report file with a name on the format `inconsistencies-YYYY-MM-DD.HH24.MI.SS.report`.
-The location of the report file is the current working directory, or as specified by the parameter `report-dir`.
+If the consistency checker does not find errors, it exits cleanly and does not produce a report.
+If the consistency checker finds errors, it exits with an exit code other than `0` and writes a report file with a name on the format `inconsistencies-YYYY-MM-DD.HH24.MI.SS.report`.
+The location of the report file is the current working directory, or as specified by the parameter `report-path`.
+
+== Example
 
 .Run the consistency checker
 ====
-Run with the `--database` option to check the consistency of a database.
 Note that the database must be stopped first.
 
 ----
-$neo4j-home> bin/neo4j-admin check-consistency --database=neo4j
+$neo4j-home> bin/neo4j-admin database check neo4j
 
-2019-11-13 12:42:14.479+0000 INFO [o.n.k.i.s.f.RecordFormatSelector] Selected RecordFormat:StandardV4_0[SF4.0.b] record format from store /data/databases/neo4j
-2019-11-13 12:42:14.481+0000 INFO [o.n.k.i.s.f.RecordFormatSelector] Format not configured for store /data/databases/neo4j. Selected format from the store files: RecordFormat:StandardV4_0[SF4.0.b]
+ID Generator consistency check
+....................  10%
+....................  20%
+....................  30%
+....................  40%
+....................  50%
+....................  60%
+....................  70%
+....................  80%
+....................  90%
+.................... 100%
 Index structure consistency check
 ....................  10%
 ....................  20%
@@ -83,17 +87,7 @@ Index structure consistency check
 ....................  80%
 ....................  90%
 .................... 100%
-Full Consistency Check
-....................  10%
-....................  20%
-....................  30%
-....................  40%
-....................  50%
-....................  60%
-....................  70%
-....................  80%
-....................  90%
-.Checking node and relationship counts
+Consistency check
 ....................  10%
 ....................  20%
 ....................  30%
@@ -104,17 +98,18 @@ Full Consistency Check
 ....................  80%
 ....................  90%
 .................... 100%
+
 ----
 
-Run with the `--backup` option to check the consistency of a backup.
+Run with the `--from-path` option to check the consistency of a backup or a dump.
 ----
-bin/neo4j-admin check-consistency --backup backup/neo4j-backup
+bin/neo4j-admin database check --from-path=<directory-with-backup-or-dump> neo4j
 ----
 
 ====
 
 [NOTE]
 ====
-`neo4j-admin check-consistency` cannot be applied to the xref:fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
- It must be run directly on the databases that are part of the Fabric setup.
+`neo4j-admin database check` cannot be applied to xref:composite-databases/introduction.adoc#composite-databases-concepts[composite databases].
+ It must be run directly on the databases that are part of a composite database.
 ====

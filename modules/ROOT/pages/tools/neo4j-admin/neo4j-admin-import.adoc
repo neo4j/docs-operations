@@ -1,31 +1,30 @@
 [[neo4j-admin-import]]
 = Import
-:description: This section describes how to perform batch imports of data into Neo4j using the command line tool `neo4j-admin import`. 
+:description: This section describes how to perform batch imports of data into Neo4j using the command line tool `neo4j-admin database import`. 
 
 :rfc-4180: https://tools.ietf.org/html/rfc4180
 
-There are two ways to import data from CSV files into Neo4j: via `neo4j-admin import` or `LOAD CSV`.
+There are two ways to import data from CSV files into Neo4j: via `neo4j-admin database import` or `LOAD CSV`.
 
-With the `neo4j-admin import` command, you can do batch imports of large amounts of data into a _previously unused database_ database from CSV files.
+With the `neo4j-admin database import` command, you can do batch imports of large amounts of data into a _previously unused database_ database from CSV files.
 The command can be performed only **once** per database.
 By default, this database is set to `neo4j`, but you can use the `--database=<database>` option to import your data into a different database.
 
 [NOTE]
 ====
-The user running `neo4j-admin import` must have `WRITE` capabilities into `dbms.directories.data` and `dbms.directories.log`.
+The user running `neo4j-admin database import` must have `WRITE` capabilities into `server.directories.data` and `server.directories.log`.
 ====
 
 With `LOAD CSV`, you can import small to medium-sized CSV files into an _existing_ database.
 `LOAD CSV` can be run as many times as needed and does not require an empty database.
 
 However, using the `import` command of `neo4j-admin` is generally faster since it is run against a stopped and empty database.
-This section describes the `neo4j-admin import` option.
+This section describes the `neo4j-admin database import` option.
 
 [TIP]
 ====
-For information on `LOAD CSV`, see the link:/docs/cypher-manual/4.4/clauses/load-csv[Cypher Manual -> `LOAD CSV`]. +
-For in-depth examples of using the command `neo4j-admin import`, refer to the xref:tutorial/neo4j-admin-import.adoc[Tutorials -> Neo4j Admin import]. +
-To create a cluster based on imported data, see xref:clustering/seed.adoc#causal-clustering-seed-import[Seed a cluster using the import tool].
+For information on `LOAD CSV`, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/load-csv[Cypher Manual -> `LOAD CSV`]. 
+For in-depth examples of using the command `neo4j-admin database import`, refer to the xref:tutorial/neo4j-admin-import.adoc[Tutorials -> Neo4j Admin import].
 ====
 
 These are some things you need to keep in mind when creating your input files:
@@ -45,21 +44,23 @@ These are some things you need to keep in mind when creating your input files:
 .Indexes and constraints
 ====
 Indexes and constraints are not created during the import.
-Instead, you have to add these afterwards (see link:/docs/cypher-manual/4.4/indexes-for-full-text-search[Cypher Manual -> Indexes]).
+Instead, you have to add these afterwards (see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/indexes-for-full-text-search[Cypher Manual -> Indexes]).
 ====
 
+[[import-tool-full]]
+== Full import
+
 [[import-tool-syntax]]
-== Syntax
+=== Syntax
 
 The syntax for importing a set of CSV files is:
 
 ----
-neo4j-admin import [--expand-commands]
+neo4j-admin database import full [--expand-commands]
                    [--verbose]
                    [--auto-skip-subsequent-headers[=<true/false>]]
-                   [--cache-on-heap[=<true/false>]]
-                   [--force[=<true/false>]]
-                   [--high-io[=<true/false>]]
+                   [--overwrite-destination[=<true/false>]]
+                   [--high-parallel-io[=<true/false>]]
                    [--ignore-empty-strings[=<true/false>]]
                    [--ignore-extra-columns[=<true/false>]]
                    [--legacy-style-quoting[=<true/false>]]
@@ -72,20 +73,23 @@ neo4j-admin import [--expand-commands]
                    [--additional-config=<path>]
                    [--array-delimiter=<char>]
                    [--bad-tolerance=<num>]
-                   [--database=<database>]
                    [--delimiter=<char>]
                    [--id-type=<STRING|INTEGER|ACTUAL>]
                    [--input-encoding=<character-set>]
-                   [--max-memory=<size>]
-                   [--processors=<num>]
+                   [--max-off-heap-memory=<size>]
+                   [--threads=<num>]
                    [--quote=<char>]
                    [--read-buffer-size=<size>]
                    [--report-file=<path>]
                    --nodes=[<label>[:<label>]...=]<files>...
                    [--nodes=[<label>[:<label>]...=]<files>...]...
                    [--relationships=[<type>=]<files>...]...
+                   <database>
 ----
+`<database>` is the name of the database to import, and defaults to `neo4j`
 
+[[import-tool-examples]]
+=== Examples
 
 .Import data from CSV files
 ====
@@ -103,7 +107,7 @@ The following command imports the three datasets:
 
 [source, shell, role=noplay]
 ----
-neo4j_home$ bin/neo4j-admin import --nodes import/movies_header.csv,import/movies.csv \
+neo4j_home$ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/movies.csv \
 --nodes import/actors_header.csv,import/actors.csv \
 --relationships import/roles_header.csv,import/roles.csv
 ----
@@ -121,7 +125,7 @@ For example:
 
 [source, shell, role=noplay]
 ----
-neo4j_home$ bin/neo4j-admin import --nodes import/node_header.csv,import/node_data_\d+\.csv
+neo4j_home$ bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data_\d+\.csv
 ----
 ====
 
@@ -134,7 +138,7 @@ For example:
 
 [source, shell, role=noplay]
 ----
-neo4j_home$ bin/neo4j-admin import --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv'
+neo4j_home$ bin/neo4j-admin database import full --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv'
 ----
 ====
 
@@ -145,46 +149,9 @@ If importing to a database that has not explicitly been created prior to the imp
 
 
 [[import-tool-options]]
-== Options
+=== Options
 
-.`neo4j-admin import` options
-|===
-| name
-
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-expand-commands[`--expand-commands`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-verbose[`--verbose`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-auto-skip-subsequent-headers[`--auto-skip-subsequent-headers`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-cache-on-heap[`--cache-on-heap`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-force[`--force`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-high-io[`--high-io`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-ignore-empty-strings[`--ignore-empty-strings`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-ignore-extra-columns[`--ignore-extra-columns`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-legacy-style-quoting[`--legacy-style-quoting`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-multiline-fields[`--multiline-fields`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-normalize-types[`--normalize-types`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-skip-bad-entries-logging[`--skip-bad-entries-logging`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-skip-bad-relationships[`--skip-bad-relationships`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-skip-duplicate-nodes[`--skip-duplicate-nodes`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-trim-strings[`--trim-strings`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-additional-config[`--additional-config`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-array-delimiter[`--array-delimiter`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-bad-tolerance[`--bad-tolerance`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-database[`--database`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-delimiter[`--delimiter`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-id-type[`--id-type`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-input-encoding[`--input-encoding`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-max-memory[`--max-memory`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-processors[`--processors`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-quote[`--quote`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-read-buffer-size[`--read-buffer-size`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-report-file[`--report-file`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-nodes[`--nodes`]
-| xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-relationships[`--relationships`]
-
-|===
-
-
-[NOTE]
+[WARNING]
 ====
 Some of the options below are marked as *Advanced*.
 These options should not be used for experimentation.
@@ -192,296 +159,218 @@ These options should not be used for experimentation.
 For more information, please contact Neo4j Professional Services.
 ====
 
-[[import-tool-option-expand-commands]]
-`--expand-commands`::
-Allow command expansion in config value evaluation.
+.`neo4j-admin database import full` options
+[options="header", cols="5m,10a,2m"]
+|===
+| Option
+| Description
+| Default
 
-[[import-tool-option-verbose]]
-`--verbose`::
-Enable verbose output.
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
 
-[[import-tool-option-auto-skip-subsequent-headers]]
-`--auto-skip-subsequent-headers`::
-Automatically skip accidental header lines in subsequent files in file groups with more than one file.
-+
-Default: `false`
+|--verbose
+|Enable verbose output.
+|
 
-[[import-tool-option-cache-on-heap]]
-`--cache-on-heap[=<true/false>]` *Advanced*::
-Determines whether or not to allow allocating memory for the cache on heap.
-+
-If `false`, then caches will still be allocated off-heap, but the additional free memory inside the JVM will not be allocated for the caches.
-+
-Use this to have better control over the heap memory.
-+
-Default: `false`
+|--auto-skip-subsequent-headers
+|Automatically skip accidental header lines in subsequent files in file groups with more than one file.
+|false
 
-[[import-tool-option-force]]
-`--force[=<true/false>]`::
-Force deletes any existing database files prior to the import.
-+
-Default: `false`
-+
-Use `--force=true` to delete all files of a specified database and then import new data.
+|--overwrite-destination[=<true/false>]
+|Deletes any existing database files prior to the import.
+
+Use `--overwrite-destination=true` to delete all files of the specified database and then import new data.
 For example:
-+
-* When using Neo4j Community Edition. +
-Since the Community Edition only supports one database and does not support `DROP DATABASE name`, the only way to re-import data using `neo4j-admin import` is to use `--force=true`.
+
+* When using Neo4j Community Edition.
+Since the Community Edition only supports one database and does not support `DROP DATABASE name`, the only way to re-import data using `neo4j-admin database import` is to use `--overwrite-destination=true`.
 * When you first want to see how the data would get imported and maybe do some tweaking before you import your actual data.
 For example, you can first import a small batch of data (e.g., 1000 rows) and examine it.
-And then, tweak your actual data (e.g., 10 million rows) and use the option `--force=true` to re-import it.
+And then, tweak your actual data (e.g., 10 million rows) and use the option `--overwrite-destination=true` to re-import it.
+|false
 
-[[import-tool-option-high-io]]
-`--high-io[=<true/false>]`::
-Ignore environment-based heuristics, and specify whether the target storage subsystem can support parallel IO with high throughput.
-+
+|--high-parallel-io[=<true/false>]
+|Ignore environment-based heuristics, and specify whether the target storage subsystem can support parallel IO with high throughput.
+
 Typically this is `true` for SSDs, large raid arrays and network-attached storage.
-+
-Default: `false`
+|false
 
+|--ignore-empty-strings[=<true/false>]
+|Determines whether or not empty string fields, such as `""`, from input source are ignored (treated as null).
+|false
 
-[[import-tool-option-ignore-empty-strings]]
-`--ignore-empty-strings[=<true/false>]`::
-Determines whether or not empty string fields, such as `""`, from input source are ignored (treated as null).
-+
-Default: `false`
+|--ignore-extra-columns[=<true/false>]
+|If unspecified columns should be ignored during the import.
+|false
 
+|--legacy-style-quoting[=<true/false>]
+|Determines whether or not backslash-escaped quote e.g. `\"` is interpreted as inner quote.
+|false
 
-[[import-tool-option-ignore-extra-columns]]
-`--ignore-extra-columns[=<true/false>]`::
-If unspecified columns should be ignored during the import.
-+
-Default: `false`
+|--multiline-fields[=<true/false>]
+|Determines whether or not fields from input source can span multiple lines, i.e. contain newline characters.
 
-
-[[import-tool-option-legacy-style-quoting]]
-`--legacy-style-quoting[=<true/false>]`::
-Determines whether or not backslash-escaped quote e.g. `\"` is interpreted as inner quote.
-+
-Default: `false`
-
-
-[[import-tool-option-multiline-fields]]
-`--multiline-fields[=<true/false>]`::
-Determines whether or not fields from input source can span multiple lines, i.e. contain newline characters.
-+
 Setting `--multiline-fields=true` can severely degrade performance of the importer.
 Therefore, use it with care, especially with large imports.
-+
-Default: `false`
+|false
 
+|--normalize-types[=<true/false>]
+|Determines whether or not to normalize property types to Cypher types, e.g. `int` becomes `long` and `float` becomes `double`.
+|true
 
-[[import-tool-option-normalize-types]]
-`--normalize-types[=<true/false>]`::
-Determines whether or not to normalize property types to Cypher types, e.g. `int` becomes `long` and `float` becomes `double`.
-+
-Default: `true`
+|--skip-bad-entries-logging[=<true/false>]
+|Determines whether or not to skip logging bad entries detected during import.
+|false
 
+|--skip-bad-relationships[=<true/false>]
+|Determines whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to node that was not specified by the node input data.
 
-[[import-tool-option-skip-bad-entries-logging]]
-`--skip-bad-entries-logging[=<true/false>]`::
-Determines whether or not to skip logging bad entries detected during import.
-+
-Default: `false`
+Skipped relationships will be logged, containing at most the number of entities specified by <<import-tool-option-bad-tolerance,`--bad-tolerance`>>, unless otherwise specified by the <<import-tool-option-skip-bad-entries-logging,`--skip-bad-entries-logging`>> option.
+|false
 
+|--skip-duplicate-nodes[=<true/false>]
+|Determines whether or not to skip importing nodes that have the same ID/group.
 
-[[import-tool-option-skip-bad-relationships]]
-`--skip-bad-relationships[=<true/false>]`::
-Determines whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to node that was not specified by the node input data.
-+
-Skipped relationships will be logged, containing at most the number of entities specified by xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-bad-tolerance[`--bad-tolerance`], unless otherwise specified by the xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-skip-bad-entries-logging[`--skip-bad-entries-logging`] option.
-+
-Default: `false`
-
-
-[[import-tool-option-skip-duplicate-nodes]]
-`--skip-duplicate-nodes[=<true/false>]`::
-Determines whether or not to skip importing nodes that have the same ID/group.
-+
 In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
-+
-Skipped nodes will be logged, containing at most the number of entities specified by xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-bad-tolerance[`--bad-tolerance`], unless otherwise specified by the xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-skip-bad-entries-logging[`--skip-bad-entries-logging`] option.
-+
-Default: `false`
 
+Skipped nodes will be logged, containing at most the number of entities specified by <<import-tool-option-bad-tolerance,`--bad-tolerance`>>, unless otherwise specified by the <<import-tool-option-skip-bad-entries-logging,`--skip-bad-entries-logging`>> option.
+|false
 
-[[import-tool-option-trim-strings]]
-`--trim-strings[=<true/false>]`::
-Determines whether or not strings should be trimmed for whitespaces.
-+
-Default: `false`
+|--trim-strings[=<true/false>]
+|Determines whether or not strings should be trimmed for whitespaces.
+|false
 
+|--additional-config=<config-file-path>
+|Path to a configuration file that contain additional configuration options.
+|
 
-[[import-tool-option-additional-config]]
-`--additional-config=<config-file-path>`::
-Path to a configuration file that contain additional configuration options.
+|--array-delimiter=<char>
+|Determines the array delimiter within a value in CSV data.
 
-
-[[import-tool-option-array-delimiter]]
-`--array-delimiter=<char>`::
-Determines the array delimiter within a value in CSV data.
-+
 ====
 * ASCII character -- e.g. `--array-delimiter=";"`.
 * `\ID` -- unicode character with ID, e.g. `--array-delimiter="\59"`.
 * `U+XXXX` -- unicode character specified with 4 HEX characters, e.g. `--array-delimiter="U+20AC"`.
 * `\t` -- horizontal tabulation (HT), e.g. `--array-delimiter="\t"`.
 ====
-+
+
 For horizontal tabulation (HT), use `\t` or the unicode character ID `\9`.
-+
+
 Unicode character ID can be used if prepended by `\`.
-+
-Default: `;`
+|;
 
+|--bad-tolerance=<num>
+|Number of bad entries before the import is considered failed.
 
-[[import-tool-option-bad-tolerance]]
-`--bad-tolerance=<num>`::
-Number of bad entries before the import is considered failed.
-+
 This tolerance threshold is about relationships referring to missing nodes.
 Format errors in input data are still treated as errors.
-+
-Default: `1000`
+|1000
 
+|--delimiter=<char>
+|Determines the delimiter between values in CSV data.
 
-[[import-tool-option-database]]
-`--database=<name>`::
-Name of the database to import.
-+
-Default: `neo4j`
-
-
-[[import-tool-option-delimiter]]
-`--delimiter=<char>`::
-Determines the delimiter between values in CSV data.
-+
 ====
 * ASCII character -- e.g. `--delimiter=","`.
 * `\ID` -- unicode character with ID, e.g. `--delimiter="\44"`.
 * `U+XXXX` -- unicode character specified with 4 HEX characters, e.g. `--delimiter="U+20AC"`.
 * `\t` -- horizontal tabulation (HT), e.g. `--delimiter="\t"`.
 ====
-+
+
 For horizontal tabulation (HT), use `\t` or the unicode character ID `\9`.
-+
+
 Unicode character ID can be used if prepended by `\`.
-+
-Default: `,`
+|,
 
+|--id-type=<STRING\|INTEGER\|ACTUAL>
+|Each node must provide a unique ID in order to be used for creating relationships during the import.
 
-[[import-tool-option-id-type]]
-`--id-type=<STRING|INTEGER|ACTUAL>`::
-Each node must provide a unique ID in order to be used for creating relationships during the import.
-+
 Possible values are:
 
 * `STRING` -- arbitrary strings for identifying nodes.
 * `INTEGER` -- arbitrary integer values for identifying nodes.
-* `ACTUAL` -- actual node IDs. (**Advanced**)
+* `ACTUAL` -- actual node IDs. label:advanced[]
+|STRING
 
-+
-Default: `STRING`
+|--input-encoding=<character-set>
+|Character set that input data is encoded in.
+|UTF-8
 
+|--max-off-heap-memory=<size>
+|Maximum off heap memory that `neo4j-admin` can use for various data structures and caching to improve performance.
 
-[[import-tool-option-input-encoding]]
-`--input-encoding=<character-set>`::
-Character set that input data is encoded in.
-+
-Default: `UTF-8`
-
-
-[[import-tool-option-max-memory]]
-`--max-memory=<size>`::
-Maximum memory that `neo4j-admin` can use for various data structures and caching to improve performance.
-+
 Values can be plain numbers such as `10000000`, or `20G` for 20 gigabyte.
 It can also be specified as a percentage of the available memory, for example `70%`.
-+
-Default: `90%`
+|90%
 
+|--threads=<num> label:advanced[]
+|Max number of worker threads used by the importer.
 
-[[import-tool-option-processors]]
-`--processors=<num>` *Advanced*::
-Max number of processors used by the importer.
-+
 Defaults to the number of available processors reported by the JVM.
 There is a certain amount of minimum threads needed, so for that reason there is no lower bound for this value.
-+
+
 For optimal performance, this value shouldn't be greater than the number of available processors.
+|
 
+|--quote=<char>
+|Character to treat as quotation character for values in CSV data.
 
-[[import-tool-option-quote]]
-`--quote=<char>`::
-Character to treat as quotation character for values in CSV data.
-+
 Quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them, for example `""` would be interpreted as a literal `"`.
-+
+
 You cannot escape using `\`.
-+
-Default: `"`
+|"
 
+|--read-buffer-size=<size>
+|Size of each buffer for reading input data.
 
-[[import-tool-option-read-buffer-size]]
-`--read-buffer-size=<size>`::
-Size of each buffer for reading input data.
-+
 It has to at least be large enough to hold the biggest single value in the input data.
 Value can be a plain number or byte units string, e.g. `128k`, `1m`.
-+
-Default: `4m`
+|4m
 
+|--report-file=<filename>
+|File in which to store the report of the csv-import.
 
-[[import-tool-option-report-file]]
-`--report-file=<filename>`::
-File in which to store the report of the csv-import.
-+
-Default: `import.report`
-+
-The location of the import log file can be controlled using the xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-report-file[`--report-file`] option.
+The location of the import log file can be controlled using the <<import-tool-option-report-file,`--report-file`>> option.
 If you run large imports of CSV files that have low data quality, the import log file can grow very large.
 For example, CSV files that contain duplicate node IDs, or that attempt to create relationships between non-existent nodes, could be classed as having low data quality.
 In these cases, you may wish to direct the output to a location that can handle the large log file.
-+
+
 If you are running on a UNIX-like system and you are not interested in the output, you can get rid of it altogether by directing the report file to `/dev/null`.
-+
-If you need to debug the import, it might be useful to collect the stack trace. This is done by using xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-verbose[`--verbose`] option.
 
+If you need to debug the import, it might be useful to collect the stack trace. This is done by using <<import-tool-option-verbose, `--verbose`>> option.
+|import.report
 
-[[import-tool-option-nodes]]
-`--nodes=[<label>[:<label>]...=]<files>...`::
-Node CSV header and data.
-
-* Multiple files will be logically seen as one big file from the perspective of the importer.
-* The first line must contain the header.
-* Multiple data sources like these can be specified in one import, where each data source has its own header.
-* Files can also be specified using regular expressions.
-
-+
-For an example, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-multiple-input-files-regex-example[Import data from CSV files using regular expression].
-
-
-[[import-tool-option-relationships]]
-`--relationships=[<type>=]<files>...`::
-Relationship CSV header and data.
+|--nodes=[<label>[:<label>]...=]<files>...
+|Node CSV header and data.
 
 * Multiple files will be logically seen as one big file from the perspective of the importer.
 * The first line must contain the header.
 * Multiple data sources like these can be specified in one import, where each data source has its own header.
 * Files can also be specified using regular expressions.
 
-+
 For an example, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-multiple-input-files-regex-example[Import data from CSV files using regular expression].
+|
 
+|--relationships=[<type>=]<files>...
+|Relationship CSV header and data.
 
-[[import-tool-option-arg-file]]
-`@<arguments-file-path>`::
-File containing all arguments, used as an alternative to supplying all arguments on the command line directly.
-+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+For an example, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-multiple-input-files-regex-example[Import data from CSV files using regular expression].
+|
+
+|@<arguments-file-path>
+|File containing all arguments, used as an alternative to supplying all arguments on the command line directly.
+
 Each argument can be on a separate line, or multiple arguments per line and separated by space.
-+
-Arguments containing spaces must be quoted.
 
+Arguments containing spaces must be quoted.
+|
+|===
 
 [NOTE]
 .Heap size for the import
@@ -497,12 +386,309 @@ If doing imports in the order of magnitude of 100 billion entities, 20G will be 
 [NOTE]
 .Record format
 ====
-If your import data will result in a graph that is larger than 34 billion nodes, 34 billion relationships, or 68 billion properties you will need to configure the importer to use the high limit record format.
-This is achieved by setting the parameters xref:reference/configuration-settings.adoc#config_dbms.record_format[`dbms.record_format=high_limit`] and xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in a configuration file, and supplying that file to the importer with xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-additional-config[`--additional-config`].
-The format is printed in the _debug.log_ file.
+If your import data results in a graph that is larger than 34 billion nodes, 34 billion relationships, or 68 billion properties, you will need to configure the importer to use the `high_limit` record format.
+This is achieved by using the `format` option of the import command and setting the value to `high_limit`:
+
+[source, shell]
+--
+neo4j-admin database import full --format=high_limit
+--
 
 The `high_limit` format is available for Enterprise Edition only.
 ====
+
+
+[[import-tool-incremental]]
+== Incremental import
+
+[WARNING]
+====
+Incremental import needs to be used with care.
+These options should not be used for experimentation.
+
+You will need to append any incremental import command with `--force`.
+
+For more information, please contact Neo4j Professional Services.
+====
+
+
+[[import-tool-incremental-syntax]]
+=== Syntax
+
+----
+neo4j-admin database import incremental
+                   [--array-delimiter=<char>]
+                   [--delimiter=<char>]
+                   [--quote=<char>]
+                   [--auto-skip-subsequent-headers[=<true/false>]]
+                   [--ignore-empty-strings[=<true/false>]]
+                   [--ignore-extra-columns[=<true/false>]]
+                   [--legacy-style-quoting[=<true/false>]]
+                   [--multiline-fields[=<true/false>]]
+                   [--overwrite-destination[=<true/false>]]
+                   [--skip-bad-entries-logging[=<true/false>]]
+                   [--skip-bad-relationships[=<true/false>]]
+                   [--skip-duplicate-nodes[=<true/false>]]
+                   [--trim-strings[=<true/false>]]
+                   [--normalize-types[=<true/false>]]
+                   [--strict[=<true/false>]]
+                   [--bad-tolerance=<num>]
+                   [--high-parallel-io[=<on/off/auto>]]
+                   [--id-type=<STRING|INTEGER|ACTUAL>]
+                   [--input-encoding=<character-set>]
+                   [--max-off-heap-memory=<size>]
+                   [--read-buffer-size=<size>]
+                   [--nodes=[<label>[:<label>]...=]<files>...]...
+                   [--relationships=[<type>=]<files>...]...
+                   [--report-file=<path>]
+                   [--stage=<all|prepare|build|merge>]
+----
+
+[[import-tool-incremental-examples]]
+=== Examples
+
+.Incremental import in a single command
+====
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE db1;
+...
+$ bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-data/incremental-import/b.csv db1
+----
+====
+
+.Incremental import in stages
+====
+. The `prepare` stage:
++
+The database must be stopped in order to run `--stage=prepare`.
++
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE db1;
+...
+$ bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/c.csv db1
+----
+. The `build` stage:
++
+While the database must be stopped in order to run `--stage=prepare`, you can run `--stage=build` on a started database in read-only mode.
++
+[source, shell, role=noplay]
+----
+$ bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw-data/incremental-import/c.csv db1
+----
+. The `merge` stage:
++
+It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
++
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE db1;
+...
+$ bin/neo4j-admin database import incremental --stage=merge db1
+----
+====
+
+
+[[import-tool-incremental-options]]
+=== Options
+
+.`neo4j-admin database import incremental` options
+[options="header", cols="5m,10a,2m"]
+|===
+| Option
+| Description
+| Default
+
+|--array-delimiter=<char>
+|Determines the array delimiter within a value in CSV data.
+
+====
+* ASCII character -- e.g. `--array-delimiter=";"`.
+* `\ID` -- unicode character with ID, e.g. `--array-delimiter="\59"`.
+* `U+XXXX` -- unicode character specified with 4 HEX characters, e.g. `--array-delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--array-delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+|;
+
+|--delimiter=<char>
+|Determines the delimiter between values in CSV data.
+
+====
+* ASCII character -- e.g. `--delimiter=","`.
+* `\ID` -- unicode character with ID, e.g. `--delimiter="\44"`.
+* `U+XXXX` -- unicode character specified with 4 HEX characters, e.g. `--delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+|,
+
+|--quote=<char>
+|Character to treat as quotation character for values in CSV data.
+
+Quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them, for example `""` would be interpreted as a literal `"`.
+
+You cannot escape using `\`.
+|"
+
+|--auto-skip-subsequent-headers[=<true/false>]
+|Automatically skip accidental header lines in subsequent files in file groups with more than one file.
+|false
+
+|--ignore-empty-strings[=<true/false>]
+|Determines whether or not empty string fields, such as `""`, from input source are ignored (treated as null).
+|false
+
+|--ignore-extra-columns[=<true/false>]
+|If unspecified columns should be ignored during the import.
+|false
+
+|--legacy-style-quoting[=<true/false>]
+|Determines whether or not backslash-escaped quote e.g. `\"` is interpreted as inner quote.
+|false
+
+|--multiline-fields[=<true/false>]
+|Determines whether or not fields from input source can span multiple lines, i.e. contain newline characters.
+
+Setting `--multiline-fields=true` can severely degrade performance of the importer.
+Therefore, use it with care, especially with large imports.
+|false
+
+|--overwrite-destination[=<true/false>]
+|Deletes any existing database files prior to the import.
+
+Use `--overwrite-destination=true` to delete all files of a specified database and then import new data.
+For example:
+
+* When using Neo4j Community Edition.
+Since the Community Edition only supports one database and does not support `DROP DATABASE name`, the only way to re-import data using `neo4j-admin database import` is to use `--overwrite-destination=true`.
+* When you first want to see how the data would get imported and maybe do some tweaking before you import your actual data.
+For example, you can first import a small batch of data (e.g., 1000 rows) and examine it.
+And then, tweak your actual data (e.g., 10 million rows) and use the option `--overwrite-destination=true` to re-import it.
+|false
+
+|--skip-bad-entries-logging[=<true/false>]
+|Determines whether or not to skip logging bad entries detected during import.
+|false
+
+|--skip-bad-relationships[=<true/false>]
+|Determines whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to node that was not specified by the node input data.
+
+Skipped relationships will be logged, containing at most the number of entities specified by <<import-tool-option-bad-tolerance,`--bad-tolerance`>>, unless otherwise specified by the <<import-tool-option-skip-bad-entries-logging,`--skip-bad-entries-logging`>> option.
+|false
+
+|--skip-duplicate-nodes[=<true/false>]
+|Determines whether or not to skip importing nodes that have the same ID/group.
+
+In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
+
+Skipped nodes will be logged, containing at most the number of entities specified by <<import-tool-option-bad-tolerance,`--bad-tolerance`>>, unless otherwise specified by the <<import-tool-option-skip-bad-entries-logging,`--skip-bad-entries-logging`>> option.
+|false
+
+|--trim-strings[=<true/false>]
+|Determines whether or not strings should be trimmed for whitespaces.
+|false
+
+|--normalize-types[=<true/false>]
+|
+|true
+
+|--strict[=<true/false>]
+|
+|true
+
+|--bad-tolerance=<num>
+|Number of bad entries before the import is considered failed.
+
+This tolerance threshold is about relationships referring to missing nodes.
+Format errors in input data are still treated as errors.
+|1000
+
+|--high-parallel-io[=<on/off/auto>]
+|Ignore environment-based heuristics, and specify whether the target storage subsystem can support parallel IO with high throughput.
+
+Typically this is `on` for SSDs, large raid arrays and network-attached storage.
+|auto
+
+|--id-type=<STRING\|INTEGER\|ACTUAL>
+|Each node must provide a unique ID in order to be used for creating relationships during the import.
+
+Possible values are:
+
+* `STRING` -- arbitrary strings for identifying nodes.
+* `INTEGER` -- arbitrary integer values for identifying nodes.
+* `ACTUAL` -- actual node IDs. label:advanced[]
+|STRING
+
+|--input-encoding=<character-set>
+|Character set that input data is encoded in.
+|UTF-8
+
+|--max-off-heap-memory=<size>
+|Maximum off heap memory that `neo4j-admin` can use for various data structures and caching to improve performance.
+
+Values can be plain numbers such as `10000000`, or `20G` for 20 gigabyte.
+It can also be specified as a percentage of the available memory, for example `70%`.
+|90%
+
+|--read-buffer-size=<size>
+|Size of each buffer for reading input data.
+
+It has to at least be large enough to hold the biggest single value in the input data.
+Value can be a plain number or byte units string, e.g. `128k`, `1m`.
+|4m
+
+|--nodes=[<label>[:<label>]...=]<files>...
+|Node CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+For an example, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-multiple-input-files-regex-example[Import data from CSV files using regular expression].
+|
+
+|--relationships=[<type>=]<files>...
+|Relationship CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+For an example, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-multiple-input-files-regex-example[Import data from CSV files using regular expression].
+|
+
+|--report-file=<path>
+|File in which to store the report of the csv-import.
+
+The location of the import log file can be controlled using the <<import-tool-option-report-file,`--report-file`>> option.
+If you run large imports of CSV files that have low data quality, the import log file can grow very large.
+For example, CSV files that contain duplicate node IDs, or that attempt to create relationships between non-existent nodes, could be classed as having low data quality.
+In these cases, you may wish to direct the output to a location that can handle the large log file.
+
+If you are running on a UNIX-like system and you are not interested in the output, you can get rid of it altogether by directing the report file to `/dev/null`.
+
+If you need to debug the import, it might be useful to collect the stack trace. This is done by using <<import-tool-option-verbose, `--verbose`>> option.
+|import.report
+
+|--stage=<all\|prepare\|build\|merge>
+|Stage of incremental import.
+
+For incremental import into an existing database use `all` (which requires the database to be stopped).
+
+For semi-online incremental import run `prepare` (on stopped database) followed by `build` (on a potentially running database) and finally `merge` (on stopped database)",
+|all
+
+|===
 
 
 [[import-tool-header-format]]
@@ -515,6 +701,17 @@ The header contains information for each field, with the format `<name>:<field_t
 The `<name>` is used for properties and node IDs.
 In all other cases, the `<name>` part of the field is ignored.
 
+When using incremental import, you will need to have node uniqueness constraints in place for the property key and label combinations that form the primary key, or the uniquely identifiable nodes.
+For example, importing nodes with a `Person` label that are uniquely identified with a `uuid` property key, the format of the header should be `uuid:ID{label:Person}`.
+
+This is also true when working with multiple groups.
+For example, you can use `uuid:ID(Person){label:Person}`, where the relationship CSV data can refer to different groups for its `:START_ID` and `:END_ID`, just like the full import method.
+
+[NOTE]
+====
+* For more information on constraints, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/constraints[Cypher Manual -> Constraints].
+* For examples of creating unique constraints, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/constraints/examples#administration-constraints-unique-nodes[Cypher Manual -> Unique node property constraints].
+====
 
 [[import-tool-header-format-nodes]]
 == Node files
@@ -656,7 +853,7 @@ user03,Moe Know,2018-02-17,false,7
 
 Special considerations for the `point` data type::
 A point is specified using the Cypher syntax for maps.
-The map allows the same keys as the input to the link:/docs/cypher-manual/4.4/functions/spatial[Cypher Manual -> Point function].
+The map allows the same keys as the input to the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/spatial[Cypher Manual -> Point function].
 The point data type in the header can be amended with a map of default values used for all values of that column, e.g. `point{crs: 'WGS-84'}`.
 Specifying the header this way allows you to have an incomplete map in the value position in the data file.
 Optionally, a value in a data file may override default values from the header.
@@ -704,7 +901,7 @@ city03  San Mateo   {latitude:37.554167, longitude:-122.313056, height: 100, crs
 ====
 
 Special considerations for temporal data types::
-The format for all temporal data types must be defined as described in link:/docs/cypher-manual/4.4/syntax/temporal#cypher-temporal-instants[Cypher Manual -> Temporal instants syntax] and link:/docs/cypher-manual/4.4/syntax/temporal#cypher-temporal-durations[Cypher Manual -> Durations syntax].
+The format for all temporal data types must be defined as described in link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/temporal#cypher-temporal-instants[Cypher Manual -> Temporal instants syntax] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/temporal#cypher-temporal-durations[Cypher Manual -> Durations syntax].
 Two of the temporal types, _Time_ and _DateTime_, take a time zone parameter which might be common between all or many of the values in the data file.
 It is therefor possible to specify a default time zone for _Time_ and _DateTime_ values in the header, for example: `time{timezone:+02:00}` and: `datetime{timezone:Europe/Stockholm}`.
 If no default time zone is specified, the default timezone is determined by the `xref:reference/configuration-settings.adoc#config_db.temporal.timezone[db.temporal.timezone]` configuration setting.
@@ -828,7 +1025,7 @@ carrieanne,"Carrie-Anne Moss","female",Actor
 ----
 ====
 
-If all your superfluous data is placed in columns located to the right of all the columns that you wish to import, you can instead use the command line option `xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-option-ignore-extra-columns[--ignore-extra-columns]`.
+If all your superfluous data is placed in columns located to the right of all the columns that you wish to import, you can instead use the command line option `<<import-tool-option-ignore-extra-columns, --ignore-extra-columns>>`.
 
 
 [[import-tool-header-format-compressed-files]]
@@ -848,7 +1045,7 @@ actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-heade
 
 [source, sh]
 ----
-neo4j_home$ bin/neo4j-admin import --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
+neo4j_home$ bin/neo4j-admin database import --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
 ----
 ====
 
