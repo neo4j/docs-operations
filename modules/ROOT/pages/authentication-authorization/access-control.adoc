@@ -333,8 +333,9 @@ However, restrictions to updating the graph will output an appropriate error whe
 
 === Privileges of `researcher`
 
-Charlie the researcher was previously a read-only user.
+The researcher Charlie was previously a read-only user.
 To assign him the desired permissions, you can do something similar to what was done with the `itadmin` role, this time copying and modifying the `reader` role.
+
 Another way to do it is by creating a new role from scratch and then either granting or denying a list of privileges:
 
 * *Denying privileges*:
@@ -404,7 +405,7 @@ GRANT READ {dateOfBirth}
 ----
 ====
 
-In order to test that Charlie, the researcher, now has the specified privileges, assign him to the `researcherB` role (with specifically denied privileges):
+In order to test that the researcher Charlie now has the specified privileges, assign him the `researcherB` role (with specifically denied privileges):
 
 ====
 [source, cypher, role=systemcmd]
@@ -438,7 +439,7 @@ neo4j@system> SHOW USER charlie PRIVILEGES AS COMMANDS;
 ----
 ====
 
-Now when Charlie logs into the `healthcare` database and tries to run a command similar to the one used by the `itadmin` above, he will see different results:
+Now when Charlie logs into the `healthcare` database and tries to run a command similar to the one previously used by the `itadmin`, he will see different results:
 
 [source, cypher]
 ----
@@ -461,7 +462,7 @@ RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 +--------------------------------------------+
 ----
 
-Only the date of birth is available, so Charlie the researcher may perform statistical analysis, for example.
+Only the date of birth is available, so that the researcher Charlie may now perform statistical analysis, for example.
 Another query Charlie could try is to find the ten diseases a patient younger than 25 is most likely to be diagnosed with, listed by probability:
 
 [source, cypher]
@@ -491,7 +492,7 @@ RETURN disease, sum(prob) AS score ORDER BY score DESC LIMIT 10;
 +-------------------------------------------+
 ----
 
-Now if we revoke the `researcherB` and instead grant the `researcherW` role to Charlie, and re-run these queries, we will see the same results.
+If the `researcherB` role is revoked to Charlie, but `researcherW` is granted, when re-running these queries, the same results will be obtained.
 
 [NOTE]
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
@@ -499,8 +500,7 @@ See <<cypher-manual#access-control-revoke-privileges, the Cypher Manual -> The `
 
 === Privileges of `doctor`
 
-Doctors should be given the ability to read and write almost everything.
-We would, however, like to remove the ability to read the patients' `address` property.
+Doctors should be given the ability to read and write almost everything, except the patients' `address` property, for instance.
 This role can be built from scratch by assigning full read and write access, and then specifically denying access to the `address` property:
 
 ====
@@ -515,7 +515,7 @@ DENY SET PROPERTY {address} ON GRAPH healthcare NODES Patient TO doctor;
 ----
 ====
 
-To allow Alice to have these privileges, we grant her this new role:
+To allow the doctor Alice to have these privileges, grant her this new role:
 
 ====
 [source, cypher]
@@ -524,7 +524,7 @@ neo4j@system> GRANT ROLE doctor TO alice;
 ----
 ====
 
-To demonstrate that Alice is not able to see patient addresses, we log in as `alice` to `healthcare` and run the query:
+To demonstrate that Alice is not able to see patient addresses, log in as `alice` to `healthcare` and run the query:
 
 [source, cypher]
 ----
@@ -547,7 +547,7 @@ RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 +-------------------------------------------------------+
 ----
 
-As we can see, the doctor has the expected privileges, including being able to see the SSN, but not the address of each patient.
+As result, the doctor has the expected privileges, including being able to see the patients' `SSN`, but not their address.
 
 The doctor is also able to see all other node types:
 
@@ -613,7 +613,7 @@ MERGE (p)-[i:DIAGNOSIS {by: 'Alice'}]->(d)
 RETURN p.name, d.name, i.by, i.date, duration.between(i.created_at, i.updated_at) AS updated;
 ----
 
-This allows this doctor to record their diagnosis as well as take note of previous diagnoses:
+This allows the doctor to record their diagnosis as well as take note of previous diagnoses:
 
 ----
 +----------------------------------------------------------------------------------------+
@@ -624,11 +624,12 @@ This allows this doctor to record their diagnosis as well as take note of previo
 ----
 
 [NOTE]
-In order to create the `DIAGNOSIS` relationship for the first time, it is required to have the privilege to create new types.
-This is also true of the property names `doctor`, `created_at` and `updated_at`.
-This can be fixed by either granting the doctor `NAME MANAGEMENT` privileges or by pre-creating the missing types.
-The latter would be more precise and can be achieved by running,
-as an administrator, the procedures `db.createRelationshipType` and `db.createProperty` with appropriate arguments.
+====
+Creating the `DIAGNOSIS` relationship for the first time requires the privilege to create new types.
+This is also true for the property names `doctor`, `created_at`, and `updated_at`.
+It can be fixed by either granting the doctor `NAME MANAGEMENT` privileges or by pre-creating the missing types.
+The latter would be more precise and can be achieved by running, as an administrator, the procedures `db.createRelationshipType` and `db.createProperty` with appropriate arguments.
+====
 
 === Privileges of `receptionist`
 
@@ -647,13 +648,11 @@ GRANT SET PROPERTY {*} ON GRAPH healthcare NODES Patient TO receptionist;
 ----
 ====
 
-[NOTE]
---
-It would have been simpler to grant global `WRITE` privileges.
-However, this would have the unfortunate side effect of allowing the receptionist the ability to create other nodes,
-like new `Symptom` nodes, even though they would subsequently be unable to find or read those same nodes.
-While there are use cases for being able to create data you cannot read, that is not desired for this model.
---
+It would have been simpler to grant global `WRITE` privileges to the receptionist Bob.
+However, this would have the unfortunate side effect of allowing him the ability to create other nodes, like new `Symptom` nodes, even though he would subsequently be unable to find or read those same nodes.
+While there are use cases in which it is desirable to have roles able to create data they cannot read, that is not the case of this model.
+
+With that in mind, grant the receptionist Bob his new `receptionist` role:
 
 ====
 [source, cypher]
@@ -678,7 +677,7 @@ RETURN labels, count(*);
 +------------------------+
 ----
 
-However, Bob is able to see all fields of the Patient records:
+However, Bob is able to see all fields of the patients' records:
 
 [source, cypher]
 ----
@@ -705,9 +704,8 @@ RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 
 [[detach-delete-restricted-user]]
 
-We have granted Bob the receptionist the ability to delete patient nodes.
-This will allow him to delete any new patients he has just created, but will not allow him the ability to delete patients that have already received diagnoses, because those are connected to parts of the graph the receptionist cannot see.
-Let's demonstrate both these scenarios:
+With the `receptionist` role, Bob can delete any new patient nodes he has just created, but he will not be able to delete patients that have already received diagnoses, since those are connected to parts of the graph that Bob cannot see. 
+Here is a demonstration of both scenarios:
 
 [source, cypher]
 ----
@@ -770,8 +768,8 @@ DETACH DELETE n;
 org.neo4j.graphdb.ConstraintViolationException: Cannot delete node<42>, because it still has relationships. To delete this node, you must first delete its relationships.
 ----
 
-The reason this fails is that Bob can find the `(:Patient)` node, but does not have sufficient traverse rights to find nor delete the outgoing relationships from it.
-Either he needs to ask Tina the `itadmin` for help for this task, or we can add more privileges to the `receptionist` role:
+The reason why this query fails is that, while Bob can find the `(:Patient)` node, he does not have sufficient traverse rights to find nor delete the outgoing relationships from it.
+Either he needs to ask Tina the `itadmin` for help for this task, or you can add more privileges to the `receptionist` role:
 
 ====
 [source, cypher, role=systemcmd]
@@ -783,19 +781,19 @@ GRANT DELETE ON GRAPH healthcare RELATIONSHIPS HAS, DIAGNOSIS TO receptionist;
 ====
 
 [NOTE]
+====
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
 See <<cypher-manual#access-control-revoke-privileges, the Cypher Manual -> The `REVOKE` command>>.
+====
 
 === Privileges of nurses
 
-As previously described, nurses have the capabilities of both doctors and receptionists.
-As such it would be tempting to assign them both the `doctor` and the `receptionist` roles.
-However, this might not have the effect you would expect.
+Nurses should have the capabilities of both doctors and receptionists, but assigning them both the `doctor` and `receptionist` roles might not have the expected effect.
 If those two roles were created with `GRANT` privileges only, combining them would be simply cumulative.
-But it turns out the doctor contains some `DENY` privileges, and these always overrule `GRANT`.
-This means that the nurse will still have the same restrictions as a doctor, which is not what we wanted.
+But if the `doctor` role contains some `DENY` privileges, these always overrule `GRANT`.
+This means that the nurse will still have the same restrictions as a doctor, which is not what is intended here.
 
-To demonstrate this, let's give it a try:
+To demonstrate this, you can assign the `doctor` role to the nurse Daniel:
 
 ====
 [source, cypher]
@@ -804,7 +802,7 @@ neo4j@system> GRANT ROLE doctor, receptionist TO daniel;
 ----
 ====
 
-Now we can see that the user 'Daniel' has a combined set of privileges:
+Daniel should now have a combined set of privileges:
 
 ====
 [source, cypher, role=systemdb]
@@ -835,11 +833,13 @@ SHOW USER daniel PRIVILEGES AS COMMANDS;
 ====
 
 [NOTE]
+====
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
 See <<cypher-manual#access-control-revoke-privileges, the Cypher Manual -> The `REVOKE` command>>.
+====
 
-Now the intention is that a nurse can perform the actions of a receptionist.
-This would mean they should be able to read and write the `address` field of the `Patient` nodes.
+Now the intention is that a nurse can perform the actions of a receptionist, which means they should be able to read and write the `address` field of the `Patient` nodes.
+To do so, the nurse can run the following query:
 
 [source, cypher]
 ----
@@ -847,6 +847,9 @@ MATCH (n:Patient)
  WHERE n.dateOfBirth < date('1972-06-12')
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
+
+Which will return these results:
+
 ----
 +-------------------------------------------------------+
 | n.name          | n.ssn   | n.address | n.dateOfBirth |
@@ -861,17 +864,17 @@ RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 +-------------------------------------------------------+
 ----
 
-Clearly the `address` field is invisible.
-This is due to the `DENIED` privileges we could see in the table earlier.
-If we tried to write to the address field we would receive an error.
-This is not the intended behavior.
-We have two choices to correct otherwise:
+As expected, the `address` field is invisible to the nurse.
+This happens because, as previously described, `DENY` privileges _always_ overrule `GRANT`.
+Since both roles `doctor` and `receptionist` were assigned to the nurse, the `DENIED` privileges of the `doctor` role are overruling the `GRANTED` privileges of the `receptionist`.
+Even if the nurse tries to write the address field, they would receive an error, and that is not what is aimed here.
+To correct that, you can:
 
-* We could redefine the `doctor` role with only grants, requiring that we define each Patient property we wish the doctor to be able to read.
-* We can redefine the `nurse` role with the actual intended behavior.
+* Redefine the `doctor` role with only grants and define each `Patient` property the doctor should be able to read.
+* Redefine the `nurse` role with the actual intended behavior.
 
-It turns out that the latter choice is by far the simplest.
-The nurse is essentially the doctor without the `address` restrictions:
+The second option is simpler if you consider that the nurse is essentially the doctor without the `address` restrictions.
+In this case, you need to create a `nurse` role from scratch:
 
 ====
 [source, cypher, role=systemdb]
@@ -883,7 +886,7 @@ GRANT WRITE ON GRAPH healthcare TO nurse;
 ----
 ====
 
-Now let's assign this role to Daniel and test the new behavior:
+Now you assign the `nurse` role to the nurse Daniel, but remember to revoke the `doctor` and the `receptionist` roles so there are no privileges being overridden:
 
 ====
 [source, cypher, role=systemdb]
@@ -894,7 +897,7 @@ GRANT ROLE nurse TO daniel;
 ----
 ====
 
-When the _improved_ nurse Daniel takes another look at the patient records, he will see the `address` fields:
+This time, when the nurse Daniel takes another look at the patient records, he will see the `address` fields:
 
 [source, cypher]
 ----
@@ -916,8 +919,7 @@ RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 +----------------------------------------------------------------------+
 ----
 
-Now Daniel can see the previously hidden `address` field.
-The other main action we want the `nurse` to be able to perform, is the primary `doctor` action of saving a diagnosis to the database:
+The other main action that the `nurse` role should be able to perform is the primary `doctor` action of saving a diagnosis to the database:
 
 [source, cypher]
 ----
@@ -938,9 +940,9 @@ RETURN p.name, d.name, i.by, i.date;
 +------------------------------------------------------------------+
 ----
 
-Performing an action otherwise reserved for the `doctor` role involves more responsibility for the `nurse`.
-Perhaps it is not desirable to entrust all nurses with this option, which is why we can divide the nurses into _senior_ and _junior_ nurses.
-Daniel is currently a senior nurse.
+Performing this action, otherwise reserved for the `doctor` role, involves more responsibility for the `nurse`.
+There might be nurses that should not be entrusted with this option, which is why you can divide the `nurse` role into _senior_ and _junior_ nurses, for example.
+Currently, Daniel is a senior nurse.
 
 === Privileges of junior nurses
 
