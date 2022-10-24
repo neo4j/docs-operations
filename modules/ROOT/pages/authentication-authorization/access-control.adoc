@@ -2,10 +2,14 @@
 [role=enterprise-edition]
 [[auth-access-control]]
 = Fine-grained access control
+:description: Describes an example that illustrates various aspects of security and fine-grained access control. 
 
 When creating a database, administrators may want to establish what users have the ability to access certain information or not.
 
-As described in xref:authentication-authorization/built-in-roles/auth-built-in-roles[Built-in roles], Neo4j already offers preset roles configured to specific permissions (i.e. reading, editing, or writing). While these built-in roles already consider the most common scenarios on a daily a use, it is also possible to create custom roles after specific needs.
+As described in xref:authentication-authorization/built-in-roles/auth-built-in-roles[Built-in roles], Neo4j already offers preset roles configured to specific permissions (i.e. reading, editing, or writing). 
+While these built-in roles already consider the most common scenarios on a daily a use, it is also possible to create custom roles after specific needs. 
+
+This page describes an example that illustrates various aspects of security and fine-grained access control.
 
 [[auth-access-control-use-case]]
 == Healthcare use case
@@ -946,12 +950,10 @@ Currently, Daniel is a senior nurse.
 
 === Privileges of junior nurses
 
-When we tried to create the senior nurse by combining the `doctor` and `receptionist` roles, that did not work out.
-As previously mentioned, it would work to combine two roles if the intention is to increase capabilities and the roles were created with `GRANT` privileges only.
-It is also possible to combine two roles if the intention is to reduce capabilities and the combination brings in `DENY` privileges.
+Previously, creating the `nurse` role by combining the `doctor` and `receptionist` roles led to an undesired scenario as the `DENIED` privileges of the `doctor` role overrode the `GRANTED` privileges of the `receptionist`.
+In that case, the objective was to enhance the permissions of the _senior_ nurse, but when it comes to the _junior_ nurse, they should be able to perform the same actions as the _senior_, except adding diagnoses to the database.
 
-Consider this case, we would like a junior nurse to be able to perform the same actions as a senior nurse, but not be able to save diagnoses.
-We could create a special role that contains specifically only the additional restrictions:
+To achieve this, you can create a special role that contains specifically only the additional restrictions:
 
 ====
 [source, cypher, role=systemdb]
@@ -961,7 +963,7 @@ DENY CREATE ON GRAPH healthcare RELATIONSHIPS DIAGNOSIS TO disableDiagnoses;
 ----
 ====
 
-Now let's assign this role to Daniel and test the new behaviour:
+And then assign this new role to the nurse Daniel, so you can test the behavior:
 
 ====
 [source, cypher, role=systemdb]
@@ -970,7 +972,7 @@ GRANT ROLE disableDiagnoses TO daniel;
 ----
 ====
 
-If we look at what privileges Daniel now has, it will be the combination of the two roles `nurse` and `disableDiagnoses`:
+If you check now what privileges Daniel has, it will be the combination of the two roles `nurse` and `disableDiagnoses`:
 
 ====
 [source, cypher, role=systemdb]
@@ -995,7 +997,7 @@ neo4j@system> SHOW USER daniel PRIVILEGES AS COMMANDS;
 ----
 ====
 
-Daniel can still see address fields, and can even perform the diagnosis investigation that the `doctor` can perform:
+Daniel can still see the address fields, and can even perform the diagnosis investigation that the `doctor` can perform:
 
 [source, cypher]
 ----
@@ -1022,7 +1024,7 @@ RETURN n.ssn, n.name, d.name, count(s) AS score ORDER BY score DESC;
 +--------------------------------------------------------+
 ----
 
-But when he tries to save a diagnosis to the database, he will be denied:
+But when he tries to save a diagnosis to the database, he will be denied that action:
 
 [source, cypher]
 ----
@@ -1040,7 +1042,7 @@ RETURN p.name, d.name, i.by, i.date;
 Create relationship with type 'DIAGNOSIS' is not allowed for user 'daniel' with roles [PUBLIC, disableDiagnoses, nurse].
 ----
 
-Promoting Daniel back to senior nurse will be as simple as revoking the role that introduced the restriction:
+To promote Daniel back to senior nurse, revoke the role that introduced the restriction:
 
 ====
 [source, cypher, role=systemdb]
@@ -1051,13 +1053,11 @@ REVOKE ROLE disableDiagnoses FROM daniel;
 
 === Building a custom administrator role
 
-Originally we created the `itadmin` role by copying the built-in `admin` role and adding restrictions.
-However, we have also shown cases where having denys can be less convenient than only having grants.
-So can we instead build the administrator role from the ground up?
+The `itadmin` role was originally created by copying the built-in `admin` role and adding restrictions.
+However, there might be cases in which having `DENY`s can be less convenient thatn only having `GRANT`s.
+Instead, you can build the administrator role from the ground up.
 
-Let's review the purpose of this role.
-The intention is that Tina, the administrator, can create new users and assign them to the product roles.
-We can create a new role called `userManager` and grant it the appropriate privileges:
+The IT administrator Tina is able to create new users and assign them to the product roles as an `itadmin`, but you can create a more restricted role called `userManager` and grant it only the appropriate privileges:
 
 ====
 [source, cypher, role=systemdb]
@@ -1069,7 +1069,7 @@ GRANT SHOW PRIVILEGE ON DBMS TO userManager;
 ----
 ====
 
-We need to revoke the `itadmin` role from Tina and grant her the `userManager` role instead:
+Test the new behavior by revoking the `itadmin` role from Tina and grant her the `userManager` role instead:
 
 ====
 [source, cypher, role=systemdb]
@@ -1079,14 +1079,13 @@ GRANT ROLE userManager TO tina
 ----
 ====
 
-The three privileges we've granted will allow:
+These are the privileges granted to `userManager`:
 
-* `USER MANAGEMENT` allows creating, updating and dropping users
-* `ROLE MANAGEMENT` allows creating, updating, and dropping roles as well as assigning roles to users
-* `SHOW PRIVILEGE` allows listing the users privileges
+* `USER MANAGEMENT` allows creating, updating, and dropping users.
+* `ROLE MANAGEMENT` allows creating, updating, and dropping roles as well as assigning roles to users.
+* `SHOW PRIVILEGE` allows listing the users' privileges.
 
-
-Listing Tina's new privileges should show a much shorter list than when she was a more powerful administrator:
+Listing Tina's new privileges should now show a much shorter list than when she was a more powerful administrator with the `itadmin` role:
 
 ====
 [source, cypher, role=systemdb]
@@ -1110,10 +1109,11 @@ neo4j@system> SHOW USER tina PRIVILEGES AS COMMANDS;
 ====
 
 [NOTE]
-We have not granted any other privilege management privileges.
+====
+No other privilege management privileges were granted here.
 How much power this role should have would depend on the requirements of the system.
 Refer to the section <<cypher-manual#access-control-built-in-roles-admin, Cypher Manual -> The `admin` role>> for a complete list of privileges to consider.
-
+====
 
 Now Tina should be able to create new users and assign them to roles:
 
