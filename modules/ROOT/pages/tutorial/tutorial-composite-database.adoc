@@ -1,0 +1,681 @@
+[role=enterprise-edition]
+[[tutorial-composite-database]]
+= Set up and use a composite database
+:description: This tutorial walks through the basics of setting up and using a composite database.
+
+Composite databases allow queries that access multiple graphs at once.
+This is a function that enables:
+
+* *Data Federation*: the ability to access data available in distributed sources in the form of *disjoint graphs*.
+* *Data Sharding*: the ability to access data available in distributed sources in the form of a *common graph partitioned on multiple databases*.
+
+In this tutorial, you will learn how to:
+
+* <<tutorial-composite-database-model-data, Model your data for composite database use>>
+* <<tutorial-composite-database-create, Create databases for the composite>>
+* <<tutorial-composite-database-import, Import data to your databases>>
+* <<tutorial-composite-database-config, Configure a composite database>>
+* <<tutorial-composite-database-get-results, Retrieve data with a single Cypher query>>
+
+
+[[tutorial-composite-database-model-data]]
+== Model your data for composite database use
+
+The example data in this tutorial is based on the Northwind dataset, created by Microsoft. 
+It contains the sales data of a fictitious small company called “Northwind Traders”.
+The data includes customers, products, customer orders, warehouse stock, shipping, suppliers, employees, and sales territories.
+
+[NOTE]
+====
+For more information on how Northwind (a relational dataset) is modeled into a graph, run `:guide northwind-graph` in Neo4j Browser to play the built-in guide Northwind Graph.
+See the link:https://neo4j.com/docs/browser-manual/current/visual-tour/#guides[Neo4j Browser documentation].
+====
+
+The Northwind graph model consists of the following data:
+
+* Node labels
+** `:Product`
+** `:Category`
+** `:Supplier`
+** `:Order`
+** `:Customer`
+
+*  Relationship types
+** `:SUPPLIES`
+** `:PART_OF`
+** `:ORDERS`
+** `:PURCHASED`
+
+image::composite-database/northwind-datamodel.svg[title="The Northwind data model", width=350]
+
+In this scenario, assume that data privacy constraints require customers’ data to be stored in their original region.
+For simplicity, there are two regions: the Americas (AME) and Europe (EU).
+The first step is to remodel the Northwind dataset, so that customer data can be separated from the Product catalog, which has no privacy constraints.
+You create two graphs: one for the Product catalog, which includes `:Product`, `:Category`, `:Supplier`, `:PART_OF`, `:SUPPLIES`, and one partitioned graph in two databases for the Customer orders in EU and AME, with `:Product`, `:Order`, `:Customer`, `:PURCHASED`, and `:ORDERS`.
+
+image::composite-database/northwind-composite-datamodel.svg[title="The new data model", width=800, role=middle]
+
+*Data Federation*
+
+This way, the Product and Customer data are in two *disjoint graphs*, with different labels and relationship types.
+This is called _Data Federation_.
+
+To query across them, you have to federate the graphs, because relationships cannot span across them.
+This is done by using a _proxy node_ modeling pattern: nodes with the `:Product` label must be present in both federated domains.
+
+In the Product catalog graph, nodes with the `:Product` label contain all the data related to a product, while in the Customer graphs, the same label is associated to a proxy node which only contains `productID`.
+The `productID` property allows you to link data across the graphs in this federation.
+
+image::composite-database/federation.svg[title="Data Federation", width=350, role=middle]
+
+*Data Sharding*
+
+Since the Customer data is for two regions (EU and AME), you have to partition it into two databases.
+The resulting two graphs have the same model (same labels, same relationship types), but different data.
+This is called _Data Sharding_.
+
+image::composite-database/sharding2.svg[title="Data Sharding", width=450, role=middle]
+
+In general, there are a couple of main use cases that require sharding.
+The most common is scalability, i.e. different shards can be deployed on different servers, splitting the load on different resources.
+Another reason could be data regulations: different shards can be deployed on servers, residing in different locations, and managed independently.
+
+[[tutorial-composite-database-create]]
+== Create databases for the composite
+For this tutorial, you need to create three databases `db0` for the Product catalog, `db1` for the EU customer data, and `db2` for the AME customers by following these steps:
+
+. Start the Neo4j DBMS.
++
+[source, shell, role=noplay]
+----
+bin/neo4j start
+----
+. Check all available databases.
++
+[source, shell, role=noplay]
+----
+ls -al /data/databases/
+----
++
+[queryresult]
+----
+total 0
+drwxr-xr-x@  5 username  staff   160  9 Jun 12:53 .
+drwxr-xr-x@  5 username  staff   160  9 Jun 12:53 ..
+drwxr-xr-x  37 username  staff  1184  9 Jun 12:53 neo4j
+-rw-r--r--   1 username  staff     0  9 Jun 12:53 store_lock
+drwxr-xr-x  38 username  staff  1216  9 Jun 12:53 system
+----
+. Connect to the Neo4j DBMS using `cypher-shell` with the default credentials and change the password when prompted:
++
+[source, shell, role=noplay]
+----
+bin/cypher-shell -u neo4j -p neo4j
+----
++
+[queryresult]
+----
+Password change required
+new password: *****
+Connected to Neo4j 4.1.x at neo4j://localhost:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+----
++
+[NOTE]
+====
+For more information about the Cypher Shell command-line interface (CLI) and how to use it, see <<cypher-shell>>.
+====
+. Run the command `SHOW DATABASES` to list all available databases:
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+2 rows available after 102 ms, consumed after another 11 ms
+----
+. Run the command `CREATE DATABASE <database-name>` to create  the databases:
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db0;
+----
++
+[queryresult]
+----
+0 rows available after 137 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db1;
+----
++
+[queryresult]
+----
+0 rows available after 141 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE DATABASE db2;
+----
++
+[queryresult]
+----
+0 rows available after 135 ms, consumed after another 0 ms
+----
++
+. Run the command `SHOW DATABASES` again to verify that the new databases have been created and are `online`:
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "db0"    | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "db1"    | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "db2"    | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+5 rows available after 8 ms, consumed after another 7 ms
+----
+
+[[tutorial-composite-database-import]]
+== Import data to your databases
+
+You can use the command `LOAD CSV WITH HEADERS FROM` to import data to the databases.
+
+[discrete]
+[[tutorial-composite-database-import-product]]
+=== Load the Product catalog in db0
+
+. Run the following Cypher query to change the active database to `db0`, and add the Product data:
++
+[source, cypher, role=noplay]
+----
+:use db0;
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n = row,
+n.unitPrice = toFloat(row.unitPrice),
+n.unitsInStock = toInteger(row.unitsInStock), n.unitsOnOrder = toInteger(row.unitsOnOrder),
+n.reorderLevel = toInteger(row.reorderLevel), n.discontinued = (row.discontinued <> "0");
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/categories.csv" AS row
+CREATE (n:Category)
+SET n = row;
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/suppliers.csv" AS row
+CREATE (n:Supplier)
+SET n = row;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+CREATE INDEX FOR (c:Category) ON (c.categoryID);
+CREATE INDEX FOR (s:Supplier) ON (s.supplierID);
+
+MATCH (p:Product),(c:Category)
+WHERE p.categoryID = c.categoryID
+CREATE (p)-[:PART_OF]->(c);
+
+MATCH (p:Product),(s:Supplier)
+WHERE p.supplierID = s.supplierID
+CREATE (s)-[:SUPPLIES]->(p);
+----
+
+. Press Enter.
+. Verify that the product data is loaded in `db0`:
++
+[source, cypher, role=noplay]
+----
+MATCH (s:Supplier)-[:SUPPLIES]->(p:Product)-[:PART_OF]->(c:Category)
+RETURN s.companyName AS Supplier, p.productName AS Product, c.categoryName AS Category
+LIMIT 5;
+----
++
+[queryresult]
+----
++--------------------------------------------------------------------------+
+| Supplier                     | Product                     | Category    |
++--------------------------------------------------------------------------+
+| "Bigfoot Breweries"          | "Sasquatch Ale"             | "Beverages" |
+| "Pavlova"                    | "Outback Lager"             | "Beverages" |
+| "Bigfoot Breweries"          | "Laughing Lumberjack Lager" | "Beverages" |
+| "Bigfoot Breweries"          | "Steeleye Stout"            | "Beverages" |
+| "Aux joyeux ecclésiastiques" | "Côte de Blaye"             | "Beverages" |
++--------------------------------------------------------------------------+
+
+5 rows available after 202 ms, consumed after another 5 ms
+----
+
+[discrete]
+[[tutorial-composite-database-import-customerEU]]
+=== Load EU customers and related orders in db1
+
+. Run the following Cypher query to change the active database to `db1`, and add the EU customers and orders:
++
+[source, cypher, role=noplay]
+----
+:use db1;
+
+:param europe => ['Germany', 'UK', 'Sweden', 'France', 'Spain', 'Switzerland', 'Austria', 'Italy', 'Portugal', 'Ireland', 'Belgium', 'Norway', 'Denmark', 'Finland'];
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/customers.csv" AS row
+WITH row
+WHERE row.country IN $europe
+CREATE (n:Customer)
+SET n = row;
+
+CREATE INDEX FOR (c:Customer) ON (c.customerID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/orders.csv" AS row
+WITH row
+MATCH (c:Customer)
+WHERE row.customerID = c.customerID
+CREATE (o:Order)
+SET o = row;
+
+CREATE INDEX FOR (o:Order) ON (o.orderID);
+
+MATCH (c:Customer),(o:Order)
+WHERE c.customerID = o.customerID
+CREATE (c)-[:PURCHASED]->(o);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n.productID = row.productID;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/order-details.csv" AS row
+MATCH (p:Product), (o:Order)
+WHERE p.productID = row.productID AND o.orderID = row.orderID
+CREATE (o)-[details:ORDERS]->(p)
+SET details = row, details.quantity = toInteger(row.quantity);
+----
+
+. Press Enter.
+. Verify that the EU Customer orders data is loaded in `db1`:
++
+[source, cypher, role=noplay]
+----
+MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)
+RETURN c.companyName AS Customer, c.country AS CustomerCountry, o.orderID AS Order, p.productID AS Product
+LIMIT 5;
+----
++
+[queryresult]
+----
++-------------------------------------------------------------+
+| Customer              | CustomerCountry | Order   | Product |
++-------------------------------------------------------------+
+| "Alfreds Futterkiste" | "Germany"       | "10692" | "63"    |
+| "Alfreds Futterkiste" | "Germany"       | "10835" | "77"    |
+| "Alfreds Futterkiste" | "Germany"       | "10835" | "59"    |
+| "Alfreds Futterkiste" | "Germany"       | "10702" | "76"    |
+| "Alfreds Futterkiste" | "Germany"       | "10702" | "3"     |
++-------------------------------------------------------------+
+
+5 rows available after 47 ms, consumed after another 2 ms
+----
+
+[discrete]
+[[tutorial-composite-database-import-customerAME]]
+=== Load AME customers and related orders in db2
+
+. Run the following Cypher query to change the active database to `db2` and add the AME customers and orders:
++
+[source, cypher, role=noplay]
+----
+:use db2;
+
+:param americas => ['Mexico', 'Canada', 'Argentina', 'Brazil', 'USA', 'Venezuela'];
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/customers.csv" AS row
+WITH row
+WHERE row.country IN $americas
+CREATE (n:Customer)
+SET n = row;
+
+CREATE INDEX FOR (c:Customer) ON (c.customerID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/orders.csv" AS row
+WITH row
+MATCH (c:Customer)
+WHERE row.customerID = c.customerID
+CREATE (o:Order)
+SET o = row;
+
+CREATE INDEX FOR (o:Order) ON (o.orderID);
+
+MATCH (c:Customer),(o:Order)
+WHERE c.customerID = o.customerID
+CREATE (c)-[:PURCHASED]->(o);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/products.csv" AS row
+CREATE (n:Product)
+SET n.productID = row.productID;
+
+CREATE INDEX FOR (p:Product) ON (p.productID);
+
+LOAD CSV WITH HEADERS FROM "http://data.neo4j.com/northwind/order-details.csv" AS row
+MATCH (p:Product), (o:Order)
+WHERE p.productID = row.productID AND o.orderID = row.orderID
+CREATE (o)-[details:ORDERS]->(p)
+SET details = row,
+details.quantity = toInteger(row.quantity);
+----
+
+. Press Enter.
+. Verify that the AME Customer orders data is loaded in `db2`:
++
+[source, cypher, role=noplay]
+----
+MATCH (c:Customer)-[:PURCHASED]->(o:Order)-[:ORDERS]->(p:Product)
+RETURN c.companyName AS Customer, c.country AS CustomerCountry, o.orderID AS Order, p.productID AS Product
+LIMIT 5;
+----
++
+[queryresult]
+----
++----------------------------------------------------------------------------+
+| Customer                             | CustomerCountry | Order   | Product |
++----------------------------------------------------------------------------+
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10759" | "32"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "72"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "13"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "19"    |
+| "Ana Trujillo Emparedados y helados" | "Mexico"        | "10926" | "11"    |
++----------------------------------------------------------------------------+
+
+5 rows available after 42 ms, consumed after another 1 ms
+----
+
+[[tutorial-composite-database-config]]
+== Configure a composite database
+Set up a composite database with the `CREATE COMPOSITE DATABASE` Cypher command and add local database aliases as constituents to the composite database.
+In this example, the composite database is called `compositenw`.
+
+. Run the command `CREATE COMPOSITE DATABASE <composite-database-name>` to create the composite database:
++
+[source, cypher, role=noplay]
+----
+CREATE COMPOSITE DATABASE compositenw;
+----
++
+[queryresult]
+----
+0 rows available after 137 ms, consumed after another 0 ms
+----
+. Run the command `CREATE ALIAS <composite-database-name>.<alias-name> FOR DATABASE <database-name>` to create the constituent database aliases:
++
+[source, cypher, role=noplay]
+----
+CREATE ALIAS compositenw.product FOR DATABASE db0;
+----
++
+[queryresult]
+----
+0 rows available after 101 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE ALIAS compositenw.customerEU FOR DATABASE db1;
+----
++
+[queryresult]
+----
+0 rows available after 107 ms, consumed after another 0 ms
+----
++
+[source, cypher, role=noplay]
+----
+CREATE ALIAS compositenw.customerAME FOR DATABASE db2;
+----
++
+[queryresult]
+----
+0 rows available after 98 ms, consumed after another 0 ms
+----
++
+[NOTE]
+====
+The constituent database aliases in this tutorial are local database aliases (pointing to databases in the same Neo4j DBMS),
+but they can just as well be remote database aliases (pointing to databases in another Neo4j DBMS).
+====
++
+. Run the command `SHOW DATABASES` to verify that the composite database has been configured and is `online`:
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name          | type        | aliases                     | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents                                                                 |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "db0"         | "standard"  | ["compositenw.product"]     | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                                                                           |
+| "db1"         | "standard"  | ["compositenw.customerEU"]  | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                                                                           |
+| "db2"         | "standard"  | ["compositenw.customerAME"] | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                                                                           |
+| "compositenw" | "composite" | []                          | "read-only"  | "localhost:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | ["compositenw.customerAME", "compositenw.customerEU", "compositenw.product"] |
+| "neo4j"       | "standard"  | []                          | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []                                                                           |
+| "system"      | "system"    | []                          | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                                                                           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+6 rows available after 242 ms, consumed after another 18 ms
+----
+. Run the command `SHOW ALIASES FOR DATABASES` to verify that the database aliases have been configured:
++
+[source, cypher, role=noplay]
+----
+SHOW ALIASES FOR DATABASES;
+----
++
+[queryresult]
+----
++----------------------------------------------------------------+
+| name                      | database  | location | url  | user |
++----------------------------------------------------------------+
+| "compositenw.product"     | "db0"     | "local"  | null | null |
+| "compositenw.customerEU"  | "db1"     | "local"  | null | null |
+| "compositenw.customerAME" | "db2"     | "local"  | null | null |
++----------------------------------------------------------------+
+3 rows available after 203 ms, consumed after another 16 ms
+----
+
+[[tutorial-composite-database-get-results]]
+== Retrieve data with a single Cypher query
+
+[discrete]
+[[tutorial-composite-database-query-product]]
+=== Query a single database
+
+When connected to a composite database you can retrieve data from a single database by using the Cypher clause `USE` and the name of an alias:
+
+[source, cypher, role=noplay]
+----
+:use compositenw
+----
+
+[source, cypher, role=noplay]
+----
+USE compositenw.product
+MATCH (p:Product)
+RETURN p.productName AS product
+LIMIT 5;
+----
+
+[queryresult]
+----
++--------------------------------+
+| product                        |
++--------------------------------+
+| "Chai"                         |
+| "Chang"                        |
+| "Aniseed Syrup"                |
+| "Chef Anton's Cajun Seasoning" |
+| "Chef Anton's Gumbo Mix"       |
++--------------------------------+
+
+5 rows available after 6 ms, consumed after another 21 ms
+----
+
+[discrete]
+[[tutorial-composite-database-query-shards]]
+=== Query across multiple shards
+
+Use the composite database to query both shards and get customers whose name starts with A:
+
+[source, cypher, role=noplay]
+----
+:use compositenw
+----
+
+[source, cypher, role=noplay]
+----
+USE compositenw.customerAME
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+  UNION
+USE compositenw.customerEU
+MATCH (c:Customer)
+WHERE c.customerID STARTS WITH 'A'
+RETURN c.customerID AS name, c.country AS country
+LIMIT 5;
+----
+
+[queryresult]
+----
++---------------------+
+| name    | country   |
++---------------------+
+| "ANATR" | "Mexico"  |
+| "ANTON" | "Mexico"  |
+| "ALFKI" | "Germany" |
+| "AROUT" | "UK"      |
++---------------------+
+
+4 rows available after 25 ms, consumed after another 56 ms
+----
+
+Or, using a more common composite database idiom:
+
+[source, cypher, role=noplay]
+----
+:use compositenw
+----
+
+[source, cypher, role=noplay]
+----
+UNWIND ['compositenw.customerAME', 'compositenw.customerEU'] AS g
+CALL {
+  USE graph.byName(g)
+  MATCH (c:Customer)
+  WHERE c.customerID STARTS WITH 'A'
+  RETURN c.customerID AS name, c.country AS country
+}
+RETURN name, country
+LIMIT 5;
+----
+
+[queryresult]
+----
++---------------------+
+| name    | country   |
++---------------------+
+| "ANATR" | "Mexico"  |
+| "ANTON" | "Mexico"  |
+| "ALFKI" | "Germany" |
+| "AROUT" | "UK"      |
++---------------------+
+
+4 rows available after 61 ms, consumed after another 8 ms
+----
+
+[discrete]
+[[tutorial-composite-database-query-all-dbs]]
+=== Query across federation and shards
+
+Here is a more complex query that uses all 3 databases to find all customers who have bought discontinued products in the Meat/Poultry category: 
+[source, cypher, role=noplay]
+----
+:use compositenw
+----
+
+[source, cypher, role=noplay]
+----
+CALL {
+  USE compositenw.product
+  MATCH (p:Product)-[:PART_OF]->(c:Category)
+  WHERE p.discontinued = true
+    AND c.categoryName = 'Meat/Poultry'
+  RETURN COLLECT(p.productID) AS pids
+}
+WITH *
+UNWIND [g IN graph.names() WHERE g STARTS WITH 'compositenw.customer'] AS g
+CALL {
+  USE graph.byName(g)
+  WITH pids
+  UNWIND pids as pid
+  MATCH (p:Product{productID:pid})<-[:ORDERS]-(:Order)<-[:PURCHASED]-(c:Customer)
+  RETURN DISTINCT c.customerID AS customer, c.country AS country
+}
+RETURN customer, country
+LIMIT 20;
+----
+
+[queryresult]
+----
++--------------------------+
+| customer | country       |
++--------------------------+
+| "RICSU"  | "Switzerland" |
+| "PERIC"  | "Mexico"      |
+| "WARTH"  | "Finland"     |
+| "WELLI"  | "Brazil"      |
+| "DRACD"  | "Germany"     |
+| "RATTC"  | "USA"         |
+| "HUNGO"  | "Ireland"     |
+| "QUEDE"  | "Brazil"      |
+| "SEVES"  | "UK"          |
+| "ANTON"  | "Mexico"      |
+| "BERGS"  | "Sweden"      |
+| "SAVEA"  | "USA"         |
+| "AROUT"  | "UK"          |
+| "FAMIA"  | "Brazil"      |
+| "WANDK"  | "Germany"     |
+| "WHITC"  | "USA"         |
+| "ISLAT"  | "UK"          |
+| "LONEP"  | "USA"         |
+| "QUICK"  | "Germany"     |
+| "HILAA"  | "Venezuela"   |
++--------------------------+
+
+20 rows available after 51 ms, consumed after another 2 ms
+----
+
+The way this query works is by `compositenw` calling database `db0` to retrieve all discontinued products in the Meat/Poultry category.
+Then, using the returned product IDs, it queries both `db1` and `db2` *in parallel* and gets the customers who have purchased these products and their country.
+
+You have just learned how to store and retrieve data from multiple databases using a single Cypher query. 
++
+For more details on composite databases, see <<composite-databases>>.
