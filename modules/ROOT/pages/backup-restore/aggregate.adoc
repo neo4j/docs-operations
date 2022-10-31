@@ -8,17 +8,15 @@
 
 The aggregate command turns a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] into a single xref:backup-restore/online-backup.adoc#backup-artifact[full backup artifact].
 
-See the illustration below:
-
-image::backup-chain-aggregation.svg[title="Backup chain aggregation",role="middle"]
+image:backup-chain-aggregation.svg[title="Backup chain aggregation",role="middle"]
 
 The benefits of aggregating a backup chain are notably:
 
-  * reducing the size of backup artifacts in a given backup folder
-  * keeps the recovery time objective (RTO) low by generating a single backup artifact ready to be restored.
-Indeed, as part of the aggregation, transactions contained in the differential backups are applied to the store contained in the full backup artifact.
+* Reduces the size of backup artifacts in a given backup folder.
+* Keeps the recovery time objective (RTO) low by generating a single backup artifact ready to be restored.
+As part of the aggregation, transactions contained in the differential backups are applied to the store contained in the full backup artifact.
 This operation is called _recovery_ and can be costly.
-  * reduces the risk of losing chain’s links
+* Reduces the risk of losing chain’s links.
 
 
 [[aggregate-backup-syntax]]
@@ -27,11 +25,11 @@ This operation is called _recovery_ and can be costly.
 [source,role=noheader]
 ----
 neo4j-admin database aggregate-backup   --from-path=<path>
-                                        [--keep-old-backup]
-                                        [--parallel-recovery]
+                                        [--keep-old-backup[=true|false]]
+                                        [--parallel-recovery[=true|false]]
                                         [--verbose]
                                         [--expand-commands]
-                                        [--additional-config=<path>]
+                                        [--additional-config=<file>]
                                         <database>
 ----
 
@@ -46,12 +44,24 @@ neo4j-admin database aggregate-backup   --from-path=<path>
 
 | --from-path
 |
-| Directory where the backup artifacts are.
+| Directory where the backup artifacts are located.
+Directory where the backup artifacts are located, or optionally the path to a specific _.backup file_ forcing `aggregate` to find the backup chain for that specific backup (and guarding against the risk of identifying the wrong backup chain, if more than one exists in a given directory). 
+When a file is supplied, the _<database>_ parameter should be omitted.
+The option to supply a file is only available in Neo4j 5.2 and later.
 
 | --keep-old-backup
 | false
 | If set to true, the old backup chain is not removed.
 
+| --parallel-recovery
+| false
+| Allow multiple threads to apply pulled transactions to a backup in parallel.
+For some databases and workloads this may reduce aggregate times significantly.
+[NOTE]
+====
+`parallel-recovery` is an experimental option.
+Consult Neo4j support before use.
+====
 | --verbose
 |
 | Enable verbose output.
@@ -63,7 +73,6 @@ neo4j-admin database aggregate-backup   --from-path=<path>
 | --additional-config
 |
 | Configuration file to provide additional or override the existing configuration settings in the _neo4j.conf_ file.
-
 |===
 
 [[aggregate-backup-command-parameters]]
@@ -83,13 +92,20 @@ Can contain `*` and `?` for globbing.
 |===
 
 [[aggregate-backup-example]]
-== Example
+== Examples
 
-The following is an example of how to perform aggregation of a set of backups located in a given folder for the `neo4j` database.
-
+.An example of how to perform aggregation of a set of backups located in a given folder for the `neo4j` database.
 [source,shell]
 ----
 bin/neo4j-admin database aggregate-backup --from-path=/mnt/backups/ neo4j
 ----
-
 The command first looks inside the `/mnt/backups/` directory for a backup chain for the database `neo4j`. If found, it is then aggregated into a single backup artifact.
+
+.An example of how to perform aggregation of a set of backups identified using a given backup file for the `neo4j` database.
+[source,shell]
+----
+bin/neo4j-admin database aggregate-backup --from-path=/mnt/backups/neo4j-2022-10-18T13-00-07.backup
+----
+The command checks the `/mnt/backups/` directory for a backup chain including the file _neo4j-2022-10-18T13-00-07.backup_, for the database `neo4j`.
+If found, it is then aggregated into a single backup artifact.
+This option is only available in Neo4j 5.2 and later.
