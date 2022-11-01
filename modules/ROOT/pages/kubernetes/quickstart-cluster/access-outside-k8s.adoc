@@ -3,117 +3,88 @@
 [[cc-access-outside-k8s]]
 = Access the Neo4j cluster from outside Kubernetes
 
-By default, xref:clustering/internals.adoc#causal-clustering-routing[server-side routing] is used for accessing a Neo4j cluster from outside Kubernetes. 
+By default, <<causal-clustering-routing, server-side routing>> is used for accessing a Neo4j cluster from outside Kubernetes. 
 
 [[cc-access-loadbalancer]]
 == Access the Neo4j cluster using a load balancer and Cypher Shell
 
-To access a Neo4j cluster from outside Kubernetes, you need to install the `neo4j-cluster-loadbalancer` service.
+A LoadBalancer service is created to access a Neo4j cluster from outside Kubernetes.
 
-. Install the load balancer service using the release name `lb`, the _neo4j/neo4j-cluster-loadbalancer_ Helm Chart, and the name of your cluster as a value of the `neo4j.name` parameter.
-+
-[NOTE]
-====
-Alternatively, you can create a _values.yaml_ file with all the configurations for the service.
-To see what options are configurable on the _neo4j/neo4j-cluster-loadbalancer_ Helm Chart, use `helm show values neo4j/neo4j-cluster-loadbalancer`. 
-====
+. Check that the LoadBalancer service is available using the `neo4j.name` used for installation:
 +
 [source, shell, subs="attributes"]
 ----
-helm install lb neo4j/neo4j-cluster-loadbalancer --set neo4j.name=my-cluster
+export NEO4J_NAME=my-cluster
+kubectl get service ${NEO4J_NAME}-lb-neo4j
 ----
 +
 [source, result, subs="attributes", role=nocopy]
 ----
-NAME: lb
-LAST DEPLOYED: Mon Nov 8 16:11:11 2021
-NAMESPACE: default
-STATUS: deployed
-REVISION: 1
-TEST SUITE: None
-NOTES:
-Thank you for installing neo4j-cluster-loadbalancer.
-
-Your release “lb” has been installed in namespace “default”.
-
-To view the status of your Load Balancer service you can use
- $ kubectl get service lb-neo4j
-
-Once your Load Balancer has an External-IP assigned you can connect to your Neo4j cluster using “neo4j://<EXTERNAL-IP>:7687”. Try:
-
- $ cypher-shell -a “neo4j://<EXTERNAL-IP>:7687"
-
-Graphs are everywhere!    
-----
-. Check that the `lb` service is available:
-+
-[source, shell, subs="attributes"]
-----
-kubectl get services  | grep lb
-----
-+
-[source, result, subs="attributes", role=nocopy]
-----
-NAME               TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                                                   AGE
-lb-neo4j           LoadBalancer   10.51.248.52    34.65.252.122   7474:31712/TCP,7473:31942/TCP,7687:31649/TCP                              3m
+NAME                  TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)                                        AGE
+my-cluster-lb-neo4j   LoadBalancer   10.28.12.119   82.21.42.42      7474:32169/TCP,7473:32145/TCP,7687:32624/TCP   2m1s
 ----
 
 . Use `kubectl describe service` to see the service details:
 +
 [source, shell]
 ----
-kubectl describe service lb-neo4j
+kubectl describe service ${NEO4J_NAME}-lb-neo4j
 ----
 +
 [source, result, subs="attributes", role=nocopy]
 ----
-Name:                     lb-neo4j
-Namespace:                default
+Name:                     my-cluster-lb-neo4j
+Namespace:                neo4j
 Labels:                   app=my-cluster
                           app.kubernetes.io/managed-by=Helm
                           helm.neo4j.com/neo4j.name=my-cluster
                           helm.neo4j.com/service=neo4j
 Annotations:              cloud.google.com/neg: {"ingress":true}
-                          meta.helm.sh/release-name: lb
-                          meta.helm.sh/release-namespace: default
-Selector:                 app=my-cluster,helm.neo4j.com/neo4j.loadbalancer=include,helm.neo4j.com/neo4j.name=my-cluster
+                          meta.helm.sh/release-name: server-1
+                          meta.helm.sh/release-namespace: neo4j
+Selector:                 app=my-cluster,helm.neo4j.com/clustering=true,helm.neo4j.com/neo4j.loadbalancer=include
 Type:                     LoadBalancer
-IP Families:              <none>
-IP:                       10.112.6.150
-IPs:                      10.112.6.150
-LoadBalancer Ingress:     35.205.81.95
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.28.12.119
+IPs:                      10.28.12.119
+LoadBalancer Ingress:     82.21.42.42
 Port:                     http  7474/TCP
 TargetPort:               7474/TCP
-NodePort:                 http  31627/TCP
-Endpoints:                10.108.0.3:7474,10.108.1.19:7474,10.108.2.14:7474 + 1 more...
+NodePort:                 http  32169/TCP
+Endpoints:                10.24.0.131:7474,10.24.1.3:7474,10.24.1.67:7474
 Port:                     https  7473/TCP
 TargetPort:               7473/TCP
-NodePort:                 https  32750/TCP
-Endpoints:                10.108.0.3:7473,10.108.1.19:7473,10.108.2.14:7473 + 1 more...
+NodePort:                 https  32145/TCP
+Endpoints:                10.24.0.131:7473,10.24.1.3:7473,10.24.1.67:7473
 Port:                     tcp-bolt  7687/TCP
 TargetPort:               7687/TCP
-NodePort:                 tcp-bolt  31988/TCP
-Endpoints:                10.108.0.3:7687,10.108.1.19:7687,10.108.2.14:7687 + 1 more...
+NodePort:                 tcp-bolt  32624/TCP
+Endpoints:                10.24.0.131:7687,10.24.1.3:7687,10.24.1.67:7687
 Session Affinity:         None
 External Traffic Policy:  Local
-HealthCheck NodePort:     31343
-Events:                   <none>
+HealthCheck NodePort:     30621
+Events:
+  Type    Reason                Age    From                Message
+  ----    ------                ----   ----                -------
+  Normal  EnsuringLoadBalancer  3m11s  service-controller  Ensuring load balancer
+  Normal  EnsuredLoadBalancer   2m36s  service-controller  Ensured load balancer
 ----
 +
 The load-balancer service can send requests to all members of the cluster.
 You can see that it has four endpoints: three cores and one read-replica.
 
-. Run `cypher-shell` from the local machine and connect to the `LoadBalancer Ingress` address, in the example `34.65.252.122`:
+. Run `cypher-shell` from the local machine and connect to the `LoadBalancer Ingress` address, in the example `82.21.42.42`:
 +
 [source, shell, subs="attributes"]
 ----
-./cypher-shell -a neo4j://34.65.252.122 -u neo4j -p my-password
+./cypher-shell -a neo4j://82.21.42.42 -u neo4j -p my-password
 ----
 +
 [source, result, subs="attributes", role=nocopy]
 ----
 If you don't see a command prompt, try pressing enter.
-Connected to Neo4j using Bolt protocol version {neo4j-version} at neo4j://34.65.252.122:7687 as user neo4j.
+Connected to Neo4j using Bolt protocol version {neo4j-version} at neo4j://82.21.42.42:7687 as user neo4j.
 Type :help for a list of available commands or :exit to exit the shell.
 Note that Cypher queries must end with a semicolon.
 ----
@@ -127,21 +98,39 @@ SHOW DATABASES;
 +
 [source, result, subs="attributes", role=nocopy]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name     | aliases | access       | address                                 | role           | requestedStatus | currentStatus | error | default | home  |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "neo4j"  | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "follower"     | "online"        | "online"      | ""    | TRUE    | TRUE  |
-| "neo4j"  | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "follower"     | "online"        | "online"      | ""    | TRUE    | TRUE  |
-| "neo4j"  | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "leader"       | "online"        | "online"      | ""    | TRUE    | TRUE  |
-| "neo4j"  | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "read_replica" | "online"        | "online"      | ""    | TRUE    | TRUE  |
-| "system" | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "leader"       | "online"        | "online"      | ""    | FALSE   | FALSE |
-| "system" | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "follower"     | "online"        | "online"      | ""    | FALSE   | FALSE |
-| "system" | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "follower"     | "online"        | "online"      | ""    | FALSE   | FALSE |
-| "system" | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "read_replica" | "online"        | "online"      | ""    | FALSE   | FALSE |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------+
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address                                 | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "standard" | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
-8 rows
+6 rows
 ready to start consuming query after 110 ms, results consumed after another 109 ms
+----
++
++
+[source, shell, subs="attributes"]
+----
+SHOW SERVERS;
+----
++
+[source, result, subs="attributes", role=nocopy]
+----
++----------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                 | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------------------------------+
+| "ad5c3cf1-541a-44f8-a19b-28bc36030914" | "server-3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "cbdebc59-64c2-4542-a041-24a1f051e64f" | "server-1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "f37e98a7-15ec-4dc4-a6bf-df9e418a7488" | "server-2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
++----------------------------------------------------------------------------------------------------------------------------------+
+
+3 rows
+ready to start consuming query after 27 ms, results consumed after another 363 ms
 ----
 +
 You can see that the nodes are advertising their internal addresses, but since you connected without using internal addresses, you use server-side routing.
@@ -149,27 +138,13 @@ You can see that the nodes are advertising their internal addresses, but since y
 [[cc-access-browser]]
 == Access the Neo4j cluster using a load balancer and Neo4j Browser
 
-. Open a web browser and point it to the `LoadBalancer Ingress` address and port `7474`, in this example, _http://34.65.252.122:7474/browser_.
+. Open a web browser and point it to the `LoadBalancer Ingress` address and port `7474`, in this example, _http://82.21.42.42:7474/browser_.
 
-. Once connected, verify that all databases are up and running using `SHOW DATABASES` in the Browser Editor:
+. Once connected, verify that all databases are up and running using `:sysinfo` in the Browser Editor:
 +
 [source, shell, subs="attributes"]
 ----
-SHOW DATABASES
+:sysinfo
 ----
 +
-[source, result, subs="attributes", role=nocopy]
-----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-│ "name"   │ "aliases" │ "access"     │ "address"                               │ "role"         │ "requestedStatus" │ "currentStatus" │ "error" │ "default" │ "home" │
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-│ "neo4j"  │ []        │ "read-write" │ "core-1.default.svc.cluster.local:7687" │ "follower"     │ "online"          │ "online"        │ ""      │ true      │ true   │
-│ "neo4j"  │ []        │ "read-write" │ "core-3.default.svc.cluster.local:7687" │ "follower"     │ "online"          │ "online"        │ ""      │ true      │ true   │
-│ "neo4j"  │ []        │ "read-write" │ "core-2.default.svc.cluster.local:7687" │ "leader"       │ "online"          │ "online"        │ ""      │ true      │ true   │
-│ "neo4j"  │ []        │ "read-write" │ "rr-1.default.svc.cluster.local:7687"   │ "read_replica" │ "online"          │ "online"        │ ""      │ true      │ true   │
-│ "system" │ []        │ "read-write" │ "core-1.default.svc.cluster.local:7687" │ "leader"       │ "online"          │ "online"        │ ""      │ false     │ false  │
-│ "system" │ []        │ "read-write" │ "core-3.default.svc.cluster.local:7687" │ "follower"     │ "online"          │ "online"        │ ""      │ false     │ false  │
-│ "system" │ []        │ "read-write" │ "core-2.default.svc.cluster.local:7687" │ "follower"     │ "online"          │ "online"        │ ""      │ false     │ false  │
-│ "system" │ []        │ "read-write" │ "rr-1.default.svc.cluster.local:7687"   │ "read_replica" │ "online"          │ "online"        │ ""      │ false     │ false  │
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-----
+image:helm-sysinfo.png[]
