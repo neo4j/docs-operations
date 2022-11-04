@@ -4,42 +4,47 @@
 
 Getting everything to work in Kubernetes requires that certain K8s objects have specific names that are referenced elsewhere.
 Each individual Neo4j instance is a Helm “release” and has a _release name_.
-All other names derive from this _release name_. +
-Release name must consist of lower case alphanumeric characters, `-` or `.`, and must start and end with an alphanumeric character.
-This guide assumes the release name is `my-neo4j-release`.
+All other names and labels of K8s objects created by the Helm charts derive from both `neo4j.name` and _release name_. +
+Release name must consist of lowercase alphanumeric characters, `-` or `.`, and must start and end with an alphanumeric character.
+This guide assumes the release name is `my-neo4j-release` and `neo4j.name` is `my-standalone`.
 
-. Install Neo4j using the deployment _values.yaml_ file, created in xref:kubernetes/quickstart-standalone/create-value-file.adoc[Create a value.yaml file], and the `neo4j/neo4j-standalone` Helm Chart:
+. Install Neo4j using the deployment _values.yaml_ file, created in xref:kubernetes/quickstart-standalone/create-value-file.adoc[Create a value.yaml file], and the _neo4j/neo4j_ Helm chart:
+.. Create a `neo4j` namespace and configure it to be used in the current context:
 +
 [source, shell, subs="attributes"]
 ----
-helm install my-neo4j-release neo4j/neo4j-standalone -f my-neo4j.values.yaml
+kubectl create namespace neo4j
+kubectl config set-context --current --namespace=neo4j
+----
++
+.. Install the Neo4j standalone server:
++
+[source, shell, subs="attributes"]
+----
+helm install my-neo4j-release neo4j/neo4j --namespace neo4j -f my-neo4j.values.yaml
 ----
 +
 .Example output
 [source, role=noheader, subs="attributes"]
 ----
-NAME: my-neo4j-release
-LAST DEPLOYED: Wed Jul 28 13:16:39 2021
-NAMESPACE: default
+LAST DEPLOYED: Wed Oct 26 15:19:17 2022
+NAMESPACE: neo4j
 STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 NOTES:
-Thank you for installing neo4j-standalone.
+Thank you for installing neo4j.
 
-Your release "my-neo4j-release" has been installed .
+Your release "my-neo4j-release" has been installed in namespace "neo4j".
 
-To view the progress of the rollout try:
+The neo4j user's password has been set to "my-password".To view the progress of the rollout try:
 
-  $ kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
+  $ kubectl --namespace "neo4j" rollout status --watch --timeout=600s statefulset/my-neo4j-release
 
+Once rollout is complete you can log in to Neo4j at "neo4j://my-neo4j-release.neo4j.svc.cluster.local:7687". Try:
 
-The neo4j user's password has been set to "bO7YDTVOgs7CS1".
-
-Once rollout is complete you can log in to Neo4j at "neo4j://my-neo4j-release.default.svc.cluster.local:7687". Try:
-
-  $ kubectl run --rm -it --image "neo4j:{neo4j-version-exact}" cypher-shell \
-     -- cypher-shell -a "neo4j://my-neo4j-release.default.svc.cluster.local:7687" -u neo4j -p "bO7YDTVOgs7CS1"
+  $ kubectl run --rm -it --namespace "neo4j" --image "neo4j:5.1.0" cypher-shell \
+     -- cypher-shell -a "neo4j://my-neo4j-release.neo4j.svc.cluster.local:7687" -u neo4j -p "my-password"
 
 Graphs are everywhere!
 ----
@@ -53,7 +58,7 @@ kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
 +
 [NOTE]
 ====
-Since you have not passed a password for the `neo4j` user, the Neo4j Helm Chart has set an automatically generated one.
+Since you have not passed a password for the `neo4j` user, the Neo4j Helm chart has set an automatically generated one.
 You can find it in the Helm install output.
 Please make a note of it.
 ====
