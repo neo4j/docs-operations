@@ -3,17 +3,32 @@
 [[cc-create-value-file]]
 = Create Helm deployment values files
 
-You create a Helm deployment YAML file for each Neo4j cluster member with all the configuration settings and the disk you have created for each particular member in xref:kubernetes/quickstart-cluster/create-pv.adoc[Create a persistent volume for each cluster member].
+You create a Helm deployment YAML file for each Neo4j cluster member with all the configuration settings.
 
 [[cc-config-parameters]]
 == Important configuration parameters
 
 `neo4j.name`::
-All Neo4j cluster members (cores or read-replicas) are linked together by the value of the parameter `neo4j.name`.
-When installed via the Neo4j Helm Charts, they will join the cluster identified by `neo4j.name`. +
-`neo4j.name` is different from the Helm _release name_, which is used to reference a specific cluster member elsewhere in Kubernetes. +
-All other names and labels of K8s objects created by the helm charts derive from both `neo4j.name` and _release name_.
-If no name is specified, the cluster gets the default name `neo4j-cluster`.
+All Neo4j cluster servers are linked together by the value of the parameter `neo4j.name`.
+When installed via the Neo4j Helm chart, they will join the cluster identified by `neo4j.name`. +
+`neo4j.name` is different from the Helm _release name_, which is used to reference a cluster server elsewhere in Kubernetes. +
+All other names and labels of K8s objects created by the Helm chart derive from both `neo4j.name` and _release name_.
+The `neo4j.name` parameter is mandatory, and the installation will fail if it is not specified. 
+`neo4j.name` must be unique within a namespace.
++
+[NOTE]
+====
+If you want to install 2 clusters in the same namespace, they must have different values for `neo4j.name`.
+====
+
+`neo4j.minimumClusterSize`::
+Starting from Neo4j 5.0.0, standalone servers and cluster servers have no distinction.
+By default, servers in a cluster can host primary and secondary databases. 
+See the xref:clustering/introduction.adoc##clustering-introduction-operational[Operational view] for more details. +
+`neo4j.minimumClusterSize` is set to 1 by default, which means the server starts without waiting for the other servers.
+When installing a cluster, you should set `neo4j.minimumClusterSize` to the number of desired members in the cluster.
+If you later decide to add an extra cluster server in excess of `neo4j.minimumClusterSize`, you need to manually enable it using the Cypher command `ENABLE SERVER`.
+For more information on enabling new servers, see xref:clustering/servers.adoc##cluster-add-server[Add a server to the cluster].
 
 `neo4j.resources`::
 The size of a Neo4j cluster member is defined by the values of the `neo4j.resources.cpu` and `neo4j.resources.memory` parameters.
@@ -22,7 +37,7 @@ If invalid or less than the minimum values are provided, Helm will throw an erro
 +
 [source, role=noheader]
 ----
-Error: template: neo4j-cluster-core/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum. 
+Error: template: neo4j/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum.
  cpu value cannot be less than 0.5 or 500m
 ----
 +
@@ -30,8 +45,8 @@ For more information, see xref:kubernetes/configuration.adoc#configure-resources
 
 `neo4j.password`:: 
 The password for the `neo4j` user. 
-The same password must be set on all cluster members. +
-If you do not provide a password, the Neo4j Helm Chart will automatically generate one for you.
+The same password must be set for all cluster members. +
+If you do not provide a password, the Neo4j Helm chart will automatically generate one for you.
 (Make a note of it.)
 +
 [NOTE]
@@ -40,27 +55,28 @@ You cannot use `neo4j` as the initial password as this is the default password.
 ====
 
 `neo4j.edition` and `neo4j.acceptLicenseAgreement`::
-By default, the cluster Helm Charts install Neo4j Enterprise Edition since clusters are not available in Community Edition. 
-This means that you do not have to explicitly set the configuration parameter `edition:` to `"enterprise"`, as it would be the case if you want to install a standalone server of Neo4j Enterprise Edition.
+By default, the Neo4j Helm chart installs Neo4j Enterprise Edition since clusters are not available in Community Edition. 
+This means that you do not have to explicitly set the configuration parameter `edition:` to `"enterprise"`, as you would do for a standalone server of Neo4j Enterprise Edition.
 However, you must acknowledge license compliance by setting `neo4j.acceptLicenseAgreement` to `"yes"`.
 For more information on how to obtain a valid license for Neo4j Enterprise Edition, see https://neo4j.com/licensing/ or write to licensing@neo4j.com.
 
 `volumes.data`::
-The `volumes.data` parameter maps the `data` volume mount of each cluster member to the persistent volume that you have created for that member.
-See xref:kubernetes/quickstart-cluster/create-pv.adoc[Create persistent volumes].
-+
+The `volumes.data` parameter maps the `data` volume mount of each cluster member to the persistent volume for that member.
+
 [NOTE]
 ====
-For details of all Neo4j Helm Chart configuration options, see xref:kubernetes/configuration.adoc[Configure a Neo4j Helm deployment].
+For details of all Neo4j Helm chart configuration options, see xref:kubernetes/configuration.adoc[Configure a Neo4j Helm deployment].
 ====
 
 [[cc-core-values-yaml]]
-== Create a values.yaml file for each cluster member 
+== Create a values.yaml file for each server
 
-Select the tab as per your Kubernetes environment and using the provided example, create a YAML file for each of your cluster members (both cores and the read replica) with all the configuration settings and the disk you have created for that particular member in xref:kubernetes/quickstart-cluster/create-pv.adoc[Create a persistent volume for each cluster member].
+Select the tab as per your Kubernetes environment, and using the provided example, create a YAML file for each of your cluster servers with all the configuration settings.
 
+This guide assumes that the YAML files are named _server-1.values.yaml_, _server-2.values.yaml_ and _server-3.values.yaml_.
 
-This guide assumes that the YAML files are named _core-1.values.yaml_, _core-2.values.yaml_, _core-3.values.yaml_, and _rr-1.values.yaml_.
+The examples use storage classes provided by the vendor.
+If you want to use a different type of storage class, such as regional disks, consult the cloud vendor documentation on creating new storage classes.
 
 [.tabbed-example]
 =====
@@ -69,7 +85,8 @@ This guide assumes that the YAML files are named _core-1.values.yaml_, _core-2.v
 [source, yaml]
 ----
 neo4j:
-  name: "my-cluster" 
+  name: "my-cluster"
+  minimumClusterSize: 3
   resources:
     cpu: "0.5"
     memory: "2Gi"
@@ -78,11 +95,12 @@ neo4j:
 
 volumes:
   data:
-    mode: "volume"
-    volume:
-      gcePersistentDisk:
-        # The name of the gcePersistentDisk volume you have created for this cluster member.
-        pdName: "core-disk-1"
+    mode: "dynamic"
+    dynamic:
+      # * premium-rwo provisions SSD disks (recommended)
+      # * standard-rwo provisions balanced SSD-backed disks
+      # * standard provisions HDD disks
+      storageClassName: premium-rwo
 ----
 ======
 [.include-with-aws]
@@ -101,10 +119,10 @@ volumes:
   data:
     mode: "volume"
     volume:
-      awsElasticBlockStore:
-        # The ID of the awsElasticBlockStore volume you have created for this cluster member.
-        volumeID: "<volume id>"
-        fsType: ext4
+      dynamic:
+        # gp2 is a general-purpose SSD volume
+        # gp3 is a high-performance SSD volume (Recommended but requires the EBS CSI driver to be installed in the cluster.)
+        storageClassName: gp2
 
 ----
 ======
@@ -123,13 +141,11 @@ neo4j:
 
 volumes:
   data:
-    mode: "volume"
-    volume:
-      azureDisk:
-        # The name and the ID of the azureDisk volume you have created for this cluster member.
-        diskName: "core-disk-1"
-        diskURI: "<disk id>"
-        kind: Managed
+    mode: "dynamic"
+    dynamic:
+      # * managed-csi-premium provisions premium SSD disks (recommended)
+      # * managed-csi provisions standard SSD backed disks
+      storageClassName: managed-csi-premium
 
 ----
 ======
