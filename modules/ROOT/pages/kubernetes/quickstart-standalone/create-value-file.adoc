@@ -7,6 +7,11 @@ You create a Helm deployment YAML file containing all the configurations for you
 [[si-config-parameters]]
 == Important configuration parameters
 
+`neo4j.name`::
+Starting from Neo4j 5.0.0, standalone servers and cluster servers have no distinction. 
+This means a standalone server can be upgraded to a cluster by adding more servers.
+Therefore, the `neo4j.name` parameter, which value links together servers in a cluster, is mandatory, and the installation will fail if it is not specified. `neo4j.name` must be unique within a namespace.
+
 `neo4j.resources`::
 The size of a Neo4j instance is defined by the values of the `neo4j.resources.cpu` and `neo4j.resources.memory` parameters.
 The minimum is `0.5` CPU and `2GB` memory.
@@ -14,7 +19,7 @@ If invalid or less than the minimum values are provided, Helm will throw an erro
 +
 [source,go,role=noheader]
 ----
-Error: template: neo4j-standalone/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum. 
+Error: template: neo4jtemplates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum.
  cpu value cannot be less than 0.5 or 500m
 ----
 +
@@ -35,8 +40,7 @@ By default, the standalone Helm Chart installs Neo4j Community Edition.
 If you want to install Neo4j Enterprise Edition, set the configuration parameters `edition: "enterprise"` and acknowledge license compliance by setting `neo4j.acceptLicenseAgreement` to `"yes"`.
 
 `volumes.data`::
-The `volumes.data` parameter maps the `data` volume mount of your Neo4j to the persistent volume that you have created for that instance.
-See xref:kubernetes/quickstart-standalone/create-pv.adoc[Create a persistent volume].
+The `volumes.data` parameter maps the `data` volume mount of your Neo4j to the persistent volume for that instance.
 +
 [NOTE]
 ====
@@ -57,6 +61,7 @@ This guide assumes that the YAML file is named _my-neo4j.values.yaml_.
 [source, yaml]
 ----
 neo4j:
+  name: my-standalone
   resources:
     cpu: "0.5"
     memory: "2Gi"
@@ -70,10 +75,13 @@ neo4j:
 
 volumes:
   data:
-    mode: "volume"
-    volume:
-      gcePersistentDisk:
-        pdName: "my-neo4j-disk"
+    mode: "dynamic"
+    dynamic:
+      # In GKE;
+      # * premium-rwo provisions SSD disks (recommended)
+      # * standard-rwo provisions balanced SSD backed disks
+      # * standard provisions HDD disks
+      storageClassName: premium-rwo
 
 ----
 ======
@@ -82,6 +90,7 @@ volumes:
 [source, yaml]
 ----
 neo4j:
+  name: my-standalone
   resources:
     cpu: "0.5"
     memory: "2Gi"
@@ -97,9 +106,9 @@ volumes:
   data:
     mode: "volume"
     volume:
-      awsElasticBlockStore:
-        volumeID: "<volume id>"
-        fsType: ext4
+      dynamic:
+        # gp2 is a general purpose SSD volume
+        storageClassName: gp2
 
 ----
 ======
@@ -109,6 +118,7 @@ volumes:
 [source, yaml]
 ----
 neo4j:
+  name: my-standalone
   resources:
     cpu: "0.5"
     memory: "2Gi"
@@ -122,12 +132,12 @@ neo4j:
 
 volumes:
   data:
-    mode: "volume"
-    volume:
-      azureDisk:
-        diskName: "my-neo4j-disk"
-        diskURI: "<disk id>"
-        kind: Managed
+    mode: "dynamic"
+    dynamic:
+      # In AKS;
+      # * managed-csi-premium provisions premium SSD disks (recommended)
+      # * managed-csi provisions standard SSD backed disks
+      storageClassName: managed-csi-premium
 
 ----
 ======
@@ -137,6 +147,7 @@ volumes:
 [source, yaml]
 ----
 neo4j:
+  name: my-standalone
   resources:
     cpu: "0.5"
     memory: "2Gi"
