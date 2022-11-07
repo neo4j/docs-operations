@@ -2,7 +2,7 @@
 [[multi-dc-cluster-aks]]
 = Deploy a single Neo4j cluster across multiple AKS clusters
 
-With the Neo4j Helm charts, you can deploy a Neo4j cluster on multiple AKS clusters using load balancers and Application Gateway.
+With the Neo4j Helm chart, you can deploy a Neo4j cluster on multiple AKS clusters using load balancers and Application Gateway.
 
 The following diagram is a schematic representation of a Neo4j cluster with three primary servers running on three different AKS clusters.
 
@@ -16,6 +16,11 @@ The Neo4j cluster can be accessed from outside Kubernetes using an Application G
 The following steps are an example of how to deploy a Neo4j cluster on a multi-AKS cluster.
 
 == Create three AKS clusters in three availability zones
+
+[NOTE]
+====
+You must have the `Microsoft.Authorization/roleAssignments/write` permission to perform these tasks.
+====
 
 . Install the `az` command-line interface (CLI) (https://docs.microsoft.com/en-us/cli/azure/install-azure-cli).
 . Create a resource group to host your virtual network.
@@ -236,6 +241,10 @@ az network vnet subnet show -g my-RG --vnet-name my-VNet -n subnet1 --output jso
 [source, shell]
 --
 az aks create --name my-aks-cluster-a --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet1" -g my-RG
+
+az aks create --name my-aks-cluster-b --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet2" -g my-RG
+
+az aks create --name my-aks-cluster-c --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet3" -g my-RG
 --
 +
 .Example output
@@ -436,11 +445,6 @@ Merged "my-aks-cluster-b-admin" as current context in /Users/myuser/.kube/config
 Merged "my-aks-cluster-c-admin" as current context in /Users/myuser/.kube/config
 --
 
-== Configure the load balancer _values.yaml_ file
-
-You configure the load balancer Helm chart to be used in a multi-zone /region Neo4j cluster scenario.
-
-In the load balancer _values.yaml_ file, set the parameter `multiCluster: true` and add an annotation, e.g., `service.beta.kubernetes.io/azure-load-balancer-internal: "true"`.
 
 [NOTE]
 ====
@@ -448,193 +452,156 @@ In rare cases, where the usual K8S Kubernetes discovery methods do not work in y
 You need one load balancer per Neo4j Instance.
 ====
 
-.An example of what to configure in the load balancer YAML file
-[source, yaml]
---
-  neo4j:
-    name: "neo4j-cluster"
-    edition: "enterprise"
+== Install Neo4j on each AKS cluster
 
-  # Annotations for the external service
-  annotations:
-     service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+Install the _neo4j/neo4j_ helm chart on each AKS cluster.
+The `LoadBalancer` service will be configured to use a private IP address from the subnet that was associated with the cluster.
+For example `my-aks-cluster-a` uses `subnet1` with the range `10.30.1.0/24`, so any address can be used from `10.30.1.1-10.30.1.255`.
+In the example, the following are used for illustration:
 
-  #this flag allows you to open internal neo4j ports necessary in multi-zone /region neo4j cluster scenario
-  multiCluster: true
---
-
-== Install a load balancer on each AKS cluster
-
-You install a load balancer on each AKS cluster to be used by the Neo4j instance running there.
+* *server-1*: 10.30.1.101
+* *server-2*: 10.30.2.101
+* *server-3*: 10.30.3.101
 
 [NOTE]
 ====
-You must have owner's permissions in the resource group not to face auth issues while deploying the load balancers.
+You must have owner's permissions in the resource group or a custom permission with the `Microsoft.Authorization/roleAssignments/write` role not to face auth issues while deploying the load balancers.
 ====
 
-. Switch to the context of the first cluster `my-aks-cluster-a-admin`.
+=== Create a _values.yaml_ file for each cluster member
+
+Create a custom YAML file for each Neo4j cluster member, for example, _server-1.values.yaml_, _server-2.values.yaml_, _server-3.values.yaml_.
+
+The property `services.neo4j.spec.loadBalancerIP` must be set to an IP address from the `subnet1` example.
+
+. Switch to the context of the first AKS cluster `my-aks-cluster-a-admin` using:
 +
 [source, shell]
 --
 kubectl config use-context my-aks-cluster-a-admin
 --
+. In the _server-1.values.yaml_, add the following settings to the Neo4j configuration:
 +
-.Example output
-[source, role=noheader, subs="attributes"]
+.server-1.values.yaml
+[source, shell]
 --
-Switched to context "my-aks-cluster-a-admin".
+# Neo4j Configuration (yaml format)
+neo4j:
+  name: multicluster
+  minimumClusterSize: 3
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+services:
+  neo4j:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    spec:
+      loadBalancerIP: 10.30.1.101
+    multiCluster: true
+config:
+  dbms.cluster.discovery.type: LIST
+  dbms.cluster.discovery.endpoints: "10.30.1.101:5000, 10.30.2.101:5000, 10.30.3.101:5000"
+  server.discovery.advertised_address: "10.30.1.101:5000"
+  server.cluster.advertised_address: "10.30.1.101:6000"
+  server.cluster.raft.advertised_address: "10.30.1.101:7000"
+  server.bolt.advertised_address: "10.30.1.101:7687"
+  server.routing.advertised_address: "10.30.1.101:7688"
 --
-. Install the load balancer using the YAML file you created.
+. In the _server-2.values.yaml_, add the following settings to the Neo4j configuration:
++
+.server-2.values.yaml
+[source, shell]
+--
+# Neo4j Configuration (yaml format)
+neo4j:
+  name: multicluster
+  minimumClusterSize: 3
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+services:
+  neo4j:
+    spec:
+      loadBalancerIP: 10.30.2.101
+    multiCluster: true
+config:
+  dbms.cluster.discovery.type: LIST
+  dbms.cluster.discovery.endpoints: "10.30.1.101:5000, 10.30.2.101:5000, 10.30.3.101:5000"
+  server.discovery.advertised_address: "10.30.2.101:5000"
+  server.cluster.advertised_address: "10.30.2.101:6000"
+  server.cluster.raft.advertised_address: "10.30.2.101:7000"
+  server.bolt.advertised_address: "10.30.2.101:7687"
+  server.routing.advertised_address: "10.30.2.101:7688"
+--
+. In the _server-3.values.yaml_, add the following settings to the Neo4j configuration:
++
+.server-3.values.yaml
+[source, shell]
+--
+# Neo4j Configuration (yaml format)
+neo4j:
+  name: multicluster
+  minimumClusterSize: 3
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+services:
+  neo4j:
+    spec:
+      loadBalancerIP: 10.30.3.101
+    multiCluster: true
+config:
+  dbms.cluster.discovery.type: LIST
+  dbms.cluster.discovery.endpoints: "10.30.1.101:5000, 10.30.2.101:5000, 10.30.3.101:5000"
+  server.discovery.advertised_address: "10.30.3.101:5000"
+  server.cluster.advertised_address: "10.30.3.101:6000"
+  server.cluster.raft.advertised_address: "10.30.3.101:7000"
+  server.bolt.advertised_address: "10.30.3.101:7687"
+  server.routing.advertised_address: "10.30.3.101:7688"
+--
+
+=== Deploy the Neo4j cluster
+
+. Switch the context to `my-aks-cluster-a-admin` using:
 +
 [source, shell]
 --
-helm install lb1 neo4j/neo4j-cluster-loadbalancer -f /path/to/lb-values.yaml
+kubectl config use-context my-aks-cluster-a-admin
+--
+. Install `server-1` using the _server-1.values.yaml_:
++
+[source, shell]
+--
+helm install server-1 neo4j/neo4j -f /path/to/server-1.values.yaml
 --
 +
 .Example output
 [source, role=noheader, subs="attributes"]
 --
-NAME: lb1
-LAST DEPLOYED: Thu Sep  8 20:27:45 2022
-NAMESPACE: default
+NAME: server-1
+LAST DEPLOYED: Tue Nov  1 14:53:54 2022
+NAMESPACE: neo4j
 STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 NOTES:
-Thank you for installing neo4j-cluster-loadbalancer.
+Thank you for installing neo4j.
 
-Your release "lb1" has been installed in namespace "default".
-
-To view the status of your Load Balancer service you can use
-  $ kubectl get service lb-neo4j
-
-Once your Load Balancer has an External-IP assigned you can connect to your Neo4j cluster using "neo4j://<EXTERNAL-IP>:7687". Try:
-
-  $ cypher-shell -a "neo4j://<EXTERNAL-IP>:7687"
-
-Graphs are everywhere!
---
-. Repeat steps 1 and 2 to create `lb2` for `my-aks-cluster-b-admin` and `lb3` for `my-aks-cluster-c-admin`.
-
-== Create a _values.yaml_ file for each cluster member
-
-Create a custom YAML file for each Neo4j cluster member, for example, _core-1.values.yaml_, _core-2.values.yaml_, _core-3.values.yaml_.
-Add the address based on the load balancer `EXTERNAL-IP` you created for each member.
-For more information on how to create a custom YAML file, see xref:kubernetes/quickstart-cluster/create-value-file.adoc[Create Helm deployment values files].
-
-. Get the IPs of the load balancers.
-+
-.. Switch to the context of the first AKS cluster `my-aks-cluster-a-admin`.
-+
-[source, shell]
---
-kubectl config use-context my-aks-cluster-a-admin
---
-.. Get the `EXTERNAL-IP`.
-Please make a note of it.
-+
-[source, shell]
---
-kubectl get svc
---
-+
-.Example output
-[source, role=noheader, subs="attributes"]
---
-NAME         TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)                                        AGE
-kubernetes   ClusterIP      10.0.0.1       <none>         443/TCP                                        5h47m
-lb-neo4j     LoadBalancer   10.0.160.168   20.62.182.59   7474:30430/TCP,7473:30683/TCP,7687:32214/TCP   12m
---
-.. Switch to the context of the second AKS cluster `my-aks-cluster-b-admin` and get the `EXTERNAL-IP` of `lb2`.
-..  Switch to the context of the third AKS cluster `my-aks-cluster-c-admin` and get the `EXTERNAL-IP` of `lb3`.
-. In the _core-1.values.yaml_, add the following settings to the Neo4j configuration:
-+
-[source, shell]
---
-# Neo4j Configuration (yaml format)
-config:
-  dbms.mode: "CORE"
-  dbms.config.strict_validation: "false"
-  causal_clustering.middleware.akka.allow_any_core_to_bootstrap: "true"
-  causal_clustering.discovery_type: "LIST"
-  causal_clustering.initial_discovery_members: "<lb1-EXTERNAL-IP>:5000,<lb2-EXTERNAL-IP>:5000,<lb3-EXTERNAL-IP>:5000"
-  causal_clustering.discovery_advertised_address: "<lb1-EXTERNAL-IP>:5000"
-  causal_clustering.raft_advertised_address: "<lb1-EXTERNAL-IP>:7000"
-  causal_clustering.transaction_advertised_address: "<lb1-EXTERNAL-IP>:6000"
-  dbms.connector.bolt.advertised_address: "<lb1-EXTERNAL-IP>:7687"
-  dbms.routing.advertised_address: "<lb1-EXTERNAL-IP>:7688"
---
-. In the _core-2.values.yaml_, add the following settings to the Neo4j configuration:
-+
-[source, shell]
---
-# Neo4j Configuration (yaml format)
-config:
-  dbms.mode: "CORE"
-  dbms.config.strict_validation: "false"
-  causal_clustering.middleware.akka.allow_any_core_to_bootstrap: "true"
-  causal_clustering.discovery_type: "LIST"
-  causal_clustering.initial_discovery_members: "<lb1-EXTERNAL-IP>:5000,<lb2-EXTERNAL-IP>:5000,<lb3-EXTERNAL-IP>:5000"
-  causal_clustering.discovery_advertised_address: "<lb2-EXTERNAL-IP>:5000"
-  causal_clustering.raft_advertised_address: "<lb2-EXTERNAL-IP>:7000"
-  causal_clustering.transaction_advertised_address: "<lb2-EXTERNAL-IP>:6000"
-  dbms.connector.bolt.advertised_address: "<lb2-EXTERNAL-IP>:7687"
-  dbms.routing.advertised_address: "<lb2-EXTERNAL-IP>:7688"
---
-. In the _core-3.values.yaml_, add the following settings to the Neo4j configuration:
-+
-[source, shell]
---
-# Neo4j Configuration (yaml format)
-config:
-  dbms.mode: "CORE"
-  dbms.config.strict_validation: "false"
-  causal_clustering.middleware.akka.allow_any_core_to_bootstrap: "true"
-  causal_clustering.discovery_type: "LIST"
-  causal_clustering.initial_discovery_members: "<lb1-EXTERNAL-IP>:5000,<lb2-EXTERNAL-IP>:5000,<lb3-EXTERNAL-IP>:5000"
-  causal_clustering.discovery_advertised_address: "<lb3-EXTERNAL-IP>:5000"
-  causal_clustering.raft_advertised_address: "<lb3-EXTERNAL-IP>:7000"
-  causal_clustering.transaction_advertised_address: "<lb3-EXTERNAL-IP>:6000"
-  dbms.connector.bolt.advertised_address: "<lb3-EXTERNAL-IP>:7687"
-  dbms.routing.advertised_address: "<lb3-EXTERNAL-IP>:7688"
---
-
-== Deploy the Neo4j cluster
-
-. Switch the context to `my-aks-cluster-a-admin`.
-+
-[source, shell]
---
-kubectl config use-context my-aks-cluster-a-admin
---
-. Install `core-1` using the _core-1.values.yaml_:
-+
-[source, shell]
---
-helm install core-1 neo4j/neo4j-cluster-core -f /path/to/core-1.values.yaml
---
-+
-.Example output
-[source, role=noheader, subs="attributes"]
---
-NAME: core-1
-LAST DEPLOYED: Thu Sep  8 21:29:30 2022
-NAMESPACE: default
-STATUS: deployed
-REVISION: 1
-TEST SUITE: None
-NOTES:
-Thank you for installing neo4j-cluster-core.
-
-Your release "core-1" has been installed .
+Your release "server-1" has been installed  in namespace "neo4j".
 
 The neo4j user's password has been set to "my-password".
 
-This release creates a single Neo4j Core instance. It  will not become ready until it is able to form a working Neo4j cluster by joining other Neo4j Core instances. To create a working cluster requires at least 3 Core instances.
+This release creates a single member of a Neo4j cluster. It will not become ready until it is able to form a working Neo4j cluster by joining other Neo4j servers. To create a working cluster at least 3 servers are required.
 
-Once you have a working Neo4j cluster you must install at least one Neo4j Service before you can connect applications to Neo4j. Available Neo4j services are:
-  neo4j-headless-service - for connecting applications running inside Kubernetes to Neo4j
-  neo4j-loadbalancer - for connecting applications running outside Kubernetes to Neo4j
+Once you have a working Neo4j cluster, you can access the Neo4j browser using the IP address of the multicluster-lb-neo4j service
+eg. http://[SERVICE_IP]:7474
 
 Graphs are everywhere!
 --
@@ -644,11 +611,11 @@ Graphs are everywhere!
 --
 kubectl config use-context my-aks-cluster-b-admin
 --
-. Install `core-2` using the _core-2.values.yaml_:
+. Install `server-2` using the _server-2.values.yaml_:
 +
 [source, shell]
 --
-helm install core-2 neo4j/neo4j-cluster-core -f /path/to/core-2.values.yaml
+helm install server-2 neo4j/neo4j -f /path/to/server-2.values.yaml
 --
 . Switch the context to `my-aks-cluster-c-admin`.
 +
@@ -656,11 +623,11 @@ helm install core-2 neo4j/neo4j-cluster-core -f /path/to/core-2.values.yaml
 --
 kubectl config use-context my-aks-cluster-c-admin
 --
-. Install `core-3` using the _core-3.values.yaml_:
+. Install `server-3` using the _server-3.values.yaml_:
 +
 [source, shell]
 --
-helm install core-3 neo4j/neo4j-cluster-core -f /path/to/core-3.values.yaml
+helm install server-3 neo4j/neo4j -f /path/to/server-3.values.yaml
 --
 . Switch to each context and check that the pod there is `READY` and that they have formed a cluster.
 +
@@ -672,10 +639,10 @@ kubectl get pods
 [source, role=noheader]
 ----
 NAME       READY   STATUS    RESTARTS   AGE
-core-1-0   1/1     Running   0          4m51s
+server-1-0   1/1     Running   0          4m51s
 ----
 
-== Create an Application Gateway
+== Create an Azure Application Gateway
 
 You create an Application Gateway to access the Neo4j cluster from outside the AKS clusters.
 
