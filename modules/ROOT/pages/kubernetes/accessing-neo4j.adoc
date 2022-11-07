@@ -11,20 +11,20 @@ For more details, see xref:configuration/ports.adoc[Neo4j ports].
 
 The Neo4j Helm chart publishes three K8s services:
 
-* *Neo4j Service* -- a ClusterIP service for application `neo4j`/`bolt` and `http(s)` connections to the Neo4j database, originating from inside the Kubernetes cluster.
+* *Default Service* -- a ClusterIP service for application `neo4j`/`bolt` and `http(s)` connections to the Neo4j database, originating from inside the Kubernetes cluster.
 * *Admin Service* -- a “Headless” (DNS only) service that includes all Neo4j ports.
 It is only available inside the Kubernetes cluster and access to it should be guarded.
 The Admin service can be used for Neo4j DBMS administration, performing backups, and collecting metrics.
-* *External* -- a LoadBalancer service for application `neo4j`/`bolt` and `http(s)` connections originating from outside the Kubernetes cluster.
+* *Neo4j* -- a LoadBalancer service for application `neo4j`/`bolt` and `http(s)` connections originating from outside the Kubernetes cluster.
 
 .K8s services per Neo4j interface
 [cols="5", options="header"]
 |===
 | Neo4j Interface
 | Default Port
-| Neo4j Service
+| Default Service
 | Admin Service
-| External Service
+| Neo4j Service
 
 | Bolt (`neo4j://` and `bolt://` protocols)
 | `7687`
@@ -109,7 +109,7 @@ For example:
 # install neo4j
 helm install "my-release" …
 # lookup installed service
-kubectl get service -l helm.neo4j.com/service=neo4j,helm.neo4j.com/instance=my-release
+kubectl get service -l helm.neo4j.com/service=default,helm.neo4j.com/instance=my-release
 ----
 
 [[ad-hoc-access]]
@@ -123,26 +123,27 @@ To access the Neo4j service for `http(s)` and `neo4j/bolt` from a developer mach
 kubectl port-forward svc/<release-name> tcp-bolt tcp-http tcp-https
 ----
 
-Neo4j is accessible via the Neo4j browser at http://localhost:7474.
+Neo4j is accessible via the Neo4j browser at _http://localhost:7474_.
 
 [[access-outside-k8s]]
+[role=enterprise-edition]
 == Applications accessing Neo4j from outside Kubernetes
 
 To access Neo4j from an application outside the Kubernetes cluster, use the IP address of the external service.
 The external IP(s) of the `LoadBalancer` can be found using `kubectl`:
 
-* Using with the service name `<release-name>-external`:
+* The service name is based on the value of the `neo4j.name` -- `<my-neo4j-name>-lb-neo4j`:
 +
 [source,shell]
 ----
-kubectl get service <release-name>-external -ocustom-columns=ip:.status.loadBalancer.ingress[].ip
+kubectl get service `<my-neo4j-name>-lb-neo4j` -ocustom-columns=ip:.status.loadBalancer.ingress[].ip
 ----
 
 * Using a label selector:
 +
 [source,shell]
 ----
-kubectl get service -l helm.neo4j.com/service=external,helm.neo4j.com/name=<release-name> -ocustom-columns=ip:.status.loadBalancer.ingress[].ip
+kubectl get service -l helm.neo4j.com/service=neo4j,helm.neo4j.com/name=<release-name> -ocustom-columns=ip:.status.loadBalancer.ingress[].ip
 ----
 
 If the Kubernetes `LoadBalancer` implementation that you are using supports setting a static IP, the IP address of the `LoadBalancer` can be configured in the Neo4j Helm release by setting `externalService.loadBalancerIP`.
@@ -153,27 +154,27 @@ For more information, see xref:kubernetes/configuration.adoc#configure-ssl[Confi
 
 If you have static IPs, you can associate DNS with them and obtain trusted certificates.
 
-The ports that are exposed on the external service can be configured in the Helm release by changing the `externalService` object.
+The ports that are exposed on the external service can be configured in the Helm release by changing the `services.neo4j` object.
 The default values are:
 
 [source, yaml]
 ----
-externalService:
- annotations: { }
- loadBalancerIP: NULL
-
- ports:
-   http:
-     enabled: true
-   https:
-     enabled: true
-   bolt:
-     enabled: true
-   backup:
-     enabled: false
+services:
+  neo4j:
+     annotations: { }
+     loadBalancerIP: NULL
+     ports:
+       http:
+         enabled: true
+       https:
+         enabled: true
+       bolt:
+         enabled: true
+       backup:
+         enabled: false
 ----
 
-Disabling / enabling a port on the `externalService` object removes it from the load balancer but does not affect whether it is disabled/enabled in Neo4j.
+Disabling/enabling a port on the `services.neo4j` object removes it from the load balancer but does not affect whether it is disabled/enabled in Neo4j.
 
 [NOTE]
 ====
