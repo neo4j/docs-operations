@@ -486,7 +486,7 @@ config:
   dbms.security.oidc.azure.claims.groups: "groups"
   dbms.security.oidc.azure.authorization.group_to_role_mapping: "e197354c-bd75-4524-abbc-d44325904567=editor;fa31ce67-9e4d-4999-bf6d-25c55258d116=publisher"
 ----
-+
+
 [IMPORTANT]
 ====
 `sub` is the only claim guaranteed to be unique and stable. 
@@ -657,11 +657,80 @@ CALL apoc.config.list() YIELD key, value WHERE key = "apoc.jdbc.neo4j.url" RETUR
 [[operations-installing-plugins]]
 == Install Plugins
 
-There are two recommended methods for adding Neo4j plugins to Neo4j Helm Chart deployments.
+There are three recommended methods for adding Neo4j plugins to Neo4j Helm chart deployments.
 You can use:
 
-* xref:kubernetes/configuration.adoc#custom-container[a custom container image].
-* xref:kubernetes/configuration.adoc#plugins-volume[a `plugins` volume].
+* <<automatic-plugin-download, an automatic plugin download>>
+* <<custom-container, a custom container image>>.
+* <<plugins-volume, a `plugins` volume>>.
+
+[[automatic-plugin-download]]
+=== Add plugins using an automatic plugin download
+
+You can configure the Neo4j deployment to automatically download and install plugins.
+If licenses are required for the plugins, you must provide the licenses in a secret.
+
+==== Install GDS Community Edition (CE)
+
+GDS Community Edition does not require a license.
+To add the GSD CE, configure the Neo4j _values.yaml_ and set the `env` to download the plugins:
+
+[source, properties]
+----
+neo4j:
+  name: licenses
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+env:
+  NEO4J_PLUGINS: '["graph-data-science"]'
+config:
+  dbms.security.procedures.unrestricted: "gds.*,apoc.*"
+----
+
+==== Install GDS Enterprise Edition (EE) and Bloom plugins
+
+To install GDS EE and Bloom, you must provide a license for each plugin.
+You provide the licenses in a secret.
+
+. Create a secret containing the licenses:
++
+[source, shell]
+----
+kubectl create secret  generic --from-file=gds.license,bloom.license gds-bloom-license
+----
+. Configure the Neo4j _values.yaml_ file using the secret as the _/licenses_ volume mount, and set the `env` to download the plugins:
++
+[source, properties]
+----
+neo4j:
+  name: licenses
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+  licenses:
+    mode: volume
+    volume:
+      secret:
+        secretName: gds-bloom-license
+        items:
+          - key: gds.license
+            path: gds.license
+          - key: bloom.license
+            path: bloom.license
+env:
+  NEO4J_PLUGINS: '["graph-data-science", "bloom"]'
+config:
+  gds.enterprise.license_file: "/licenses/gds.license"
+  dbms.security.procedures.unrestricted: "gds.*,apoc.*,bloom.*"
+  server.unmanaged_extension_classes: "com.neo4j.bloom.server=/bloom,semantics.extension=/rdf"
+  dbms.security.http_auth_allowlist: "/,/browser.*,/bloom.*"
+  dbms.bloom.license_file: "/licenses/bloom.license"
+----
 
 [[custom-container]]
 === Add plugins using a custom container image
