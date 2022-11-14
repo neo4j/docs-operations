@@ -2,189 +2,27 @@
 [[si-uninstall-cleanup]]
 = Uninstall Neo4j and clean up the created resources
 
-[[uninstall-neo4j]]
+
 == Uninstall Neo4j Helm deployment
 
-Uninstall the Neo4j Helm deployment.
-
+.Uninstall the Neo4j Helm deployment.
 [source, shell]
 ----
 helm uninstall my-neo4j-release
 ----
 
+.Example output
 [source, role=noheader]
 ----
 release "my-neo4j-release" uninstalled
 ----
 
-[[si-cleanup-resources]]
 == Fully remove all the data and resources
 
 Uninstalling the Helm release does not remove the created resources and data.
 Therefore, after uninstalling the helm deployment, you also have to delete all the data and resources.
 
-[.tabbed-example]
-=====
-[.include-with-gke]
-======
-
-. Display all data associated with the GCP persistent disk by running:
-+
 [source, shell]
 ----
-gcloud compute disks describe "my-neo4j-disk"
+kubectl delete pvc --all --namespace neo4j
 ----
-+
-[source, role=noheader]
-----
-creationTimestamp: '2021-07-28T04:54:59.385-07:00'
-id: '756334900703722364'
-kind: compute#disk
-labelFingerprint: 42WmSpB8rSM=
-lastAttachTimestamp: '2021-07-28T05:45:03.723-07:00'
-lastDetachTimestamp: '2021-07-28T06:00:18.793-07:00'
-name: my-neo4j-disk
-physicalBlockSizeBytes: '4096'
-selfLink: https://www.googleapis.com/compute/v1/projects/my-neo4j-project/zones/europe-west2-a/disks/my-neo4j-disk
-sizeGb: '128'
-status: READY
-type: https://www.googleapis.com/compute/v1/projects/my-neo4j-project/zones/europe-west2-a/diskTypes/pd-ssd
-zone: https://www.googleapis.com/compute/v1/projects/my-neo4j-project/zones/europe-west2-a
-----
-+
-[NOTE]
-====
-If you re-create Neo4j with the same settings, it will pick up the same disk again, and all the data will still be on it.
-
-Even if the GKE cluster is deleted, the persistent disk with the Neo4j data will still exist.
-====
-+
-. Delete the GCP persistent disk:
-+
-[source, shell]
-----
-gcloud compute disks delete my-neo4j-disk
-----
-+
-[source, role=noheader]
-----
-The following disks will be deleted:
- - [my-neo4j-disk] in [europe-west2-a]
-Do you want to continue (Y/n)?  y
-Deleted [https://www.googleapis.com/compute/v1/projects/my-neo4j-project/zones/europe-west2-a/disks/my-neo4j-disk].
-----
-+
-[TIP]
-====
-If you want to delete the entire GKE Kubernetes cluster, run:
-
-[source, shell]
-----
-gcloud container clusters delete my-neo4j-gke-cluster
-----
-====
-======
-
-[.include-with-aws]
-======
-
-. Display all data associated with the AWS EBS disk by running:
-+
-[source, shell]
-----
-aws ec2 describe-volumes --filters Name=tag:volume,Values=neo4j-k8s --query "Volumes[*].{ID:VolumeId}" --output text
-----
-+
-[NOTE]
-====
-If you re-create Neo4j with the same settings, it will pick up the same disk again, and all the data will still be on it.
-
-Even if you delete the EKS cluster, the EBS disk with the Neo4j data will still exist.
-Note that the disk _will_ be deleted if its Resource Group is deleted.
-====
-+
-. Delete the AWS EBS disk using the volume ID:
-+
-[source, shell]
-----
-aws ec2 delete-volume --volume-id "<volume id>"
-----
-+
-[TIP]
-====
-If you are sure that you want to delete the entire EKS Kubernetes cluster, run:
-
-[source, shell]
-----
-eksctl delete cluster my-neo4j-eks-cluster
-----
-====
-
-======
-
-[.include-with-azure]
-======
-
-. Display all data associated with the Azure managed disk by running:
-+
-[source, shell]
-----
-az disk show --name "my-neo4j-disk"
-----
-+
-[NOTE]
-====
-If you re-create Neo4j with the same settings, it will pick up the same disk again and all the data will still be on it.
-
-Even if you delete the AKS cluster, the managed disk with the Neo4j data will still exist.
-Note that the disk _will_ be deleted if its Resource Group is deleted.
-====
-+
-. Delete the Azure managed disk:
-+
-[source, shell]
-----
-az disks delete --name "my-neo4j-disk"
-----
-+
-[TIP]
-====
-If you are sure that you want to delete the entire AKS Kubernetes cluster, run:
-
-[source, shell]
-----
-az aks delete --name my-neo4j-aks-cluster
-----
-====
-
-======
-
-[.include-with-docker-desktop]
-======
-
-. Check the name of the `PersistentVolumeClaim` (`pvc`):
-+
-[source, shell]
-----
-kubectl get pvc
-----
-+
-[source, role=noheader]
-----
-NAME                      STATUS   VOLUME                CAPACITY   ACCESS MODES   STORAGECLASS   AGE
-data-my-neo4j-release-0   Bound    my-neo4j-release-pv   1Ti        RWO            manual         43h
-----
-+
-[NOTE]
-====
-If you re-create Neo4j with the same settings, it will pick up the PVC again, and all the data is still on it.
-If you use manually provisioned volumes and delete the `PersistentVolumeClaim` and the `PersistentVolume` in Kubernetes, the `hostPath` directory with the Neo4j data will still exist.
-
-When you use dynamically provisioned volumes and delete the `PersistentVolume`, the underlying data may or may not be removed, depending on the Docker Desktop version and configuration.
-====
-+
-. To fully remove all the data and resources, delete the `PersistentVolumeClaim` in Kubernetes.
-The dynamically provisioned volumes are automatically removed when the `PersistentVolumeClaim` is deleted.
-======
-
-=====
