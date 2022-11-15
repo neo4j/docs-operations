@@ -258,12 +258,11 @@ Read Replicas only need to define `+NEO4J_causal_clustering_initial_discovery_me
 
 The following environment variables are specific to Causal Clustering, and are available in the Neo4j Enterprise Edition:
 
-* `NEO4J_dbms_mode`: the database mode, defaults to `SINGLE`, set to `CORE` or `READ_REPLICA` for Causal Clustering.
-* `+NEO4J_causal_clustering_expected_core_cluster_size+`: the initial cluster size (number of Core instances) at startup.
-* `+NEO4J_causal_clustering_initial_discovery_members+`: the network addresses of an initial set of Core cluster members.
-* `+NEO4J_causal_clustering_discovery_advertised_address+`: hostname/IP address and port to advertise for member discovery management communication.
-* `+NEO4J_causal_clustering_transaction_advertised_address+`: hostname/IP address and port to advertise for transaction handling.
-* `+NEO4J_causal_clustering_raft_advertised_address+`: hostname/IP address and port to advertise for cluster communication.
+* `+NEO4J_dbms_mode`: the database mode, defaults to `SINGLE`, set to `CORE` or `READ_REPLICA` for Causal Clustering.
+* `+NEO4J_dbms_cluster_discovery_endpoints+`: the network addresses of an initial set of Core cluster members.
+* `+NEO4J_server_discovery_advertised_address+`: hostname/IP address and port to advertise for member discovery management communication.
+* `+NEO4J_server.cluster.advertised_address+`: hostname/IP address and port to advertise for transaction handling.
+* `+NEO4J_server.cluster.raft.advertised_address+`: hostname/IP address and port to advertise for cluster communication.
 
 See xref:clustering/settings.adoc[] for more details of Neo4j Causal Clustering settings.
 
@@ -278,39 +277,39 @@ Example of a `docker run` command for deploying a cluster with 3 COREs:
 
 [source, shell, subs="attributes"]
 ----
-docker network create --driver=bridge cluster
+docker network create --driver=bridge neo4j-cluster
 
-docker run --name=core1 --detach --network=cluster \
+docker run --name=core1 --detach --network=neo4j-cluster \
     --publish=7474:7474 --publish=7473:7473 --publish=7687:7687 \
     --hostname=core1 \
     --env NEO4J_dbms_mode=CORE \
-    --env NEO4J_causal_clustering_expected_core_cluster_size=3 \
-    --env NEO4J_causal_clustering_initial_discovery_members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_dbms_cluster_discovery_endpoints=core1:5000,core2:5000,core3:5000 \
     --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
-    --env NEO4J_dbms_connector_bolt_advertised_address=localhost:7687 \
-    --env NEO4J_dbms_connector_http_advertised_address=localhost:7474 \
+    --env NEO4j_server_bolt_advertised_address=localhost:7687 \
+    --env NEO4j_server_http_advertised_address=localhost:7474 \
+    --env NEO4J_AUTH=neo4j/foo123 \
     neo4j:{neo4j-version-exact}-enterprise
 
-docker run --name=core2 --detach --network=cluster \
+docker run --name=core2 --detach --network=neo4j-cluster \
     --publish=8474:7474 --publish=8473:7473 --publish=8687:7687 \
     --hostname=core2 \
     --env NEO4J_dbms_mode=CORE \
-    --env NEO4J_causal_clustering_expected_core_cluster_size=3 \
-    --env NEO4J_causal_clustering_initial_discovery_members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_dbms_cluster_discovery_endpoints=core1:5000,core2:5000,core3:5000 \
     --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
-    --env NEO4J_dbms_connector_bolt_advertised_address=localhost:8687 \
-    --env NEO4J_dbms_connector_http_advertised_address=localhost:8474 \
+    --env NEO4j_server_bolt_advertised_address=localhost:8687 \
+    --env NEO4j_server_http_advertised_address=localhost:8474 \
+    --env NEO4J_AUTH=neo4j/foo123 \
     neo4j:{neo4j-version-exact}-enterprise
 
-docker run --name=core3 --detach --network=cluster \
+docker run --name=core3 --detach --network=neo4j-cluster \
     --publish=9474:7474 --publish=9473:7473 --publish=9687:7687 \
     --hostname=core3 \
     --env NEO4J_dbms_mode=CORE \
-    --env NEO4J_causal_clustering_expected_core_cluster_size=3 \
-    --env NEO4J_causal_clustering_initial_discovery_members=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_dbms_cluster_discovery_endpoints=core1:5000,core2:5000,core3:5000 \
     --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
-    --env NEO4J_dbms_connector_bolt_advertised_address=localhost:9687 \
-    --env NEO4J_dbms_connector_http_advertised_address=localhost:9474 \
+    --env NEO4j_server_bolt_advertised_address=localhost:9687 \
+    --env NEO4j_server_http_advertised_address=localhost:9474 \
+    --env NEO4J_AUTH=neo4j/foo123 \
     neo4j:{neo4j-version-exact}-enterprise
 ----
 
@@ -320,22 +319,22 @@ Example of a `docker run` command for adding a Read Replica to the cluster:
 
 [source, shell, subs="attributes"]
 ----
-docker run --name=read-replica1 --detach --network=cluster \
-         --publish=10474:7474 --publish=10473:7473 --publish=10687:7687 \
-         --hostname=read-replica1 \
-         --env NEO4J_dbms_mode=READ_REPLICA \
-         --env NEO4J_causal_clustering_initial_discovery_members=core1:5000,core2:5000,core3:5000 \
-         --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
-         --env NEO4J_dbms_connector_bolt_advertised_address=localhost:10687 \
-         --env NEO4J_dbms_connector_http_advertised_address=localhost:10474 \
-         neo4j:{neo4j-version-exact}-enterprise
+docker run --name=read-replica1 --detach --network=neo4j-cluster \
+    --publish=10474:7474 --publish=10473:7473 --publish=10687:7687 \
+    --hostname=read-replica1 \
+    --env NEO4J_dbms_mode=READ_REPLICA \
+    --env NEO4J_dbms_cluster_discovery_endpoints=core1:5000,core2:5000,core3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4j_server_bolt_advertised_address=localhost:10687 \
+    --env NEO4j_server_http_advertised_address=localhost:10474 \
+    neo4j:{neo4j-version-exact}-enterprise
 ----
 
 
 [[docker-cc-setup-multiple]]
 === Set up a Neo4j Cluster on multiple Docker hosts
 
-To get the Causal Cluster high-availability characteristics, however, it is more sensible to put the cluster nodes on different physical machines.
+In order to create a  highly-availabile cluster of containers, cluster nodes can be deployed on different physical machines.
 
 When each container is running on its own physical machine, and the Docker network is not used, you have to define the advertised addresses to enable the communication between the physical machines.
 Each container must also bind to the host machine's network.
@@ -351,24 +350,16 @@ docker run --name=neo4j-core --detach \
          --publish=5000:5000 --publish=6000:6000 --publish=7000:7000 \
          --hostname=public-address \
          --env NEO4J_dbms_mode=CORE \
-         --env NEO4J_causal_clustering_expected_core_cluster_size=3 \
-         --env NEO4J_causal_clustering_initial_discovery_members=core1-public-address:5000,core2-public-address:5000,core3-public-address:5000 \
-         --env NEO4J_causal_clustering_discovery_advertised_address=public-address:5000 \
-         --env NEO4J_causal_clustering_transaction_advertised_address=public-address:6000 \
-         --env NEO4J_causal_clustering_raft_advertised_address=public-address:7000 \
-         --env NEO4J_dbms_connectors_default_advertised_address=public-address \
+         --env NEO4J_dbms_cluster_discovery_endpoints=core1-public-address:5000,core2-public-address:5000,core3-public-address:5000 \
+         --env NEO4J_server_discovery_advertised_address=public-address:5000 \
+         --env NEO4J_server_cluster_advertised_address=public-address:6000 \
+         --env NEO4J_server_cluster.raft.advertised_address=public-address:7000 \
+         --env NEO4J_server_default_advertised_address=public-address \
          --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
-         --env NEO4J_dbms_connector_bolt_advertised_address=public-address:7687 \
-         --env NEO4J_dbms_connector_http_advertised_address=public-address:7474 \
+         --env NEO4j_server_bolt_advertised_address=public-address:7687 \
+         --env NEO4j_server_http_advertised_address=public-address:7474 \
          neo4j:{neo4j-version-exact}-enterprise
 ----
 +
 Where `public-address` is the public hostname or ip-address of the machine.
 
-[NOTE]
-====
-Please note that if you are starting a Read Replica as above, you must publish the discovery port.
-For example, `--publish=5000:5000`.
-
-In versions prior to Neo4j 4.0, this was only necessary with Core servers.
-====
