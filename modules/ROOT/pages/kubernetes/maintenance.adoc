@@ -1,10 +1,10 @@
 :description: The section describes some maintenance operations when running Neo4j in a Kubernetes cluster.
 [[kubernetes-maintenance]]
-= Operations
-:description: The section describes some operations when running Neo4j in a Kubernetes cluster. 
+= Kubernetes maintenance operations
+:description: The section describes some maintenance operations when running Neo4j in a Kubernetes cluster. 
 
 [[online-maintenance]]
-== Online Maintenance
+== Online maintenance
 
 Online maintenance does not require stopping the `neo4j` process.
 It is performed using the command `kubectl exec`.
@@ -19,7 +19,7 @@ kubectl exec <release-name>-0 -- neo4j-admin store-info --all /var/lib/neo4j/dat
 [NOTE]
 ====
 All `neo4j-admin` commands need the `--expand-commands` flag to run in the Neo4j container.
-This is because the Neo4j Helm Chart defines the Neo4j configuration using command expansion to dynamically resolve some configuration parameters at runtime.
+This is because the Neo4j Helm chart defines the Neo4j configuration using command expansion to dynamically resolve some configuration parameters at runtime.
 ====
 
 To run a series of commands, use an interactive shell:
@@ -36,7 +36,7 @@ Therefore, running tasks that use a significant amount of memory or running Neo4
 ====
 
 [[offline-maintenance]]
-== Offline Maintenance
+== Offline maintenance
 
 You use the Neo4j offline maintenance mode to perform maintenance tasks that require Neo4j to be offline.
 In this mode, the `neo4j` process is not running.
@@ -50,7 +50,7 @@ However, the Neo4j Pod does run, but it never reaches the status `READY`.
 * You can do that by using the _values.yaml_ file:
 .. Open your _values.yaml_ file and add `offlineMaintenanceModeEnabled: true` to the `neo4j` object:
 +
-[source, yaml]
+[source, properties]
 ----
 neo4j:
  offlineMaintenanceModeEnabled: true
@@ -117,7 +117,7 @@ kubectl exec <release-name>-0 -- neo4j-admin store-info --all /var/lib/neo4j/dat
 kubectl exec -it <release-name>-0 -- bash
 ----
 
-* For long-running commands, use a shell and run tasks using `nohup` so they continue if the `kubectl exec` connection is lost:
+* For long running commands, use a shell and run tasks using `nohup` so they continue if the `kubectl exec` connection is lost:
 +
 [source, shell]
 ----
@@ -127,14 +127,14 @@ kubectl exec -it <release-name>-0 -- bash
 ----
 
 [[put-online-mode]]
-=== Put the Neo4j DBMS in online mode
+=== Put the Neo4j instance in online mode
 
 When you finish with the maintenance tasks, return the Neo4j instance to a normal operation:
 
 * You can do that by using the _values.yaml_ file:
 . Open your _values.yaml_ file and add `offlineMaintenanceModeEnabled: false` to the `neo4j` object:
 +
-[source, yaml]
+[source, properties]
 ----
 neo4j:
  offlineMaintenanceModeEnabled: false
@@ -167,7 +167,7 @@ All Neo4j `config` values must be YAML strings, not YAML booleans.
 Therefore, make sure you put quotes around values, such as `"true"` or `"false"`, so that they are handled correctly by Kubernetes.
 ====
 +
-[source, yaml]
+[source, properties]
 ----
 # Neo4j Configuration (yaml format)
 config:
@@ -192,7 +192,7 @@ ALTER USER neo4j SET PASSWORD '<new-password>'
 +
 . Update the Neo4j configuration to enable authentication:
 +
-[source, yaml]
+[source, properties]
 ----
 # Neo4j Configuration (yaml format)
 config:
@@ -226,7 +226,7 @@ These operations are performed in xref:kubernetes/maintenance.adoc#offline-maint
 neo4j-admin dump --expand-commands --database=system --to /backups/system.dump && neo4j-admin dump --expand-commands --database=neo4j --to /backups/neo4j.dump
 ----
 +
-. xref:kubernetes/maintenance.adoc#put-online-mode[Put the Neo4j DBMS in online mode].
+. xref:kubernetes/maintenance.adoc#put-online-mode[Put the Neo4j instance in online mode].
 . Verify that Neo4j is working by refreshing Neo4j Browser.
 
 [TIP]
@@ -250,109 +250,75 @@ neo4j-admin load --expand-commands --database=system --from /backups/system.dump
 For information about the command syntax, options, and usage, see xref:backup-restore/restore-dump.adoc[Restore a database dump].
 ====
 +
-. xref:kubernetes/maintenance.adoc#put-online-mode[Put the Neo4j DBMS in online mode].
+. xref:kubernetes/maintenance.adoc#put-online-mode[Put the Neo4j instance in online mode].
 . Verify that Neo4j is working by refreshing Neo4j Browser.
 
 [role=enterprise-edition]
 [[kubernetes-neo4j-backup-restore]]
-== Back up and restore a single database (online)
+== Back up and restore a Neo4j database (online)
 
-You can use the `neo4j-admin backup` command to make a full or incremental backup of an **online** database(s) and `neo4j-admin restore` to restore it in a live Neo4j DBMS or cluster.
+You can use the `neo4j-admin backup` command to make a full or incremental backup of an **online** database(s) and `neo4j-admin restore` to restore it in a live Neo4j DBMS.
 These operations are performed in xref:kubernetes/maintenance.adoc#online-maintenance[online maintenance mode].
 
-[NOTE]
-====
-For performing backups, Neo4j uses the _Admin Service_, which is only available inside the Kubernetes cluster and access to it should be guarded.
-For more information, see xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc[Access the Neo4j cluster from inside Kubernetes]
-and xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
-====
-
 [[kubernetes-neo4j-backup]]
-=== Back up a single database
+=== Back up the `neo4j` database
 
-The `neo4j-admin backup` command can be run both from the same and a separate pod.
-However, it uses resources (CPU, RAM) in the Neo4j container (competing with Neo4j itself), because it checks the database consistency at the end of every backup operation.
-Therefore, it is recommended to run the operation in a separate pod.
+To back up the `neo4j` database, run the following command:
 
-[NOTE]
+[source, properties]
+----
+kubectl exec <release-name>-0 -- neo4j-admin backup --from=localhost:6362 --database=neo4j --backup-dir=/backups --expand-commands
+----
+
+[TIP]
 ====
-In the Neo4j Helm Charts, the backup configurations are set by default to `dbms.backup.enabled=true` and `dbms.backup.listen_address=0.0.0.0:6362`.
+You may also want to use the option `--include-metadata=all`.
+It creates a cypher script, which you can later use to restore the database's users, roles, and privileges.
 
-Note that the default for Neo4j on-site installations is to listen only on 127.0.0.1, which will not work from other containers, since they would not be able to access the backup port.
+For information about the command syntax, options, memory configuration, and usage, see xref:backup-restore/online-backup.adoc[Back up an online database].
 ====
 
-**Back up a database from a separate pod**
-
-. Create a Neo4j instance pod to get access to the `neo4j-admin` command:
-+
-[source, shell, subs="attributes"]
-----
-kubectl run —rm -it —image “neo4j:{neo4j-version-exact}-enterprise” backup — bash
-----
-
-. Run the following command to back up the database you want.
-In this example, this is the `neo4j` database.
-The command is the same for standalone instances and Neo4j cluster members.
-+
-[source, shell]
-----
-bin/neo4j-admin backup --from=my-neo4j-release-admin.default.svc.cluster.local:6362 --database=neo4j --backup-dir=/backups --expand-commands
-----
+[CAUTION]
+====
+Note that this operation consumes resources (CPU, RAM) in the Neo4j container (competing with Neo4j itself).
+If your resources are constrained, you can run the backup in a sidecar container in the same pod or from a remote K8s Pod/Job.
+====
 
 [[kubernetes-neo4j-restore]]
-=== Restore a single database
+=== Restore `neo4j` database
+To restore the `neo4j` database, you need to execute `neo4j-admin restore` command and create the database in the `system` db.
 
-To restore a single offline database or a database backup, you first need to delete the database that you want to replace unless you want to restore the backup as an additional database in your DBMS, then
-use the restore command of `neo4j-admin` to restore the database backup, and finally, use the Cypher command `CREATE DATABASE name` to create the restored database in the `system` database.
-
-==== Delete the database that you want to replace
-
-Before you restore the database backup, you have to delete the database that you want to replace with that backup using the Cypher command `DROP DATABASE name` against the `system` database.
-If you want to restore the backup as an additional database in your DBMS, then you can proceed to the next section.
-
-[NOTE]
+[TIP]
 ====
-For Neo4j cluster deployments, you run the Cypher command `DROP DATABASE name` only on one of the cluster members.
-The command is automatically routed to the leader and from there to the other cluster members.
+For information about the command syntax, options, and usage, see xref:backup-restore/restore-backup.adoc[Restore a database backup].
 ====
-. Connect to the Neo4j DBMS:
+
+. Connect to the Neo4j standalone instance:
 +
 [source, shell]
 ----
 kubectl exec -it <release-name>-0 -- bash
 ----
 +
-. Connect to the `system` database using `cypher-shell`:
+. Connect to your `system` database using `cypher-shell`:
 +
 [source, shell]
 ----
 cypher-shell -u neo4j -p <password> -d system
 ----
 +
-. Drop the database you want to replace with the backup:
+. Drop the `neo4j` database and exit:
 +
-[source, cypher]
+[source, shell]
 ----
 DROP DATABASE neo4j;
 ----
-. Exit the Cypher Shell command-line console:
 +
 [source, shell]
 ----
 :exit;
 ----
-
-==== Restore the database backup
-
-You use the `neo4j-admin restore` command to restore the database backup, and then the Cypher command `CREATE DATABASE name` to create the restored database in the `system` database.
-For information about the command syntax, options, and usage, see xref:backup-restore/restore-backup.adoc[Restore a database backup].
-
-. Restore the `neo4j` database backup.
 +
-[NOTE]
-====
-For Neo4j cluster deployments, restore the database backup on each cluster member.
-====
 . Run the `neo4j-admin restore` command:
 +
 [source, shell]
@@ -360,7 +326,7 @@ For Neo4j cluster deployments, restore the database backup on each cluster membe
 neo4j-admin restore --database=neo4j --from=/backups/neo4j --expand-commands
 ----
 +
-. Connect to the `system` database using `cypher-shell`:
+. Connect to your `system` database using `cypher-shell`:
 +
 [source, shell]
 ----
@@ -369,36 +335,27 @@ cypher-shell -u neo4j -p <password> -d system
 +
 . Create `neo4j` database.
 +
-[NOTE]
-====
-For Neo4j cluster deployments, you run the Cypher command `CREATE DATABASE name` only on one of the cluster members.
-====
-+
-[source, cypher]
+[source, shell]
 ----
 CREATE DATABASE neo4j;
 ----
-. Open the browser at _http://<external-ip>:7474/browser/_ and check that all data has been successfully restored.
-. Execute a Cypher command against the `neo4j` database, for example:
++
+. Open the browser at _http://<external-ip>:7474/browser/_ and check that all data is successfully restored.
+. Execute cypher command against `neo4j` database:
 +
 [source, cypher]
 ----
 MATCH (n) RETURN n
 ----
-+
+
 [NOTE]
 ====
 If you have backed up your database with the option `--include-metadata`, you can manually restore the users and roles metadata.
 For more information, see xref:backup-restore/restore-backup.adoc#restore-backup-example[Restore a database backup -> Example].
 ====
 
-[NOTE]
-====
-To restore the `system` database, follow the steps described in xref:kubernetes/maintenance.adoc#kubernetes-neo4j-dump-load[Dump and load databases (offline)].
-====
-
 [[kubernetes-upgrading]]
-== Upgrade the Neo4j DBMS on Kubernetes
+== Upgrade Neo4j on Kubernetes
 
 To upgrade from Neo4j Community to Enterprise edition, run:
 
@@ -411,7 +368,7 @@ To upgrade to the next patch release of Neo4j, update your Neo4j _values.yaml_ f
 
 . Open the _values.yaml_ file, using the code editor of your choice, and add the following line to the `image` object:
 +
-[source, yaml, subs="attributes"]
+[source, properties, subs="attributes"]
 ----
 image:
   customImage: neo4j:{neo4j-version-exact}
@@ -424,55 +381,10 @@ image:
 helm upgrade <release-name> neo4j/neo4j-standalone -f values.yaml
 ----
 
-[[_migrate_neo4j_from_the_labs_helm_charts_to_the_neo4j_helm_charts_offline]]
-== Migrate Neo4j from the Labs Helm charts to the Neo4j Helm charts (offline)
-
-To migrate your Neo4j deployment from the Labs Helm charts to the Neo4j Helm charts, back up your standalone instance or cluster created with the Labs Helm charts and restore it in a standalone instance or a cluster created using the Neo4j Helm charts.
-
-Neo4j supports the following migration paths for a single instance and a cluster:
-
-Single instance::
-* From the Labs Helm charts 3.5 or earlier to either Neo4j Helm charts 4.3 or 4.4 -- upgrade your Neo4j deployment to whichever version you want to move to using the steps in the https://neo4j.com/labs/neo4j-helm/1.0.0/ and then migrate from the Labs Helm charts (4.3 or 4.4) to Neo4j Helm charts 4.3 or 4.4 using the steps described here.
-* From the Labs Helm charts 4.3 to Neo4j Helm charts 4.3 -- follow the steps described here.
-* From the Labs Helm charts 4.3 to Neo4j Helm charts 4.4 -- follow the steps described here.
-
-Cluster::
-From the Labs Helm charts 4.3 or 4.4 to Neo4j Helm charts 4.4 -- follow the steps described here.
-
-=== Back up a Neo4j deployment created with the Labs Helm charts
-
-To back up your Neo4j deployment created with the Labs Helm charts, follow the steps in the https://neo4j.com/labs/neo4j-helm/1.0.0/backup/[Neo4j-Helm User Guide -> Backing up Neo4j Containers].
-
-=== Restore your backup into a standalone or a cluster created with the Neo4j Helm charts
-
-If the backup exists on a cloud provider, you can take one of the following approaches:
-
-Approach 1::
-. Create a standalone or a cluster using the Neo4j Helm charts with a custom Neo4j image that has all the cloud provider utilities to download the backup from the respective cloud provider storage to your specific mount.
-. Restore the backup following the steps described in xref:kubernetes/maintenance.adoc#kubernetes-neo4j-restore[Restore a single database].
-
-Approach 2::
-. Get the backup on your local machine.
-. Copy the backup to the respective mount in your new cluster created using the Neo4j Helm charts, using the command `kubectl cp <local-path> <pod>:<path>`.
-For example,
-+
-[source, shell]
-----
-kubectl cp /Users/username/Desktop/backup/4.3.3/neo4j standalone-0:/tmp/
-----
-where the _/tmp_ directory refers to the mount.
-. Restore the back up following the steps described in xref:kubernetes/maintenance.adoc#kubernetes-neo4j-restore[Restore a single database].
-
-
-[[scaling]]
+[[vertical-scaling]]
 == Scale a Neo4j deployment
 
-Neo4j supports both vertical and horizontal scaling.
-
-[[vertical-scaling]]
-=== Vertical scaling
-
-To increase or decrease the resources (CPU, memory) available to a Neo4j instance, change the `neo4j.resources` object in the _values.yaml_ file to set the desired resource usage, and then perform a helm upgrade.
+To increase or decrease the resources (CPU, memory) available to Neo4j, change the `neo4j.resources` object in the _values.yaml_ file to set the desired resource usage, and then perform a helm upgrade.
 
 [NOTE]
 ====
@@ -480,9 +392,11 @@ If you change the memory allocated to the Neo4j container, you should also chang
 See xref:configure-resources[Configure Resource Allocation] for more details.
 ====
 
-For example, if your running Neo4j instance has the following allocated resources:
+For example:
 
-[source, role=noheader]
+. Create a _values.yaml_ file for a Neo4j instance with 1 CPU and 3 GB of memory:
++
+[source, properties]
 ----
 # values.yaml
 neo4j:
@@ -496,12 +410,17 @@ config:
   dbms.memory.heap.max_size: "2G"
   dbms.memory.pagecache.size: "500m"
 ----
-
-And, you want to increase them to 2 CPUs and 4 GB of memory (allocating additional memory to the pagecache).
-
-. Modify the _values.yaml_ file to set the desired resource usage:
 +
-[source, yaml]
+. Run `helm install` to create the instance:
++
+[source, shell,subs="attributes"]
+----
+helm install <release-name> neo4j/neo4j-standalone -f values.yaml
+----
++
+. Modify the _values.yaml_ file to increase to 2 CPU and 4 GB of memory (allocating the additional memory to the pagecache):
++
+[source, properties]
 ----
 # values.yaml
 neo4j:
@@ -516,109 +435,9 @@ config:
   dbms.memory.pagecache.size: "1G"
 ----
 +
-. Run `helm upgrade` with the modified deployment _values.yaml_ file and the respective Helm Chart (_neo4j/neo4j-standalone_, _neo4j/neo4j-cluster-core_, or _neo4j/neo4j-cluster-read-replica)_ to apply the changes.
-For example:
+. Run `helm upgrade` to apply the change:
 +
 [source, shell]
 ----
 helm upgrade <release-name> neo4j/neo4j-standalone -f values.yaml
-----
-
-[role=enterprise-edition]
-[[horizontal-scaling]]
-=== Horizontal scaling
-
-You can add a new core member or a read replica to the Neo4j cluster to scale out write or read workloads.
-
-. In the Kubernetes cluster, verify that you have a node that you can use for the new Neo4j cluster member.
-. Create a persistent disk for the new Neo4j cluster member to be used for its `data` volume mount.
-For more information, see xref:kubernetes/quickstart-cluster/create-pv.adoc[Create a persistent volume for each cluster member] and xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
-. Create a Helm deployment YAML file for the new Neo4j cluster member with all the configuration settings and the disk you have created for it.
-For more information, see xref:kubernetes/quickstart-cluster/create-value-file.adoc[Create Helm deployment values files] and xref:kubernetes/configuration.adoc[Configure a Neo4j Helm deployment].
-. Install the new member using the command `helm install`, the deployment _values.yaml_ file, and the respective Helm Chart (_neo4j/neo4j-cluster-core_ or _neo4j/neo4j-cluster-read-replica)_.
-For example:
-+
-[source, shell, subs="attributes"]
-----
-helm install rr-2 neo4j/neo4j-cluster-read-replica -f rr-2.values.yaml
-----
-
-[[imagepullsecrets]]
-== Use custom images from private registries
-
-Neo4j 4.4.4 introduces the support for using custom images from private registries by adding new or existing `imagePullSecrets`.
-
-=== Add an existing `imagePullSecret`
-
-You can use an existing `imagePullSecret` for your Neo4j deployment by specifying its name in the _values.yaml_ file.
-Neo4j Helm charts will check if the provided `imagePullSecret` exists in the Kubernetes cluster and use it.
-If a secret with the given name does not exist in the cluster, Helm Charts will throw an error.
-
-.Using an already existing secret *mysecret*
-[source, yaml]
-----
-# values.yaml
-# Override image settings in Neo4j pod
-image:
-  imagePullPolicy: IfNotPresent
-  # set a customImage if you want to use your own docker image
-  customImage: demo_neo4j_image:v1
-
-  #imagePullSecrets list
-  imagePullSecrets:
-      - "mysecret"
-----
-
-=== Create and add a new `imagePullSecret`
-
-You can create a new `imagePullSecret` for your Neo4j deployment by defining an equivalent `imageCredential` in the _values.yaml_ file.
-
-Neo4j Helm charts will create a secret with the given name and use it as an `imagePullSecret` to pull the custom image defined.
-The following example shows how to define a private docker registry `mysecret` `imageCredential`.
-
-.Creating and adding `mysecret` as the `imagePullSecret` to the cluster.
-[source, yaml]
-----
-# values.yaml
-# Override image settings in Neo4j pod
-image:
-  imagePullPolicy: IfNotPresent
-  # set a customImage if you want to use your own docker image
-  customImage: demo_neo4j_image:v1
-
-  #imagePullSecrets list
-  imagePullSecrets:
-      - "mysecret"
-
-  #imageCredentials list for which secret of type docker-registry will be created automatically using the details provided
-  # registry, username, password, email are compulsory fields for an imageCredential, without any helm chart will throw an error
-  # imageCredential name should be part of the imagePullSecrets list or else the respective imageCredential will be ignored and no secret creation will be done
-  imageCredentials:
-    - registry: "https://index.docker.io/v1/"
-      username: "demouser"
-      password: "demopass123"
-      email: "demo@company1.com"
-      name: "mysecret"
-----
-
-[[NodeSelector]]
-== Assign Neo4j pods to specific nodes
-
-From version 4.4.5, Neo4j provides support for assigning Neo4j pods to specific nodes using `nodeSelector` labels.
-
-You specify the `nodeSelector` labels in the _values.yaml_ file.
-
-[NOTE]
-====
-If there is no node with the given labels, the Helm chart will throw an error.
-====
-
-.nodeSelector labels in _values.yaml_
-[source, yaml]
-----
-#nodeSelector labels
-#Ensure the respective labels are present on one of the cluster nodes or else Helm charts will throw an error.
-nodeSelector:
-   nodeNumber: one
-   name: node1
 ----

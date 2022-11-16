@@ -1,0 +1,437 @@
+:description: A quick start guide for deploying a Neo4j instance to a Kubernetes local installation (via Docker Desktop for Mac OS) using Neo4j Helm charts.
+[[quickstart-docker-desktop]]
+= Quickstart: Deploy a Neo4j instance to a local Kubernetes installation via Docker Desktop for Mac
+:description: A quick start guide for deploying a Neo4j instance to a local Kubernetes installation (via Docker Desktop for Mac OS) using Neo4j Helm charts. 
+
+[[dd-prerequisites]]
+== Prerequisites
+
+* Verify that you have xref:kubernetes/helm-charts-setup.adoc[configured the Neo4j Helm charts and created a release name for your Neo4j instance].
+* Verify that you have installed Docker Desktop for Mac.
+For more information, see link:https://docs.docker.com/docker-for-mac/install/[Docker official documentation].
+* Enable the Docker Desktop Kubernetes engine.
+For more information, see link:https://docs.docker.com/desktop/kubernetes/[Docker official documentation].
+* Verify that you have sufficient CPU and RAM for your Neo4j deployment.
+For more information, see xref:installation/requirements.adoc[System requirements].
+* Verify that you do not have a running instance of Neo4j (e.g., via Neo4j Desktop or Neo4j Browser) to avoid port clashes.
+* Verify that you have a valid license if you want to install Neo4j Enterprise Edition.
+For more information, see https://neo4j.com/licensing/ or write to licensing@neo4j.com.
+
+
+// [NOTE]
+// ====
+// The instructions in this guide have been tested with Docker Desktop for MAC version 3.3.3, Helm version 3.5.4, and macOS Catalina.
+// Unfortunately, they do not seem to work on macOS Big Sur due to this Docker bug: <link to bug report>.
+// If you use macOS Big Sur, go directly to the section <<dd-create-instance-dynamically, Create a Neo4j instance using dynamically provisioned storage>>.
+// ====
+
+// [[dd-create-instance-manually]]
+// == Create a Neo4j instance using manually provisioned storage
+//
+// Before you spin up a Neo4j standalone instance, you manually provision storage to persist its data.
+//
+// [[dd-persistent-data]]
+// === Create a directory on your Mac for the Neo4j data
+//
+// You create a directory on your Mac that the Neo4j instance in K8s will use to persist data.
+// This directory will be mounted by the pod running Neo4j.
+//
+// . Create the required directory, for example, in the _/tmp_ folder.
+// +
+// [NOTE]
+// ====
+// Docker Desktop for Mac only has access to certain directories on your host machine, you create a directory within one of these locations:
+//
+// * /users
+// * /Volumes
+// * /private
+// * /tmp
+// * /var/folders
+// ====
+// +
+// [source, shell]
+// ----
+// mkdir -p "/tmp/<local-volume>"  # create "persistent volume directories"
+// ----
+// +
+// . Set the local directory as an environment variable for future reference.
+// +
+// [source, shell]
+// ----
+// export LOCAL_VOLUME="/private/tmp/<local-volume>/<release-name>"
+// ----
+//
+// [[dd-persistent-volume]]
+// === Create a `PersistentVolume` in Kubernetes that references the directory on your Mac
+//
+// . You use the _neo4j/neo4j-docker-desktop-pv_ Docker Desktop specific Helm chart to create a Kubernetes Persistent Volume (PV) that references the directory on your Mac.
+// +
+// [source, shell]
+// ----
+// helm install "<release-name>-pv" neo4j/neo4j-docker-desktop-pv \
+// 	--set hostPath="<local-volume>" \
+// 	--set neo4j.name="<release-name>" \
+// 	--set capacity.storage=10Gi
+// ----
+// +
+// [source, role=noheader]
+// ----
+// NAME: <release-name>-pv
+// LAST DEPLOYED: Wed Jun  2 18:37:10 2021
+// NAMESPACE: default
+// STATUS: deployed
+// REVISION: 1
+// TEST SUITE: None
+// ----
+// +
+// . View the created persistent volume using:
+// +
+// [source, shell]
+// ----
+// kubectl get pv
+// ----
+// +
+// [source, role=noheader]
+// ----
+// NAME            CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   REASON   AGE
+// <release-name>-pv   10Gi      RWO            Retain           Available           manual                  94s
+// ----
+//
+// [[dd-create-instance]]
+// === Create a Neo4j instance
+//
+// You create a Neo4j instance using the _neo4j/neo4j-standalone_ Helm chart.
+//
+// [NOTE]
+// ====
+// By default, the helm chart install Neo4j Community Edition.
+// If you want to install Neo4j Enterprise Edition, add `--set neo4j.edition=”enterprise”` and `--set  neo4j.acceptLicenseAgreement: yes` to confirm that you have a Neo4j license agreement.
+//
+// If you want to use your own configuration, see xref:kubernetes/configuration.adoc[Configure and install Neo4j using a customized Helm chart].
+// ====
+//
+// . Ensure your Helm Chart repositories are up to date:
+// +
+// [source, shell, subs=attributes]
+// ----
+// helm repo update
+// ----
+// +
+// . Install Neo4j:
+// +
+// [source, shell, subs=attributes]
+// ----
+// helm install "<release-name>" neo4j/neo4j-standalone \
+// 	--version={neo4j-version} \
+// 	--set neo4j.password="my-password"
+// ----
+// +
+// [source, role=noheader]
+// ----
+// NAME: <release-name>
+// LAST DEPLOYED: Wed Jun  2 18:37:51 2021
+// NAMESPACE: default
+// STATUS: deployed
+// REVISION: 1
+// TEST SUITE: None
+// NOTES:
+// Thank you for installing neo4j.
+//
+// Your release "<release-name>" has been installed .
+//
+// To view the progress of the rollout try:
+//
+//   $ kubectl rollout status --watch --timeout=600s statefulset/<release-name>
+//
+//
+// The neo4j user's password has been set to "my-password".
+//
+// Once rollout is complete you can log in to Neo4j at "neo4j://<release-name>.default.svc.cluster.local:7687". Try:
+//
+//
+//   $ kubectl run --rm -it --image "{neo4j-version-exact}" cypher-shell \
+//      -- cypher-shell -a "neo4j://<release-name>.default.svc.cluster.local:7687" -u neo4j -p "my-password"
+//
+// Graphs are everywhere!
+// ----
+
+[[dd-create-values-file]]
+== Create a Helm deployment values file
+
+Create a new file _my-neo4j.values.yaml_ with the following content:
+
+[source, yaml]
+----
+neo4j:
+  resources:
+    cpu: "1"
+    memory: "2Gi"
+
+  # Uncomment to set the initial password. You cannot use `neo4j` as this is the default password. 
+  #password: "my-initial-password"
+
+  # Uncomment to use enterprise edition
+  #edition: "enterprise"
+  #acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 2Gi
+----
+
+For details of all Neo4j Helm chart configuration options, see xref:kubernetes/configuration.adoc[Configure and install Neo4j using a customized Helm chart].
+
+[NOTE]
+====
+By default, the helm chart installs Neo4j Community Edition.
+If you want to install Neo4j Enterprise Edition, uncomment the configuration parameters `edition: "enterprise"` and `acceptLicenseAgreement: "yes"` in _my-neo4j.values.yaml_.
+====
+
+[[dd-install-neo4j]]
+== Create a Neo4j instance using dynamically provisioned storage
+
+. Ensure your Helm Chart repositories are up to date:
++
+[source, shell]
+----
+helm repo update
+----
++
+. Install Neo4j using the deployment values file created in xref:kubernetes/quickstart-docker-desktop.adoc#dd-create-values-file[Create a Helm deployment values file]:
++
+[source, shell]
+----
+helm install my-neo4j-release neo4j/neo4j-standalone -f my-neo4j.values.yaml
+----
++
+[source, subs="attributes", role=noheader]
+----
+NAME: my-neo4j-release
+LAST DEPLOYED: Thu Jun 10 10:43:01 2021
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+Thank you for installing neo4j.
+
+Your release "my-neo4j-release" has been installed .
+
+To view the progress of the rollout try:
+
+  $ kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
+
+Once rollout is complete you can log in to Neo4j at "neo4j://my-neo4j-release.default.svc.cluster.local:7687". Try:
+
+  $ kubectl run --rm -it --image "neo4j:{neo4j-version-exact}" cypher-shell \
+     -- cypher-shell -a "neo4j://my-neo4j-release.default.svc.cluster.local:7687" -u neo4j
+
+Graphs are everywhere!
+----
++
+The command creates a Neo4j StatefulSet that relies on the default Kubernetes `StorageClass` to dynamically create a persistent volume.
+Generally speaking, when using Docker Desktop this volume will not survive a Kubernetes restart.
++
+. Run the `kubectl rollout` command provided in the output of `helm install` to watch the Neo4j's rollout until it is complete.
++
+[source, shell, subs="attributes"]
+----
+kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
+----
++
+[NOTE]
+====
+Since you have not passed a password for the `neo4j` user, the Neo4j Helm chart has set an automatically generated one.
+You can find it in the Helm install output.
+Please make a note of it.
+====
+
+[[dd-verify-install]]
+== Verify the installation
+
+. Check that `statefulset` is OK.
+Initially it will not be ready but just check there is something there.
++
+[source, shell]
+----
+kubectl get statefulsets
+----
++
+[source, role=noheader]
+----
+NAME         READY   AGE
+<release-name>   1/1     5m11s
+----
++
+. Check that the PVC is OK (the `STATUS` must be `Bound`):
++
+[source, shell]
+----
+kubectl get pvc
+----
++
+[source, role=noheader]
+----
+NAME                STATUS   VOLUME          CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+data-<release-name>-0   Bound    <release-name>-pv   10Gi      RWO            manual         8m36s
+----
++
+. Check that the pod is `READY`:
++
+[source, shell]
+----
+kubectl get pods
+----
++
+[source, role=noheader]
+----
+NAME              READY    STATUS     RESTARTS   AGE
+<release-name>-0   1/1     Running      0          5m53s
+----
++
+. Check that the pod logs look OK:
++
+[source, shell]
+----
+kubectl exec <pod-name> -- tail -n50 /logs/neo4j.log
+----
++
+[source, subs="attributes", role=noheader]
+----
+Changed password for user 'neo4j'.
+Directories in use:
+  home:         /var/lib/neo4j
+  config:       /config/
+  logs:         /data/logs
+  plugins:      /var/lib/neo4j/plugins
+  import:       /var/lib/neo4j/import
+  data:         /var/lib/neo4j/data
+  certificates: /var/lib/neo4j/certificates
+  run:          /var/lib/neo4j/run
+Starting Neo4j.
+2021-06-02 17:38:27.791+0000 INFO  Command expansion is explicitly enabled for configuration
+2021-06-02 17:38:27.819+0000 INFO  Starting...
+2021-06-02 17:38:31.195+0000 INFO  ======== Neo4j {neo4j-version-exact} ========
+2021-06-02 17:38:34.168+0000 INFO  Initializing system graph model for component 'security-users' with version -1 and status UNINITIALIZED
+2021-06-02 17:38:34.188+0000 INFO  Setting up initial user from `auth.ini` file: neo4j
+2021-06-02 17:38:34.190+0000 INFO  Creating new user 'neo4j' (passwordChangeRequired=false, suspended=false)
+2021-06-02 17:38:34.205+0000 INFO  Setting version for 'security-users' to 2
+2021-06-02 17:38:34.214+0000 INFO  After initialization of system graph model component 'security-users' have version 2 and status CURRENT
+2021-06-02 17:38:34.223+0000 INFO  Performing postInitialization step for component 'security-users' with version 2 and status CURRENT
+2021-06-02 17:38:34.561+0000 INFO  Bolt enabled on 0.0.0.0:7687.
+2021-06-02 17:38:36.910+0000 INFO  Remote interface available at http://localhost:7474/
+2021-06-02 17:38:36.912+0000 INFO  Started.
+----
++
+. Check that the services look OK:
++
+[source, shell]
+----
+kubectl get services
+----
++
+[source, role=noheader]
+----
+NAME                     TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                                        AGE
+kubernetes               ClusterIP      10.96.0.1        <none>        443/TCP                                        3d1h
+my-neo4j-release         ClusterIP      10.103.103.142   <none>        7687/TCP,7474/TCP,7473/TCP                     2d8h
+my-neo4j-release-admin   ClusterIP      10.99.11.122     <none>        6362/TCP,7687/TCP,7474/TCP,7473/TCP            2d8h
+my-neo4j-release-neo4j   LoadBalancer   10.110.138.165   localhost     7474:31237/TCP,7473:32026/TCP,7687:32169/TCP   2d3h
+----
++
+. Use port forwarding to get access to the browser:
++
+[source, shell]
+----
+kubectl port-forward svc/<release-name> tcp-bolt tcp-http tcp-https
+----
++
+. In a web browser, open the Neo4j Browser at _http://localhost:7474_.
+. Use the automatically generated password (as printed in the output of the `helm install` command) or the one you have set up with the `helm install` command.
+
+[[dd-uninstall-cleanup]]
+== Uninstall Neo4j and clean up your Docker Desktop
+
+[[dd-uninstall]]
+=== Uninstall Neo4j Helm deployment
+
+. Uninstall Neo4j Helm deployment.
++
+[source, shell]
+----
+helm uninstall <release-name>
+----
++
+[source, role=noheader]
+----
+release "<release-name>" uninstalled
+----
++
+. Check the name of the `PersistentVolumeClaim` (`pvc`):
++
+[source, shell]
+----
+kubectl get pvc
+----
++
+[source, role=noheader]
+----
+NAME                STATUS   VOLUME          CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+data-<release-name>-0   Bound    <release-name>-pv   1Ti        RWO            manual         43h
+----
++
+[NOTE]
+====
+If you re-create Neo4j with the same settings, it will pick up the PVC again, and all the data is still on it.
+// If you use manually provisioned volumes and delete the `PersistentVolumeClaim` and the `PersistentVolume` in Kubernetes, the `hostPath` directory with the Neo4j data will still exist.
+
+When you use dynamically provisioned volumes and delete the `PersistentVolume`, the underlying data may or may not be removed, depending on the Docker Desktop version and configuration.
+====
+
+[[dd-cleanup]]
+=== Fully remove all the data and resources
+
+To fully remove all the data and resources, delete the `PersistentVolumeClaim` in Kubernetes.
+//+
+[NOTE]
+====
+The dynamically provisioned volumes are automatically removed when the `PersistentVolumeClaim` is deleted.
+// If using manually provisioned volumes, you have to complete all steps in this section to fully remove all the data and resources.
+====
+//+
+[source, shell]
+----
+kubectl delete pvc <pvc-name>
+----
+//+
+[source, shell]
+----
+persistentvolumeclaim "data-<release-name>-0" deleted
+----
+
+// . Uninstall the `PersistentVolume` in Kubernetes:
+// +
+// [source, shell]
+// ----
+// helm uninstall <release-name>-pv
+// ----
+// +
+// [source, role=noheader]
+// ----
+// release "<release-name>-pv" uninstalled
+// ----
+// . Delete the local directory.
+// +
+// [source, shell]
+// ----
+// rm -r "<local-volume>"
+// ----
+//+
+// [NOTE]
+// ====
+// If the `PersistentVolumeClaim` is deleted, and you want to reuse the `PersistentVolume` and regain access to the data on it, you have to manually change the status of the PV before it can be reused.
+// For more information, see xref:kubernetes/persistent-volumes/index.adoc#static-pv-reuse[Reuse a persistent volume].
+// ====
