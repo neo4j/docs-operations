@@ -21,14 +21,21 @@ For more information about the `neo4j-admin` commands, see xref:tools/neo4j-admi
 [[docker-neo4j-import]]
 == Use Neo4j Import
 
-The xref:tools/neo4j-admin/neo4j-admin-import.adoc[Neo4j Import tool] can be run locally within a container using the following command:
+The xref:tools/neo4j-admin/neo4j-admin-import.adoc[Neo4j Import tool] can be run locally within a container using the following commands:
 
 [source, shell]
 ----
-docker exec --interactive --tty <containerID/name> neo4j-admin database import <options>
+docker exec --interactive --tty <containerID/name> neo4j-admin database import full <options>
 ----
 
-For more information about the `neo4j-admin database import` syntax and options, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-syntax[Syntax] and xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-options[Options].
+and
+
+[source, shell]
+----
+docker exec --interactive --tty <containerID/name> neo4j-admin database import incremental <options>
+----
+
+For more information about the commands' syntax and options, see xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[Full import] and xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-incremental[Incremental import].
 
 [discrete]
 [[docker-import-prerequisites]]
@@ -42,7 +49,7 @@ For more information about the `neo4j-admin database import` syntax and options,
 [[docker-import-example]]
 === Import CSV files into the Neo4j Docker container using the Neo4j import tool
 
-This is an example of how to start a container with mounted volumes _/data_ and _/import_, to ensure the persistence of the data in them, and load the CSV files using the `neo4j-admin database import` command.
+This is an example of how to start a container with mounted volumes _/data_ and _/import_, to ensure the persistence of the data in them, and load the CSV files using the `neo4j-admin database import full` command.
 You can add the flag `--rm` to automatically remove the container's file system when the container exits.
 
 [source, shell, subs="attributes"]
@@ -74,9 +81,16 @@ $neo4j-home> bin/neo4j-admin server memory-recommendation --memory=16g --docker
 ...
 ...
 # Based on the above, the following memory settings are recommended:
-EXPORT NEO4J_dbms_memory_heap_initial__size=5g
-EXPORT NEO4J_dbms_memory_heap_max__size=5g
-EXPORT NEO4J_dbms_memory_pagecache_size=7g
+NEO4J_server_memory_heap_initial__size='5g'
+NEO4J_server_memory_heap_max__size='5g'
+NEO4J_server_memory_pagecache_size='7g'
+#
+# It is also recommended turning out-of-memory errors into full crashes,
+# instead of allowing a partially crashed database to continue running:
+NEO4J_server_jvm_additional='-XX:+ExitOnOutOfMemoryError'
+#
+...
+...
 ----
 ====
 
@@ -184,13 +198,16 @@ To install link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-ne
 
 [source, shell, subs="attributes"]
 ----
-docker run --publish=7474:7474 --publish=7687:7687 --volume=$HOME/neo4j/plugins:/plugins neo4j:{neo4j-version-exact}
+docker run \
+   --publish=7474:7474 --publish=7687:7687 \
+   --volume=$HOME/neo4j/plugins:/plugins \
+   neo4j:{neo4j-version-exact}
 ----
 
 [[docker-neo4jlabs-plugins]]
 == Configure Neo4j Labs plugins
 
-The Neo4j Docker image includes a startup script which can automatically download and configure certain Neo4j plugins at runtime.
+The Neo4j Docker image includes a startup script that can automatically download and configure certain Neo4j plugins at runtime.
 
 [NOTE]
 ====
@@ -239,7 +256,7 @@ For example, to install the APOC plugin (`apoc`) and the Neo Semantics plugin (`
 
 | APOC Core
 | `apoc-core`
-| https://neo4j.com/labs/apoc/
+| https://neo4j.com/docs/apoc/current/
 
 | Bloom
 | `bloom`
