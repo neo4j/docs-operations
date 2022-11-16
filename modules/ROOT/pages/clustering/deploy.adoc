@@ -1,164 +1,48 @@
-:description: This section describes how to deploy different Neo4j Cluster topologies.
 [role=enterprise-edition]
-[[clustering-deploy]]
+[[causal-clustering-deploy]]
 = Deploy a cluster
-:description: This section describes how to deploy different Neo4j Cluster topologies. 
+:description: How to deploy a new Neo4j Causal Cluster. 
 
 
-[[clustering-new-cluster-introduction]]
+[[causal-clustering-new-cluster-introduction]]
 == Introduction
 
-This section describes how to set up a new cluster.
-Two scenarios are covered:
+This section describes how to set up a new Causal Cluster consisting of three Core instances.
+It includes how to add more Core Servers as well as Read Replicas to a running cluster.
+Additionally, it also describes how to detach a Read Replica from a cluster and turn it into a standalone instance.
 
-. A four-instance cluster with one Single instance as Primary server and three Read Replica instances as Secondary servers.
-This scenario is ideal for reporting and analytical workloads.
-. A three-instance cluster with three Core instances as Primary servers.
-This scenario is ideal for transactional workloads.
+Three Cores is the minimum number of servers needed in order to form a fault-tolerant Causal Cluster.
+See xref:clustering/introduction.adoc#causal-clustering-core-servers[Core Servers] for a discussion on the number of servers required in various scenarios.
 
-Additionally, the process to turn a Secondary server into a standalone instance by detaching it from an existing cluster is also described.
+Refer to xref:tutorial/local-causal-cluster.adoc[Set up a local Causal Cluster] for a tutorial on how to set up a Causal Cluster on a local machine.
 
 
-[[clustering-new-single-and-replicas-cluster]]
-== Configure a cluster with Single and Read Replica instances
+[[causal-clustering-new-multi-machine-cluster]]
+== Configure a Core-only cluster
 
-The following configuration settings are important to consider when deploying a new cluster with a Single instance as a Primary server.
+The following configuration settings are important to consider when deploying a new Causal Cluster.
 See also xref:clustering/settings.adoc[Settings reference] for more detailed descriptions and examples.
 
-[IMPORTANT]
-====
-This configuration is optimized for best scalability and it is recommended to be used for reporting and analytical workloads.
-Clusters configured in this way do not provide automatic failover and fault tolerance.
-In case of fault, if a cluster is not supported by appropriate external tooling, data may be lost.
-====
-
-[NOTE]
-====
-In the current version of Neo4j, the clustering-related parameters use the `causal_clustering` namespace.
-This will be replaced with a more suitable namespace in an upcoming release.
-====
-
-.Important settings for clusters with Single instance as Primary server
-[options="header",cols="<3,<2,<4"]
+.Important settings for a new Causal Cluster
+[options="header",cols="<,<"]
 |===
 | Option name
-| Servers
 | Description
-| xref:reference/configuration-settings.adoc#config_dbms.default_advertised_address[`dbms.default_advertised_address`]
-| All (Primary and Secondary)
-| The address that other machines are told to connect to.
-In the typical case, this should be set to the fully qualified domain name or the IP address of this server.
-.2+| xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode`]
-| Primary
-| The operating mode of the server instance.
-The Primary server is set as `SINGLE`.
-| Secondary
-| The operating mode of the server instance.
-The Secondary servers are set as `READ_REPLICA`.
-| xref:reference/configuration-settings.adoc#config_dbms.clustering.enable[`dbms.clustering.enable=true`]
-| Primary
-| Allows a single instance to form a cluster and is only evaluated when `dbms.mode=SINGLE`.
-| xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[`causal_clustering.initial_discovery_members`]
-| Secondary
-| This setting needs to be specified on Read Replica instances and contains the network address for at least the primary instance, but can also include Secondary servers.
-This parameter must be set to the same value on all cluster members.
-The behavior of this setting can be modified by configuring the setting `causal_clustering.discovery_type`.
-This is described in detail in xref:clustering/discovery.adoc[Discovery].
-|===
-
-The following example shows how to set up a cluster with a Single instance as Primary server and three Read Replica instances as Secondary servers.
-
-[[clustering-new-cluster-example-configure-a-single-and-replicas-cluster]]
-.Configure a cluster with a Single instance as Primary server
-====
-In this example, one Primary server named single.example.com and three Secondary servers, `read_replica01.example.com`, `read_replica02.example.com` and `read_replica03.example.com` are configured.
-All instances have Neo4j Enterprise Edition installed.
-To form a cluster, the xref:configuration/file-locations.adoc[_neo4j.conf_] needs to be configured on each server.
-The Primary server, set as  Single instance, is configured as such:
-
-._neo4j.conf_ on single.example.com:
-[source, properties]
-----
-dbms.mode=SINGLE
-dbms.clustering.enable=true
-dbms.default_advertised_address=single.example.com
-----
-
-The _neo4j.conf_ on the Secondary servers, set as Read Replica instances, is identical across all instances:
-
-._neo4j.conf_ on read_replica01.example.com, read_replica02.example.com and read_replica03.example.com:
-[source, properties]
-----
-dbms.mode=READ_REPLICA
-dbms.default_advertised_address=read_replica<xx>.example.com
-causal_clustering.initial_discovery_members=single.example.com:5000
-----
-
-Once all _neo4j.conf_ files have been configured, the instances can be started and the cluster is ready.
-After the cluster has started, it is possible to connect to any of the instances and run `CALL dbms.cluster.overview()` to check the status of the cluster.
-This shows information about each member of the cluster:
-
-[source, Cypher, role=noplay]
-----
-CALL dbms.cluster.overview();
-----
-
-[queryresult]
-----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| id                                     | addresses                                                                          | databases                                       | groups |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "8e4133d7-4de1-469e-88ac-864571cb0a92" | ["bolt://read_replica1.example.com:7687", "http://read_replica1.example.com:7474"] | {neo4j: "READ_REPLICA", system: "READ_REPLICA"} | []     |
-| "eb6a4e88-9a5f-405b-b230-5bbbd681ec9e" | ["bolt://read_replica2.example.com:7687", "http://read_replica2.example.com:7474"] | {neo4j: "READ_REPLICA", system: "READ_REPLICA"} | []     |
-| "274e36db-d96f-4736-8a99-68851b1bbb0b" | ["bolt://read_replica3.example.com:7687", "http://read_replica3.example.com:7474"] | {neo4j: "READ_REPLICA", system: "READ_REPLICA"} | []     |
-| "6fd05bc6-760e-4644-bf02-05117a5d777d" | ["bolt://single.example.com:7687", "http://single.example.com:7474"]               | {neo4j: "LEADER", system: "LEADER"}             | []     |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-4 rows available after 8 ms, consumed after another 3 ms
-----
-====
-
-[[clustering-new-core-instance-cluster]]
-== Configure a cluster with Core instances
-
-The following configuration settings are important to consider when deploying a new cluster with Core instances as Primary servers.
-See also xref:clustering/settings.adoc[Settings reference] for more detailed descriptions and examples.
-
-[IMPORTANT]
-====
-This configuration is optimized for fault tolerance, automatic failover and best scalability, and it is recommended to be used for transactional workloads.
-In many cases and when they are correctly configured, these clusters safeguard data and they do not require any particular external tooling.
-====
-
-.Important settings for clusters with Core instances as Primary servers
-[options="header",cols="<3,<2,<4"]
-|===
-| Option name
-| Servers
-| Description
-| xref:reference/configuration-settings.adoc#config_dbms.default_listen_address[`dbms.default_listen_address`]
-| All (Primary and Secondary)
+| `xref:reference/configuration-settings.adoc#config_dbms.default_listen_address[dbms.default_listen_address]`
 | The address or network interface this machine uses to listen for incoming messages.
 Setting this value to `0.0.0.0` makes Neo4j bind to all available network interfaces.
-| xref:reference/configuration-settings.adoc#config_dbms.default_advertised_address[`dbms.default_advertised_address`]
-| All (Primary and Secondary)
+| `xref:reference/configuration-settings.adoc#config_dbms.default_advertised_address[dbms.default_advertised_address]`
 | The address that other machines are told to connect to.
 In the typical case, this should be set to the fully qualified domain name or the IP address of this server.
-.2+| xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode`]
-| Primary
-| The operating mode of the server instance.
-The Primary servers are set as `CORE`.
-| Secondary
-| The operating mode of the server instance.
-The Secondary servers are set as `READ_REPLICA`.
-| xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[`causal_clustering.minimum_core_cluster_size_at_formation`]
-| Primary
-| The minimum number of Core instances in the cluster at formation.
+| `xref:reference/configuration-settings.adoc#config_dbms.mode[dbms.mode]`
+| The operating mode of a single server instance.
+For Causal Clustering, there are two possible modes: `CORE` or `READ_REPLICA`.
+| `xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[causal_clustering.minimum_core_cluster_size_at_formation]`
+| The minimum number of Core machines in the cluster at formation.
 A cluster will not form without the number of Cores defined by this setting, and this should in general be configured to the full and fixed amount.
-| xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_runtime[`causal_clustering.minimum_core_cluster_size_at_runtime`]
-| Primary
+| `xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_runtime[causal_clustering.minimum_core_cluster_size_at_runtime]`
 | The minimum number of Core instances which will exist in the consensus group.
-| xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[`causal_clustering.initial_discovery_members`]
-| All (Primary and Secondary)
+| `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering.initial_discovery_members]`
 | The network addresses of an initial set of Core cluster members that are available to bootstrap this Core or Read Replica instance.
 In the default case, the initial discovery members are given as a comma-separated list of address/port pairs, and the default port for the discovery service is `:5000`.
 It is good practice to set this parameter to the same value on all Core Servers.
@@ -176,12 +60,12 @@ Make sure you understand the security implications and strongly consider setting
 
 The following example shows how to set up a simple cluster with three Core servers:
 
-[[clustering-new-cluster-example-configure-a-core-only-cluster]]
+[[causal-clustering-new-cluster-example-configure-a-core-only-cluster]]
 .Configure a Core-only cluster
 ====
 
-In this example, three Core instances named `core01.example.com`, `core02.example.com` and `core03.example.com` are configured.
-Neo4j Enterprise Edition is installed on all three servers.
+In this example, three Core Servers named `core01.example.com`, `core02.example.com` and `core03.example.com` are configured.
+Neo4j Enterprise Edition is already installed on all three servers.
 They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
 Note that they are all identical, except for the configuration of `dbms.default_advertised_address`:
 
@@ -212,27 +96,13 @@ dbms.mode=CORE
 causal_clustering.initial_discovery_members=core01.example.com:5000,core02.example.com:5000,core03.example.com:5000
 ----
 
-The Neo4j servers are ready to be started.
+Now the Neo4j servers are ready to be started.
 The startup order does not matter.
 
 After the cluster has started, it is possible to connect to any of the instances and run `CALL dbms.cluster.overview()` to check the status of the cluster.
-This shows information about each member of the cluster:
+This shows information about each member of the cluster.
 
-[source, cypher, role=noplay]
-----
-CALL dbms.cluster.overview();
-----
-
-[queryresult]
-----
-+----------------------------------------------------------------------------------------------------------------------------------------+
-| id                                     | addresses                                  | databases                               | groups |
-+----------------------------------------------------------------------------------------------------------------------------------------+
-| "8e07406b-90b3-4311-a63f-85c45af63583" | ["bolt://core1:7687", "http://core1:7474"] | {neo4j: "LEADER", system: "FOLLOWER"}   | []     |
-| "aeb6debe-d3ea-4644-bd68-304236f3813b" | ["bolt://core3:7687", "http://core3:7474"] | {neo4j: "FOLLOWER", system: "FOLLOWER"} | []     |
-| "b99ff25e-dc64-4c9c-8a50-ebc1aa0053cf" | ["bolt://core2:7687", "http://core2:7474"] | {neo4j: "FOLLOWER", system: "LEADER"}   | []     |
-+----------------------------------------------------------------------------------------------------------------------------------------+
-----
+A Neo4j Causal Cluster of three instances is now running.
 ====
 
 [TIP]
@@ -243,19 +113,19 @@ If you want to follow along with the startup, you can follow the messages in xre
 ====
 
 
-[[clustering-add-core]]
+[[causal-clustering-add-core]]
 == Add a Core Server to an existing cluster
 
 Core Servers are added to an existing cluster by starting a new Neo4j instance with the appropriate configuration.
-The new server joins the existing cluster and becomes available once it has copied the data from its peers.
+The new server joins the existing cluster and become available once it has copied the data from its peers.
 It may take some time for the new instance to perform the copy if the existing cluster contains large amounts of data.
 
-The setting `causal_clustering.initial_discovery_members` shall be updated on all the servers in the cluster to include the new server.
+The setting `causal_clustering.initial_discovery_members` needs to be updated on all the servers in the cluster to include the new server.
 
 .Add a Core Server to an existing cluster
 ====
 
-In this example, a Core Server, `core04.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
+In this example, a Core Server, `core04.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#causal-clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
 
 Configure the following entries in xref:configuration/file-locations.adoc[_neo4j.conf_]:
 
@@ -271,55 +141,29 @@ causal_clustering.initial_discovery_members=core01.example.com:5000,core02.examp
 ----
 
 Note that the configuration is very similar to that of the previous servers.
-In this example, the new server is not intended to be a permanent member of the cluster, thus it is not included in `causal_clustering.initial_discovery_members` on the other Core members of the cluster.
+In this example, the new server is not intended to be a permanent member of the cluster, thus it is not included in `causal_clustering.initial_discovery_members`.
 
 Now start the new Core Server and let it add itself to the existing cluster.
 ====
 
 
-[[clustering-add-secondary]]
-== Add a Secondary server to an existing cluster
+[[causal-clustering-add-read-replica]]
+== Add a Read Replica to an existing cluster
 
-In the {neo4j-version} version of Neo4j, all Secondary servers are Read Replica instances.
-The initial configuration for Read Replica instances is provided via _neo4j.conf_, as mentioned above in xref:clustering/deploy.adoc#clustering-new-single-and-replicas-cluster[Configure a cluster with Single and Read Replica instances].
-Since Read Replicas do not participate in cluster quorum decisions, their configuration is shorter; they only need to know the addresses of at least one primary instance which they can bind to in order to discover the cluster.
+Initial Read Replica configuration is provided similarly to Core Servers via _neo4j.conf_.
+Since Read Replicas do not participate in cluster quorum decisions, their configuration is shorter; they only need to know the addresses of some of the Core Servers which they can bind to in order to discover the cluster.
+They can then choose an appropriate Core Server from which to copy data.
 
-[NOTE]
-====
-It is recommended to specify the addresses for _all_ existing primary instances in a cluster when adding a Read Replica.
-They can then select an appropriate Primary server from which to copy data.
+.Add a Read Replica to an existing cluster
 ====
 
-
-.Add a Secondary server to an existing cluster with a Single instance as Primary server
-====
-
-In this example, a Read Replica instance, `replica04.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-single-and-replicas-cluster[Configure a cluster with a Single instance as Primary server].
+In this example, a Read Replica, `replica01.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#causal-clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
 
 Configure the following entries in xref:configuration/file-locations.adoc[_neo4j.conf_]:
 
-._neo4j.conf_ on replica04.example.com:
+._neo4j.conf_ on replica01.example.com:
 [source, properties]
 ----
-dbms.default_advertised_address=read_replica04.example.com
-dbms.mode=READ_REPLICA
-causal_clustering.initial_discovery_members=single.example.com:5000
-----
-
-Now start the new Read Replica and let it add itself to the existing cluster.
-====
-
-.Add a Secondary server to an existing cluster with Core servers as Primary servers
-====
-
-In this example, a Read Replica, `replica05.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
-
-Configure the following entries in _neo4j.conf_:
-
-._neo4j.conf_ on replica05.example.com:
-[source, properties]
-----
-dbms.default_advertised_address=read_replica05.example.com
 dbms.mode=READ_REPLICA
 causal_clustering.initial_discovery_members=core01.example.com:5000,core02.example.com:5000,core03.example.com:5000
 ----
@@ -327,24 +171,17 @@ causal_clustering.initial_discovery_members=core01.example.com:5000,core02.examp
 Now start the new Read Replica and let it add itself to the existing cluster.
 ====
 
-[NOTE]
-====
-When adding a Secondary server to an existing cluster, only _Primary_ servers need to be listed in `causal_clustering.initial_discovery_members`.
-It is not necessary to include existing Secondary servers, i.e. other Read Replica instances.
-====
+[[causal-clustering-detach-read-replica]]
+== Detach a Read Replica from an existing cluster
 
-[[clustering-detach-secondary-server]]
-== Detach a Secondary server from an existing cluster
-
-It is possible to turn a Secondary server into a standalone instance that thus contains a snapshot of the data in the cluster.
+It is possible to turn a Read Replica into a standalone instance that thus contains a snapshot of the data in the cluster.
 This can, in theory, be done for a Core Server as well, but this is **not** recommended for performance and safety reasons.
-As mentioned above, in the {neo4j-version} version of Neo4j, all Secondary servers are Read Replica instances.
 
 .Detach a Read Replica and turn it into a stand alone instance
 ====
 
 In this example, a Read Replica, `replica01.example.com`, is detached from a cluster.
-See xref:clustering/deploy.adoc#clustering-add-secondary[Add a Secondary server to an existing cluster] above on how to add a Read Replica to a cluster.
+See xref:clustering/deploy.adoc#causal-clustering-add-read-replica[Add a Read Replica to an existing cluster] above on how to add a Read Replica to a cluster.
 
 First, ensure that the Read Replica is up-to-date, then shut it down.
 Once the Read Replica is shut down, configure the following entry in xref:configuration/file-locations.adoc[_neo4j.conf_]:
@@ -354,6 +191,7 @@ Once the Read Replica is shut down, configure the following entry in xref:config
 ----
 dbms.mode=SINGLE
 ----
+
 Start the instance again.
 It is now a standalone instance containing the same data as the cluster (at the time of shutting down the Read Replica).
 ====
@@ -372,16 +210,10 @@ See xref:reference/procedures.adoc#procedure_dbms_cluster_readreplicatoggle[`dbm
 It is important to use the correct URI scheme when connecting to a Read Replica since it only allows read sessions/transactions.
 The following table illustrates the supported URI schemes (the `+s` indicates that TLS has been configured for the cluster):
 
-[cols="6", options="header"]
+[cols="4", options="header"]
 |===
-2+|
-2+| SSR disabled
-2+| SSR enabled
-
 |
 | `bolt+s://`
-| `neo4j+s://` read session/tx
-| `neo4j+s://` write session/tx
 | `neo4j+s://` read session/tx
 | `neo4j+s://` write session/tx
 
@@ -389,26 +221,14 @@ The following table illustrates the supported URI schemes (the `+s` indicates th
 | {check-mark}
 | {cross-mark}
 | {cross-mark}
-| {cross-mark}
-| {check-mark}
 
 | Browser
 | {check-mark}
 | {cross-mark}
 | {cross-mark}
-| {cross-mark}
-| {check-mark}
 
 | Neo4j Driver
 | {check-mark}
 | {check-mark}
 | {cross-mark}
-| {check-mark}
-| {check-mark}
 |===
-
-[NOTE]
-====
-In addition to `dbms.routing.enabled=true`, the configuration setting `dbms.routing.default_router` needs to be set to `SERVER` in order to connect to a Read Replica, where applicable.
-See xref:clustering/internals.adoc#clustering-routing[Server-side routing] for more information.
-====

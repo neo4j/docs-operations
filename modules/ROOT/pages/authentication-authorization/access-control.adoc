@@ -74,7 +74,7 @@ The database would be used by a number of different user types, with different n
 
 When building an application for a specific domain, it is common to model the different users within the application itself.
 However, when working with a database that provides rich user management with roles and privileges,
-it is possible to model these entirely within the database security model (for more information, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control[Cypher Manual -> Access control]).
+it is possible to model these entirely within the database security model (for more information, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security[Cypher Manual -> Administration -> Security)].
 This results in separation of concerns for the access control to the data and the data itself.
 We will show two approaches to using Neo4j security features to support the _healthcare_ database application.
 First, a simple approach using built-in roles, and then a more advanced approach using fine-grained privileges for sub-graph access control.
@@ -113,7 +113,7 @@ There are two different ways of doing this, either by using the built-in roles, 
 
 Neo4j comes with a number of built-in roles that cover a number of common needs:
 
-* `PUBLIC` -    All users have this role, can by default access the home database and run all procedures and user-defined functions.
+* `PUBLIC` -    All users have this role, can by default access the default database and run all procedures and user-defined functions.
 * `reader` -    Can read data from all databases.
 * `editor` -    Can read and update all databases, but not expand the schema with new labels, relationship types or property names.
 * `publisher` - Can read and edit, as well as add new labels, relationship types and property names.
@@ -251,32 +251,30 @@ The complete set of privileges available to users assigned the `itadmin` role ca
 ====
 [source, cypher, role=systemcmd]
 ----
-SHOW ROLE itadmin PRIVILEGES AS COMMANDS;
+SHOW ROLE itadmin PRIVILEGES;
 ----
 ----
-+-------------------------------------------------------------------------+
-| command                                                                 |
-+-------------------------------------------------------------------------+
-| "GRANT ACCESS ON DATABASE * TO `itadmin`"                               |
-| "GRANT MATCH {*} ON GRAPH * NODE * TO `itadmin`"                        |
-| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `itadmin`"                |
-| "GRANT WRITE ON GRAPH * TO `itadmin`"                                   |
-| "GRANT INDEX MANAGEMENT ON DATABASE * TO `itadmin`"                     |
-| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `itadmin`"                |
-| "GRANT NAME MANAGEMENT ON DATABASE * TO `itadmin`"                      |
-| "GRANT START ON DATABASE * TO `itadmin`"                                |
-| "GRANT STOP ON DATABASE * TO `itadmin`"                                 |
-| "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `itadmin`"           |
-| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `itadmin`"                        |
-| "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO `itadmin`"       |
-| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO `itadmin`" |
-+-------------------------------------------------------------------------+
++--------------------------------------------------------------------------------------------------------+
+| access    | action           | resource         | graph        | segment                   | role      |
++--------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "match"          | "all_properties" | "*"          | "NODE(*)"                 | "itadmin" |
+| "GRANTED" | "write"          | "graph"          | "*"          | "NODE(*)"                 | "itadmin" |
+| "GRANTED" | "match"          | "all_properties" | "*"          | "RELATIONSHIP(*)"         | "itadmin" |
+| "GRANTED" | "write"          | "graph"          | "*"          | "RELATIONSHIP(*)"         | "itadmin" |
+| "GRANTED" | "access"         | "database"       | "*"          | "database"                | "itadmin" |
+| "GRANTED" | "admin"          | "database"       | "*"          | "database"                | "itadmin" |
+| "GRANTED" | "constraint"     | "database"       | "*"          | "database"                | "itadmin" |
+| "GRANTED" | "index"          | "database"       | "*"          | "database"                | "itadmin" |
+| "GRANTED" | "token"          | "database"       | "*"          | "database"                | "itadmin" |
+| "DENIED"  | "read"           | "property(ssn)"  | "healthcare" | "NODE(Patient)"           | "itadmin" |
+| "DENIED"  | "create_element" | "graph"          | "healthcare" | "RELATIONSHIP(DIAGNOSIS)" | "itadmin" |
++--------------------------------------------------------------------------------------------------------+
 ----
 ====
 
 [NOTE]
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
-See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/manage-privileges#access-control-revoke-privileges[the Cypher Manual -> The `REVOKE` command].
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/subgraph#administration-security-subgraph-revoke[the Cypher Manual -> The `REVOKE` command].
 
 In order for the IT administrator `tina` to be provided these privileges, she must be assigned the new role `itadmin`.
 
@@ -420,28 +418,28 @@ GRANT ROLE researcherB TO charlie;
 ----
 ====
 
-We can use a version of the `SHOW PRIVILEGES` command to see Charlies access rights, combining those from `researcherB` and `PUBLIC`:
+We can use a version of the `SHOW PRIVILEGES` command to see Charlies access rights:
 
 ====
 [source, cypher, role=systemcmd]
 ----
-neo4j@system> SHOW USER charlie PRIVILEGES AS COMMANDS;
+neo4j@system> SHOW USER charlie PRIVILEGES;
 ----
 ----
-+-----------------------------------------------------------------------+
-| command                                                               |
-+-----------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                              |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                      |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                          |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                           |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE * TO $role"               |
-| "GRANT MATCH {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"       |
-| "DENY TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
-| "DENY READ {address} ON GRAPH `healthcare` NODE Patient TO $role"     |
-| "DENY READ {name} ON GRAPH `healthcare` NODE Patient TO $role"        |
-| "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO $role"         |
-+-----------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------------------------+
+| access    | action     | resource            | graph        | segment                   | role          | user      |
++---------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "access"   | "database"          | "DEFAULT"    | "database"                | "PUBLIC"      | "charlie" |
+| "GRANTED" | "access"   | "database"          | "healthcare" | "database"                | "PUBLIC"      | "charlie" |
+| "GRANTED" | "execute"  | "database"          | "*"          | "FUNCTION(*)"             | "PUBLIC"      | "charlie" |
+| "GRANTED" | "execute"  | "database"          | "*"          | "PROCEDURE(*)"            | "PUBLIC"      | "charlie" |
+| "GRANTED" | "match"    | "all_properties"    | "healthcare" | "NODE(*)"                 | "researcherB" | "charlie" |
+| "DENIED"  | "read"     | "property(address)" | "healthcare" | "NODE(Patient)"           | "researcherB" | "charlie" |
+| "DENIED"  | "read"     | "property(name)"    | "healthcare" | "NODE(Patient)"           | "researcherB" | "charlie" |
+| "DENIED"  | "read"     | "property(ssn)"     | "healthcare" | "NODE(Patient)"           | "researcherB" | "charlie" |
+| "GRANTED" | "match"    | "all_properties"    | "healthcare" | "RELATIONSHIP(*)"         | "researcherB" | "charlie" |
+| "DENIED"  | "traverse" | "graph"             | "healthcare" | "RELATIONSHIP(DIAGNOSIS)" | "researcherB" | "charlie" |
++---------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
@@ -502,7 +500,7 @@ Now if we revoke the `researcherB` and instead grant the `researcherW` role to C
 
 [NOTE]
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
-See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/manage-privileges#access-control-revoke-privileges[the Cypher Manual -> The `REVOKE` command].
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/subgraph#administration-security-subgraph-revoke[the Cypher Manual -> The `REVOKE` command].
 
 === Privileges of `doctor`
 
@@ -791,7 +789,7 @@ GRANT DELETE ON GRAPH healthcare RELATIONSHIPS HAS, DIAGNOSIS TO receptionist;
 
 [NOTE]
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
-See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/manage-privileges#access-control-revoke-privileges[the Cypher Manual -> The `REVOKE` command].
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/subgraph#administration-security-subgraph-revoke[the Cypher Manual -> The `REVOKE` command].
 
 === Privileges of nurses
 
@@ -816,34 +814,35 @@ Now we can see that the user 'Daniel' has a combined set of privileges:
 ====
 [source, cypher, role=systemdb]
 ----
-SHOW USER daniel PRIVILEGES AS COMMANDS;
+SHOW USER daniel PRIVILEGES;
 ----
 ----
-+---------------------------------------------------------------------------+
-| command                                                                   |
-+---------------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                                  |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                          |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                              |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                               |
-| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"                    |
-| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
-| "GRANT READ {*} ON GRAPH `healthcare` NODE * TO $role"                    |
-| "GRANT READ {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"             |
-| "GRANT WRITE ON GRAPH `healthcare` TO $role"                              |
-| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role"      |
-| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"                |
-| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"                |
-| "DENY READ {address} ON GRAPH `healthcare` NODE Patient TO $role"         |
-| "DENY SET PROPERTY {address} ON GRAPH `healthcare` NODE Patient TO $role" |
-+---------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------------------+
+| access    | action           | resource            | graph        | segment           | role           | user     |
++-------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "access"         | "database"          | "DEFAULT"    | "database"        | "PUBLIC"       | "daniel" |
+| "GRANTED" | "access"         | "database"          | "healthcare" | "database"        | "PUBLIC"       | "daniel" |
+| "GRANTED" | "execute"        | "database"          | "*"          | "FUNCTION(*)"     | "PUBLIC"       | "daniel" |
+| "GRANTED" | "execute"        | "database"          | "*"          | "PROCEDURE(*)"    | "PUBLIC"       | "daniel" |
+| "GRANTED" | "read"           | "all_properties"    | "healthcare" | "NODE(*)"         | "doctor"       | "daniel" |
+| "GRANTED" | "traverse"       | "graph"             | "healthcare" | "NODE(*)"         | "doctor"       | "daniel" |
+| "GRANTED" | "write"          | "graph"             | "healthcare" | "NODE(*)"         | "doctor"       | "daniel" |
+| "DENIED"  | "read"           | "property(address)" | "healthcare" | "NODE(Patient)"   | "doctor"       | "daniel" |
+| "DENIED"  | "set_property"   | "property(address)" | "healthcare" | "NODE(Patient)"   | "doctor"       | "daniel" |
+| "GRANTED" | "read"           | "all_properties"    | "healthcare" | "RELATIONSHIP(*)" | "doctor"       | "daniel" |
+| "GRANTED" | "traverse"       | "graph"             | "healthcare" | "RELATIONSHIP(*)" | "doctor"       | "daniel" |
+| "GRANTED" | "write"          | "graph"             | "healthcare" | "RELATIONSHIP(*)" | "doctor"       | "daniel" |
+| "GRANTED" | "match"          | "all_properties"    | "healthcare" | "NODE(Patient)"   | "receptionist" | "daniel" |
+| "GRANTED" | "set_property"   | "all_properties"    | "healthcare" | "NODE(Patient)"   | "receptionist" | "daniel" |
+| "GRANTED" | "create_element" | "graph"             | "healthcare" | "NODE(Patient)"   | "receptionist" | "daniel" |
+| "GRANTED" | "delete_element" | "graph"             | "healthcare" | "NODE(Patient)"   | "receptionist" | "daniel" |
++-------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
 [NOTE]
 Privileges that were granted or denied earlier can be revoked using the `REVOKE` command.
-See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/manage-privileges#access-control-revoke-privileges[the Cypher Manual -> The `REVOKE` command].
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/subgraph#administration-security-subgraph-revoke[the Cypher Manual -> The `REVOKE` command].
 
 Now the intention is that a nurse can perform the actions of a receptionist.
 This would mean they should be able to read and write the `address` field of the `Patient` nodes.
@@ -980,23 +979,24 @@ If we look at what privileges Daniel now has, it will be the combination of the 
 ====
 [source, cypher, role=systemdb]
 ----
-neo4j@system> SHOW USER daniel PRIVILEGES AS COMMANDS;
+neo4j@system> SHOW USER daniel PRIVILEGES;
 ----
 ----
-+---------------------------------------------------------------------+
-| command                                                             |
-+---------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                            |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                    |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                        |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                         |
-| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"              |
-| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"      |
-| "GRANT READ {*} ON GRAPH `healthcare` NODE * TO $role"              |
-| "GRANT READ {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"      |
-| "GRANT WRITE ON GRAPH `healthcare` TO $role"                        |
-| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
-+---------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------------+
+| access    | action           | resource         | graph        | segment                   | role               | user     |
++----------------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "access"         | "database"       | "DEFAULT"    | "database"                | "PUBLIC"           | "daniel" |
+| "GRANTED" | "access"         | "database"       | "healthcare" | "database"                | "PUBLIC"           | "daniel" |
+| "GRANTED" | "execute"        | "database"       | "*"          | "FUNCTION(*)"             | "PUBLIC"           | "daniel" |
+| "GRANTED" | "execute"        | "database"       | "*"          | "PROCEDURE(*)"            | "PUBLIC"           | "daniel" |
+| "DENIED"  | "create_element" | "graph"          | "healthcare" | "RELATIONSHIP(DIAGNOSIS)" | "disableDiagnoses" | "daniel" |
+| "GRANTED" | "read"           | "all_properties" | "healthcare" | "NODE(*)"                 | "nurse"            | "daniel" |
+| "GRANTED" | "traverse"       | "graph"          | "healthcare" | "NODE(*)"                 | "nurse"            | "daniel" |
+| "GRANTED" | "write"          | "graph"          | "healthcare" | "NODE(*)"                 | "nurse"            | "daniel" |
+| "GRANTED" | "read"           | "all_properties" | "healthcare" | "RELATIONSHIP(*)"         | "nurse"            | "daniel" |
+| "GRANTED" | "traverse"       | "graph"          | "healthcare" | "RELATIONSHIP(*)"         | "nurse"            | "daniel" |
+| "GRANTED" | "write"          | "graph"          | "healthcare" | "RELATIONSHIP(*)"         | "nurse"            | "daniel" |
++----------------------------------------------------------------------------------------------------------------------------+
 ----
 ====
 
@@ -1087,7 +1087,7 @@ GRANT ROLE userManager TO tina
 The three privileges we've granted will allow:
 
 * `USER MANAGEMENT` allows creating, updating and dropping users
-* `ROLE MANAGEMENT` allows creating, updating, and dropping roles as well as assigning roles to users
+* `ROLE MANAGEMENT` allows assigning roles to users
 * `SHOW PRIVILEGE` allows listing the users privileges
 
 
@@ -1096,28 +1096,28 @@ Listing Tina's new privileges should show a much shorter list than when she was 
 ====
 [source, cypher, role=systemdb]
 ----
-neo4j@system> SHOW USER tina PRIVILEGES AS COMMANDS;
+neo4j@system> SHOW USER tina PRIVILEGES;
 ----
 
 ----
-+--------------------------------------------------+
-| command                                          |
-+--------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"         |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role" |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"     |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"      |
-| "GRANT ROLE MANAGEMENT ON DBMS TO $role"         |
-| "GRANT USER MANAGEMENT ON DBMS TO $role"         |
-| "GRANT SHOW PRIVILEGE ON DBMS TO $role"          |
-+--------------------------------------------------+
++-----------------------------------------------------------------------------------------------------+
+| access    | action            | resource   | graph        | segment        | role          | user   |
++-----------------------------------------------------------------------------------------------------+
+| "GRANTED" | "access"          | "database" | "DEFAULT"    | "database"     | "PUBLIC"      | "tina" |
+| "GRANTED" | "access"          | "database" | "healthcare" | "database"     | "PUBLIC"      | "tina" |
+| "GRANTED" | "execute"         | "database" | "*"          | "FUNCTION(*)"  | "PUBLIC"      | "tina" |
+| "GRANTED" | "execute"         | "database" | "*"          | "PROCEDURE(*)" | "PUBLIC"      | "tina" |
+| "GRANTED" | "role_management" | "database" | "*"          | "database"     | "userManager" | "tina" |
+| "GRANTED" | "show_privilege"  | "database" | "*"          | "database"     | "userManager" | "tina" |
+| "GRANTED" | "user_management" | "database" | "*"          | "database"     | "userManager" | "tina" |
++-----------------------------------------------------------------------------------------------------+
 ----
 ====
 
 [NOTE]
 We have not granted any other privilege management privileges.
 How much power this role should have would depend on the requirements of the system.
-Refer to the section link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/built-in-roles#access-control-built-in-roles-admin[Cypher Manual -> The `admin` role] for a complete list of privileges to consider.
+Refer to the section link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/administration[Cypher Manual -> Security of Administration] for a complete list of privileges to consider.
 
 
 Now Tina should be able to create new users and assign them to roles:
@@ -1127,23 +1127,23 @@ Now Tina should be able to create new users and assign them to roles:
 ----
 CREATE USER sally SET PASSWORD 'secret' CHANGE REQUIRED;
 GRANT ROLE receptionist TO sally;
-SHOW USER sally PRIVILEGES AS COMMANDS;
+SHOW USER sally PRIVILEGES;
 ----
 ====
 
 ====
 ----
-+----------------------------------------------------------------------+
-| command                                                              |
-+----------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                             |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                     |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                         |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                          |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"        |
-| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role" |
-| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"           |
-| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"           |
-+----------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------------+
+| access    | action           | resource         | graph        | segment         | role           | user    |
++-------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "access"         | "database"       | "DEFAULT"    | "database"      | "PUBLIC"       | "sally" |
+| "GRANTED" | "access"         | "database"       | "healthcare" | "database"      | "PUBLIC"       | "sally" |
+| "GRANTED" | "execute"        | "database"       | "*"          | "FUNCTION(*)"   | "PUBLIC"       | "sally" |
+| "GRANTED" | "execute"        | "database"       | "*"          | "PROCEDURE(*)"  | "PUBLIC"       | "sally" |
+| "GRANTED" | "match"          | "all_properties" | "healthcare" | "NODE(Patient)" | "receptionist" | "sally" |
+| "GRANTED" | "set_property"   | "all_properties" | "healthcare" | "NODE(Patient)" | "receptionist" | "sally" |
+| "GRANTED" | "create_element" | "graph"          | "healthcare" | "NODE(Patient)" | "receptionist" | "sally" |
+| "GRANTED" | "delete_element" | "graph"          | "healthcare" | "NODE(Patient)" | "receptionist" | "sally" |
++-------------------------------------------------------------------------------------------------------------+
 ----
 ====
