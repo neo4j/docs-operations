@@ -1,10 +1,11 @@
+:description: This section describes how to deploy different Neo4j Cluster topologies.
 [role=enterprise-edition]
-[[causal-clustering-deploy]]
+[[clustering-deploy]]
 = Deploy a cluster
-:description: How to deploy a new Neo4j Causal Cluster. 
+:description: This section describes how to deploy different Neo4j Cluster topologies. 
 
 
-[[causal-clustering-new-cluster-introduction]]
+[[clustering-new-cluster-introduction]]
 == Introduction
 
 This section describes how to set up a new cluster.
@@ -175,7 +176,7 @@ Make sure you understand the security implications and strongly consider setting
 
 The following example shows how to set up a simple cluster with three Core servers:
 
-[[causal-clustering-new-cluster-example-configure-a-core-only-cluster]]
+[[clustering-new-cluster-example-configure-a-core-only-cluster]]
 .Configure a Core-only cluster
 ====
 
@@ -242,19 +243,19 @@ If you want to follow along with the startup, you can follow the messages in xre
 ====
 
 
-[[causal-clustering-add-core]]
+[[clustering-add-core]]
 == Add a Core Server to an existing cluster
 
 Core Servers are added to an existing cluster by starting a new Neo4j instance with the appropriate configuration.
-The new server will join the existing cluster and become available once it has copied the data from its peers.
+The new server joins the existing cluster and becomes available once it has copied the data from its peers.
 It may take some time for the new instance to perform the copy if the existing cluster contains large amounts of data.
 
-The setting `causal_clustering.initial_discovery_members` shall be updated on all the  servers in the cluster to include the new server.
+The setting `causal_clustering.initial_discovery_members` shall be updated on all the servers in the cluster to include the new server.
 
 .Add a Core Server to an existing cluster
 ====
 
-In this example, a Core Server, `core04.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#causal-clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
+In this example, a Core Server, `core04.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
 
 Configure the following entries in xref:configuration/file-locations.adoc[_neo4j.conf_]:
 
@@ -297,7 +298,7 @@ In this example, a Read Replica instance, `replica04.example.com`, is added to t
 
 Configure the following entries in xref:configuration/file-locations.adoc[_neo4j.conf_]:
 
-._neo4j.conf_ on replica01.example.com:
+._neo4j.conf_ on replica04.example.com:
 [source, properties]
 ----
 dbms.default_advertised_address=read_replica04.example.com
@@ -311,7 +312,7 @@ Now start the new Read Replica and let it add itself to the existing cluster.
 .Add a Secondary server to an existing cluster with Core servers as Primary servers
 ====
 
-In this example, a Read Replica, `replica05.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#causal-clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
+In this example, a Read Replica, `replica05.example.com`, is added to the cluster created in xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
 
 Configure the following entries in _neo4j.conf_:
 
@@ -345,33 +346,7 @@ As mentioned above, in the {neo4j-version} version of Neo4j, all Secondary serve
 In this example, a Read Replica, `replica01.example.com`, is detached from a cluster.
 See xref:clustering/deploy.adoc#clustering-add-secondary[Add a Secondary server to an existing cluster] above on how to add a Read Replica to a cluster.
 
-First, check if the Read Replica is as up-to-date as desired.
-Use `SHOW DATABASE` to see where the different members of the cluster are in terms of committed transactions compared to the leader.
-
-[source, cypher, role=noplay]
-----
-neo4j@system> SHOW DATABASE test00 YIELD name,serverID,address,role,lastCommittedTxn,replicationLag;
-----
-
-Note that `SHOW DATABASES` uses `serverID` as it lists databases and there may be more than one database per server, while `dbms.cluster.overview()` uses only `id` as it is only concerned with servers.
-
-
-[queryresult]
-----
-+---------------------------------------------------------------------------------------------------------------------------+
-| name     | serverID                               | address          | role           | lastCommittedTxn | replicationLag |
-+---------------------------------------------------------------------------------------------------------------------------+
-| "test00" | "aeb6debe-d3ea-4644-bd68-304236f3813b" | "core3:7687"     | "leader"       | 21423            | 0              |
-| "test00" | "8e07406b-90b3-4311-a63f-85c45af63583" | "core1:7687"     | "follower"     | 21422            | -1             |
-| "test00" | "b99ff25e-dc64-4c9c-8a50-ebc1aa0053cf" | "core2:7687"     | "follower"     | 21423            | 0              |
-| "test00" | "0bf3f6c1-0f48-47c2-a943-18fa8362c918" | "replica4:7687"  | "read_replica" | 21409            | -14            |
-| "test00" | "0e9c1b28-c8c0-4c65-a1f2-39d326411280" | "replica6:7687"  | "read_replica" | 21421            | -2             |
-| "test00" | "82524236-3058-48a2-b198-6580003475af" | "replica5:7687"  | "read_replica" | 21413            | -10            |
-+---------------------------------------------------------------------------------------------------------------------------+
-----
-
-Based on the results, decide which Read Replica to detach and proceed to shut it down.
-
+First, ensure that the Read Replica is up-to-date, then shut it down.
 Once the Read Replica is shut down, configure the following entry in xref:configuration/file-locations.adoc[_neo4j.conf_]:
 
 ._neo4j.conf_ on replica01.example.com:
@@ -380,12 +355,12 @@ Once the Read Replica is shut down, configure the following entry in xref:config
 dbms.mode=SINGLE
 ----
 Start the instance again.
-It is now a standalone instance containing the data committed to it at the time of shutdown.
+It is now a standalone instance containing the same data as the cluster (at the time of shutting down the Read Replica).
 ====
 
 [NOTE]
 ====
-There is always a chance that the Read Replica is behind the Core Servers at any time (see above on how to check the state of your cluster members).
+There is always a chance that the Read Replica is behind the Core Servers at any time.
 If a transaction is being processed at the time of the shutdown of the Read Replica, this transaction is eventually reflected in the remaining Cluster, but not on the detached Read Replica.
 A way to ensure that a Read Replica contains a snapshot of a database in the cluster at a point in time, is to pause the read Replica before shutting it down.
 See xref:reference/procedures.adoc#procedure_dbms_cluster_readreplicatoggle[`dbms.cluster.readReplicaToggle()`] for more information.
@@ -435,5 +410,5 @@ The following table illustrates the supported URI schemes (the `+s` indicates th
 [NOTE]
 ====
 In addition to `dbms.routing.enabled=true`, the configuration setting `dbms.routing.default_router` needs to be set to `SERVER` in order to connect to a Read Replica, where applicable.
-See xref:clustering/internals.adoc#causal-clustering-routing[Server-side routing] for more information.
+See xref:clustering/internals.adoc#clustering-routing[Server-side routing] for more information.
 ====

@@ -1,16 +1,14 @@
-:description: This section describes facilities for transaction management.
 [[transaction-management]]
-= Manage transactions
+= Transaction management
+:description: This section describes facilities for transaction management. 
+
 
 [[transaction-management-transaction-timeout]]
 == Configure transaction timeout
 
-It is recommended to configure Neo4j to terminate transactions whose execution time has exceeded the configured timeout.
-
-* Set `xref:reference/configuration-settings.adoc#config_dbms.transaction.timeout[dbms.transaction.timeout]` to some positive time interval value (e.g.,`10s`) denoting the default transaction timeout.
+It is possible to configure Neo4j to terminate transactions whose execution time has exceeded the configured timeout.
+To enable this feature, set `xref:reference/configuration-settings.adoc#config_dbms.transaction.timeout[dbms.transaction.timeout]` to some positive time interval value denoting the default transaction timeout.
 Setting `dbms.transaction.timeout` to `0` -- which is the default value -- disables the feature.
-
-* You can also set this dynamically on each instance (Read Replicas only if required) using the procedure `dbms.setConfigValue('dbms.transaction.timeout','10s')`.
 
 .Configure transaction timeout
 ====
@@ -21,8 +19,8 @@ dbms.transaction.timeout=10s
 ----
 ====
 
-Configuring transaction timeout has no effect on transactions executed with custom timeouts (e.g., via the Java API or Neo4j Drivers), as the custom timeout overrides the value set for `dbms.transaction.timeout`.
-Note that the timeout value can only be overridden to a value that is smaller than that configured by `dbms.transaction.timeout`.
+Configuring transaction timeout will have no effect on transactions executed with custom timeouts (e.g. via the Java API or Neo4j Drivers), as a custom timeout will override the value set for `dbms.transaction.timeout`.
+Please note that the timeout value can only be overridden to a value that is smaller than that configured by `dbms.transaction.timeout`.
 
 The _transaction timeout_ feature is also known as the _transaction guard_.
 
@@ -31,10 +29,10 @@ The _transaction timeout_ feature is also known as the _transaction guard_.
 == Configure lock acquisition timeout
 
 An executing transaction may get stuck while waiting for some lock to be released by another transaction.
-To kill that transaction and remove the lock, set set `xref:reference/configuration-settings.adoc#config_dbms.lock.acquisition.timeout[dbms.lock.acquisition.timeout]` to some positive time interval value (e.g., `10s`) denoting the maximum time interval within which any particular lock should be acquired, before failing the transaction.
-Setting `dbms.lock.acquisition.timeout` to `0` -- which is the default value -- disables the lock acquisition timeout.
+A transaction in such state is not desirable, and in some cases it is better for the transaction to instead give up and fail.
 
-This feature cannot be set dynamically.
+To enable this feature, set `xref:reference/configuration-settings.adoc#config_dbms.lock.acquisition.timeout[dbms.lock.acquisition.timeout]` to some positive time interval value denoting the maximum time interval within which any particular lock should be acquired, before failing the transaction.
+Setting `dbms.lock.acquisition.timeout` to `0` -- which is the default value -- disables the lock acquisition timeout.
 
 .Configure lock acquisition timeout
 ====
@@ -49,14 +47,64 @@ dbms.lock.acquisition.timeout=10s
 [[transaction-management-list-transactions]]
 == List all running transactions
 
-The procedure for viewing transactions, `dbms.listTransactions()`, is replaced by the command for showing transactions, `SHOW TRANSACTIONS`.
-Both the command and procedure returns the transactions that are currently executing within the instance.
-
-The link:/docs/cypher-manual/4.4/access-control/database-administration#access-control-database-administration-transaction[`SHOW TRANSACTION` privilege] determines what transactions are returned by the command.
-However, the xref:authentication-authorization/terminology.adoc#term-current-user[current user] can always view all of their own currently executing transactions.
+An xref:authentication-authorization/terminology.adoc#term-administrator[administrator] is able to view all transactions that are currently executing within the instance.
+Alternatively, the xref:authentication-authorization/terminology.adoc#term-current-user[current user] may view all of their own currently-executing transactions.
 
 *Syntax:*
 
-`SHOW TRANSACTIONS`
+`CALL dbms.listTransactions()`
 
-For more information on this command, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/transaction-clauses#query-listing-transactions[Cypher manual -> `SHOW TRANSACTIONS` command].
+*Returns:*
+
+[options="header"]
+|===
+| Name                        | Type    | Description
+| `transactionId`             | String  | This is the ID of the transaction.
+| `username`                  | String  | This is the username of the user who is executing the transaction.
+| `metaData`                  | Map     | This is any metadata associated with the transaction.
+| `startTime`                 | String  | This is the time at which the transaction was started.
+| `protocol`                  | String  | The protocol used by connection issuing the transaction.
+| `connectionId`              | String  | The ID of the connection issuing the transaction. This field will be null if the transaction was issued using embedded API.
+| `clientAddress`             | String  | The client address of the connection issuing the transaction.
+| `requestUri`                | String  | The request URI used by the client connection issuing the transaction.
+| `currentQueryId`            | String  | This is the ID of the current query executed by transaction.
+| `currentQuery`              | String  | This is the current query executed by transaction.
+| `activeLockCount`           | Integer | Count of active locks held by transaction.
+| `status`                    | String  | Status of the executing transaction. 
+                                          Possible values: `Running`, `Closing`, `Blocked by: <additional info>`, and `Terminated with reason: <additional info>`.
+| `resourceInformation`       | Map     | Information about what transaction is waiting for when it is blocked.
+| `elapsedTimeMillis`         | Integer | This is the time in milliseconds that has elapsed since the transaction was started.
+| `cpuTimeMillis`             | Integer | CPU time in milliseconds that has been actively spent executing the transaction.
+| `waitTimeMillis`            | Integer | Wait time in milliseconds that has been spent waiting to acquire locks.
+| `idleTimeMillis`            | Integer | Idle time in milliseconds.
+| `allocatedBytes`            | Integer | Number of bytes allocated so far by the transaction.
+                                          This column is deprecated in favor of `estimatedUsedHeapMemory`.
+| `allocatedDirectBytes`      | Integer | Direct bytes used by the executing transaction.
+| `pageHits`                  | Integer | Page hits occurred during the execution.
+| `pageFaults`                | Integer | Page faults occurred during the execution.
+| `database`                  | String  | This is the name of the database the transaction is executing against.
+| `estimatedUsedHeapMemory`   | Integer | This is the current estimated heap usage of the transaction, in bytes.
+|===
+
+.Viewing transactions that are currently executing
+====
+The following example shows that the user '*alwood*' is currently running `dbms.listTransactions()`.
+The procedure call yields specific information about the running transaction, namely `transactionId`, `username`, `currentQuery`, `elapsedTimeMillis`, `requestUri`, and `status`.
+
+[source, cypher]
+----
+CALL dbms.listTransactions() YIELD transactionId, username, currentQuery, elapsedTimeMillis, requestUri, status
+----
+
+[queryresult]
+----
+╒═════════════════════╤═══════════╤══════════════════════════════════════╤════════════════════╤════════════════╤═══════════════════╕
+│"transactionId"      │"username" │"currentQuery"                        │"elapsedTimeMillis" │"requestUri"    │"status"           │
+╞═════════════════════╪═══════════╪══════════════════════════════════════╪════════════════════╪════════════════╪═══════════════════╡
+│"myDb-transaction-22"│"alwood"   │"CALL dbms.listTransactions() YIELD   │"1"                 │"127.0.0.1:7687"│"Running"          │
+│                     │           │ transactionId, username, currentQuery│                    │                │                   │
+│                     │           │elapsedTime, requestUri, status"      │                    │                │                   │
+└─────────────────────┴───────────┴──────────────────────────────────────┴────────────────────┴────────────────┴───────────────────┘
+1 row
+----
+====

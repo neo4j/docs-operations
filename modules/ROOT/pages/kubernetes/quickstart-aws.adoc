@@ -1,0 +1,293 @@
+:description: A quick start guide for deploying a Neo4j instance to an AWS Elastic Kubernetes Service (EKS) cluster using Neo4j Helm charts.
+[[quickstart-aws-eks]]
+= Quickstart: Deploy a Neo4j instance to an AWS Elastic Kubernetes Service (EKS) cluster
+:description: A quick start guide for deploying a Neo4j instance to an AWS Elastic Kubernetes Service (EKS) cluster using Neo4j Helm charts. 
+
+[[eks-prerequisites]]
+== Prerequisites
+
+
+* The `aws` command-line interface (CLI) (https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html).
+* The `eksctl` command-line interface (CLI) (https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html).
+* The `kubectl` Kubernetes client command-line tool (https://kubernetes.io/docs/tasks/tools/).
+* The `helm` command-line tool (https://helm.sh/docs/intro/install/).
+  - Add the neo4j Helm repository `helm repo add neo4j https://helm.neo4j.com/neo4j`.
+* An AWS Elastic Kubernetes Service (EKS) cluster.
+* Verify that your Kubernetes nodes have sufficient CPU and memory for your Neo4j deployment.
++
+[TIP]
+====
+We recommend using nodes with at least 4 CPUs and 4GB of memory.
+This size can usually fit a Neo4j instance with 1CPU and 2GB memory.
+For more information on Neo4j's system requirements, see xref:installation/requirements.adoc[System requirements].
+====
+* Verify that you have a valid license if you want to install Neo4j Enterprise Edition.
+For more information, see https://neo4j.com/licensing/ or write to licensing@neo4j.com.
+* All the shell commands in this guide assume that the AWS region and availability zone to use have been set using the `AWS_DEFAULT_REGION` and `AWS_AVAILABILITY_ZONE` environment variables, for example:
++
+[source, shell]
+----
+export AWS_DEFAULT_REGION="eu-west-1"
+export AWS_AVAILABILITY_ZONE="eu-west-1c"
+----
+
+
+[TIP]
+====
+If you do not have an EKS cluster, you can create a single-node one using:
+
+[source, shell]
+----
+eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --node-zones "${AWS_AVAILABILITY_ZONE}" --nodes-min 1 --nodes-max 2 --node-type c4.xlarge --nodes 1 --node-volume-size 10 --ssh-access --with-oidc
+----
+
+You can configure `kubectl` to use your EKS cluster using:
+
+[source, shell]
+----
+aws eks update-kubeconfig --name my-neo4j-eks-cluster
+----
+====
+
+[[eks-quickstart-overview]]
+
+To install Neo4j, perform the following steps:
+
+* xref:kubernetes/quickstart-aws.adoc#eks-ebs-disk[Create an AWS EBS disk for the Neo4j instance].
+* xref:kubernetes/quickstart-aws.adoc#eks-values-file[Create a Helm deployment values file].
+* xref:kubernetes/quickstart-aws.adoc#eks-install-helm[Install Neo4j using the deployment values file and the _neo4j/neo4j-standalone_ Helm chart].
+
+
+[[eks-ebs-disk]]
+== Create an AWS EBS disk
+
+Create an AWS EBS disk using the following command.
+This is a normal AWS EBS disk and not Kubernetes specific:
+
+[source, shell]
+----
+aws ec2 create-volume --availability-zone=${AWS_AVAILABILITY_ZONE} --size=64 --volume-type=gp3 --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value=neo4j-k8s}]'
+----
+
+Fetch the ID of the disk that was just created.
+
+[source, shell]
+----
+aws ec2 describe-volumes --filters Name=tag:volume,Values=neo4j-k8s --query "Volumes[*].{ID:VolumeId}" --output text
+----
+
+.Example result
+[source, role=noheader]
+----
+vol-0795be227aff63b2a
+----
+
+[[eks-values-file]]
+== Create a Helm deployment values file
+
+Create a new file _my-neo4j.values.yaml_ with the following content, replacing `<volume id>` with the ID of the disk you created:
+
+[source, yaml]
+----
+neo4j:
+  resources:
+    cpu: "1"
+    memory: "2Gi"
+
+  # Uncomment to set the initial password. You cannot use `neo4j` as this is the default password. 
+  #password: "my-initial-password"
+
+  # Uncomment to use enterprise edition
+  #edition: "enterprise"
+  #acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: "volume"
+    volume:
+      awsElasticBlockStore:
+        volumeID: "<volume id>"
+        fsType: ext4
+
+----
+
+For details of all Neo4j Helm chart configuration options, see xref:kubernetes/configuration.adoc[Configure and install Neo4j using a customized Helm chart].
+
+[[eks-install-helm]]
+== Install Neo4j
+
+. Ensure your Helm Chart repositories are up to date:
++
+[source, shell]
+----
+helm repo update
+----
++
+. Install Neo4j using the deployment values file created in xref:kubernetes/quickstart-aws.adoc#eks-values-file[Create a Helm deployment values file]:
++
+[source, shell, subs="attributes"]
+----
+helm install my-neo4j-release neo4j/neo4j-standalone -f my-neo4j.values.yaml
+----
++
+.Example output
+[source, role=noheader, subs="attributes"]
+----
+NAME: my-neo4j-release
+LAST DEPLOYED: Wed Jul  7 19:52:58 2021
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+Thank you for installing neo4j-standalone.
+
+Your release "my-neo4j-release" has been installed .
+
+To view the progress of the rollout try:
+
+  $ kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
+
+
+Once rollout is complete you can log in to Neo4j at "neo4j://my-neo4j-release.default.svc.cluster.local:7687". Try:
+
+  $ kubectl run --rm -it --image "neo4j:{neo4j-version-exact}" cypher-shell \
+     -- cypher-shell -a "neo4j://my-neo4j-release.default.svc.cluster.local:7687" -u neo4j
+
+Graphs are everywhere!
+----
++
+. Run the `kubectl rollout` command provided in the output of `helm install` to watch the Neo4j's rollout until it is complete.
++
+[source, shell, subs="attributes"]
+----
+kubectl rollout status --watch --timeout=600s statefulset/my-neo4j-release
+----
++
+[NOTE]
+====
+Since you have not passed a password for the `neo4j` user, the Neo4j Helm chart has set an automatically generated one.
+You can find it in the Helm install output.
+Please make a note of it.
+====
+
+[[eks-verify-install]]
+== Verify the installation
+
+. Check that the `statefulset` is OK.
+Initially it will not be ready but just check there is something there.
++
+[source, shell]
+----
+kubectl --namespace default get statefulsets
+----
++
+[source, role=noheader]
+----
+NAME               READY   AGE
+my-neo4j-release   1/1     2m11s
+----
++
+. Check that the pod is `Running`:
++
+[source, shell]
+----
+kubectl --namespace default get pods
+----
++
+[source, role=noheader]
+----
+NAME                 READY   STATUS    RESTARTS   AGE
+my-neo4j-release-0   1/1     Running   0          16m
+----
++
+. Check that the pod logs look OK:
++
+[source, shell]
+----
+kubectl --namespace default exec my-neo4j-release-0 -- tail -n50 /logs/neo4j.log
+----
++
+[source, role=noheader, subs="attributes"]
+----
+2021-07-28 12:45:50.267+0000 INFO  Command expansion is explicitly enabled for configuration
+2021-07-28 12:45:50.280+0000 INFO  Starting...
+2021-07-28 12:45:55.680+0000 INFO  ======== Neo4j {neo4j-version-exact} ========
+2021-07-28 12:46:00.006+0000 INFO  Bolt enabled on [0:0:0:0:0:0:0:0%0]:7687.
+2021-07-28 12:46:02.476+0000 INFO  Remote interface available at http://localhost:7474/
+2021-07-28 12:46:02.478+0000 INFO  Started.
+----
++
+. Check that the services look OK:
++
+[source, shell]
+----
+kubectl get services --namespace default
+----
++
+[source, role=noheader]
+----
+NAME                     TYPE           CLUSTER-IP      EXTERNAL-IP    PORT(S)                                        AGE
+kubernetes               ClusterIP      10.112.0.1      <none>         443/TCP                                        28h
+my-neo4j-release         ClusterIP      10.112.10.159   <none>         7687/TCP,7474/TCP,7473/TCP                     41m
+my-neo4j-release-admin   ClusterIP      10.112.4.73     <none>         6362/TCP,7687/TCP,7474/TCP,7473/TCP            41m
+my-neo4j-release-neo4j   LoadBalancer   10.112.6.75     34.140.48.23   7474:31420/TCP,7473:31591/TCP,7687:31650/TCP   41m
+----
++
+. In a web browser, open the Neo4j Browser at _http://<EXTERNAL-IP>:7474/browser_.
+. Use the automatically generated password (as printed in the output of the `helm install` command) or the one you have configured in the _my-neo4j.values.yaml_ file.
+
+[[eks-uninstall-cleanup]]
+== Uninstall Neo4j and clean up the created resources
+
+[[eks-uninstall]]
+=== Uninstall Neo4j Helm deployment
+
+. Uninstall Neo4j Helm deployment.
++
+[source, shell]
+----
+helm uninstall my-neo4j-release
+----
++
+[source, role=noheader]
+----
+release "my-neo4j-release" uninstalled
+----
++
+. Uninstalling the Helm Release does not remove the AWS EBS disk, nor does it remove the data it contains:
++
+[source, shell]
+----
+aws ec2 describe-volumes --filters Name=tag:volume,Values=neo4j-k8s --query "Volumes[*].{ID:VolumeId}" --output text
+----
++
+[NOTE]
+====
+If you re-create Neo4j with the same settings, it will pick up the same disk again, and all the data will still be on it.
+
+Even if you delete the EKS cluster, the EBS disk with the Neo4j data will still exist.
+Note that the disk _will_ be deleted if its Resource Group is deleted.
+====
+
+[[eks-cleanup]]
+=== Fully remove all the data and resources
+
+After uninstalling the helm deployment, the only remaining step is to delete the EBS disk.
+
+. Delete the AWS EBS disk using the volume ID:
++
+[source, shell]
+----
+aws ec2 delete-volume --volume-id "<volume id>"
+----
+
+[TIP]
+====
+If you are sure that you want to delete the entire EKS Kubernetes cluster, run:
+
+[source, shell]
+----
+eksctl delete cluster my-neo4j-eks-cluster
+----
+====
