@@ -1,19 +1,17 @@
-:description: This section details a few selected internals of a Neo4j cluster.
 [role=enterprise-edition]
-[[clustering-internals]]
+[[causal-clustering-internals]]
 = Internals of clustering
-:description: This section details a few selected internals of a Neo4j cluster. Understanding the internals is not vital but can be helpful in diagnosing and resolving operational issues. 
+:description: This section details a few selected internals of a Neo4j Causal Cluster. Understanding the internals is not vital but can be helpful in diagnosing and resolving operational issues. 
 
 
-[[clustering-elections-and-leadership]]
+[[causal-clustering-elections-and-leadership]]
 == Elections and leadership
 
-The Core instances used as Primary servers in a cluster use the Raft protocol to ensure consistency and safety.
-See xref:clustering-advanced/lifecycle.adoc#causal-clustering-lifecycle-core-membership[Advanced Causal Clustering] for more information on the Raft protocol.
+The Core Servers in a Causal Cluster use the Raft protocol to ensure consistency and safety.
 An implementation detail of Raft is that it uses a _Leader_ role to impose an ordering on an underlying log with other instances acting as _Followers_ which replicate the leader's state.
 Specifically in Neo4j, this means that writes to the database are ordered by the Core instance currently playing the _Leader_ role for the respective database.
-If a Neo4j DBMS cluster contains multiple databases, each one of those databases operates within a logically separate Raft group, and therefore each has an individual leader.
-This means that a Core instance may act both as _Leader_ for some databases, and as _Follower_ for other databases.
+If multiple databases have been installed, each one of those databases will operate within a logically separate Raft group, and therefore each have an individual leader.
+This means that a Core Server may act both as _Leader_ for some databases, and as _Follower_ for other databases.
 
 If a follower has not heard from the leader for a while, then it can initiate an election and attempt to become the new leader.
 The follower makes itself a _Candidate_ and asks other Cores to vote for it.
@@ -21,80 +19,74 @@ If it can get a majority of the votes, then it assumes the leader role.
 Cores will not vote for a candidate which is less up-to-date than itself.
 There can only be one leader at any time per database, and that leader is guaranteed to have the most up-to-date log.
 
-Elections are expected to occur during the normal running of a cluster and they do not pose an issue in and of itself.
+It is expected for elections to occur during the normal running of a cluster and they do not pose an issue in and of itself.
 If you are experiencing frequent re-elections and they are disturbing the operation of the cluster then you should try to figure out what is causing them.
 Some common causes are environmental issues (e.g. a flaky networking) and work overload conditions (e.g. more concurrent queries and transactions than the hardware can handle).
 
 
-[[clustering-leadership-balancing]]
+[[causal-clustering-leadership-balancing]]
 == Leadership balancing
-
 Write transactions will always be routed to the leader for the respective database.
 As a result, unevenly distributed leaderships may cause write queries to be disproportionately directed to a subset of instances.
 By default, Neo4j avoids this by automatically transferring database leaderships so that they are evenly distributed throughout the cluster.
-Additionally, Neo4j will automatically transfer database leaderships away from instances where those databases are configured to be read-only using xref:reference/configuration-settings.adoc#config_dbms.databases.read_only[dbms.databases.read_only] or similar.
 
 
-[[clustering-multi-database-and-the-reconciler]]
+[[causal-clustering-multi-database-and-the-reconciler]]
 == Multi-database and the reconciler
 
 Databases operate as independent entities in a Neo4j DBMS, both in standalone and in a cluster.
-Since a cluster can consist of multiple independent server instances, the effects of administrative operations like creating a new database happen asynchronously and independently for each server.
-However, the immediate effect of an administrative operation is to safely commit the desired state in the `system` database.
+Since a cluster consists of multiple independent server instances, the effects of administrative operations like creating a new database happen asynchronously and independently for each server.
+However, the immediate effect of an administrative operation is to safely commit the desired state in the system database.
 
-The desired state committed in the `system` database gets replicated and is picked up by an internal component called the reconciler.
-It runs on every instance and takes the appropriate actions required locally on that instance for reaching the desired state; creating, starting, stopping, and dropping databases.
+The desired state committed in the system database gets replicated and is picked up by an internal component called the reconciler.
+It runs on every instance and takes the appropriate actions required locally on that instance for reaching the desired state; creating, starting, stopping and dropping databases.
 
 Every database runs in an independent Raft group and since there are two databases in a fresh cluster, `system` and `neo4j`, this means that it also has two Raft groups.
-Every Raft group also has an independent leader and thus a particular Core instance could be the leader for one database and a follower for another.
+Every Raft group also has an independent leader and thus a particular Core server could be the leader for one database and a follower for another.
 
-[NOTE]
-====
-This does not apply to clusters where a Single instance is the Primary server.
-In such clusters, the Single instance is the leader of all databases and there is no Raft at all.
-====
 
-[[clustering-routing]]
+[[causal-clustering-routing]]
 == Server-side routing
 
 Server-side routing is a complement to the client-side routing, performed by a Neo4j Driver.
 
-In a cluster deployment of Neo4j, Cypher queries may be directed to a cluster member that is unable to run the given query.
+In a Causal Cluster deployment of Neo4j, Cypher queries may be directed to a cluster member that is unable to run the given query.
 With server-side routing enabled, such queries will be rerouted internally to a cluster member that is expected to be able to run it.
-This situation can occur for write-transaction queries when they address a database for which the receiving cluster member is not the leader.
+This situation can occur for write-transaction queries, when they address a database for which the receiving cluster member is not the leader.
 
 The cluster role for core cluster members is per database.
-Thus, if a write-transaction query is sent to a cluster member that is not the leader for the specified database (specified either via the Bolt Protocol or by the Cypher syntax: link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE` clause]), server-side routing will be performed if properly configured.
+Thus, if a write-transaction query is sent to a cluster member which is not the leader for the specified database (specified either via the Bolt Protocol or by the Cypher syntax; link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE` clause]), server-side routing will be performed, if properly configured.
 
 Server-side routing is enabled by the DBMS, by setting xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled=true`] for each cluster member.
 The listen address (xref:reference/configuration-settings.adoc#config_dbms.routing.listen_address[`dbms.routing.listen_address`]) and advertised address (xref:reference/configuration-settings.adoc#config_dbms.routing.advertised_address[`dbms.routing.advertised_address`]) also need to be configured for server-side routing communication.
 
-Client connections need to state that server-side routing should be used and this is available for Neo4j Drivers and HTTP API.
+Client connections need to state that server-side routing should be used and this is only available for Neo4j Drivers that use the link:https://7687.org[Bolt Protocol].
 
 [NOTE]
 ====
-Neo4j Drivers can only use server-side routing when the `neo4j://` URI scheme is used.
-The Drivers will not perform any routing when the `bolt://` URI scheme is used, instead connecting directly to the specified host.
+In order to determine which cluster member to query, Neo4j Drivers will query the cluster for routing information, using xref:reference/procedures.adoc#procedure_dbms_cluster_routing_getroutingtable[`dbms.cluster.routing.getRoutingTable()`], when needed.
+When you use the `neo4j://` URI scheme, then the Neo4j Drivers will do this using client-side routing.
 
-On the cluster-side you must fulfil the following pre-requisites to make server-side routing available:
+However, when using the `neo4j://` URI scheme, the Neo4j Drivers will also state that server-side routing should be used.
 
-* Set `dbms.routing.enabled=true` on each member of the cluster.
-* Configure `dbms.routing.listen_address`, and provide the advertised address using `dbms.routing.advertised_address` on each member.
-* Optionally, you can set `dbms.routing.default_router=SERVER` on each member of the cluster.
+With the exception of the Python Driver, if you use the `bolt://`  URI scheme, the Neo4j Drivers will *not* state that server-side routing should be used.
 
-The final pre-requisite enforces server-side routing on the clients by sending out a routing table with exactly one entry to the client.
-Therefore, `dbms.routing.default_router=SERVER` configures a cluster member to make its routing table behave like a standalone instance.
-The implication is that if a Neo4j Driver connects to this cluster member, then the Neo4j Driver sends all requests to that cluster member.
-Please note that the default configuration for `dbms.routing.default_router` is `dbms.routing.default_router=CLIENT`.
-See xref:reference/configuration-settings.adoc#config_dbms.routing.default_router[`dbms.routing.default_router`] for more information.
+The specification for setting the flag, that states whether server-side routing should be used, was introduced in link:https://7687.org/bolt/bolt-protocol-message-specification-4.html#request-message---41---hello[Bolt Protocol 4.1 - server-side routing].
 
-The HTTP-API of each member will benefit from these settings automatically.
+When using the `neo4j://` URI scheme, a Neo4j Driver will:
+
+. Query the cluster for routing information.
+. Use the routing table (client-side routing) to send a query.
+. State that server-side routing is allowed to be used.
+
+Provided that server-side routing has been configured for the cluster, when the Neo4j Driver sends a write-transaction query to a non-leader cluster member, then that cluster member will try to route it correctly to the cluster member that is the leader.
 ====
 
-The table below shows the criteria by which server-side routing is performed:
+
+The table below show the criteria, when server-side routing will be performed:
 
 .Server-side routing criteria
-[options="header", cols="^2,^1,^1,^1,^3,^1,^1"]
+[options="header", cols="^2,^1,^2,^2,^1,^1,^1"]
 |===
 4+^| CLIENT - Neo4j Driver (Bolt Protocol)
 3+^| SERVER - Neo4j Cluster member
@@ -103,33 +95,37 @@ h|URI scheme
 h|Client-side routing
 h|Request server-side routing
 h|Transaction type
-h|Server - Instance > Role (per database)
+h|Role (per database)
 h|Server-side routing enabled
 h|Routes the query
 
-| `neo4j://` | {check-mark} | {check-mark} | write | Primary - Single     | {check-mark} | {cross-mark}
-| `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Single     | {check-mark} | {cross-mark}
-| `neo4j://` | {check-mark} | {check-mark} | write | Primary - Core > leader | {check-mark} | {cross-mark}
-| `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Core > leader | {check-mark} | {cross-mark}
-| `neo4j://` | {check-mark} | {check-mark} | write | Primary - Core > follower       | {check-mark} | {check-mark}
-| `neo4j://` | {check-mark} | {check-mark} | read  | Primary - Core > follower       | {check-mark} | {cross-mark}
-| `neo4j://` | {check-mark} | {check-mark} | write | Secondary - Read Replica        | {check-mark} | {check-mark}
-| `neo4j://` | {check-mark} | {check-mark} | read  | Secondary - Read Replica        | {check-mark} | {cross-mark}
+| `neo4j://` | yes | yes | write | follower     | yes | label:yes[]
+| `neo4j://` | yes | yes | read  | follower     | yes | no
+| `neo4j://` | yes | yes | write | read replica | yes | label:yes[]
+| `neo4j://` | yes | yes | read  | read replica | yes | no
+| `neo4j://` | yes | yes | write | leader       | yes | no
+| `neo4j://` | yes | yes | read  | leader       | yes | no
 
-| `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Single     | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Single     | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Core > leader | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Core > leader | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| write | Primary - Core > follower       | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| read  | Primary - Core > follower       | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| write | Secondary - Read Replica        | {check-mark} | {cross-mark}
-| `bolt://` | {cross-mark} | {cross-mark}| read  | Secondary - Read Replica        | {check-mark} | {cross-mark}
+| `bolt://` | no | no | write | follower     | yes | no
+| `bolt://` | no | no | read  | follower     | yes | no
+| `bolt://` | no | no | write | read replica | yes | no
+| `bolt://` | no | no | read  | read replica | yes | no
+| `bolt://` | no | no | write | leader       | yes | no
+| `bolt://` | no | no | read  | leader       | yes | no
+
+| `bolt://` (Python Driver) | no | yes | write | follower     | yes | label:yes[]
+| `bolt://` (Python Driver) | no | yes | read  | follower     | yes | no
+| `bolt://` (Python Driver) | no | yes | write | read replica | yes | label:yes[]
+| `bolt://` (Python Driver) | no | yes | read  | read replica | yes | no
+| `bolt://` (Python Driver) | no | yes | write | leader       | yes | no
+| `bolt://` (Python Driver) | no | yes | read  | leader       | yes | no
+
 |===
 
 
 Server-side routing connector configuration::
 Rerouted queries are communicated over the link:https://7687.org[Bolt Protocol] using a designated communication channel.
-The receiving end of the communication is configured using the following settings:
+The receiving end of of the communication is configured using the following settings:
 +
 * xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled`]
 * xref:reference/configuration-settings.adoc#config_dbms.routing.listen_address[`dbms.routing.listen_address`]
@@ -143,7 +139,7 @@ This driver is configured with settings of the format:
 +
 [NOTE]
 ====
-The configuration options described in _Configuration_ in the link:{neo4j-docs-base-uri}[Neo4j Driver manuals] have an equivalent in the server-side routing configuration.
+The configuration options described in link:{neo4j-docs-base-uri}/driver-manual/{page-version}/client-applications#driver-configuration[Driver Manual -> Configuration] have equivalens in the server-side routing configuration.
 ====
 
 Server-side routing encryption::
@@ -151,22 +147,22 @@ Encryption of server-side routing communication is configured by the cluster SSL
 For more information, see xref:clustering/intra-cluster-encryption.adoc[Cluster Encryption].
 
 
-[[clustering-store-copy]]
+[[causal-clustering-store-copy]]
 == Store copy
 
 Store copies are initiated when an instance does not have an up-to-date copy of the database.
-For example, this is the case when a new instance is joining a cluster (without a seed).
-It can also happen as a consequence of falling behind the rest of the cluster, for reasons such as connectivity issues or having been shut down.
-Upon re-establishing connection with the cluster, an instance recognizes that it is too far behind and fetches a new copy from the rest of the cluster.
+For example, this will be the case when a new instance is joining a cluster (without a seed).
+It can also happen as a consequence of falling behind the rest of the cluster, for reasons such as connectivity issues or having been shutdown.
+Upon re-establishing connection with the cluster, an instance will recognize that it is too far behind and fetch a new copy from the rest of the cluster.
 
-A store copy is a major operation, which may disrupt the availability of instances in the cluster.
+A store copy is a major operation which may disrupt the availability of instances in the cluster.
 Store copies should not be a frequent occurrence in a well-functioning cluster, but rather be an exceptional operation that happens due to specific causes, e.g. network outages or planned maintenance outages.
 If store copies happen during regular operation, then the configuration of the cluster, or the workload directed at it, might have to be reviewed so that all instances can keep up, and that there is enough of a buffer of Raft logs and transaction logs to handle smaller transient issues.
 
 The protocol used for store copies is robust and configurable.
-The network requests are directed at an upstream member according to configuration and they are retried despite transient failures.
+The network requests will be directed at an upstream member according to configuration and they will be retried despite transient failures.
 The maximum amount of time to retry every request can be configured with xref:reference/configuration-settings.adoc#config_causal_clustering.store_copy_max_retry_time_per_request[`causal_clustering.store_copy_max_retry_time_per_request`].
-If a request fails and the maximum retry time has elapsed then it stops retrying and the store copy fails.
+If a request fails and the maximum retry time has elapsed then it will stop retrying and the store copy will fail.
 
 Use xref:reference/configuration-settings.adoc#config_causal_clustering.catch_up_client_inactivity_timeout[`causal_clustering.catch_up_client_inactivity_timeout`] to configure the inactivity timeout for any particular request.
 
@@ -175,29 +171,29 @@ Use xref:reference/configuration-settings.adoc#config_causal_clustering.catch_up
 The xref:reference/configuration-settings.adoc#config_causal_clustering.catch_up_client_inactivity_timeout[`causal_clustering.catch_up_client_inactivity_timeout`] configuration is for all requests from the catchup client, including the pulling of transactions.
 ====
 
-The default upstream strategy is not applicable to Single instances and it differs for Core and Read Replica instances.
-Core instances always send the initial request to the leader to get the most up-to-date information about the store.
-The strategy for the file and index requests for Core instances is to vary every other request to a random Read Replica instance and every other to a random Core instance.
+The default upstream strategy differs for Cores and Read Replicas.
+Cores will always send the initial request to the leader to get the most up-to-date information about the store.
+The strategy for the file and index requests for Cores is to vary every other request to a random Read Replica and every other to a random Core member.
 
-Read Replica instances use the same strategy for store copies as it uses for pulling transactions.
-The default is to pull from a random Core instance.
+Read Replicas use the same strategy for store copies as it uses for pulling transactions.
+The default is to pull from a random Core member.
 
-If you are running a multi-datacenter cluster, then upstream strategies for both Core and Read Replica instances can be configured.
-Remember that for Read Replica instances, this also affects from where transactions are pulled.
+If you are running a multi-data center cluster, then upstream strategies for both Cores and Read Replicas can be configured.
+Remember that for Read Replicas this also affects from where transactions are pulled.
 See more in xref:clustering-advanced/multi-data-center/configuration.adoc[Configure for multi-data center operations].
 
 
 [WARNING]
 ====
-* Do not transform a Read Replica instance into a Core instance.
-* Do not transform a Core instance into a Read Replica instance.
+* Do not transform a Read Replica into a Core.
+* Do not transform a Core into a Read Replica.
 ====
 
-[[clustering-on-disk-state]]
+[[causal-clustering-on-disk-state]]
 == On-disk state
 
-The on-disk state of cluster instances is different from that of standalone instances.
-The biggest difference is the existence of an additional cluster state.
+The on-disk state of cluster instances is different to that of standalone instances.
+The biggest difference being the existence of additional cluster state.
 Most of the files there are relatively small, but the Raft logs can become quite large depending on the configuration and workload.
 
 It is important to understand that once a database has been extracted from a cluster and used in a standalone deployment, it must not be put back into an operational cluster.
@@ -207,5 +203,5 @@ This is because the cluster and the standalone deployment now have separate data
 ====
 If you try to reinsert a modified database back into the cluster, then the logs and stores will mismatch.
 Operators should not try to merge standalone databases into the cluster in the optimistic hope that their data will become replicated.
-That does not happen and instead, it likely leads to unpredictable cluster behavior.
+That will not happen and will likely lead to unpredictable cluster behavior.
 ====
