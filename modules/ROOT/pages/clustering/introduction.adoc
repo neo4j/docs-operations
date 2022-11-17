@@ -1,100 +1,79 @@
-:description: Introduction to the Neo4j clustering topologies.
 [role=enterprise-edition]
-[[clustering-introduction]]
+[[causal-clustering-introduction]]
 = Introduction
-:description: Introduction to the Neo4j clustering topologies. 
+:description: Introduction to the Neo4j Causal Clustering architecture. 
 
 
-[[clustering-introduction-overview]]
+[[causal-clustering-introduction-overview]]
 == Overview
 
-Neo4j’s Causal Clustering provides three main features:
+Neo4j's Causal Clustering provides three main features:
 
-. **Safety**: Primary Servers provide a fault tolerant platform for transaction processing which will remain available while a simple majority of those servers are functioning.
-. **Scale**: Secondary Servers provide a scalable platform for graph queries that enables very large graph workloads to be executed in a distributed topology.
-. **Causal consistency**: through the use of bookmarks, a client application is guaranteed to read at least its own writes.
+. *Safety:* Core Servers provide a fault tolerant platform for transaction processing which will remain available while a simple majority of those Core Servers are functioning.
+. *Scale:* Read Replicas provide a massively scalable platform for graph queries that enables very large graph workloads to be executed in a widely distributed topology.
+. *Causal consistency:* when invoked, a client application is guaranteed to read at least its own writes.
 
 Together, this allows the end-user system to be fully functional and both read and write to the database in the event of multiple hardware and network failures and makes reasoning about database interactions straightforward.
 
-The remainder of this section provides an overview of how causal clustering works in production, including both operational and application aspects.
+In the remainder of this section we will provide an overview of how causal clustering works in production, including both operational and application aspects.
 
 
-[[clustering-introduction-operational]]
+[[causal-clustering-introduction-operational]]
 == Operational view
 
-From an operational point of view, it is useful to view the cluster as being composed of servers with two different roles, referred to as _Primary_ and _Secondary_ servers.
+From an operational point of view, it is useful to view the cluster as being composed of servers with two different roles: Cores and Read Replicas.
 
-image::cluster-architecture.png[title="Causal Cluster Architecture",role="middle"]
+image::causal-clustering.svg[title="Causal Cluster Architecture", role="middle"]
 
 The two roles are foundational in any production deployment but are managed at different scales from one another and undertake different roles in managing the fault tolerance and scalability of the overall cluster.
 
-[[clustering-primary-servers]]
-== Primary servers
 
-The Primary servers are based on two types on instances:
+[[causal-clustering-core-servers]]
+=== Core Servers
 
-* **Single instance** is an instance that operates without redundancy within the set of Primary servers and allows read and write operations.
-Redundancy is achieved by adding Secondary servers, which guarantee causal consistency but they **do not** safeguard data as Primary servers do.
-Therefore, clusters based on a Single instance as Primary server are good for read scalability, but they are not fault tolerant.
-If a fault occurs on the Single instance, there is a potential risk of data loss: it is the responsibility of the application or of the tooling around the cluster to eliminate or minimize such risk.
-
-* **Core instance** is an instance that allows read and write operations and its main responsibility is to safeguard data.
-Core instances do so by replicating all transactions using the Raft protocol.
-Raft ensures that the data is safely durable before confirming a transaction commit to the end user application.
-In practice, this means once a majority of Core instances in a cluster (N/2+1) have accepted the transaction, it is safe to acknowledge the commit to the end user application.
-+
+The main responsibility of Core Servers is to safeguard data.
+Core Servers do so by replicating all transactions using the Raft protocol.
+Raft ensures that the data is safely durable before confirming transaction commit to the end user application.
+In practice this means once a majority of Core Servers in a cluster (`N/2+1`) have accepted the transaction, it is safe to acknowledge the commit to the end user application.
 
 The safety requirement has an impact on write latency.
-Implicitly, writes are acknowledged by the fastest majority, but as the number of Core instances in the cluster grows, so does the size of the majority needed to acknowledge a write.
-+
+Implicitly writes will be acknowledged by the fastest majority, but as the number of Core Servers in the cluster grows so do the size of the majority needed to acknowledge a write.
 
-In practice, this means that there are relatively few machines in a typical Core instance cluster, enough to provide sufficient fault tolerance for the specific deployment. This is calculated with the formula M = 2F + 1, where M is the number of Core instances required to tolerate F faults.
+In practice this means that there are relatively few machines in a typical Core Server cluster, enough to provide sufficient fault tolerance for the specific deployment.
+This is calculated with the formula `M = 2F + 1` where `M` is the number of Core Servers required to tolerate `F` faults.
 For example:
-+
-** In order to tolerate two failed Core instances, you need to deploy a cluster of five Core instances.
-** The smallest fault tolerant cluster, a cluster that can tolerate one fault, must have three Core instances.
-** It is also possible to create a Causal Cluster consisting of only two Core instances.
-However, that cluster is not fault-tolerant.
-If one of the two servers fails, the remaining server becomes read-only.
+
+* In order to tolerate two failed Core Servers we would need to deploy a cluster of five Cores.
+* The smallest _fault tolerant_ cluster, a cluster that can tolerate one fault, must have three Cores.
+* It is also possible to create a Causal Cluster consisting of only two Cores.
+  However, that cluster will not be fault-tolerant. If one of the two servers fails, the remaining server will become read-only.
 
 [NOTE]
 ====
-With Core instances, should the cluster suffer enough Core failures, it can no longer process writes and becomes read-only to preserve safety.
+Should the cluster suffer enough Core failures then it can no longer process writes and it will become read-only to preserve safety.
 ====
 
-[NOTE]
-====
-In version {neo4j-version} of Neo4j Causal Cluster, Primary servers cannot be mixed: either one Single instance is the Primary server or a set of Core instances are the Primary servers.
-====
+[[causal-clustering-read-replicas]]
+=== Read Replicas
 
-[[clustering-secondary-servers]]
-== Secondary servers
+The main responsibility of Read Replicas is to scale out graph workloads.
+Read Replicas act like caches for the graph data that the Core Servers safeguard and are fully capable of executing arbitrary (read-only) queries and procedures.
 
-In version {neo4j-version} of Neo4j Causal Cluster, Secondary servers can only be one type of instance, called **Read Replica instances**.
+Read Replicas are asynchronously replicated from Core Servers via transaction log shipping.
+They will periodically poll an upstream server for new transactions and have these shipped over.
+Many Read Replicas can be fed data from a relatively small number of Core Servers, allowing for a large fan out of the query workload for scale.
 
-The main responsibility of Read Replica instances is to scale out read workloads.
-Read Replica instances act like caches for the graph data and are fully capable of executing arbitrary (read-only) queries and procedures.
-
-
-Read Replica instances are asynchronously replicated from Primary Servers via transaction log shipping.
-They periodically poll an upstream server for new transactions and have these shipped over.
-Many Read Replica instances can be fed data from a relatively small number of Primary Servers, allowing for a large fan-out of the query workload for scale.
-
-Read Replica instances should typically be run in relatively large numbers and treated as disposable.
-Losing a Read Replica instance does not impact the cluster’s availability, aside from the loss of its fraction of graph query throughput.
-When Primary servers are Core instances, the loss of one or more Read Replica instances does not affect the fault tolerance of the cluster.
-
-When the Primary server is a Single instance, Secondary servers may be part of a Disaster Recovery strategy.
-Due to its asynchronous nature, Read Replica instances may not provide all transactions committed on the Primary server, but they may be set as a new Primary server in case the Single instance is no longer available.
-The change of a Read Replica instance into a Single instance is a manual operation that must be executed by a Database Administrator or by some tooling and it requires careful checks, in order to identify the most up-to-date instance and the status of the other instances.
+Read Replicas should typically be run in relatively large numbers and treated as disposable.
+Losing a Read Replica does not impact the cluster's availability, aside from the loss of its fraction of graph query throughput.
+It does not affect the fault tolerance capabilities of the cluster.
 
 
-[[consistency-explained]]
+[[causal-consistency-explained]]
 == Causal consistency
 
 While the operational mechanics of the cluster are interesting from an application point of view, it is also helpful to think about how applications will use the database to get their work done.
-In many applications, it is typically desirable to both read from the graph and write to the graph.
-Depending on the nature of the workload, it is common to want reads from the graph to take into account previous writes to ensure causal consistency.
+In an application we typically want to read from the graph and write to the graph.
+Depending on the nature of the workload we usually want reads from the graph to take into account previous writes to ensure causal consistency.
 
 [NOTE]
 ====
@@ -107,7 +86,7 @@ This simplifies interaction with large clusters, allowing clients to treat them 
 Causal consistency makes it possible to write to Core Servers (where data is safe) and read those writes from a Read Replica (where graph operations are scaled out).
 For example, causal consistency guarantees that the write which created a user account will be present when that same user subsequently attempts to log in.
 
-image::causal-clustering-drivers.svg[title="Cluster setup with causal consistency via Neo4j drivers", role="middle"]
+image::causal-clustering-drivers.svg[title="Causal Cluster setup with causal consistency via Neo4j drivers", role="middle"]
 
 On executing a transaction, the client can ask for a bookmark which it then presents as a parameter to subsequent transactions.
 Using that bookmark the cluster can ensure that only servers which have processed the client's bookmarked transaction will run its next transaction.
@@ -116,4 +95,10 @@ This provides a _causal chain_ which ensures correct read-after-write semantics 
 Aside from the bookmark everything else is handled by the cluster.
 The database drivers work with the cluster topology manager to choose the most appropriate Core Servers and Read Replicas to provide high quality of service.
 
-Since Neo4j clusters are causally consistent, in the remainder of this chapter, the terms _causal cluster_ or _cluster_ are used to denote Neo4j installations consisting of primary and secondary servers.
+
+[[causal-clustering-summary]]
+== Summary
+
+In this section we have examined Causal Clustering at a high level from an operational and an application development point of view.
+We now understand that the Core Servers are responsible for the long-term safekeeping of data while the more numerous Read Replicas are responsible for scaling out graph query workloads.
+Reasoning about this powerful architecture is greatly simplified by the Neo4j drivers which abstract the cluster topology to easily provide read levels like causal consistency.
