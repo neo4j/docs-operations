@@ -1,0 +1,54 @@
+= Locks and deadlocks
+:description: This page discusses how locks are used in Neo4j, and strategies to avoid deadlocks.
+ 
+Neo4j is fully https://neo4j.com/docs/java-reference/current/transaction-management/[ACID compliant].
+This means that all database operations which access graphs, indexes or schemas must be performed in a transaction.
+When a transaction occurs, Neo4j takes locks to prevent data corruption.
+ 
+== Locks
+ 
+Locks are taken automatically by the queries that users run.
+They ensure that a node/relationship is locked to one particular transaction until that transaction is completed.
+For example: a lock on a node by one transaction will prevent additional transactions which seek to simultaneously modify the same node.
+As such, locks prevent concurrent modifications of shared resources between transactions.
+ 
+Locks are used in Neo4j to ensure data consistency and isolation levels.
+They not only protect logical entities (such as nodes and relationships), but also the integrity of internal data structures.
+ 
+The default isolation is read-committed isolation level.
+It is, however, possible to manually acquire write locks on nodes and relationships.
+For more information on how to manually acquire write locks, see https://neo4j.com/docs/java-reference/current/transaction-management/#transactions-isolation[Neo4j's Java-reference manual on transaction management]
+ 
+== Lock contention
+ 
+Lock contention may arise if an application needs to perform updates on the same nodes/relationships.
+In such a scenario, transactions must wait for locks to be released in order to be completed.
+In general, the more nodes/relationships a graph has, the more likely it is that transactions will have to wait for a lock to be released in order to perform an update.
+ 
+== Locks in practice
+ 
+When creating or deleting relationships in Neo4j, nodes are not exclusively locked during a transaction.
+Rather, internally shared locks prevent the deletion of nodes, and shared degree locks are acquired for synchronizing with concurrent label changes for those nodes (to ensure correct count updates).
+ 
+At commit time, relationships are inserted into their relationship chains at places that are currently uncontested (i.e. not currently modified by another transaction), and the surrounding relationships are exclusively locked.
+ 
+In other words, relationship modifications acquires coarse-grained shared node locks when doing the operation in the transaction, and then acquires precise exclusive relationship locks during commit.
+ 
+The locking is very similar for sparse and dense nodes. The biggest contention for sparse nodes is the update of the degree (i.e. number of relationships) for the node.
+Dense nodes store this data in a concurrent data structure, and so can avoid exclusive node locks in almost all cases for relationship modifications.
+ 
+== Deadlocks
+ 
+When multiple locks are taken by concurrent operations, a scenario may arise where none of the transactions can proceed.
+This is called a deadlock.
+For example, given two specific nodes (A and B), adding or deleting relationships to both of these nodes in a random order for each transaction, will result in deadlocks when there are are two or more transactions doing it concurrently.
+ 
+Neo4j assists transactions by internally sorting operations. That said, deadlocks can happen regardless.
+ 
+When Neo4j detects a deadlock, the transaction is aborted (with the transient error message code `Neo.TransientError.Transaction.DeadlockDetected`).
+ 
+Most likely, a deadlock will be resolved by retrying the transaction.
+ 
+To avoid deadlocks, it is recommended that updates occur in the same order (first A, then B). Another option is to avoid lock contention by not modifying the same entities at the same time concurrently.
+ 
+For more on deadlocks and their resolution, see https://neo4j.com/docs/java-reference/5/transaction-management/#transactions-deadlocks[Neo4j's Java-reference manual on transaction management].
