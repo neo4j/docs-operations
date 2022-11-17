@@ -1,6 +1,14 @@
+[role=enterprise-edition]
 [[query-management]]
 = Query management
 :description: This section describes facilities for query management. 
+
+This section describes the following:
+
+* xref:monitoring/query-management.adoc#query-management-list-queries[List all running queries]
+* xref:monitoring/query-management.adoc#query-management-list-active-locks[List all active locks for a query]
+* xref:monitoring/query-management.adoc#query-management-terminate-multiple-queries[Terminate multiple queries]
+* xref:monitoring/query-management.adoc#query-management-terminate-single-query[Terminate a single query]
 
 
 [[query-management-list-queries]]
@@ -23,7 +31,7 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 | `metaData`                  | Map     | This is any metadata associated with the transaction.
 | `query`                     | String  | This is the query itself.
 | `parameters`                | Map     | This is a map containing all the parameters used by the query.
-| `planner`                   | String  | Planner used by the query. footnote:[For details, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning#cypher-planner[Cypher Manual -> Cypher planner]]
+| `planner`                   | String  | Planner used by the query. footnote:[For details, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning/query-options[Cypher Manual -> Cypher query options]]
 | `runtime`                   | String  | Runtime used by the query. footnote:[For details, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning#cypher-runtime[Cypher Manual -> Cypher runtime]]
 | `indexes`                   | List    | Indexes used by the query.
 | `startTime`                 | String  | This is the time at which the query was started.
@@ -34,7 +42,7 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 | `clientAddress`             | String  | The client address of the connection issuing the query.
 | `requestUri`                | String  | The request URI used by the client connection issuing the query.
 | `status`                    | String  | Status of the executing query. 
-                                          Possible values: `Parsing`, `Planning`, `Planned`, `Running`, and `Waiting`.
+                                          Possible values: `Planning`, `Planned`, `Running`, and `Waiting`.
 | `resourceInformation`       | Map     | Status of the executing query.
 | `activeLockCount`           | Integer | Count of active locks held by transaction executing the query.
 | `elapsedTimeMillis`         | Integer | This is the time in milliseconds that has elapsed since the query was started.
@@ -43,8 +51,9 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 | `waitTimeMillis`            | Integer | Wait time in milliseconds that has been spent waiting to acquire locks.
 | `idleTimeMillis`            | Integer | Idle time in milliseconds.
                                           This field will be null unless the config parameter xref:reference/configuration-settings.adoc#config_dbms.track_query_cpu_time[`dbms.track_query_cpu_time`] is set to `true`.
-| `allocatedBytes`            | Integer | Estimated bytes allocated for the executing query.
-                                          For memory-intense or long-running queries the value may be larger than the current memory usage.
+| `allocatedBytes`            | Integer | Bytes allocated for the executing query.
+                                          This number is cumulative over the duration of the query.
+                                          For memory-intense or long-running queries the value may be larger than the current memory allocation.
                                           This field will be null unless the config parameter xref:reference/configuration-settings.adoc#config_dbms.track_query_allocation[`dbms.track_query_allocation`] is set to `true`.
 | `pageHits`                  | Integer | Page hits occurred during the execution.
 | `pageFaults`                | Integer | Page faults occurred during the execution.
@@ -54,23 +63,23 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 .Viewing queries that are currently executing
 ====
 The following example shows that the user `alwood` is currently running `dbms.listQueries()` yielding specific
-variables, namely `queryId`, `username`, `query`, `elapsedTimeMillis`, `requestUri`, `status`, and `database`.
+variables, namely `queryId`, `username`, `query`, `elapsedTimeMillis`, `requestUri`, and `status`.
+It is executed against the database `myDb`, which is indicated by the prefix in the `queryId`.
 
 [source, cypher]
 ----
-CALL dbms.listQueries() YIELD queryId, username, query, elapsedTimeMillis, requestUri, status, database
+CALL dbms.listQueries() YIELD queryId, username, query, elapsedTimeMillis, requestUri, status
 ----
 
 [queryresult]
 ----
-╒═══════════╤═══════════╤══════════════════════════════╤════════════════════╤════════════════╤══════════╤═══════════╕
-│"queryId"  │"username" │"query"                       │"elapsedTimeMillis" │"requestUri"    │"status"  │"database" │
-╞═══════════╪═══════════╪══════════════════════════════╪════════════════════╪════════════════╪══════════╪═══════════╡
-│"query-33" │"alwood"   │"CALL dbms.listQueries() YIELD│1                   │"127.0.0.1:7687"│"running" │"myDb"     │
-│           │           │ queryId, username, query, ela│                    │                │          │           │
-│           │           │psedTime, requestUri, status, │                    │                │          │           │
-│           │           │database"                     │                    │                │          │           │
-└───────────┴───────────┴──────────────────────────────┴────────────────────┴────────────────┴──────────┴───────────┘
+╒═══════════════╤═══════════╤══════════════════════════════╤════════════════════╤════════════════╤═══════════════════╕
+│"queryId"      │"username" │"query"                       │"elapsedTimeMillis" │"requestUri"    │"status"           │
+╞═══════════════╪═══════════╪══════════════════════════════╪════════════════════╪════════════════╪═══════════════════╡
+│"myDb-query-33"│"alwood"   │"CALL dbms.listQueries() YIELD│"1"                 │"127.0.0.1:7687"│{"state":"RUNNING"}│
+│               │           │ queryId, username, query, ela│                    │                │                   │
+│               │           │psedTime, requestUri, status" │                    │                │                   │
+└───────────────┴───────────┴──────────────────────────────┴────────────────────┴────────────────┴───────────────────┘
 1 row
 ----
 ====
@@ -97,11 +106,11 @@ An xref:authentication-authorization/terminology.adoc#term-administrator[adminis
 
 .Viewing active locks for a query
 ====
-The following example shows the active locks held by transaction executing query with id `query-614`
+The following example shows the active locks held by transaction executing query with id `myDb-query-614`
 
 [source, cypher]
 ----
-CALL dbms.listActiveLocks( "query-614" )
+CALL dbms.listActiveLocks( "myDb-query-614" )
 ----
 
 [queryresult]
@@ -109,7 +118,7 @@ CALL dbms.listActiveLocks( "query-614" )
 ╒════════╤══════════════╤════════════╕
 │"mode"  │"resourceType"│"resourceId"│
 ╞════════╪══════════════╪════════════╡
-│"SHARED"│"SCHEMA"      │0           │
+│"SHARED"│"SCHEMA"      │"0"         │
 └────────┴──────────────┴────────────┘
 1 row
 ----
@@ -118,22 +127,22 @@ The following example shows the active locks for all currently executing queries
 
 [source, cypher]
 ----
-CALL dbms.listQueries() YIELD queryId, query, database
+CALL dbms.listQueries() YIELD queryId, query
 CALL dbms.listActiveLocks( queryId ) YIELD resourceType, resourceId, mode
-RETURN queryId, query, resourceType, resourceId, mode, database
+RETURN queryId, query, resourceType, resourceId, mode
 ----
 
 [queryresult]
 ----
-╒════════════╤══════════════════════════════╤══════════════╤════════════╤════════╤════════════╕
-│"queryId"   │"query"                       │"resourceType"│"resourceId"│"mode"  │"database"  │
-╞════════════╪══════════════════════════════╪══════════════╪════════════╪════════╪════════════╡
-│"query-614" │"match (n), (m), (o), (p), (q)│"SCHEMA"      │0           │"SHARED"│"myDb"      │
-│            │ return count(*)"             │              │            │        │            │
-├────────────┼──────────────────────────────┼──────────────┼────────────┼────────┼────────────┤
-│"query-684" │"CALL dbms.listQueries() YIELD│"SCHEMA"      │0           │"SHARED"│"myOtherDb" │
-│            │ .."                          │              │            │        │            │
-└────────────┴──────────────────────────────┴──────────────┴────────────┴────────┴────────────┘
+╒══════════════════════╤══════════════════════════════╤══════════════╤════════════╤════════╕
+│"queryId"             │"query"                       │"resourceType"│"resourceId"│"mode"  │
+╞══════════════════════╪══════════════════════════════╪══════════════╪════════════╪════════╡
+│"myDb-query-614"      │"match (n), (m), (o), (p), (q)│"SCHEMA"      │"0"         │"SHARED"│
+│                      │ return count(*)"             │              │            │        │
+├──────────────────────┼──────────────────────────────┼──────────────┼────────────┼────────┤
+│"myOtherDb-query-684" │"CALL dbms.listQueries() YIELD│"SCHEMA"      │"0"         │"SHARED"│
+│                      │ .."                          │              │            │        │
+└──────────────────────┴──────────────────────────────┴──────────────┴────────────┴────────┘
 2 rows
 ----
 ====
@@ -164,29 +173,28 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 | Name        | Type   | Description
 | `queryId`   | String | This is the ID of the terminated query.
 | `username`  | String | This is the username of the user who was executing the (now terminated) query.
-| `message`   | String | A message stating whether the query was successfully found.
 |===
 
 
 .Terminating multiple queries
 ====
-The following example shows that the administrator has terminated the queries with IDs `query-378` and `query-765`, started by the users `joesmith` and `annebrown`, respectively.
+The following example shows that the administrator has terminated the queries with IDs `joeDb-query-378` and `anneDb-query-765`, started by the users `joesmith` and `annebrown`, respectively.
 
-This command can target queries from multiple databases at the same time. In this example, `joesmith` ran his query against `joeDb` and `annebrown` ran hers against `anneDb`.
+This command can target queries from multiple databases at the same time, as noted by the prefixes `joeDb-` and `anneDb-`:
 
 [source, cypher]
 ----
-CALL dbms.killQueries(['query-378','query-765'])
+CALL dbms.killQueries(['joeDb-query-378','anneDb-query-765'])
 ----
 
 [queryresult]
 ----
-+-------------------------------------------+
-| queryId     | username    | message       |
-+-------------------------------------------+
-| "query-378" | "joesmith"  | "Query found" |
-| "query-765" | "annebrown" | "Query found" |
-+-------------------------------------------+
++----------------------------------+
+| queryId            | username    |
++----------------------------------+
+| "joeDb-query-378"  | "joesmith"  |
+| "anneDb-query-765" | "annebrown" |
++----------------------------------+
 2 rows
 ----
 ====
@@ -222,35 +230,35 @@ Alternatively, the xref:authentication-authorization/terminology.adoc#term-curre
 
 .Terminating a single query
 ====
-The following example shows that the user `joesmith` has terminated his query with the ID `query-502`.
+The following example shows that the user `joesmith` has terminated his query with the ID `joeDb-query-502`.
 
 [source, cypher]
 ----
-CALL dbms.killQuery('query-502')
+CALL dbms.killQuery('joeDb-query-502')
 ----
 
 [queryresult]
 ----
-+-------------------------------------------+
-| queryId     | username    | message       |
-+-------------------------------------------+
-| "query-502" | "joesmith"  | "Query found" |
-+-------------------------------------------+
++-----------------------------------------------+
+| queryId           | username    | message     |
++-----------------------------------------------+
+| "joeDb-query-502" | "joesmith"  | Query found |
++-----------------------------------------------+
 1 row
 ----
 The following example shows the output when trying to kill a query with an ID that does not exist.
 [source, cypher]
 ----
-CALL dbms.killQuery('query-502')
+CALL dbms.killQuery('myDb-query-502')
 ----
 
 [queryresult]
 ----
-+-----------------------------------------------------------+
-| queryId     | username    | message                       |
-+-----------------------------------------------------------+
-| "query-502" | "n/a"       | "No Query found with this id" |
-+-----------------------------------------------------------+
++--------------------------------------------------------------+
+| queryId          | username    | message                     |
++--------------------------------------------------------------+
+| "myDb-query-502" | "n/a"       | No Query found with this id |
++--------------------------------------------------------------+
 1 row
 ----
 ====

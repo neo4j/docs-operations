@@ -48,13 +48,13 @@ Detailed information about discovery and discovery configuration options is give
 When consuming this information, the server will try to handshake with the other listed servers.
 On successful handshake with another server (or servers), the current server will discover the whole current topology.
 
-The discovery protocol continues to run throughout the lifetime of the Causal Cluster and is used to maintain the current state of available servers and to help clients route queries to an appropriate server via the client-side xref:introduction.adoc#intro-drivers[drivers].
+The discovery protocol continues to run throughout the lifetime of the Causal Cluster and is used to maintain the current state of available servers and to help clients route queries to an appropriate server via the client-side link:{neo4j-docs-base-uri}/driver-manual/{page-version}[drivers].
 
 //=== Discovery protocol implementation
 
 //The discovery service is implemented using one out of two third-party middleware systems: https://hazelcast.org/documentation/[_Hazelcast_] or https://akka.io/docs/[_Akka_].
 
-//Only the Akka-based implementation supports <<clustering-intra-cluster-encryption, intra-cluster encryption>> of the discovery protocol.
+//Only the Akka-based implementation supports <<causal-clustering-intra-cluster-encryption, intra-cluster encryption>> of the discovery protocol.
 //Causal Clusters running a version of Neo4j prior to v3.5.0 can only use the Hazelcast-based implementation.
 
 //It is possible to switch from one implementation to the other.
@@ -69,7 +69,6 @@ The discovery protocol continues to run throughout the lifetime of the Causal Cl
 == Core membership
 
 If it is a Core Server that is performing discovery, once it has made a connection to the one of the existing Core Servers, it then joins the Raft protocol.
-Each database is replicated by a logically separate Raft group, so the process below is repeated for every one.
 
 [NOTE]
 ====
@@ -82,16 +81,14 @@ Joining a cluster involves the insertion of a cluster membership entry into the 
 Once that entry is applied to enough members of the Raft consensus group (those machines running the specific instance of the algorithm), they update their view of the cluster to include the new server.
 Thus membership changes benefit from the same safety properties as other data transacted via Raft (see xref:clustering-advanced/lifecycle.adoc#causal-clustering-transacting-via-raft-protocol[Transacting via the Raft protocol] for more information).
 
-The new Core Server must also catch up its own Raft logs with respect to the other Core Servers as it initializes its internal Raft instance.
+The new Core Server must also catch up its own Raft log with respect to the other Core Servers as it initializes its internal Raft instance.
 This is the normal case when a cluster is first booted and has performed few operations.
 There will be a delay before the new Core Server becomes available if it also needs to catch up (as per xref:clustering-advanced/lifecycle.adoc#causal-clustering-catchup-protocol[Catchup protocol]) graph data from other servers.
 This is the normal case for a long lived cluster where the servers holds a great deal of graph data.
 
-Where a joining Neo4j instance has databases whose names match databases which already exist in the cluster, the database stores on the joining instance must be the same as their counterparts on cluster members (although they are allowed to be in previous states).
-For example, if a cluster contains a database named _products_, a new instance may join with a backup of _products_, but not a database named _products_ with different contents.
-A new instance may also join a cluster if it does not contain any matching databases.
+When an instance establishes a connection to any other instance, it determines the current state of the cluster and ensures that it is eligible to join.
+To be eligible the Neo4j instance must host the same database store as other members of the cluster (although it is allowed to be in an older, outdated, state), or be a new deployment without a database store.
 
-The described catchup process is repeated for each database which exists in the cluster.
 
 [[causal-clustering-lifecycle-rr-membership]]
 == Read Replica membership
@@ -132,19 +129,12 @@ These are transient roles and any Core Server can expect to play them throughout
 While it is interesting from a computing science point of view to understand those states, operators should not be overly concerned: they are an implementation detail.
 ====
 
-[NOTE]
-====
-As each database operates within a logically separate Raft group, a core server can have multiple roles: one for each database.
-For example, it may be the _Leader_ for database `system` and at the same time be a _Follower_ for database `neo4j`.
-
-====
-
 For safety, within any Raft protocol instance there is only one Leader able to make forward progress in any given term.
 The Leader bears the responsibility for imposing order on Raft log entries and driving the log forward with respect to the _Followers_.
 
 Followers maintain their logs with respect to the current Leader's log.
-Should any participant in the cluster suspect that the Leader has failed (not receiving new entries or heartbeats), then they can instigate a leadership election by entering the _Candidate_ state.
-In Neo4j Core Servers this failure detection window is set by default above 20s to enable more stable leaders.
+Should any participant in the cluster suspect that the Leader has failed, then they can instigate a leadership election by entering the _Candidate_ state.
+In Neo4j Core Servers this is happens at ms timescale, around 500ms by default.
 
 Whichever instance is in the best state (including the existing Leader, if it remains available) can emerge from the election as Leader.
 The "best state" for a Leader is decided by highest term, then by longest log, then by highest committed entry.
@@ -201,20 +191,21 @@ On subsequent reboot the Read Replica will rollback any partially applied transa
 [[causal-clustering-core-shutdown]]
 == Core shutdown
 
-A shutdown of a Core Server, like Core Server booting, is handled via the Raft protocol.
-When a member is shutdown, either cleanly or by force, it will eventually be voted out from the Raft group.
+A clean Core Server shutdown, like Core Server booting, is handled via the Raft protocol.
+When a Core Server is shut down, it appends a membership entry to the Raft log which is then replicated around the Core Servers.
+Once a majority of Core Servers have committed that membership entry the leaver has logically left the cluster and can safely shut down.
 All remaining instances accept that the cluster has grown smaller, and is therefore less fault tolerant.
-For any databases where the leaver was playing the _Leader_ role, each of those leaderships will be transferred to other Core Servers.
-Once the new Leader is established, the Core cluster continues albeit with less redundancy.
+If the leaver happened to be playing the Leader role at the point of leaving, it will be transitioned to another Core Server after a brief election.
 
-If more members than the current fault tolerance leaves the cluster within a very short time period, the cluster cannot proceed and will lose quorum.
-However, if members are gradually lost, the cluster may have time to reduce the size of the cluster.
-A Core cluster of 5 members reduced to 3 can still continue operate normally with a fault tolerance reduced from 2 to 0.
-After the Raft protocol votes out the lost members which reduces the cluster size to 3, our fault tolerance has been increased from 0 to 1, and can lose yet another member and keep operating.
-This is because the Raft protocol has had time to vote out the lost members, and changed the cluster size of 5 (fault tolerance of 2) to 3 (fault tolerance of 1).
+An unclean shutdown does not directly inform the cluster that a Core Server has left.
+Instead the Core cluster size remains the same for purposes of computing majorities for commits.
+Thus an unclean shutdown in a cluster of 5 Core Servers now requires 3/4 members to agree to commit which is a tighter margin than 3/5 before the unclean shutdown.
 
 [NOTE]
 ====
-Raft may only reduce a cluster size to the configured xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_runtime[causal_clustering.minimum_core_cluster_size_at_runtime].
-Once the cluster has reached this size, it will stop voting out members.
+Of course when Core Servers fail, operators or monitoring scripts can be alerted so that they can intervene in the cluster if necessary.
 ====
+
+If the leaver was playing the Leader role, there will be a brief election to produce a new Leader.
+Once the new Leader is established, the Core cluster continues albeit with less redundancy.
+However even with this failure, a Core cluster of 5 servers reduced to 4 can still tolerate one more fault before becoming read-only.

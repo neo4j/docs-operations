@@ -1,124 +1,24 @@
-:description: How to set up SSL within your environment, how to view, validate, and test the certificates. 
 [[ssl-framework]]
 = SSL framework
-:description: Describes how to set up SSL within your environment, how to view, validate, and test the certificates.  
+:description: Describes SSL/TLS integration for securing communication channels in Neo4j. 
 
-The SSL framework provides support for securing the following Neo4j communication channels using standard SSL/TLS technology:
-
-* `bolt` (port - `7687`)
-* `https` (port - `7473`)
-* `cluster` (ports - `5000`, `6000`, and `7000`)
-* `backups` (port - `6362`)
-
-[[ssl-providers]]
-== SSL providers
-
-The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
-
-Follow these steps to use OpenSSL:
-
-- Install a suitable dependency into the `plugins/` folder of Neo4j.
-
-[NOTE]
-====
-Dependencies can be downloaded from https://netty.io/wiki/forked-tomcat-native.html.
-Which dependencies you need depends upon the Neo4j version.
-Each version of Neo4j ships with a version of Netty and Netty requires specific tcnative versions.
-See table below.
-====
-
-- Using non static versions of tcnative will require installation of platform-specific OpenSSL dependencies as described in https://netty.io/wiki/forked-tomcat-native.html.
-- Set `xref:reference/configuration-settings.adoc#config_dbms.netty.ssl.provider[dbms.netty.ssl.provider]=OPENSSL`.
-- Restart Neo4j
-
-Most supported versions of Neo4j use Netty 41.77.Final, which requires tcnative 2.0.52.
-Only Neo4j 3.5 still uses older versions of Netty.
-See the table below for detailed information:
-
-[options="header", cols="1,1,2,3"]
-|===
-| Neo4j version
-| Netty version
-| tcnative version
-| Direct link
-
-| 5.0
-| 4.1.77.Final
-| 2.0.52.Final. Both netty-tcnative-boringssl-static and netty-tcnative-classes are required
-| https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
-https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
-
-| 4.4.9
-| 4.1.77.Final
-| 2.0.52.Final
-| https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
-https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
-
-| 4.3.15
-| 4.1.77.Final
-| 2.0.52.Final
-| https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
-https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
-
-| 3.5.34
-| 3.9.9.Final + 4.1.68.Final
-| 2.0.42.Final
-| https://search.maven.org/artifact/io.netty/netty-tcnative/2.0.42.Final/jar
-|===
+Neo4j supports the securing of communication channels using standard SSL/TLS technology.
 
 
-[NOTE]
-====
-Using OpenSSL can significantly improve performance, especially for AES-GCM-cryptos, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256.
-====
+[[ssl-introduction]]
+== Introduction
+
+The SSL support is enabled per communication channel and requires SSL certificates encoded in the `PEM` format.
+The process is described in the following sections.
 
 [[ssl-certificates]]
 == Certificates
 
-The SSL configuration requires SSL xref:security/ssl-framework.adoc#term-ssl-certificate[certificates] to be issued by Certificate Authority (CA). 
-All Certificates and the private key must be in `PEM` format.
+The instructions in this section assume that you have already acquired the required xref:security/ssl-framework.adoc#term-ssl-certificate[certificates].
 
-[TIP]
-====
-If the same certificates are used across all instances of the cluster, make sure that when generating the certificates to include the DNS names of all the cluster instances in the certificates. 
-Multi-host and wildcard certificates are also supported.
-====
-
-The instructions on this page assume that you have already obtained the required certificates from the CA.
-
-=== Validate the key and the certificate
-
-If you need, you can validate the key file and the certificate as follows:
-
-.Validate the key
-[source, shell]
-----
-openssl rsa -in private.key -check 
-----
-
-.Validate certificate in the PEM format
-[source, shell]
-----
-PEM - $openssl x509 -in public.crt –text –noout
-DER - $openssl x509 -in certificate.der -inform der -text -noout
-----
-
-=== Transform the certificates
-
-Neo4j requires all SSL certificates to be in the `PEM` format. 
-If your certificate is in the `DER` format, you must transform it into `PEM` format. 
-
-.Transform `DER` format certificate to `PEM` format
-[source, shell]
-----
-openssl x509 -in cert.crt -inform der -outform pem -out cert.pem
-----
-
-.Transform `PEM` format certificate to `DER` format
-[source, shell]
-----
-openssl x509 -in cert.crt -outform der -out cert.der
-----
+All certificates must be in the `PEM` format, and they can be combined into one file.
+The private key is also required to be in the `PEM` format.
+Multi-host and wildcard certificates are supported.
 
 [[ssl-connectors]]
 == Connectors
@@ -126,7 +26,7 @@ openssl x509 -in cert.crt -outform der -out cert.der
 Before enabling SSL support, you must ensure the following connector configurations to avoid errors:
 
 * Set `dbms.connector.https.enabled` to `true` when using HTTPS.
-* Set `dbms.connector.bolt.tls_level` to `REQUIRED` or `OPTIONAL` when using Bolt.
+* Set `dbms.connector.bolt.tls_level` to `REQUIRED` or `OPTIONAL` when using Bolt. 
 
 For more information on configuring connectors, see xref:configuration/connectors.adoc[Configure connectors].
 
@@ -137,855 +37,115 @@ The SSL policies are configured by assigning values to parameters of the followi
 
 `dbms.ssl.policy.<scope>.<setting-suffix>`
 
-* `scope` is the name of the communication channel, such as `bolt`, `https`, `cluster`, `backup`, and `fabric`.
-* `setting-suffix` can be any of the following:
-+
-[options="header"]
-|===
-| Setting suffix         | Description                                                                            | Default value
-3+^.^| *Basic*
-| `enabled`              | Setting this to `true` enables this policy.                                        | `false`
-| `base_directory`       | The base directory under which <term-ssl-cryptographic-objects, cryptographic objects>> are searched for by default.      | `certificates/<scope>`
-| `private_key`          | The private key used for authenticating and securing this instance.                    | `private.key`
-| `private_key_password` | The passphrase to decode the private key.
-                           Only applicable for encrypted private keys.                                            |
-| `public_certificate`   | A public certificate matching the private key signed by a CA.  | `public.crt`
-| `trusted_dir`          | A directory populated with certificates of trusted parties.                            | `trusted/`
-| `revoked_dir`          | A directory populated with certificate revocation lists (CRLs).                        | `revoked/`
-3+^.^| *Advanced*
-| `verify_hostname`      | Enabling this setting turns on client-side hostname verification.
-                           After receiving the server's public certificate, the client compares the
-                           address it uses against the certificate Common Name (CN) and Subject Alternative
-                           Names (SAN) fields.
-                           If the address does not match those fields, the client disconnects.            | `false`
-| `ciphers`              | A comma-separated list of ciphers suits allowed during cipher negotiation.
-                           Valid values depend on the current JRE and SSL provider. 
-                           For Ciphers supported by the Oracle JRE, see the link:https://docs.oracle.com/en/java/javase/11/docs/specs/security/standard-names.html#jsse-cipher-suite-names[Oracle official documentation].
-| Java platform default allowed cipher suites.
-| `tls_versions`         | A comma-separated list of allowed TLS versions.                                        | `TLSv1.2`
-| `client_auth`          | Whether or not clients must be authenticated.
-                           Setting this to `REQUIRE` enables mutual authentication for servers.
-                           Other possible values are `NONE` and `OPTIONAL`.           | `OPTIONAL` for `bolt` and `https`; + 
-                            `REQUIRE` for `cluster` and `backup`.
-| `trust_all`            | Setting this to `true` results in all clients and servers to be trusted and the content of the `trusted_dir` directory to be ignored.
-                           Use this only as a mean of debugging, since it does not offer security.
-| `false`
-|===
-
-[NOTE]
-====
-For security reasons, Neo4j does not automatically create any of these directories.
-Therefore, the creation of an SSL policy requires the appropriate file system structure to be set up manually.
-Note that the existence of the directories, the certificate file, and the private key are mandatory.
-Ensure that only the Neo4j user can read the private key.
-====
+The `scope` is the name of the communication channel, and must be one of `bolt`, `https`, `cluster`, `backup` or `fabric`.
 
 Each policy needs to be explicitly enabled by setting:
 
 `dbms.ssl.policy.<scope>.enabled=true`
 
-[[ssl-bolt-config]]
-=== Configure SSL over Bolt
 
-Bolt protocol is based on the link:https://neo4j.com/docs/bolt/current/packstream/[PackStream serialization] and supports the Cypher type system, protocol versioning, authentication, and TLS via certificates. 
-For Neo4j clusters, Bolt provides smart client routing with load balancing and failover. 
-Bolt connector is used by Cypher Shell, Neo4j Browser, and by the officially supported language drivers. 
-Bolt connector is enabled by default but its encryption is disabled. 
-To enable the encryption over Bolt, create the folder structure and place the key file and the certificates under those. 
-Then, you need to configure the SSL Bolt policies in the _neo4j.conf_ file.
+[[ssl-settings]]
+=== Settings
 
-. Enable the Bolt connector to enable SSL over Bolt:
-+
-[source, properties]
-----
-dbms.connector.bolt.enabled=true (default is true)
-----
+The valid values for `setting-suffix` are described below.
 
-. Set up the _bolt_ folder under _certificates_.
-.. Create a directory _bolt_ under _<neo4j-home>/certificates_ folder:
-+
-[source, shell]
-----
-mkdir certificates/bolt
-----
-
-.. Create a directory _trusted_ and _revoked_ under _<neo4j-home>/certificates/bolt_ folder:
-+
-[source, shell]
-----
-mkdir certificates/bolt/trusted
-mkdir certificates/bolt/revoked
-----
-
-. Place the certificates _private.key_ and the _public.crt_ files under _<neo4j-home>/certificates/bolt_ folder:
-+
-[source, shell]
-----
-cp /path/to/certs/private.key certificates/bolt
-cp /path/to/certs/public.crt certificates/bolt
-----
-. Place the _public.crt_ file under the _<neo4j-home>/certificates/bolt/trusted_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/bolt/trusted
-----
-. (Optional) If a particular certificate is revoked, then place it under _<neo4j-home>/certificates/bolt/revoked_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/bolt/revoked
-----
-+
-The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
-[options="header", cols="3,1,4*m"]
+[options="header"]
 |===
-| Path
-| Directory/File
-| Owner
-| Group
-| Permission
-| Unix/Linux View
-
-| /data/neo4j/certificates/bolt
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/bolt/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/bolt/private.key
-| File
-| neo4j
-| neo4j
-| 0400
-| -r--------
-
-| /data/neo4j/certificates/bolt/trusted
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/bolt/trusted/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/bolt/revoked
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
+| Setting suffix         | Description                                                                            | Default value
+3+^.^| *Basic*
+| `enabled`              | Setting this to `true` will enable this policy.                                        | `false`
+| `base_directory`       | The base directory under which cryptographic objects are searched for by default.      | `certificates/<scope>`
+| `private_key`          | The private key used for authenticating and securing this instance.                    | `private.key`
+| `private_key_password` | The passphrase to decode the private key.
+                           Only applicable for encrypted private keys.                                            |
+| `public_certificate`   | A public certificate matching the private key signed by a Certificate Authority (CA).  | `public.crt`
+| `trusted_dir`          | A directory populated with certificates of trusted parties.                            | `trusted/`
+| `revoked_dir`          | A directory populated with certificate revocation lists (CRLs).                        | `revoked/`
+3+^.^| *Advanced*
+| `verify_hostname`      | Enabling this setting will turn on client-side hostname verification.
+                           After the client has received the servers public certificate, it will compare the
+                           address it used against the certificate Common Name (CN) and Subject Alternative
+                           Names (SAN) fields.
+                           If the address used doesn’t match those fields, the client will disconnect.            | `false`
+| `ciphers`              | A comma-separated list of ciphers suits that will be allowed during cipher negotiation.
+                           Valid values depend on the current JRE and SSL provider, see note below for examples.  | Java platform default allowed cipher suites
+| `tls_versions`         | A comma-separated list of allowed TLS versions.                                        | `TLSv1.2`
+| `client_auth`          | Whether or not clients must be authenticated.
+                           Setting this to `REQUIRE` effectively enables mutual authentication for servers.
+                           Available values given to this setting are `NONE`, `OPTIONAL`, or `REQUIRE`.           | `OPTIONAL` for `bolt` and `https` and `REQUIRE` for `cluster` and `backup`.
+| `trust_all`            | Setting this to `true` will result in all clients and servers being trusted.
+                           The content of the `trusted_dir` directory will be ignored.
+                           Use of this is discouraged, since it will not offer security.
+                           It is provided as a mean of debugging.                                                 | `false`
 |===
-+
-[TIP]
+
+[NOTE]
 ====
-The owner/group should be configured to the user/group that will be running the `neo4j` service. 
-Default user/group is neo4j/neo4j.
+Ciphers supported by the Oracle JRE can be found here:
+https://docs.oracle.com/en/java/javase/11/docs/specs/security/standard-names.html#jsse-cipher-suite-names
 ====
 
-. Set the Bolt SSL configuration in _neo4j.conf_.
-.. Set the SSL Bolt policy to `true`:
-+
+For security reasons, Neo4j will not attempt to automatically create any of these directories.
+The creation of an SSL policy therefore requires the appropriate file system structure to be set up manually.
+Note that the existence of the directories is mandatory, as well as the presence of the certificate file and the private key.
+Ensure correct permissions are set on the private key, such that only the Neo4j user can read it.
+
+[[ssl-bolt-example]]
+.Enable Bolt SSL
+====
+
+In this example we will configure Bolt to use SSL/TLS.
+As the simplest configuration possible, we will just enable it in _neo4j.conf_ and rely on the default values:
+
 [source, properties]
 ----
 dbms.ssl.policy.bolt.enabled=true
 ----
-.. Set the appropriate certificates path and the right key and cert files:
-+
-[source, properties]
-----
-dbms.ssl.policy.bolt.base_directory=certificates/bolt
-dbms.ssl.policy.bolt.private_key=private.key
-dbms.ssl.policy.bolt.public_certificate=public.crt
-----
-+
-[TIP]
-====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
-====
 
-.. Set the Bolt client authentication to `NONE` to disable the mutual authentication:
-+
-[source, properties]
-----
-dbms.ssl.policy.bolt.client_auth=NONE
-----
+Then create the mandatory directories:
 
-.. Set the Bolt TLS level to allow the connector to accept encrypted and/or unencrypted connections:
-+
-[source, properties]
-----
-dbms.connector.bolt.tls_level=REQUIRED (default is DISABLED)
-----
-+
-[TIP]
-====
-In Neo4j version 3.5, the default value is `OPTIONAL`.
-In the Neo4j 4.x versions, the default value is `DISABLED`, where only unencrypted client connections are to be accepted by this connector, and all encrypted connections will be rejected. 
-Use `REQUIRED` when only encrypted client connections are to be accepted by this connector, and all unencrypted connections will be rejected. 
-Use `OPTIONAL` where either encrypted or unencrypted client connections are accepted by this connector.
-====
-
-. Test the SSL connection to the specified host and Bolt port and view the certificate:
-+
 [source, shell]
 ----
-openssl s_client -connect my_domain.com:7687
+$neo4j-home> mkdir certificates/bolt
+$neo4j-home> mkdir certificates/bolt/trusted
+$neo4j-home> mkdir certificates/bolt/revoked
 ----
 
-[[ssl-bolt-connect]]
-=== Connect with SSL over Bolt
+Finally, place the files _private.key_ and _public.crt_ into the base directory:
 
-Each of the `neo4j` and `bolt` URI schemes permit variants that contain extra encryption and trust information. 
-The `+s` variants enable encryption with a full certificate check. 
-The `+ssc` variants enable encryption with no certificate check. 
-This latter variant is designed specifically for use with self-signed certificates.
-
-[options="header", cols="1m,1,3"]
-|===
-| URI Scheme
-| Routing
-| Description
-
-| neo4j
-| Yes
-| Unsecured
-
-| neo4j+s
-| Yes
-| Secured with full certificate
-
-| neo4j+ssc
-| Yes
-| Secured with self-signed certificate
-
-| bolt
-| No
-| Unsecured
-
-| bolt+s
-| No
-| Secured with full certificate
-
-| bolt+ssc
-| No
-| Secured with self-signed certificate
-|===
-
-Once SSL is enabled over Bolt, you can connect to the Neo4j DBMS using `neo4j+s` or `bolt+s`:
-
-Cypher Shell::
-[source, shell]
----- 
-cypher-shell -a neo4j+s://<Server DNS or IP>:<Bolt port>
-
-or
-
-cypher-shell -a bolt+s://<Server DNS or IP>:<Bolt port>
-----
-
-Neo4j Browser::
-From the *Connect URL* dropdown menu, select the URI scheme you want to use (`neo4j+s` or `bolt+s`).
-+
-[NOTE]
-====
-URI schemes ending `+ssc` are not supported by Neo4j Browser since the browser’s OS handles certificate trust. 
-If it is necessary to connect to a Neo4j instance using a self-signed certificate from Neo4j Browser, first visit a web page that uses the self-signed certificate in order to prompt the browser to request that certificate trust be granted. 
-Once that trust has been granted, you can connect with URI schemes ending `+s`.
-====
-
-[[ssl-https-config]]
-=== Configure SSL over HTTPS
-
-HTTP(s) is used by the Neo4j Browser and the HTTP API.  
-HTTPS (secure HTTP) is set to encrypt network communications. 
-To enable the encryption over HTTPS, create the folder structure and place the key file and the certificates under those. 
-Then, you need to configure the SSL HTTPS policies in the _neo4j.conf_ file and disable the HTTP connector.
-
-. Enable the HTTPS connector to enable SSL over HTTPS:
-+
-[source, properties]
-----
-dbms.connector.https.enabled=true (default is false)
-----
-
-. Set up the _https_ folder under _certificates_.
-.. Create a directory _https_ under _<neo4j-home>/certificates_ folder:
-+
 [source, shell]
 ----
-mkdir certificates/https
+$neo4j-home> cp /path/to/certs/private.key certificates/bolt
+$neo4j-home> cp /path/to/certs/public.crt certificates/bolt
 ----
 
-.. Create a directory _trusted_ and _revoked_ under _<neo4j-home>/certificates/https_ folder:
-+
+The base directory should now show the following listings:
+
 [source, shell]
 ----
-mkdir certificates/https/trusted
-mkdir certificates/https/revoked
+$neo4j-home> ls certificates/bolt
+-r-------- ... private.key
+-rw-r--r-- ... public.crt
+drwxr-xr-x ... revoked
+drwxr-xr-x ... trusted
 ----
-
-. Place the certificates _private.key_ and the _public.crt_ files under _<neo4j-home>/certificates/https_ folder:
-+
-[source, shell]
-----
-cp /path/to/certs/private.key certificates/https
-cp /path/to/certs/public.crt certificates/https
-----
-. Place the _public.crt_ file under the _<neo4j-home>/certificates/https/trusted_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/https/trusted
-----
-. (Optional) If a particular certificate is revoked, then place it under _<neo4j-home>/certificates/https/revoked_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/https/revoked
-----
-+
-The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
-[options="header", cols="3,1,4*m"]
-|===
-| Path
-| Directory/File
-| Owner
-| Group
-| Permission
-| Unix/Linux View
-
-| /data/neo4j/certificates/https
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/https/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/https/private.key
-| File
-| neo4j
-| neo4j
-| 0400
-| -r--------
-
-| /data/neo4j/certificates/https/trusted
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/https/trusted/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/https/revoked
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-|===
-+
-[TIP]
-====
-The owner/group should be configured to the user/group that will be running the `neo4j` service. 
-Default user/group is neo4j/neo4j.
 ====
 
-. Set the HTTPS SSL configuration in _neo4j.conf_.
-.. Set the SSL HTTPS policy to `true`:
-+
-[source, properties]
-----
-dbms.ssl.policy.https.enabled=true
-----
-.. Set the appropriate certificates path and the right key and cert files:
-+
-[source, properties]
-----
-dbms.ssl.policy.https.base_directory=certificates/https
-dbms.ssl.policy.https.private_key=private.key
-dbms.ssl.policy.https.public_certificate=public.crt
-----
-+
-[TIP]
-====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
-====
 
-.. Set the HTTPS client authentication to `NONE` to disable the mutual authentication:
-+
-[source, properties]
-----
-dbms.ssl.policy.https.client_auth=NONE
-----
+[[ssl-providers]]
+== Choosing an SSL provider
 
-.. Disable HTTP connector:
-+
-[source, properties]
-----
-dbms.connector.http.enabled=false
-----
+The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
 
-. Test the SSL connection to the specified host and HTTPS port and view the certificate:
-+
-[source, shell]
-----
-openssl s_client -connect my_domain.com:7473
-----
+Follow these steps to utilize OpenSSL:
 
-
-[[ssl-cluster-config]]
-=== Configure SSL for intra-cluster communications
-
-Intra-cluster encryption is the security solution for the cluster communication.
-The Neo4j cluster communicates on 3 ports:
-
-* 5000 - Discovery management
-* 6000 - Transactions
-* 7000 - Raft communications
- 
-To set up intra-cluster encryption, on each server create the folder structure and place the key file and the certificates under those. 
-Then, you need to configure the SSL cluster policies in the _neo4j.conf_ file and test that the intra-cluster communication is encrypted. 
-
-. Set up the _cluster_ folder under _certificates_.
-.. Create a directory _cluster_ under_<neo4j-home>/certificates_ folder:
-+
-[source, shell]
-----
-mkdir certificates/cluster
-----
-
-.. Create a directory _trusted_ and _revoked_ under _<neo4j-home>/certificates/cluster_ folder:
-+
-[source, shell]
-----
-mkdir certificates/cluster/trusted
-mkdir certificates/cluster/revoked
-----
-
-. Place the certificates _private.key_ and the _public.crt_ files under _<neo4j-home>/certificates/cluster_ folder:
-+
-[source, shell]
-----
-cp /path/to/certs/private.key certificates/cluster
-cp /path/to/certs/public.crt certificates/cluster
-----
-. Place the _public.crt_ file under the _<neo4j-home>/certificates/cluster/trusted_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/cluster/trusted
-----
-+
-[TIP]
-====
-If each server has a certificate of its own, signed by a CA, then each server's public certificate has to be put in the _trusted_ folder on each instance of the cluster. 
-Thus, the servers are able to establish trust relationships with each other.
-====
-. (Optional) If a particular certificate is revoked, then place it under _<neo4j-home>/certificates/cluster/revoked_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/cluster/revoked
-----
-+
-The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
-[options="header", cols="3,1,4*m"]
-|===
-| Path
-| Directory/File
-| Owner
-| Group
-| Permission
-| Unix/Linux View
-
-| /data/neo4j/certificates/cluster
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/cluster/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/cluster/private.key
-| File
-| neo4j
-| neo4j
-| 0400
-| -r--------
-
-| /data/neo4j/certificates/cluster/trusted
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/cluster/trusted/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/cluster/revoked
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-|===
-+
-[TIP]
-====
-The owner/group should be configured to the user/group that will be running the `neo4j` service. 
-Default user/group is neo4j/neo4j.
-====
-
-. Set the cluster SSL configuration in _neo4j.conf_.
-.. Set the cluster SSL policy to `true`:
-+
-[source, properties]
-----
-dbms.ssl.policy.cluster.enabled=true
-----
-.. Set the appropriate certificates path and the right key and cert files:
-+
-[source, properties]
-----
-dbms.ssl.policy.cluster.base_directory=certificates/cluster
-dbms.ssl.policy.cluster.private_key=private.key
-dbms.ssl.policy.cluster.public_certificate=public.crt
-----
-+
-[TIP]
-====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
-====
-
-.. Set the cluster client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
-+
-[source, properties]
-----
-dbms.ssl.policy.cluster.client_auth=REQUIRE
-----
-+
-[NOTE]
-====
-The policy must be configured on every server with the same settings. 
-The actual xref:security/ssl-framework.adoc#term-ssl-cryptographic-objects[cryptographic objects] installed will be mostly different since they do not share the same private keys and corresponding certificates. 
-The trusted CA certificate will be shared however.
-====
-
-.. Verify that the intra-cluster communication is encrypted. 
-You may use an external tooling, such as Nmap (https://nmap.org/download.html):
-+
-[source, shell]
-----
-nmap --script ssl-enum-ciphers -p <port> <hostname>
-----
-+
-[NOTE]
-====
-The hostname and port have to be adjusted according to your configuration. 
-This can prove that TLS is in fact enabled and that only the intended cipher suites are enabled. 
-All servers and all applicable ports should be tested.
-If the intra-cluster encryption is enabled, the output should indicate the port is open and it is using TLS with the ciphers used. 
-====
-
-[TIP]
-====
-For more details on securing the comunication between the cluster servers, see <<causal-clustering-intra-cluster-encryption>>.
-====
-
-[[ssl-backup-config]]
-=== Configure SSL for backup communication
-
-In a single instance, by default the backup communication happens on port `6362`.
-In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup.
-These ports are configured by `dbms.backup.listen.address` (port `6362`) and `causal_clustering.transaction_listen_address` (port `6000`) respectively.
-If the intra-cluster encryption is enabled and the backup communication is using port `6000`, then your communication channels are already encrypted.
-The following steps assumes that your backup is set up on a different port. 
-
-To set up SSL for backup communication, create the folder structure and place the key file and the certificates under those. 
-Then, you need to configure the SSL backup policies in the _neo4j.conf_ file. 
-
-. Set up the _backup_ folder under _certificates_.
-.. Create a directory _backup_ under _<neo4j-home>/certificates_ folder:
-+
-[source, shell]
-----
-mkdir certificates/backup
-----
-
-.. Create a directory _trusted_ and _revoked_ under _<neo4j-home>/certificates/backup_ folder:
-+
-[source, shell]
-----
-mkdir certificates/backup/trusted
-mkdir certificates/backup/revoked
-----
-
-. Place the certificates _private.key_ and the _public.crt_ files under _<neo4j-home>/certificates/backup_ folder:
-+
-[source, shell]
-----
-cp /path/to/certs/private.key certificates/backup
-cp /path/to/certs/public.crt certificates/backup
-----
-. Place the _public.crt_ file under the _<neo4j-home>/certificates/backup/trusted_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/backup/trusted
-----
-. (Optional) If a particular certificate is revoked, then place it under _<neo4j-home>/certificates/backup/revoked_ folder.
-+
-[source, shell]
-----
-cp /path/to/certs/public.crt certificates/backup/revoked
-----
-+
-The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
-[options="header", cols="3,1,4*m"]
-|===
-| Path
-| Directory/File
-| Owner
-| Group
-| Permission
-| Unix/Linux View
-
-| /data/neo4j/certificates/backup
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/backup/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/backup/private.key
-| File
-| neo4j
-| neo4j
-| 0400
-| -r--------
-
-| /data/neo4j/certificates/backup/trusted
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-
-| /data/neo4j/certificates/backup/trusted/public.crt
-| File
-| neo4j
-| neo4j
-| 0644
-| -rw-r--r--
-
-| /data/neo4j/certificates/backup/revoked
-| Directory
-| neo4j
-| neo4j
-| 0755
-| drwxr-xr-x
-|===
-+
-[TIP]
-====
-The owner/group should be configured to the user/group that will be running the `neo4j` service. 
-Default user/group is neo4j/neo4j.
-====
-
-. Set the backup SSL configuration in _neo4j.conf_.
-.. Set the backup SSL policy to `true`:
-+
-[source, properties]
-----
-dbms.ssl.policy.backup.enabled=true
-----
-.. Set the appropriate certificates path and the right key and cert files:
-+
-[source, properties]
-----
-dbms.ssl.policy.backup.base_directory=certificates/backup
-dbms.ssl.policy.backup.private_key=private.key
-dbms.ssl.policy.backup.public_certificate=public.crt
-----
-+
-[TIP]
-====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
-====
-
-.. Set the backup client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
-+
-[source, properties]
-----
-dbms.ssl.policy.backup.client_auth=REQUIRE
-----
-
-[[ssl-other-configs]]
-=== Other configurations for SSL
-
-==== Using encrypted private key 
-
-To use an encrypted private key, configure the following settings.
-The private key password must be clear text format without any quotes. 
-
-.Bolt
-[source, properties]
-----
-dbms.ssl.policy.bolt.private_key_password=<clear text password>
-----
-
-.HTTPS
-[source, properties]
-----
-dbms.ssl.policy.https.private_key_password=<password>
-----
-
-.Intra-cluster encryption
-[source, properties]
-----
-dbms.ssl.policy.cluster.private_key_password=<password>
-----
-
-.Backup
-[source, properties]
-----
-dbms.ssl.policy.backup.private_key_password=<password>
-----
-
-If hardcoding of clear text private key password is not feasible due to security constraints, it can be set up to use dynamic password pickup:
-
-[source, properties]
-----
-dbms.ssl.policy.bolt.private_key_password=$(openssl aes-256-cbc -a -d -in /opt/neo4j/etc/neo4j/neo4j_cert_pwd.enc -kfile  /opt/neo4j/var/lib/neo4j/certificates/bolt/neo4j.cert)
----- 
+. Install a suitable dependency into the `plugins/` folder of Neo4j.
+  Dependencies can be downloaded from https://netty.io/wiki/forked-tomcat-native.html.
+. Set `xref:reference/configuration-settings.adoc#config_dbms.netty.ssl.provider[dbms.netty.ssl.provider]=OPENSSL`.
 
 [NOTE]
-====
-Using a dynamic command requires Neo4j to be started with the `--expand-commands` option.
-For more information, see xref:configuration/neo4j-conf.adoc#neo4j-conf-expand-commands[Command expansion]. 
-====
+Using OpenSSL can significantly improve performance, especially for AES-GCM-cryptos, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256.
 
-==== Using specific cipher
-
-There are cases where Neo4j Enterprise requires the use of specific ciphers for encryptions. 
-One can set up a Neo4j configuration by specifying the list of cipher suits that will be allowed during cipher negotiation. 
-Valid values depend on the current JRE and SSL provider. 
-For Oracle JRE here is the list of supported ones - https://docs.oracle.com/en/java/javase/11/docs/specs/security/standard-names.html#jsse-cipher-suite-names.
-
-.Bolt
-[source, properties]
-----
-dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
-----
-
-.HTTPS
-[source, properties]
-----
-dbms.ssl.policy.https.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
-----
-
-.Intra-cluster encryption
-[source, properties]
----- 
-dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
-----
-
-.Backup
-[source, properties]
-----
-dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
-----
-
-[[ssl-ocsp-config]]
-=== Using OCSP stapling
-
-From version 4.2, Neo4j supports OCSP stapling, which is implemented on the server side, and can be configured in the _neo4j.config_ file. 
-OCSP stapling is also available for Java Bolt driver and HTTP API. 
-
-On the server side in the _neo4j.conf_ file, configure the following settings:
-
-. Set the SSL Bolt policy to `true`:
-+
-[source, properties]
-----
-dbms.ssl.policy.bolt.enabled=true
-----
-. Enable the OCSP stapling for Bolt:
-+
-[source, properties]
-----
-dbms.connector.bolt.ocsp_stapling_enabled=true (default = false)
-----
-
-[[ssl-logging]]
-== SSL logs
-
-All information related to SSL can be found in the _debug.log_ file.
-You can also enable additional debug logging for SSL by adding the following configuration to the _neo4j.conf_ file and restarting Neo4j.
-
-[source, properties]
----- 
-dbms.jvm.additional=-Djavax.net.debug=ssl:handshake
-----
-
-This will log additional information in the _neo4j.log_ file. 
-In some installations done using `rpm` based installs, _neo4j.log_ is not created. 
-To get the contents of this, since _neo4j.log_ just contains `STDOUT` content, look for the `neo4j` service log contents using `journalctl`:
-
-[source]
----- 
-neo4j@ubuntu:/var/log/neo4j$ journalctl -u neo4j -b > neo4j.log
-neo4j@ubuntu:/var/log/neo4j$ vi neo4j.log
-----
 
 [[ssl-terminology]]
 == Terminology

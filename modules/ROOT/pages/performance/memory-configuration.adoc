@@ -12,71 +12,46 @@ image::neo4j-memory-management.svg[title="Neo4j memory management", role="middle
 [.compact]
 *OS memory*::
 Some memory must be reserved for running the processes of the operating system itself.
-It is not possible to explicitly configure the amount of RAM that should be reserved for the operating system, as this is what RAM remains available after configuring Neo4j.
-If you do not leave enough space for the OS, it will start to swap memory to disk, which will heavily affect performance.
+It is not possible to explicitly configure the amount of RAM that should be reserved for the operating system, as this is what RAM remains available after configuring page cache and heap space.
+However, if you do not leave enough space for the OS, it will start swapping to disk, which will heavily affect performance.
 +
 1GB is a good starting point for a server that is dedicated to running Neo4j.
 However, there are cases where the amount reserved for the OS is significantly larger than 1GB, such as servers with exceptionally large RAM.
 
-*JVM Heap*::
-The JVM heap is a separate dynamic memory allocation that Neoj4 uses to store instantiated Java objects.
-The memory for the Java objects are managed automatically by a garbage collector.
-Particularly important is that a garbage collector automatically handles the deletion of unused objects.
-For more information on how the garbage collector works and how to tune it, see xref:performance/gc-tuning.adoc[Tuning of the garbage collector].
-+
-The heap memory size is determined by the parameters `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.initial_size[dbms.memory.heap.initial_size]` and `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.max_size[dbms.memory.heap.max_size]`.
-It is recommended to set these two parameters to the same value to avoid unwanted full garbage collection pauses.
-+
-Generally, to aid performance, you should configure a large enough heap to sustain concurrent operations.
-
-*Native memory*::
-Native memory, sometimes referred to as off-heap memory, is memory directly allocated by Neo4j from the OS.
-This memory will grow dynamically as needed and is not subject to the garbage collector.
-
-*DBMS*::
-The database management system, or DBMS, contains the global components of the Neo4j instance.
-For example, the bolt server, logging service, monitoring service, etc.
-
-*Database*::
-Each database in the system comes with an overhead.
-In deployments with multiple databases, this overhead needs to be accounted for.
-
-*Transaction*::
-When executing a transaction, Neo4j holds not yet committed data, the result, and intermediate states of the queries in memory.
-The size needed for this is very dependent on the nature of the usage of Neo4j.
-For example, long-running queries, or very complicated queries, are likely to require more memory.
-Some parts of the transactions can optionally be placed off-heap, but for the best performance, it is recommended to keep the default with everything on-heap.
-+
-This memory group can be limited with the setting `xref:reference/configuration-settings.adoc#config_dbms.memory.transaction.global_max_size[dbms.memory.transaction.global_max_size]`.
+*Lucene index cache*::
+Neo4j uses https://lucene.apache.org/[Apache Lucene] for some of its indexing functionality.
+Index lookup performance is optimized by ensuring that the indexes are cached into memory.
+Similar to the OS memory, the Lucene index cache cannot be explicitly configured.
+Instead, you estimate the memory needed and make sure that there is enough headroom left for the Lucene indexes after the page cache and heap cache have been assigned.
 
 *Page cache*::
-The page cache is used to cache the Neo4j data stored on disk.
+The page cache is used to cache the Neo4j data and native indexes.
 The caching of graph data and indexes into memory helps avoid costly disk access and result in optimal performance.
 +
 The parameter for specifying how much memory Neo4j is allowed to use for the page cache is: `xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.size[dbms.memory.pagecache.size]`.
 
-*Network buffers*::
-Direct buffers are used by Neo4j to send and receive data.
-Direct byte buffers are important for improving performance because they allow native code and Java code to share data without copying it.
-However, they are expensive to create, which means byte buffers are usually reused once they are created.
-
-*Other shared buffers*::
-This includes unspecified shared direct buffers.
-
-*JVM overhead*::
-The JVM will require some memory to function correctly.
-For example, this can be:
-
-* *Thread stacks* – Each thread has its own call stack.
-The stack stores primitive local variables and object references along with the call stack (list of method invocations) itself.
-The stack is cleaned up as stack frames move out of context, so there is no GC performed here.
-
-* *Metaspace* – Metaspace stores the java class definitions and some other metadata.
-
-* *Code cache* – The JIT compiler stores the native code it generates in the code cache to improve performance by reusing it.
-
+*Heap size*::
+The heap space is used for query execution, transaction state, management of the graph, etc.
+The size needed for the heap is very dependent on the nature of the usage of Neo4j.
+For example, long-running queries, or very complicated queries, are likely to require a larger heap than simpler queries.
 +
-For more details and means of limiting the memory used by the JVM please consult your JVM documentation.
+Generally speaking, to aid performance, it is recommended to configure a large enough heap to sustain concurrent operations.
++
+In case of performance issues, you may have to tune your queries, and monitor their memory usage, in order to determine whether the heap needs to be increased.
++
+The heap memory size is determined by the parameters `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.initial_size[dbms.memory.heap.initial_size]` and `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.max_size[dbms.memory.heap.max_size]`.
+It is recommended to set these two parameters to the same value to avoid unwanted full garbage collection pauses.
+
+*Transaction state*::
+Transaction state is the memory that is needed to hold data and intermediate results in transactions that update records in the database.
+Queries that only read data do not require transaction state memory allocation.
+By default, transaction state is allocated off-heap.
+When the transaction state is allocated off-heap, the maximum size of the transaction state can be defined using the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_state.max_off_heap_memory[dbms.tx_state.max_off_heap_memory]`.
+Note that the transaction state memory is not pre-allocated; it will grow and shrink as needed by the activity in the database.
+Keeping transaction state off-heap is particularly beneficial to applications characterized by large, write-intensive transactions.
++
+Transaction state can also be configured to be allocated on-heap, by using the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_state.memory_allocation[dbms.tx_state.memory_allocation]`.
+Note that when the transaction state is configured on-heap, its maximum size cannot be specified.
 
 [[memory-configuration-considerations]]
 == Considerations
@@ -85,18 +60,18 @@ For more details and means of limiting the memory used by the JVM please consult
 [[memory-configuration-explicit]]
 Always use explicit configuration::
 To have good control of the system behavior, it is recommended to always define the page cache and heap size parameters explicitly in xref:configuration/file-locations.adoc[_neo4j.conf_].
-Otherwise, Neo4j computes some heuristic values at startup based on the available system resources.
+Otherwise, some heuristic values will be computed at startup based on the available system resources.
 
 [discrete]
 [[memory-configuration-initial]]
 Initial memory recommendation::
-Use the `xref:tools/neo4j-admin/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command to get an initial recommendation for how to distribute a certain amount of memory.
+Use the `xref:tools/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command to get an initial recommendation for how to distribute a certain amount of memory.
 The values may need to be adjusted to cater for each specific use case.
 
 [discrete]
 [[memory-configuration-database]]
 Inspect the memory settings of all databases in a DBMS::
-The `xref:tools/neo4j-admin/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command is useful for inspecting the current distribution of data and indexes.
+The `xref:tools/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command is useful for inspecting the current distribution of data and indexes.
 +
 .Use `neo4j-admin memrec` to inspect the memory settings of all your databases
 ====
@@ -120,10 +95,8 @@ Using this information, you can do a sanity check of your memory configuration:
 * For cases when _off-heap_ transaction state is used, estimate transactional workload and how much memory is left to the value of `dbms.tx_state.max_off_heap_memory`.
 * Compare the value for Lucene indexes to how much memory is left after assigning `dbms.memory.pagecache.size` and `dbms.memory.heap.initial_size`.
 
-[NOTE]
-In some production systems the access to memory is limited and must be negotiated between different areas.
+Note that in some production systems the access to memory is limited and must be negotiated between different areas.
 Therefore, it is recommended to perform a certain amount of testing and tuning of these settings to figure out the optimal division of the available memory.
-
 ====
 
 // Re-insert information about how index migration affects memory when there is a replacement for lucene+native-3.0
@@ -133,17 +106,6 @@ Therefore, it is recommended to perform a certain amount of testing and tuning o
 //The rebuilding of indexes will change the distribution of memory utilization.
 //In a database with many indexes, a significant amount of memory may have been reserved for Lucene.
 //After the rebuild, it could be necessary to allocate some of that memory to the page cache instead.
-
-[discrete]
-[[memory-configuration-heap-usage]]
-Limit transaction memory usage recommendation::
-The measured heap usage of all transactions is only an estimate and the actual heap utilization may be slightly larger or slightly smaller than the estimated value.
-In some cases, limitations of the estimation algorithm to detect shared objects at a deeper level of the memory graph could lead to overestimations.
-This is because a conservative estimate is given based on aggregated estimations of memory usage, where the identities of all contributing objects are not known, and cannot be assumed to be shared.
-For example, when you use link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/unwind[`UNWIND`] on a very large list, or expand a variable length or shortest path pattern, where many relationships are shared between the computed result paths.
-+
-In these cases, if you experience problems with a query that gets terminated, you can execute the same query with the xref:performance/memory-configuration.adoc#memory-configuration-limit-transaction-memory[transaction memory limit] disabled.
-If the actual heap usage is not too large, it might succeed without triggering an out-of-memory error.
 
 [[memory-configuration-capacity-planning]]
 == Capacity planning
@@ -214,7 +176,7 @@ You can see that the data volume and native indexes combined take up approximate
 
 . Multiply that number by 1.2 to size up the result, and allow for 20% growth.
 +
-`dbms.memory.pagecache.size` = 1.2 * (40GB) =  48GB
+`dbms.memory.pagecache.size` = 1.2 * (40GB) =  48GB
 
 . Configure the page cache by adding the following to _neo4j.conf_:
 +
@@ -224,32 +186,34 @@ dbms.memory.pagecache.size=48G
 ----
 ====
 
-[[memory-configuration-limit-transaction-memory]]
-== Limit transaction memory usage
-By using the `dbms.memory.transaction.global_max_size` setting you can configure a global maximum memory usage for all of the transactions running on the server.
-This setting must be configured low enough so that you do not run out of memory.
-If you are experiencing `OutOfMemory` messages during high transaction load, try to lower this limit.
+[[memory-configuration-query-heap]]
+== Configure query heap usage
+When running a Cypher query, Neo4j utilizes the heap internally for storing results.
+It may be difficult to predict how much memory a query needs.
+If a query ends up using too much memory, it could severely hamper the overall performance of the database.
 
-Neo4j also offers the following settings to provide fairness, which can help improve stability in multi-tenant deployments.
+There are two settings that can be enabled in _neo4j.conf_ to improve the heap utilization of Neo4j:
 
-* The setting xref:reference/configuration-settings.adoc#config_dbms.memory.transaction.database_max_size[`dbms.memory.transaction.database_max_size`] limits the transaction memory usage per database.
-* The setting xref:reference/configuration-settings.adoc#config_dbms.memory.transaction.max_size[`dbms.memory.transaction.max_size`] constrains each transaction.
+[source, properties]
+----
+dbms.track_query_allocation=true
+cypher.query_max_allocations.size=1G
+----
 
-When any of the limits are reached, the transaction is terminated without affecting the overall health of the database.
-
-To help configure these settings you can use the following commands to list the current usage:
+`dbms.track_query_allocation=true` enables Neo4j to track the heap utilization of all Cypher queries.
+You can view the utilization of running queries by calling:
 
 [source, cypher]
 ----
-CALL dbms.listPools()
-CALL dbms.listTransactions()
 CALL dbms.listQueries()
 ----
 
 Or alternatively, you can enable `dbms.logs.query.allocation_logging_enabled` and monitor the memory usage of each query in the _query.log_.
 
+The configuration `cypher.query_max_allocations.size` limits the amount of memory each query can use.
+Whenever that limit is reached, the query is terminated without affecting the overall health of the database.
+
 [NOTE]
-By default, transaction sizes are unconstrained.
-However, in a xref:clustering/introduction.adoc[Cluster] deployment, regardless of instance type, the maximum amount of memory each transaction is permitted to use is 2GB.
-Additionally, if your configuration contains xref:reference/configuration-settings.adoc#config_dbms.clustering.enable[`dbms.clustering.enable=true`],
-xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode=CORE`], or xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode=READ_REPLICA`], the largest value permitted for the xref:reference/configuration-settings.adoc#config_dbms.memory.transaction.max_size[`dbms.memory.transaction.max_size`] setting is also 2GB.
+--
+The heap-usage of query is only an estimate and the actual heap utilization might be slightly bigger or slightly smaller than the estimated value.
+--

@@ -5,6 +5,11 @@
 A Causal Cluster exposes some HTTP endpoints which can be used to monitor the health of the cluster.
 In this section we will describe these endpoints and explain their semantics.
 
+The section includes:
+
+* xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-adjusting-security-for-cc[Adjusting security settings for Causal Clustering endpoints]
+* xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-unified[Unified endpoints]
+
 
 [[causal-clustering-http-endpoints-adjusting-security-for-cc]]
 == Adjusting security settings for Causal Clustering endpoints
@@ -23,20 +28,16 @@ A unified set of endpoints exist, both on Core Servers and on Read Replicas, wit
 * `/db/<databasename>/cluster/writable` -- Used to direct `write` traffic to specific instances.
 * `/db/<databasename>/cluster/read-only` -- Used to direct `read` traffic to specific instances.
 * `/db/<databasename>/cluster/available` -- Available for the general case of directing arbitrary request types to instances that are available for processing read transactions.
-* `/db/<databasename>/cluster/status` -- Gives a detailed description of this instance's view of its status within the cluster, for the given database.
-* `/dbms/cluster/status` -- Gives a detailed description of this instance's view of its status within the cluster, for all databases.
+* `/db/<databasename>/cluster/status` -- Gives a detailed description of this instance's view of its own status within the cluster.
 //Remove until we have rolling upgrades in 4.x
 //Useful for monitoring and coordinating rolling upgrades.
-See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoints] for further details.
+See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for further details.
 
-Every `/db/<databasename>/*` endpoint targets a specific database.
-The `databaseName` path parameter represents the name of the database.
-By default, a fresh Neo4j installation with two databases `system` and `neo4j` will have the following cluster endpoints:
+Every endpoint targets a specific database with its own Raft-group. The `databaseName` path parameter represents the name of the database.
+By default, a fresh Neo4j installation will have endpoints for two databases `system` and `neo4j`:
 
 [source]
 --------------
-http://localhost:7474/dbms/cluster/status
-
 http://localhost:7474/db/system/cluster/writable
 http://localhost:7474/db/system/cluster/read-only
 http://localhost:7474/db/system/cluster/available
@@ -64,9 +65,6 @@ http://localhost:7474/db/neo4j/cluster/status
 .3+<.^| `/db/<databasename>/cluster/status`              <| Leader         | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
                                                          <| Follower       | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
                                                          <| Read Replica   | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
-.3+<.^| `/dbms/cluster/status`                           <| Leader         | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
-                                                         <| Follower       | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
-                                                         <| Read Replica   | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
 |===
 
 
@@ -79,7 +77,7 @@ Here are some examples:
 
 * Requesting `writable` endpoint on a Core Server that is currently elected leader with verbose output:
 
-[source, curl]
+[source, shell]
 --------------
 #> curl -v localhost:7474/db/neo4j/cluster/writable
 * About to connect() to localhost port 7474 (#0)
@@ -104,23 +102,14 @@ true* Closing connection #0
 
 
 [[causal-clustering-http-endpoints-status]]
-=== Status endpoints
+=== Status endpoint
 
 The  status endpoint, available at `/db/<databasename>/cluster/status`, is to be used to assist with rolling upgrades.
-For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/current/upgrade/upgrade-4.3/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
+For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/current/upgrade/upgrade-4.0/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
 
-Typically, you will want to have some guarantee that a Core is safe to shutdown for each database before removing it from a cluster.
-Counter intuitively, a core being safe to shutdown means that a majority of the *other* cores are healthy, caught up, and have recently heard from that database's leader.
-The status endpoints provide the following information in order to help resolve such issues.
+Typically, you will want to have some guarantee that a Core is safe to shutdown before removing it from a cluster.
+The status endpoint provides the following information in order to help resolve such issues:
 
-[NOTE]
-====
-Several of the fields in status endpoint responses refer to details of xref:clustering-advanced/lifecycle.adoc#causal-clustering-transacting-via-raft-protocol[Raft], the algorithm used in Neo4j Causal Clusters to provide highly available transactions.
-When using multiple databases, each database implements Raft independently.
-Therefore, details such as `leader` and `raftCommandsPerSecond` are database specific.
-====
-
-[[causal-clustering-http-endpoints-status-example]]
 .Example status response
 ====
 [source, json]
@@ -181,57 +170,4 @@ The following table explains how results can be compared.
 | `noMembersLagging`                         | For Core A with `lastAppliedRaftIndex` = `min`, and Core B with `lastAppliedRaftIndex` = `max`, `B.lastAppliedRaftIndex-A.lastAppliedRaftIndex<raftIndexLagThreshold`. | If there is a large difference in the applied indexes between Cores, then it could be dangerous to switch off a Core.
 |===
 
-[[combined-status-endpoints]]
-=== Combined status endpoints
-
-When using the status endpoints to support a rolling upgrade, you need to assess whether a Core is safe to shutdown for *all* databases.
-To avoid having to issue a separate request to each `/db/<databasename>/cluster/status` endpoint, you can use the `/dbms/cluster/status` instead.
-
-This endpoint returns a json array, the elements of which contain the same fields as the xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status-example[single database version], along with fields for for `databaseName` and `databaseUuid`.
-
-.Example combined status response
-====
-[source, json]
---------------
-[
-  {
-    "databaseName": "neo4j",
-    "databaseUuid": "f4dacc01-f88a-4512-b3bf-68f7539c941e",
-    "databaseStatus": {
-      "lastAppliedRaftIndex": -1,
-      "votingMembers": [
-        "0cff51ad-7cee-44cc-9102-538fc4544b95",
-        "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-        "99ca7cd0-6072-4387-bd41-7566a98c6afc"
-      ],
-      "memberId": "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-      "leader": "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-      "millisSinceLastLeaderMessage": 0,
-      "raftCommandsPerSecond": 0.0,
-      "core": true,
-      "participatingInRaftGroup": true,
-      "healthy": true
-    }
-  },
-  {
-    "databaseName": "system",
-    "databaseUuid": "00000000-0000-0000-0000-000000000001",
-    "databaseStatus": {
-      "lastAppliedRaftIndex": 7,
-      "votingMembers": [
-        "0cff51ad-7cee-44cc-9102-538fc4544b95",
-        "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-        "99ca7cd0-6072-4387-bd41-7566a98c6afc"
-      ],
-      "memberId": "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-      "leader": "90ff5df1-f5f8-4b4c-8289-a0e3deb2235c",
-      "millisSinceLastLeaderMessage": 0,
-      "raftCommandsPerSecond": 0.0,
-      "core": true,
-      "participatingInRaftGroup": true,
-      "healthy": true
-    }
-  }
-]
---------------
-====
+For more information on rolling upgrades for causal clusters, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/current/upgrade/upgrade-4.0/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
