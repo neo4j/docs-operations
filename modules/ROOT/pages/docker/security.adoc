@@ -2,135 +2,16 @@
 = Security
 :description: This chapter describes security in Neo4j when running in a Docker container. 
 
+
 [[docker-encryption]]
-== SSL Encryption
+== Encryption
 
-Neo4j on Docker supports Neo4j's native xref:security/ssl-framework.adoc[SSL Framework] for setting up secure Bolt and HTTPS communications.
-To configure these settings in Docker, you either set them in the xref:configuration/neo4j-conf.adoc[_neo4j.conf_] file, or pass them to Docker as xref:docker/configuration.adoc#docker-environment-variables[Docker environment variables].
+The Docker image can expose Neo4j's native TLS support.
+To use your own key and certificate, provide an _/ssl_ volume with the key and certificate inside.
+The files must be called _neo4j.key_ and _neo4j.cert_.
+You must also publish port `7473` to access the HTTPS endpoint.
 
-=== Set up your certificate folders
-
-. Verify that you have xref:security/ssl-framework.adoc#term-ssl-certificate[SSL public certificate(s)] and xref:security/ssl-framework.adoc#term-ssl-private-key[private key(s)].
-+
-The certificates must be issued by a trusted certificate authority (CA), such as https://www.openssl.org/ or https://letsencrypt.org/.
-+
-The default file names are _private.key_ and _public.crt_.
-
-. Create a local folder to store your certificates.
-+
-For example, _$HOME/neo4j/certificates_.
-This folder will be later mounted to _/ssl_ of your container.
-
-. In you local folder (e.g. _$HOME/neo4j/certificates_), create a folder for the SSL policy of each of your communication channels that you want to secure.
-There, you will store your certificates and private keys.
-+
-It is recommended to use different certificates for the different communication channels (`bolt` and `https`).
-+
-In the following examples, `<scope>` substitutes the name of the communication channel.
-+
-[source, shell]
+[source, shell, subs="attributes"]
 ----
-$ mkdir $HOME/neo4j/certificates/<scope>
+docker run --publish=7473:7473 --publish=7687:7687 --volume=$HOME/neo4j/ssl:/ssl neo4j:{neo4j-version}
 ----
-+
-. In each of your _<scope>_ folders, create a _/trusted_ and a _/revoked_ folder for the trusted and revoked certificates.
-+
-[source, shell]
-----
-$ mkdir $HOME/neo4j/certificates/<scope>/trusted
-$ mkdir $HOME/neo4j/certificates/<scope>/revoked
-----
-+
-. Finally, you add your certificates to the respective _<scope>_ folder.
-+
-The _<scope>_ folder(s) should now show the following listings:
-+
-[source, shell]
-----
-$ ls $HOME/neo4j/certificates/<scope>
--r-------- ... private.key
--rw-r--r-- ... public.crt
-drwxr-xr-x ... revoked
-drwxr-xr-x ... trusted
-----
-
-[[ssl-neo4j-conf]]
-=== Configure SSL via _neo4j.conf_
-
-In the _neo4j.conf_ file, configure the following settings for the policies that you want to use:
-
-[source, shell]
-----
-# Https SSL configuration
-dbms.connector.https.enabled=true
-dbms.ssl.policy.https.enabled=true
-dbms.ssl.policy.https.base_directory=certificates/https
-dbms.ssl.policy.https.private_key=private.key
-dbms.ssl.policy.https.public_certificate=public.crt
-
-
-# Bolt SSL configuration
-dbms.ssl.policy.bolt.enabled=true
-dbms.ssl.policy.bolt.base_directory=certificates/bolt
-dbms.ssl.policy.bolt.private_key=private.key
-dbms.ssl.policy.bolt.public_certificate=public.crt
-----
-
-[NOTE]
-====
-For more information on configuring SSL policies, see xref:security/ssl-framework.adoc#ssl-configuration[Configuration].
-
-For more information on configuring connectors, see xref:configuration/connectors.adoc#connectors-configuration-options[Configuration options].
-====
-
-
-.A `docker run` command that launches a container with SSL policy enabled via _neo4j.conf_.
-====
-[source, shell, subs="attributes+,+macros"]
-----
-docker run \
-    --publish=7473:7473 \ #<1>
-    --publish=7687:7687 \
-    --user="$(id -u):$(id -g)" \ #<2>
-    --volume=$HOME/neo4j/certificates:/ssl \ #<3>
-    --volume=$HOME/neo4j/conf:/conf \ #<4>
-    neo4j:{neo4j-version}
-----
-
-<1> The port to access the HTTPS endpoint.
-<2> Docker will be started as the current user (assuming the current user has read-access to the certificates).
-<3> The volume that contains the SSL policies that you want to set up Neo4j to use.
-<4> The volume that contains the _neo4j.conf_ file.
-In this example, the _neo4j.conf_ is in the `$HOME/neo4j/conf` folder of the host.
-====
-
-[[ssl-envar_example]]
-=== Configure SSL via Docker environment variables
-
-As an alternative to configuring SSL via the _neo4j.conf_ file, you can set an SSL policy by passing its configuration values to the Neo4j Docker container as environment variables.
-For more information on how to convert the Neo4j settings to the form accepted by Docker, see xref:docker/configuration.adoc#docker-environment-variables[Environment variables]:
-
-.A `docker run` command that launches a container with SSL policy enabled via Docker environment variables.
-====
-[source, shell, subs="attributes+,+macros"]
-----
-docker run \
-    --publish=7473:7473 \ #<1>
-    --publish=7687:7687 \
-    --user="$(id -u):$(id -g)" \ #<2>
-    --volume=$HOME/neo4j/certificates:/ssl \ #<3>
-    --env NEO4J_dbms_connector_https_enabled=true \ #<4>
-    --env NEO4J_dbms_ssl_policy_https_enabled=true \ #<5>
-    --env NEO4J_dbms_ssl_policy_https_base__directory=/ssl/https \ #<6>
-    neo4j:{neo4j-version}
-----
-<1> The port to access the HTTPS endpoint.
-<2> Docker will be started as the current user (assuming the current user has read-access to the certificates).
-<3> The volume that contains the SSL policies that you want to set up Neo4j to use.
-<4> The HTTPS connector is disabled by default.
-Therefore, you must set `dbms.connector.https.enabled` to `true`, to be able Neo4j to listen for incoming connections on the HTTPS port.
-However, for the Bolt SSL policy, you do not have to pass this parameter as the Bolt connector is enabled by default.
-<5> The SSL policy that you want to set up for Neo4j.
-<6> The base directory under which SSL certificates and keys are searched for.
-Note that the value is the docker volume folder _/ssl/https_ and not the _/certificate/https_ folder of the host.
-====

@@ -1,0 +1,119 @@
+[role=enterprise-edition]
+[[multi-clustering-configuration]]
+= Configure a multi-cluster
+:description: This section describes how to configure several Causal Clusters in order to construct a single multi-cluster. 
+
+
+In this section we will configure the multi-cluster illustrated in the picture below.
+Each cluster has three Core Servers and two Read Replicas:
+
+image::multicluster-example.svg[title="Configure a multi-cluster with three clusters.", role="middle"]
+
+
+. Configure each cluster as you would configure a regular Causal Cluster.
++
+Refer to xref:clustering/setup-new-cluster.adoc[Create a new cluster] for details.
++
+For example, if you configure a multi-cluster of three clusters, where each has three Core members, then in each of the clusters the value of `xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[causal_clustering.minimum_core_cluster_size_at_formation]` should be set to `3` (as opposed to `9`, which would be the sum of all Core members).
++
+. Start up each of the clusters and test that it functions as expected.
+. Shut down all the members of all the clusters.
+. Assign a name to each of the databases/clusters:
++
+Configure xref:reference/configuration-settings.adoc#config_causal_clustering.database[causal_clustering.database] on each of the members in each of the clusters.
++
+.Assign a name to a cluster
+====
+
+We wish to assign the name `foo` to this database.
+We do so by adding the following entry to _neo4j.conf_:
+
+[source, properties]
+----
+causal_clustering.database=foo
+----
+====
++
+[NOTE]
+If an intended member of a cluster is missing the `causal_clustering.database` setting, it will form a separate cluster with the implicit name of `default`.
++
+*Limitations:*
+Once an instance is first launched with a non-default name, that name is persisted.
+On subsequent startups of that instance, if a name change is detected it will cause the startup to fail.
+The database name configured for an instance may only be changed after unbinding the instance using `xref:tools/unbind.adoc[neo4j-admin unbind]`.
+. Configure discovery members.
++
+When setting up a multi-cluster, we must configure the discovery service to locate all members from all constituent clusters.
+This enables them to join the multi-cluster-wide discovery service depicted in the image above.
++
+This is achieved by combining each cluster's `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering_initial_discovery_members]` config value.
+See xref:clustering-advanced/lifecycle.adoc#causal-clustering-discovery-protocol[Discovery protocol] for details about discovery.
++
+.Initial discovery configuration for a multi-cluster
+====
+Assume that we have three clusters with initial discovery members configured as follows:
+
+[source, properties]
+----
+# `foo` members
+causal_clustering.initial_discovery_members=neo20:5000,neo21:5000,neo22:5000
+----
+
+[source, properties]
+----
+# `bar` members
+causal_clustering.initial_discovery_members=neo23:5000,neo24:5000,neo25:5000
+----
+
+[source, properties]
+----
+# `baz` members
+causal_clustering.initial_discovery_members=neo26:5000,neo27:5000,neo28:5000
+----
+
+To form a multi-cluster with these three clusters, update the config value on all members of all clusters:
+
+[source, properties]
+----
+# `foo`,`bar and `baz` members
+causal_clustering.initial_discovery_members=neo20:5000,neo21:5000,neo22:5000,neo23:5000,neo24:5000,neo25:5000,neo26:5000,neo27:5000,neo28:5000
+----
+====
+. Start up and test the multi-cluster:
+.. Start up all the members of the multi-cluster.
+.. Use the `xref:clustering-advanced/multi-clustering/monitor.adoc#multi-clustering-dbms.cluster.overview[dbms.cluster.overview()]` procedure to test that the multi-cluster works as expected.
++
+.Test the multi-cluster
+====
+To test that the multi-cluster is working correctly, and to get information about the participating members and the databases they manage, use the `dbms.cluster.overview()` procedure:
+
+[source, cypher]
+----
+CALL dbms.cluster.overview()
+----
+
+The procedure will show output similar to the following:
+
+[options="header"]
+|===
+| id                                   | addresses                                                        | role         | groups | database
+| 08eb9305-53b9-4394-9237-0f0d63bb05d5 | [+bolt://neo20:7687+, +http://neo20:7474+, +https://neo20:7473+] | LEADER       |   []   | foo
+| cb0c729d-233c-452f-8f06-f2553e08f149 | [+bolt://neo21:7687+, +http://neo21:7474+, +https://neo21:7473+] | FOLLOWER     |   []   | foo
+| ded9eed2-dd3a-4574-bc08-6a569f91ec5c | [+bolt://neo22:7687+, +http://neo22:7474+, +https://neo22:7473+] | FOLLOWER     |   []   | foo
+| 3df6ec18-6333-4fb8-8b34-db7ecdfd967f | [+bolt://neo23:7687+, +http://neo23:7474+, +https://neo23:7473+] | LEADER       |   []   | bar
+| 395f708f-ae0c-4e24-a48d-9e90d4d63590 | [+bolt://neo24:7687+, +http://neo24:7474+, +https://neo24:7473+] | FOLLOWER     |   []   | bar
+| fef25f21-6a99-4694-ae1c-10d91465acd2 | [+bolt://neo25:7687+, +http://neo25:7474+, +https://neo25:7473+] | FOLLOWER     |   []   | bar
+| dcc57b70-d4a4-486b-ae57-e635bdcb1563 | [+bolt://neo26:7687+, +http://neo26:7474+, +https://neo26:7473+] | LEADER       |   []   | baz
+| a664ede1-1f87-4828-aee8-1ffd2bcce09c | [+bolt://neo27:7687+, +http://neo27:7474+, +https://neo27:7473+] | FOLLOWER     |   []   | baz
+| 17addd42-a9f9-427e-9b32-e59d650e35af | [+bolt://neo28:7687+, +http://neo28:7474+, +https://neo28:7473+] | FOLLOWER     |   []   | baz
+| a049dea4-d4de-421c-898c-e638fa98440b | [+bolt://neo30:7687+, +http://neo30:7474+, +https://neo30:7473+] | READ_REPLICA |   []   | foo
+| 894ced90-85cd-47c2-9a75-f86b22ef74bf | [+bolt://neo31:7687+, +http://neo31:7474+, +https://neo31:7473+] | READ_REPLICA |   []   | foo
+| 151e46c9-14b8-49bf-bf25-cf09cf3ad582 | [+bolt://neo32:7687+, +http://neo32:7474+, +https://neo32:7473+] | READ_REPLICA |   []   | bar
+| e1d153aa-c3e6-40fd-acf7-d73c6c79baf4 | [+bolt://neo33:7687+, +http://neo33:7474+, +https://neo33:7473+] | READ_REPLICA |   []   | bar
+| 6e0b1801-9dba-4925-bc45-ceee91c10338 | [+bolt://neo34:7687+, +http://neo34:7474+, +https://neo34:7473+] | READ_REPLICA |   []   | baz
+| 87577513-db46-4ca3-a75f-3d8919f9b454 | [+bolt://neo35:7687+, +http://neo35:7474+, +https://neo35:7473+] | READ_REPLICA |   []   | baz
+|===
+
+The `dbms.cluster.overview()` procedure provides an overview of the whole multi-cluster, regardless of which cluster member is used to run the query, and which constituent cluster that member belongs to.
+The name of the database managed by each cluster member is provided by the _database_ column.
+====

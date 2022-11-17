@@ -2,7 +2,6 @@
 = Disks, RAM and other tips
 :description: This section provides an overview of performance considerations for disk and RAM when running Neo4j. 
 
-
 As with any persistence solution, performance depends a lot on the persistence media used.
 In general, the faster storage you have, and the more of your data you can fit in RAM, the better performance you will get.
 
@@ -10,25 +9,25 @@ In general, the faster storage you have, and the more of your data you can fit i
 [[performance-storage]]
 == Storage
 
-There are many performance characteristics to consider for your storage solutions.
-The performance can vary hugely in orders of magnitude.
-Generally, having all your data in RAM achieves maximum performance.
-
-If you have multiple disks or persistence media available, it may be a good idea to divide the store files and transaction logs across those disks.
+If you have multiple disks or persistence media available it may be a good idea to divide the store files and transaction logs across those disks.
 Keeping the store files on disks with low seek time can do wonders for read operations.
+Today a typical mechanical drive has an average seek time of about 5ms.
+This can cause a query or traversal to be very slow when the amount of RAM assigned to the page cache is too small.
+A new, good SATA enabled SSD has an average read service time of less than 100 microseconds, meaning those scenarios will execute at least 50 times faster, and modern NVMe drives can service reads in 10 to 50 microseconds.
+However, this is still hundreds of times slower than accessing RAM.
+
+To avoid hitting disk you need more RAM.
+On a standard mechanical drive you can handle graphs with a few tens of millions of primitives (nodes, relationships and properties) with 2-3 GBs of RAM.
+A server with 8-16 GBs of RAM can handle graphs with hundreds of millions of primitives, and a good server with 16-64 GBs can handle billions of primitives.
+However, if you invest in a good SSD you will be able to handle much larger graphs on less RAM.
 
 Use tools like `dstat` or `vmstat` to gather information when your application is running.
-If the swap or paging numbers are high, that is a sign that the database does not quite fit in memory.
-In this case, database access can have high latencies.
-
-[NOTE]
-====
-To achieve maximum performance, it is recommended to provide Neo4j with as much RAM as possible to avoid hitting the disk.
-====
+If the swap or paging numbers are high, that is a sign that the Lucene indexes don't quite fit in memory.
+In this case, queries that do index lookups will have high latencies.
 
 
 [[performance-page-cache]]
-== Page cache
+== Page Cache
 
 When Neo4j starts up, its page cache is empty and needs to warm up.
 The pages, and their graph data contents, are loaded into memory on demand as queries need them.
@@ -40,86 +39,27 @@ The page fault spike is then followed by a gradual decline of page fault activit
 
 [role=enterprise-edition]
 [[performance-page-cache-warmup]]
-== Active page cache warmup
+=== Active Page Cache Warmup
 
-Neo4j Enterprise Edition has a feature called _active page cache warmup_, which is enabled by default via the xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.warmup.enable[`dbms.memory.pagecache.warmup.enable`] configuration setting.
+The Neo4j Enterprise Edition has a feature called _active page cache warmup_, which shortens the page fault spike and makes the page cache warm up faster.
+This is done by periodically recording _cache profiles_ of the store files, as the database is running.
+These profiles contain information about what data is and is not in memory, and are stored in a "profiles" sub-directory of the store directory.
+When Neo4j is later restarted, it will look for these cache profiles and eagerly load in the same data that was in memory when the profile was created.
+The profiles are also copied as part of online backup and cluster store-copy, and helps warm up new database instances that join a cluster.
 
-*How it works*
-
-It shortens the page fault spike and makes the page cache warm up faster.
-This is done by periodically recording _cache profiles_ of the store files while the database is running.
-These profiles contain information about what data is and is not in memory and are stored in the _data/databases/mydatabase/profiles_ directory.
-When Neo4j is restarted next time, it looks for these cache profiles and loads the same data that was in memory when the profile was created.
-The profiles are also copied as part of the online backup and cluster store-copy operations and help warm up new databases that join a cluster.
-
-The setting should remain enabled for most scenarios.
-However, when the workload changes after the database restarts, the setting can be disabled to avoid spending time fetching data that will be directly evicted.
-
-*Configuration options*
-
-Load the entire database into memory::
-
-It is also possible to configure xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.warmup.preload[`dbms.memory.pagecache.warmup.preload`] to load the entire database data into memory.
-This is useful when the size of the database store is smaller than the available memory for the page cache.
-When enabled, it disables warmup by profile and prefetches data into the page cache as part of the startup.
-
-Load specified files into memory::
-
-The files that you want to prefetch can be filtered using the xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.warmup.preload.whitelist[`dbms.memory.pagecache.warmup.preload.whitelist`] setting.
-It takes a regular expression as a value to match the files.
-
-
-.Load only the nodes and relationships
-====
-For example, if you want to load only the nodes and relationships, you can use the regex `+.*(node|relationship).*+` to match the name of the store files.
-The _active page cache warmup_ will prefetch the content of the following files:
-
-[source, shell]
-----
-neostore.nodestore.db
-neostore.nodestore.db.id
-neostore.nodestore.db.labels
-neostore.nodestore.db.labels.id
-neostore.relationshipgroupstore.db
-neostore.relationshipgroupstore.db.id
-neostore.relationshipstore.db
-neostore.relationshipstore.db.id
-neostore.relationshiptypestore.db
-neostore.relationshiptypestore.db.id
-neostore.relationshiptypestore.db.names
-Neostore.relationshiptypestore.db.names.id
-----
-
-And can be verified using unix `grep`:
-
-[source, shell]
-----
-ls neo4j/ | grep -E '.*(node|relationship).*'
-----
-====
-
-Configure the profile frequency for the page cache::
-
-The profile frequency is the rate at which the profiles are re-generated.
-More frequent means more accurate.
-A profile contains information about those parts of the files that are currently loaded into memory.
-By default, it is set to xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.warmup.profile.interval[`dbms.memory.pagecache.warmup.profile.interval=1m`].
-It takes some time to generate these profiles, and therefore `1m` is a good interval.
-If the workload is very stable, then the profile will not change much.
-Accordingly, if the workload changes often, the profile will thus often become outdated.
 
 [role=enterprise-edition]
 [[performance-checkpoint-iops-limit]]
-== Checkpoint IOPS limit
+=== Checkpoint IOPS Limit
 
 Neo4j flushes its page cache in the background as part of its checkpoint process.
 This will show up as a period of elevated write IO activity.
 If the database is serving a write-heavy workload, the checkpoint can slow the database down by reducing the IO bandwidth that is available to query processing.
 Running the database on a fast SSD, which can service a lot of random IOs, significantly reduces this problem.
 If a fast SSD is not available in your environment, or if it is insufficient, then an artificial IOPS limit can be placed on the checkpoint process.
-The xref:reference/configuration-settings.adoc#config_dbms.checkpoint.iops.limit[`dbms.checkpoint.iops.limit`] restricts the IO bandwidth that the checkpoint process is allowed to use.
+The `xref:reference/configuration-settings.adoc#config_dbms.checkpoint.iops.limit[dbms.checkpoint.iops.limit]` restricts the IO bandwidth that the checkpoint process is allowed to use.
 Each IO is, in the case of the checkpoint process, an 8 KiB write.
-An IOPS limit of 600, for instance, would thus only allow the checkpoint process to write at a rate of roughly 5 MiB per second.
+An IOPS limit of 300, for instance, would thus only allow the checkpoint process to write at a rate of roughly 2.5 MiB per second.
 This will, on the other hand, make checkpoints take longer to complete.
 A longer time between checkpoints can cause more transaction log data to accumulate, and can lengthen recovery times.
 See the xref:configuration/transaction-logs.adoc[transaction logs] section for more details on the relationship between checkpoints and log pruning.

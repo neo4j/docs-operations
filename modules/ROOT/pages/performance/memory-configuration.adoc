@@ -2,10 +2,10 @@
 = Memory configuration
 :description: This section describes the different aspects of Neo4j memory configuration and use. 
 
-[[memory-configuration-overview]]
 == Overview
 
-The RAM of the Neo4j server has a number of usage areas, with some sub-areas:
+Consider the image below.
+As you can see, the RAM of the Neo4j server has a number of usage areas, with some sub-areas:
 
 image::neo4j-memory-management.svg[title="Neo4j memory management", role="middle"]
 
@@ -13,126 +13,119 @@ image::neo4j-memory-management.svg[title="Neo4j memory management", role="middle
 *OS memory*::
 Some memory must be reserved for running the processes of the operating system itself.
 It is not possible to explicitly configure the amount of RAM that should be reserved for the operating system, as this is what RAM remains available after configuring page cache and heap space.
-However, if you do not leave enough space for the OS, it will start swapping to disk, which will heavily affect performance.
+However, if we do not leave enough space for the OS it will start swapping to disk, which will heavily affect performance.
 +
 1GB is a good starting point for a server that is dedicated to running Neo4j.
 However, there are cases where the amount reserved for the OS is significantly larger than 1GB, such as servers with exceptionally large RAM.
 
 *Lucene index cache*::
 Neo4j uses https://lucene.apache.org/[Apache Lucene] for some of its indexing functionality.
-Index lookup performance is optimized by ensuring that the indexes are cached into memory.
-Similar to the OS memory, the Lucene index cache cannot be explicitly configured.
-Instead, you estimate the memory needed and make sure that there is enough headroom left for the Lucene indexes after the page cache and heap cache have been assigned.
+Index lookup performance is optimized by ensuring that as much as possible of the indexes are cached into memory.
+Similar to the OS memory, the Lucene index cache can not be explicitly configured.
+Instead we estimate the memory needed and make sure that there is enough headroom left for Lucene indexes after the page cache and heap cache have been assigned.
 
 *Page cache*::
 The page cache is used to cache the Neo4j data and native indexes.
-The caching of graph data and indexes into memory helps avoid costly disk access and result in optimal performance.
+The caching of graph data and indexes into memory will help avoid costly disk access and result in optimal performance.
 +
 The parameter for specifying how much memory Neo4j is allowed to use for the page cache is: `xref:reference/configuration-settings.adoc#config_dbms.memory.pagecache.size[dbms.memory.pagecache.size]`.
 
 *Heap size*::
-The heap space is used for query execution, transaction state, management of the graph, etc.
+The heap space is used for query execution, transaction state, management of the graph etc.
 The size needed for the heap is very dependent on the nature of the usage of Neo4j.
 For example, long-running queries, or very complicated queries, are likely to require a larger heap than simpler queries.
 +
-Generally speaking, to aid performance, it is recommended to configure a large enough heap to sustain concurrent operations.
+Generally speaking, in order to aid performance, we want to configure a large enough heap to sustain concurrent operations.
 +
-In case of performance issues, you may have to tune your queries, and monitor their memory usage, in order to determine whether the heap needs to be increased.
+In case of performance issues we may have to tune our queries, and monitor their memory usage, in order to determine whether the heap needs to be increased.
 +
 The heap memory size is determined by the parameters `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.initial_size[dbms.memory.heap.initial_size]` and `xref:reference/configuration-settings.adoc#config_dbms.memory.heap.max_size[dbms.memory.heap.max_size]`.
-It is recommended to set these two parameters to the same value to avoid unwanted full garbage collection pauses.
+It is recommended to set these two parameters to the same value.
+This will help avoid unwanted full garbage collection pauses.
 
 *Transaction state*::
 Transaction state is the memory that is needed to hold data and intermediate results in transactions that update records in the database.
 Queries that only read data do not require transaction state memory allocation.
-By default, transaction state is allocated off-heap.
+By default, transaction state is allocated from the heap, or _on-heap_.
+Note that when the transaction state is configured inside the heap, its maximum size cannot be specified.
++
+Transaction state can also be configured to be allocated separately from the heap, or _off-heap_, by using the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_state.memory_allocation[dbms.tx_state.memory_allocation]`.
 When the transaction state is allocated off-heap, the maximum size of the transaction state can be defined using the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_state.max_off_heap_memory[dbms.tx_state.max_off_heap_memory]`.
 Note that the transaction state memory is not pre-allocated; it will grow and shrink as needed by the activity in the database.
 Keeping transaction state off-heap is particularly beneficial to applications characterized by large, write-intensive transactions.
-+
-Transaction state can also be configured to be allocated on-heap, by using the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_state.memory_allocation[dbms.tx_state.memory_allocation]`.
-Note that when the transaction state is configured on-heap, its maximum size cannot be specified.
 
-[[memory-configuration-considerations]]
+
 == Considerations
 
-[discrete]
-[[memory-configuration-explicit]]
 Always use explicit configuration::
-To have good control of the system behavior, it is recommended to always define the page cache and heap size parameters explicitly in xref:configuration/file-locations.adoc[_neo4j.conf_].
-Otherwise, some heuristic values will be computed at startup based on the available system resources.
+In order to have good control of a system's behavior, it is recommended that you always define the page cache and heap size parameters explicitly in xref:configuration/file-locations.adoc[_neo4j.conf_].
+If these parameters are not explicitly defined, some heuristic values will be computed at startup based on available system resources.
 
-[discrete]
-[[memory-configuration-initial]]
 Initial memory recommendation::
 Use the `xref:tools/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command to get an initial recommendation for how to distribute a certain amount of memory.
 The values may need to be adjusted to cater for each specific use case.
 
-[discrete]
-[[memory-configuration-database]]
-Inspect the memory settings of all databases in a DBMS::
-The `xref:tools/neo4j-admin-memrec.adoc[neo4j-admin memrec]` command is useful for inspecting the current distribution of data and indexes.
+Inspect the memory settings of a database::
+The `xref:tools/neo4j-admin-memrec.adoc[neo4j-admin memrec --database]` command is useful for inspecting the current distribution of data and indexes in an existing database.
 +
-.Use `neo4j-admin memrec` to inspect the memory settings of all your databases
+.Use `neo4j-admin memrec` to inspect the memory settings of a database
 ====
-Estimate the total size of the database files.
+We wish to estimate the total size of the database files.
 
 [source, shell]
 ----
-$neo4j-home> bin/neo4j-admin memrec
+$neo4j-home> bin/neo4j-admin memrec --database=graph.db
 ...
 ...
 ...
-# Total size of lucene indexes in all databases: 6690m
-# Total size of data and native indexes in all databases: 17050m
+# Lucene indexes: 6690m
+# Data volume and native indexes: 17050m
 ----
 
-You can see that the Lucene indexes take up approximately 6.7GB of data, and that the data volume and native indexes combined take up approximately 17GB.
+We can see that the Lucene indexes take up approximately 6.7GB of data, and that the data volume and native indexes combined take up approximately 17GB.
 
-Using this information, you can do a sanity check of your memory configuration:
+Using this information, we can do a sanity check of our memory configuration:
 
 * Compare the value for data volume and native indexes to the value of `dbms.memory.pagecache.size`.
-* For cases when _off-heap_ transaction state is used, estimate transactional workload and how much memory is left to the value of `dbms.tx_state.max_off_heap_memory`.
 * Compare the value for Lucene indexes to how much memory is left after assigning `dbms.memory.pagecache.size` and `dbms.memory.heap.initial_size`.
 
-Note that in some production systems the access to memory is limited and must be negotiated between different areas.
-Therefore, it is recommended to perform a certain amount of testing and tuning of these settings to figure out the optimal division of the available memory.
+Note that even though we strive for caching as much of our data and indexes as possible, in some production systems the access to memory is limited and must be negotiated between different areas.
+Then there will will be a certain amount of testing and tuning to figure out the optimal division of the available memory.
 ====
 
-// Re-insert information about how index migration affects memory when there is a replacement for lucene+native-3.0
-// The effect of index providers on memory usage
-//After an upgrade from an earlier version of Neo4j, it is advantageous to rebuild certain indexes in order to take advantage of new index features.
-//For details, see <<index-configuration>>.
-//The rebuilding of indexes will change the distribution of memory utilization.
-//In a database with many indexes, a significant amount of memory may have been reserved for Lucene.
-//After the rebuild, it could be necessary to allocate some of that memory to the page cache instead.
+*The effect of index providers on memory usage*::
+After an upgrade from an earlier version of Neo4j, it is advantageous to rebuild certain indexes in order to take advantage of new index features.
+For details, see xref:performance-configuration/index.adoc[Index configuration].
+The rebuilding of indexes will change the distribution of memory utilization.
+In a database with many indexes, a significant amount of memory may have been reserved for Lucene.
+After the rebuild, it could be necessary to allocate some of that memory to the page cache instead.
+Use `neo4j-admin memrec --database` to inspect the database before and after rebuilding indexes.
 
-[[memory-configuration-capacity-planning]]
 == Capacity planning
 
 In many use cases, it is advantageous to try to cache as much of the data and indexes as possible.
-The following examples illustrate methods for estimating the page cache size, depending on whether you are already running in production or planning for a future deployment:
+The following examples illustrate methods for estimating the page cache size, depending on whether we are already running in production or planning for a future deployment:
 
-.Estimate page cache for the existing Neo4j databases
+.Estimate page cache for an existing Neo4j database
 ====
-First, estimate the total size of data and indexes, and then multiply with some factor, for example 20%, to allow for growth.
+First estimate the total size of data and indexes, and then multiply with some factor, for example 20%, to allow for growth.
 
 [source, shell]
 ----
-$neo4j-home> bin/neo4j-admin memrec
+$neo4j-home> bin/neo4j-admin memrec --database=graph.db
 ...
 ...
 ...
-# Total size of lucene indexes in all databases: 6690m
-# Total size of data and native indexes in all databases: 35050m
+# Lucene indexes: 6690m
+# Data volume and native indexes: 35050m
 ----
 
-You can see that the data volume and native indexes combined take up approximately 35GB.
-In your specific use case, you estimate that 20% will provide sufficient head room for growth.
+We can see that the data volume and native indexes combined take up approximately 35GB.
+In our specific use case we estimate that 20% will provide sufficient head room for growth.
 
 `dbms.memory.pagecache.size` = 1.2 * (35GB) =  42GB
 
-You configure the page cache by adding the following to _neo4j.conf_:
+We configure the page cache by adding the following to _neo4j.conf_:
 
 [source, properties]
 ----
@@ -142,78 +135,31 @@ dbms.memory.pagecache.size=42GB
 
 .Estimate page cache for a new Neo4j database
 ====
-When planning for a future database, it is useful to run an import with a fraction of the data, and then multiply the resulting store size delta by that fraction plus some percentage for growth.
+When planning for a future database, it is useful to run an import with a fraction of the data, and then multiply the resulting store size by that fraction plus some percentage for growth.
+For example, import 1/100th of the data and measure its data volume and native indexes.
+Then multiply that number by 120 to size up the result, and allow for 20% growth.
 
-. Run the `memrec` command to see the total size of the data and indexes in all current databases.
-+
+Assume that we have imported 1/100th of the data into a test database.
+
 [source, shell]
 ----
-$neo4j-home> bin/neo4j-admin memrec
+$neo4j-home> bin/neo4j-admin memrec --database=graph.db
 ...
 ...
 ...
-# Total size of lucene indexes in all databases: 6690m
-# Total size of data and native indexes in all databases: 35050m
+# Lucene indexes: 425.0
+# Data volume and native indexes: 251100k
 ----
 
-. Import 1/100th of the data and again measure the data volume and native indexes of all databases.
-+
-[source, shell]
-----
-$neo4j-home> bin/neo4j-admin memrec
-...
-...
-...
-# Total size of lucene indexes in all databases: 6690m
-# Total size of data and native indexes in all databases: 35400m
-----
-+
-You can see that the data volume and native indexes combined take up approximately 35.4GB.
+We can see that the data volume and native indexes combined take up approximately 250MB.
+We size up the result and additionally reserve 20% for growth:
 
-. Multiply the resulting store size delta by that fraction.
-+
-35.4GB - 35GB = 0.4GB * 100 = 40GB
+`dbms.memory.pagecache.size` = 120 * (250MB) =  30GB
 
-. Multiply that number by 1.2 to size up the result, and allow for 20% growth.
-+
-`dbms.memory.pagecache.size` = 1.2 * (40GB) =  48GB
+We configure the page cache by adding the following to _neo4j.conf_:
 
-. Configure the page cache by adding the following to _neo4j.conf_:
-+
 [source, properties]
 ----
-dbms.memory.pagecache.size=48G
+dbms.memory.pagecache.size=30G
 ----
 ====
-
-[[memory-configuration-query-heap]]
-== Configure query heap usage
-When running a Cypher query, Neo4j utilizes the heap internally for storing results.
-It may be difficult to predict how much memory a query needs.
-If a query ends up using too much memory, it could severely hamper the overall performance of the database.
-
-There are two settings that can be enabled in _neo4j.conf_ to improve the heap utilization of Neo4j:
-
-[source, properties]
-----
-dbms.track_query_allocation=true
-cypher.query_max_allocations.size=1G
-----
-
-`dbms.track_query_allocation=true` enables Neo4j to track the heap utilization of all Cypher queries.
-You can view the utilization of running queries by calling:
-
-[source, cypher]
-----
-CALL dbms.listQueries()
-----
-
-Or alternatively, you can enable `dbms.logs.query.allocation_logging_enabled` and monitor the memory usage of each query in the _query.log_.
-
-The configuration `cypher.query_max_allocations.size` limits the amount of memory each query can use.
-Whenever that limit is reached, the query is terminated without affecting the overall health of the database.
-
-[NOTE]
---
-The heap-usage of query is only an estimate and the actual heap utilization might be slightly bigger or slightly smaller than the estimated value.
---

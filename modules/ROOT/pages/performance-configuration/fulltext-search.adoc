@@ -1,0 +1,82 @@
+[[index-configuration-fulltext-search]]
+= Indexes to support full-text search
+:description: This section describes how to enable full-text search, by using full-text schema indexes. 
+
+This section describes the following:
+
+* xref:performance-configuration/fulltext-search.adoc#index-configuration-fulltext-search-introduction[Introduction]
+* xref:performance-configuration/fulltext-search.adoc#index-configuration-fulltext-search-configuration[Configuration]
+* xref:performance-configuration/fulltext-search.adoc#index-configuration-fulltext-search-deprecation-of-explicit[Deprecation of explicit indexes]
+
+
+[[index-configuration-fulltext-search-introduction]]
+== Introduction
+
+Full-text schema indexes are powered by the http://lucene.apache.org/[Apache Lucene] indexing and search library.
+A full-text schema index enables you to write queries that matches within the _contents_ of indexed string properties.
+A full description on how to create and use full-text schema indexes is provided in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/schema#schema-index-fulltext-search[Cypher Manual -> Full-text schema index].
+
+
+[[index-configuration-fulltext-search-configuration]]
+== Configuration
+
+The following options are available for configuring full-text schema indexes:
+
+`dbms.index.fulltext.default_analyzer`::
+The name of the analyzer that the full-text schema indexes should use by default.
+This setting only has effect when a full-text schema index is created, and will be remembered as an index-specific setting from then on.
+The list of possible analyzers is available through the `db.index.fulltext.listAvailableAnalyzers()` Cypher procedure.
+Unless otherwise specific, the default analyzer is `standard`, which is the same as the `StandardAnalyzer` from Lucene.
+
+`dbms.index.fulltext.eventually_consistent`::
+Whether or not full-text schema indexes should be eventually consistent, or not.
+This setting only has effect when a full-text schema index is created, and will be remembered as an index-specific setting from then on.
+Schema indexes are normally fully consistent, and the committing of a transaction does not return until both the store and the indexes have been updated.
+Eventually consistent full-text schema indexes, on the other hand, are not updated as part of commit, but instead have their updates queued up and applied in a background thread.
+This means that there can be a short delay between committing a change, and that change becoming visible via any eventually consistent full-text schema indexes.
+This delay is just an artifact of the queueing, and will usually be quite small since eventually consistent indexes are updated "as soon as possible".
+By default, this is turned off, and full-text schema indexes are fully consistent.
+
+`dbms.index.fulltext.eventually_consistent_index_update_queue_max_length`::
+Eventually consistent full-text schema indexes have their updates queued up and applied in a background thread, and this setting determines the maximum size of that update queue.
+If the maximum queue size is reached, then committing transactions will block and wait until there is more room in the queue, before adding more updates to it.
+This setting applies to all eventually consistent full-text schema indexes, and they all use the same queue.
+The maximum queue length must be at least 1 index update, and must be no more than 50 million due to heap space usage considerations.
+The default maximum queue length is 10.000 index updates.
+
+[NOTE]
+--
+When Neo4j is deployed in Causal Cluster configurations, it is recommended that all cluster members have identical `dbms.index.fulltext.*` settings in their xref:configuration/file-locations.adoc[_neo4j.conf_] files.
+This ensures that the indexes always behave predictably, when the cluster switches leader, or when members perform store copies.
+--
+
+
+[[index-configuration-fulltext-search-deprecation-of-explicit]]
+== Deprecation of explicit indexes
+
+Full-text indexes have previously been supported in Neo4j via the deprecated _explicit indexes_, but with some limitations that the full-text schema indexes solve.
+This section outlines some of the similarities and differences in the two full-text indexing implementations:
+
+ * Both schema and explicit full-text indexes support indexing of both nodes and relationships.
+ * Both schema and explicit full-text indexes support configuring custom analyzers, including analyzers that are not included with Lucene itself.
+ * Both schema and explicit full-text indexes can be queried using the Lucene query language.
+ * Both schema and explicit full-text indexes can return the _score_ for each result from a query.
+ * The full-text schema indexes are kept up to date automatically, as nodes and relationships are added, removed, and modified.
+   The explicit _auto indexes_ can do this as well, except it can get confused by id and space re-use, and produce wrong results from queries as a consequence.
+   This is not a problem for the new full-text schema indexes.
+ * The full-text schema indexes will automatically populate newly created indexes with the existing data in a store.
+   The explicit _auto indexes_ do no such thing when they are enabled, and they will miss updates that occur while they are temporarily disabled or misconfigured.
+ * The full-text schema indexes can be checked by the consistency checker, and they can be rebuilt if there is a problem with them.
+   The explicit indexes are ignored by the consistency checker, and they cannot be automatically rebuilt if they develop any issues.
+ * The explicit indexes can be used to index by keys and values that are not actually in the store, so for instance if you want to index a node by the contents of a book without assigning it to the node as a property value, you can do that.
+   The full-text schema indexes are a projection of the store, and can only index nodes and relationships by the contents of their properties.
+ * The explicit indexes suffer from the Lucene limitation of only supporting up to at most 2 billion documents in a single index.
+   The full-text schema indexes have no such limitation.
+ * The explicit indexes interact poorly with a Causal Cluster.
+   For instance, the fact that a new explicit index has been created can only be communicated from the leader to the rest of the cluster via a _store copy_.
+   The full-text schema indexes are created, dropped, and updated transactionally, and is replicated throughout a cluster automatically.
+ * The explicit indexes can be accessed via dedicated REST end-points and Java APIs, as well as Cypher procedures.
+   The full-text schema indexes can only be accessed via Cypher procedures.
+ * The full-text schema indexes can be configured to be _eventually consistent_, in which index updating is moved from the commit path to a background thread.
+   This removes the slow Lucene writes from the performance critical commit process, which has historically been among the main bottlenecks for Neo4j write performance.
+   This is not possible to do with explicit indexes.

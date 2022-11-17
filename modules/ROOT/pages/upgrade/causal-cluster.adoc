@@ -1,0 +1,221 @@
+[role=enterprise-edition]
+[[cc-upgrade-guide]]
+= Upgrade a Causal Cluster
+:description: This section describes how to upgrade a Neo4j Causal Cluster. 
+
+
+This section describes the following:
+
+* xref:upgrade/causal-cluster.adoc#cc-upgrade-pre-upgrade-information[Important pre-upgrade information]
+* xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling[Rolling upgrade]
+** xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling-fixed[Rolling upgrade for fixed servers]
+** xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling-replaceable[Rolling upgrade for replaceable resources]
+* xref:upgrade/causal-cluster.adoc#cc-upgrade-offline[Offline upgrade]
+
+
+[[cc-upgrade-pre-upgrade-information]]
+== Important pre-upgrade information
+
+All upgrades should be approached with careful planning and testing.
+
+*Pre-upgrade steps*::
+
+. Read xref:upgrade/planning.adoc[Upgrade planning] thoroughly and perform all the steps listed there.
+. Perform and verify backups:
+* Back up xref:configuration/file-locations.adoc[_neo4j.conf_].
+* If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], back up the _xref:configuration/file-locations.adoc[data]/dbms_ directory.
+* Back up all the files used for encryption, i.e. private key, public certificate, and the contents of the _trusted_ and _revoked_ directories.
+  The locations of these are described in xref:security/ssl-framework.adoc[SSL framework].
+  You should back up these files on each server in the cluster.
+* Verify that you have a xref:backup/performing.adoc[full backup] that is stored in a safe location.
+. Prepare a new _neo4j.conf_ file for each of the servers in the cluster, following the instructions under the _Apply configuration changes_ step in xref:upgrade/planning.adoc[Upgrade planning].
++
+If following instructions for xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling-replaceable[Rolling upgrade for replaceable resources], all the servers that form the cluster will be replaced.
+Therefore, make sure that the parameter `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering.initial_discovery_members]` is updated to reflect the new Core members.
+. If using custom plugins, make sure that you have the plugins that are adjusted for the new version in an accessible location.
+
+*Limitations*::
+
+* Neo4j does not support downgrades.
+If the upgrade is not successful, you have to do a full rollback, including restoring a pre-upgrade backup.
+* In order to minimize risk, it is recommended that while upgrading, you do not change configuration, perform architectural restructuring, or similar tasks.
+
+*Monitoring the status of cluster members*::
+
+Use the procedure `xref:monitoring/causal-cluster/procedures.adoc#dbms.cluster.overview[dbms.cluster.overview()]` to monitor the status of the cluster members during the upgrade.
+
+*Upgrade methods*::
+
+The following are methods of upgrading a Neo4j Causal Cluster:
+
+* xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling[Rolling upgrade]; this method is available under certain conditions.
+** xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling-fixed[Rolling upgrade for fixed servers]
+** xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling-replaceable[Rolling upgrade for replaceable resources]
+* xref:upgrade/causal-cluster.adoc#cc-upgrade-offline[Offline upgrade]; this method is always available.
+
+*Installing the new Neo4j version*::
+
+For instructions on how to install the software package itself, refer to xref:installation/index.adoc[Installation].
+
+*Post-upgrade*::
+Note that backups taken before the upgrade are no longer valid for update via the incremental online backup.
+Therefore, it is important to perform a _full backup_, using an empty target directory, immediately after the upgrade.
+
+
+[[cc-upgrade-rolling]]
+== Rolling upgrade
+
+*Limitations*::
+
+Rolling upgrades are only supported between patch releases, and only when a store format upgrade is not needed.
+Read the link:{neo4j-base-uri}/release-notes/data-store-changes/[Data Store Changes] page to find out whether a certain upgrade path involves a store format change.
+You can also contact Customer Support to obtain this information.
+
+If you cannot use rolling upgrades, then follow the instructions for xref:upgrade/causal-cluster.adoc#cc-upgrade-offline[offline upgrades] instead.
+
+*Downtime*::
+
+Since downgrades are not supported, a failed upgrade will require recovery from a pre-upgrade backup.
+Therefore, the safest path is to disable write loads during the upgrade process.
+
+Recommendations::
+
+* When upgrading a cluster, it is important to do so in a systematic, predictable way.
+The critical point during the upgrades is knowing when to switch off the original members.
+It is recommended that you use the status endpoint when performing a rolling upgrade, which provides access to information that can aid you when deciding which member to switch off, and when it is safe to do so.
+For more information, see xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint].
++
+[NOTE]
+====
+It is only possible to use the status endpoint when upgrading from Neo4j v3.5, since that is when the status endpoint was introduced.
+====
++
+* Since replacing cores is no different from temporarily removing cores, the process of doing a rolling upgrade reduces fault tolerance temporarily.
+If you absolutely need to maintain a minimum threshold of fault tolerance, then you should increase the cluster size to account for this planned failure.
+
+
+[[cc-upgrade-rolling-fixed]]
+=== Rolling upgrade for fixed servers
+
+--
+This variant is suitable for deployments where the servers are fixed and have to be updated in-place.
+--
+
+*Upgrade steps*::
+
+. On one of the Core Servers:
+.. (Optional/Recommended) Use the xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[status endpoint] to evaluate whether it is safe to remove this member.
+.. Shutdown the instance.
+.. Install Neo4j using one of the following methods, specific to your technology:
+* If using a tarball or zipfile for installation:
+... Untar or unzip the version of Neo4j that you want to upgrade to.
+... Place the _neo4j.conf_ file, that you have prepared for this server, into the _xref:configuration/file-locations.adoc[Configuration]_ directory.
+... If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], copy the _xref:configuration/file-locations.adoc[data]/dbms_ directory into the new location.
+... Copy the files used for encryption from the old installation to the new one.
+... Copy the xref:configuration/file-locations.adoc[_data_] directory from the old installation to the new one.
+This step is not applicable if you have `xref:reference/configuration-settings.adoc#config_dbms.directories.data[dbms.directories.data]` pointing to a directory outside of _NEO4J_HOME_.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+* If using a Debian or RPM distribution:
+... Install the version of Neo4j that you want to upgrade to.
+... When prompted, review the differences between the _neo4j.conf_ files of the previous version and the new version of Neo4j.
+Transfer any custom settings to the new installation, as prepared in the pre-upgrade step.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+.. Start up Neo4j, and see it join the cluster.
+. Repeat the previous steps for every server instance.
+
+
+[[cc-upgrade-rolling-replaceable]]
+=== Rolling upgrade for replaceable resources
+
+--
+This variant is suitable for deployments utilizing replaceable cloud or container resources.
+With this method, it is possible to avoid a reduction in availability, since you are adding a new instance before removing an old instance.
+--
+
+*Upgrade steps*::
+
+. Configure a new instance with the version of Neo4j that you want to upgrade to.
+. Use the new _neo4j.conf_ that you have prepared in the pre-upgrade step.
+. If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], place the backed-up _xref:configuration/file-locations.adoc[data]/dbms_ directory into the _data_ directory of the new instance.
+. Copy the files used for encryption from the old installation to the new one.
+. If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory on the new instance.
+. Start up the new instance, and let it complete a store copy.
+. See the new instance join the cluster.
+. (Optional/Recommended) Use the xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[status endpoint] to evaluate whether it is safe to remove an old member.
+. Shutdown the old instance.
+. Repeat the previous steps for every server instance.
+
+
+[[cc-upgrade-offline]]
+== Offline upgrade
+
+--
+This variant is suitable for cases where a rolling upgrade is not possible due to breaking changes, or could be undesirable for other reasons.
+--
+
+*Downtime*::
+
+If the offline upgrade method is selected, this will involve downtime.
+A test upgrade on a production-like equipment provides information on the duration of the downtime.
+
+*Upgrade steps*::
+
+. Shut down all the servers in the cluster
+
+. On one of the Core Servers:
+.. Set xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode=SINGLE`] in _neo4j.conf_.
+.. Install Neo4j using one of the following methods, specific to your technology:
+* If using a tarball or zipfile for installation:
+... Untar or unzip the version of Neo4j that you want to upgrade to.
+... Place the _neo4j.conf_ file, that you have prepared for this server, into the _xref:configuration/file-locations.adoc[Configuration]_ directory.
+... Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in _neo4j.conf_.
+Neo4j will fail to start without this configuration.
+... If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], place the backed-up _xref:configuration/file-locations.adoc[data]/dbms_ directory into the _data_ directory of the new instance.
+... Copy the files used for encryption from the old installation to the new one.
+... Copy the xref:configuration/file-locations.adoc[_data_] directory from the old installation to the new one.
+This step is not applicable if you have `xref:reference/configuration-settings.adoc#config_dbms.directories.data[dbms.directories.data]` pointing to a directory outside of _NEO4J_HOME_.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+* If using a Debian or RPM distribution:
+... Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in _neo4j.conf_.
+... Install the version of Neo4j that you want to upgrade to.
+... When prompted, review the differences between the _neo4j.conf_ files of the previous version and the new version of Neo4j.
+Transfer any custom settings to the new installation, as prepared in the pre-upgrade step.
+Make sure to preserve `dbms.allow_upgrade=true` as set in the instruction above.
+Neo4j will fail to start without this configuration.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+.. Start up Neo4j.
+The database upgrade will take place during startup.
++
+The xref:monitoring/logging/general-logging.adoc#general-logging-log-files[_neo4j.log_] file contains valuable information on how many steps the upgrade will involve and how far it has progressed.
+For large upgrades, it is a good idea to monitor this log continuously.
+.. Stop your Neo4j database once again.
+.. Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=false`], or remove it.
+.. Set xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode=CORE`] in _neo4j.conf_ to re-enable Causal Clustering in the configuration.
+.. Use `xref:tools/dump-load.adoc[neo4j-admin dump]` to make a copy of the database.
+.. Do not yet restart the database.
+
+. On each of the other Core Servers:
+.. Delete the database directory (in a default configuration: _xref:configuration/file-locations.adoc[data]/databases/graph.db_).
+.. Install the version of Neo4j that you want to upgrade to.
+.. Transfer any custom settings to the new installation, as prepared in the pre-upgrade step.
+.. If using a tarball or zipfile for installation:
+* If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], place the backed-up _xref:configuration/file-locations.adoc[data]/dbms_ directory into the _data_ directory of the new instance.
+* Copy the files used for encryption from the old installation to the new one.
+.. If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+.. Perform `xref:tools/unbind.adoc[neo4j-admin unbind]` on the instance.
+.. Using `xref:tools/dump-load.adoc[neo4j-admin load]`, restore the upgraded database onto this server.
+
+. Startup all the Core Servers and see the cluster form.
+
+. On each of the Read Replica servers:
+.. Stop Neo4j.
+.. Delete the database directory (in a default configuration: _xref:configuration/file-locations.adoc[data]/databases/graph.db_).
+.. Install the version of Neo4j that you want to upgrade to.
+.. Transfer any custom settings to the new installation, as prepared in the pre-upgrade step.
+.. If using a tarball or zipfile for installation:
+* If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], place the backed-up _xref:configuration/file-locations.adoc[data]/dbms_ directory into the _data_ directory of the new instance.
+* Copy the files used for encryption from the old installation to the new one.
+.. If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+.. Using `xref:tools/dump-load.adoc[neo4j-admin dump/load]`, restore the upgraded database onto this server.
+Alternatively, you can omit this step and let the Read Replica do a complete store copy.
+.. Start the Read Replica and see it join the cluster.

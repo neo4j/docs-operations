@@ -1,0 +1,129 @@
+[[upgrade-planning]]
+= Upgrade planning
+:description: This section describes how to plan for an upgrade of Neo4j. 
+
+:neo4j-releases-download-page: http://neo4j.com/download/other-releases
+:neo4j-upgrade-faq: https://neo4j.com/guides/upgrade/
+
+Plan your upgrade by following the steps in this chapter.
+
+
+[[supported-upgrade-paths]]
+== Supported upgrade paths
+
+The following upgrade paths are supported:
+
+* 3.3.latest -> {neo4j-version-exact}
+* 3.4.latest -> {neo4j-version-exact}
+* 3.5.any -> {neo4j-version-exact}
+
+The following steps are required if you need to upgrade from a version earlier than 3.3:
+
+. Upgrade to version 3.3.latest by following the instructions in the manual for that version.
+. Upgrade to version {neo4j-version-exact} as per instructions in this manual.
+
+*Limitations*
+
+A Neo4j upgrade must be performed as an isolated operation.
+If you have other changes planned, such as switching from a single-instance installation to a Causal Cluster, you must action these separately.
+
+[NOTE]
+====
+There is no supported upgrade path from {neo4j-version} to 4.x.
+Due to surface changes in Neo4j 4.x, you will need to perform a migration.
+
+For more details, see link:{neo4j-docs-base-uri}/upgrade-migration-guide[The Neo4j Migration Guide].
+====
+
+
+[[upgrade-prepare]]
+== Prepare to upgrade
+
+. Review supported upgrade paths.
++
+Before upgrading to a new major or minor release, the database must first be upgraded to the latest version within the relevant release.
+The latest version is available at this page: {neo4j-releases-download-page}.
+
+
+. Review Release Notes.
++
+To view the details of the changes that are included in each version, see the link:{neo4j-base-uri}/release-notes[Release Notes].
+
+. Apply configuration changes.
+.. With each version, new configuration settings may be introduced and existing configurations may change.
+On rare occasions, settings can change name between versions.
+Any such changes are detailed in the _Upgrade guide_, as mentioned above.
+Please ensure that you have taken such changes into account.
+.. It is also useful to inspect the current configuration file and take note of any non-default settings.
+When upgrading, it is particularly important to note any custom values of the settings `xref:reference/configuration-settings.adoc#config_dbms.directories.data[dbms.directories.data]` and `xref:reference/configuration-settings.adoc#config_dbms.active_database[dbms.active_database]`.
+In cluster installations, pay attention to cluster-specific configuration settings, which may be different on different cluster members.
+
+. Plan index upgrade.
++
+Review xref:performance-configuration/index.adoc[Index configuration] and determine whether you have indexes that ought to be rebuilt in order to take advantage of performance improvements.
+Include the rebuilding of these indexes in your test upgrade.
+
+. Upgrade application code.
++
+As part of upgrade planning, it is vital to test and potentially update all applications that use Neo4j.
+How much development time is required to update the code will depend on the particular application.
++
+In particular, the Cypher language may evolve between Neo4j versions.
+For backward compatibility, Neo4j provides directives which enable you to explicitly select a previous Cypher language version.
+This is possible to do globally or for individual statements, as described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/deprecations-additions-removals-compatibility#cypher-compatibility[Neo4j Cypher Manual].
+
+. Upgrade custom plugins.
++
+Check the _plugins_ directory (see xref:configuration/file-locations.adoc[File locations]) to verify whether custom plugins are used in your deployment.
+Ensure that any plugins are compatible with Neo4j {neo4j-version-exact}.
++
+[NOTE]
+Please note that there may be cases where a patch upgrade requires an upgrade of a plugin.
+Check with the plugin authors whether this applies to the plugins used in your deployment for this particular version.
+
+. Plan disk space requirements.
++
+An upgrade requires substantial free disk space, as it makes an entire copy of the database.
+For the upgrade, make sure to make available an additional ( 50% * size_of(_database directory_), where the default _database directory_ is located in: _xref:configuration/file-locations.adoc[data]/databases/graph.db_).
+In addition to this, do not forget to reserve the disk space needed for the pre-upgrade backup.
++
+The upgraded database may require slightly larger data files overall.
+
+. Perform a test upgrade.
++
+Based on the findings in this chapter, allocate a test environment for the upgrade and do a test upgrade.
+The test upgrade will give you valuable information about the time required for the production upgrade, as well as potential additional action points, such as upgrade of plugins and application code.
+
+. Review the logs.
++
+The xref:monitoring/logging/general-logging.adoc#general-logging-log-files[_neo4j.log_] file contains valuable information on how many steps the upgrade will involve and how far it has progressed.
+For large upgrades, it is a good idea to monitor this log continuously.
+Below is a sample of what the log may look like:
++
+[source]
+----
+2018-09-18 13:24:23.243+0000 INFO  Starting...
+2018-09-18 13:24:24.262+0000 INFO  Initiating metrics...
+2018-09-18 13:24:24.488+0000 INFO  Starting upgrade of database
+2018-09-18 13:24:24.538+0000 INFO  Migrating Indexes (1/5):
+2018-09-18 13:24:24.542+0000 INFO    10% completed
+2018-09-18 13:24:24.543+0000 INFO    20% completed
+2018-09-18 13:24:24.543+0000 INFO    30% completed
+...
+...
+...
+2018-09-18 13:24:24.574+0000 INFO  Migrating Counts store (5/5):
+2018-09-18 13:24:24.574+0000 INFO    10% completed
+2018-09-18 13:24:24.574+0000 INFO    20% completed
+2018-09-18 13:24:24.575+0000 INFO    30% completed
+...
+...
+...
+2018-09-18 13:24:24.576+0000 INFO    100% completed
+2018-09-18 13:24:24.584+0000 INFO  Successfully finished upgrade of database
+----
+
+== Additional resources
+
+In addition to the steps outlined in this chapter, it is valuable to review the link:{neo4j-upgrade-faq}[_Upgrade guide_ at neo4j.com].
+The upgrade guide is  maintained by Neo4j Customer Support, and contains valuable information about upgrade actions particular to this release.

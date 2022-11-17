@@ -9,15 +9,16 @@ The section includes:
 
 * xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-adjusting-security-for-cc[Adjusting security settings for Causal Clustering endpoints]
 * xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-unified[Unified endpoints]
+* xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-core-servers[Endpoints for Core Servers]
+* xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-read-replicas[Endpoints for Read Replicas]
 
 
 [[causal-clustering-http-endpoints-adjusting-security-for-cc]]
 == Adjusting security settings for Causal Clustering endpoints
 
-If authentication and authorization is enabled in Neo4j, the Causal Clustering status endpoints will also require authentication credentials.
-The setting xref:reference/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] controls whether the native auth provider is enabled.
-For some load balancers and proxy servers, providing authentication credentials with the request is not an option.
-For those situations, consider disabling authentication of the Causal Clustering status endpoints by setting xref:reference/configuration-settings.adoc#config_dbms.security.causal_clustering_status_auth_enabled[`dbms.security.causal_clustering_status_auth_enabled=false`] in xref:configuration/file-locations.adoc[_neo4j.conf_].
+If authentication and authorization is enabled in Neo4j (see xref:authentication-authorization/enable.adoc[Configuration]), the Causal Clustering status endpoints will also require authentication credentials.
+For some load balancers and proxy servers, providing this with the request is not an option.
+For those situations, consider disabling authentication of the Causal Clustering status endpoints by setting `xref:reference/configuration-settings.adoc#config_dbms.security.causal_clustering_status_auth_enabled[dbms.security.causal_clustering_status_auth_enabled=false]` in xref:configuration/file-locations.adoc[_neo4j.conf_].
 
 
 [[causal-clustering-http-endpoints-unified]]
@@ -25,89 +26,38 @@ For those situations, consider disabling authentication of the Causal Clustering
 
 A unified set of endpoints exist, both on Core Servers and on Read Replicas, with the following behavior:
 
-* `/db/<databasename>/cluster/writable` -- Used to direct `write` traffic to specific instances.
-* `/db/<databasename>/cluster/read-only` -- Used to direct `read` traffic to specific instances.
-* `/db/<databasename>/cluster/available` -- Available for the general case of directing arbitrary request types to instances that are available for processing read transactions.
-* `/db/<databasename>/cluster/status` -- Gives a detailed description of this instance's view of its own status within the cluster.
-//Remove until we have rolling upgrades in 4.x
-//Useful for monitoring and coordinating rolling upgrades.
+* `/db/manage/server/causalclustering/writable` -- Used to direct `write` traffic to specific instances.
+* `/db/manage/server/causalclustering/read-only` -- Used to direct `read` traffic to specific instances.
+* `/db/manage/server/causalclustering/available` -- Available for the general case of directing arbitrary request types to instances that are available for processing read transactions.
+* `/db/manage/server/causalclustering/status` -- Gives a detailed description of this instance's view of its own status within the cluster.
+Useful for monitoring and coordinating rolling upgrades.
 See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for further details.
-
-Every endpoint targets a specific database with its own Raft-group. The `databaseName` path parameter represents the name of the database.
-By default, a fresh Neo4j installation will have endpoints for two databases `system` and `neo4j`:
-
-[source]
---------------
-http://localhost:7474/db/system/cluster/writable
-http://localhost:7474/db/system/cluster/read-only
-http://localhost:7474/db/system/cluster/available
-http://localhost:7474/db/system/cluster/status
-
-http://localhost:7474/db/neo4j/cluster/writable
-http://localhost:7474/db/neo4j/cluster/read-only
-http://localhost:7474/db/neo4j/cluster/available
-http://localhost:7474/db/neo4j/cluster/status
---------------
 
 .Unified HTTP endpoint responses
 [options="header", cols="<3a,1,<2a,<2a"]
 |===
 | Endpoint                                                | Instance state | Returned code   | Body text
-.3+<.^| `/db/<databasename>/cluster/writable`            <| Leader         | `200 OK`        | `true`
+.3+<.^| `/db/manage/server/causalclustering/writable`    <| Leader         | `200 OK`        | `true`
                                                          <| Follower       | `404 Not Found` | `false`
                                                          <| Read Replica   | `404 Not Found` | `false`
-.3+<.^| `/db/<databasename>/cluster/read-only`           <| Leader         | `404 Not Found` | `false`
+.3+<.^| `/db/manage/server/causalclustering/read-only`   <| Leader         | `404 Not Found` | `false`
                                                          <| Follower       | `200 OK`        | `true`
                                                          <| Read Replica   | `200 OK`        | `true`
-.3+<.^| `/db/<databasename>/cluster/available`           <| Leader         | `200 OK`        | `true`
+.3+<.^| `/db/manage/server/causalclustering/available`   <| Leader         | `200 OK`        | `true`
                                                          <| Follower       | `200 OK`        | `true`
                                                          <| Read Replica   | `200 OK`        | `true`
-.3+<.^| `/db/<databasename>/cluster/status`              <| Leader         | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
+.3+<.^| `/db/manage/server/causalclustering/status`      <| Leader         | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
                                                          <| Follower       | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
                                                          <| Read Replica   | `200 OK`        | JSON - See xref:monitoring/causal-cluster/http-endpoints.adoc#causal-clustering-http-endpoints-status[Status endpoint] for details.
 |===
 
 
-.Use a Causal Clustering monitoring endpoint
-====
-From the command line, a common way to ask those endpoints is to use `curl`.
-With no arguments, `curl` will do an HTTP `GET` on the URI provided and will output the body text, if any.
-If you also want to get the response code, just add the `-v` flag for verbose output.
-Here are some examples:
-
-* Requesting `writable` endpoint on a Core Server that is currently elected leader with verbose output:
-
-[source, shell]
---------------
-#> curl -v localhost:7474/db/neo4j/cluster/writable
-* About to connect() to localhost port 7474 (#0)
-*   Trying ::1...
-* connected
-* Connected to localhost (::1) port 7474 (#0)
-> GET /db/neo4j/cluster/writable HTTP/1.1
-> User-Agent: curl/7.24.0 (x86_64-apple-darwin12.0) libcurl/7.24.0 OpenSSL/0.9.8r zlib/1.2.5
-> Host: localhost:7474
-> Accept: */*
->
-< HTTP/1.1 200 OK
-< Content-Type: text/plain
-< Access-Control-Allow-Origin: *
-< Transfer-Encoding: chunked
-< Server: Jetty(9.4.17)
-<
-* Connection #0 to host localhost left intact
-true* Closing connection #0
---------------
-====
-
-
 [[causal-clustering-http-endpoints-status]]
 === Status endpoint
 
-The  status endpoint, available at `/db/<databasename>/cluster/status`, is to be used to assist with rolling upgrades.
-For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/current/upgrade/upgrade-4.0/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
+The  status endpoint, available at `/db/manage/server/causalclustering/status`, is to be used to assist with xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling[rolling upgrades].
 
-Typically, you will want to have some guarantee that a Core is safe to shutdown before removing it from a cluster.
+Typically, you will want to have some guarantee that a core is safe to shutdown before removing it from a cluster.
 The status endpoint provides the following information in order to help resolve such issues:
 
 .Example status response
@@ -122,8 +72,7 @@ The status endpoint provides the following information in order to help resolve 
   "millisSinceLastLeaderMessage":84545,
   "participatingInRaftGroup":true,
   "core":true,
-  "isHealthy":true,
-  "raftCommandsPerSecond":124
+  "healthy":true
 }
 --------------
 ====
@@ -131,43 +80,113 @@ The status endpoint provides the following information in order to help resolve 
 .Status endpoint descriptions
 [options="header", cols="2,1,1,2,4"]
 |===
-| Field                          | Type     |Optional| Example                                | Description
+| Field                        | Type     |Optional| Example                                | Description
 | `core`                         | boolean  | no     | `true`                                 | Used to distinguish between Core Servers and Read Replicas.
 | `lastAppliedRaftIndex`         | number   | no     | `4321`                                 | Every transaction in a cluster is associated with a raft index.
 
                                                                                               Gives an indication of what the latest applied raft log index is.
 | `participatingInRaftGroup`     | boolean  | no     | `false`                                | A participating member is able to vote.
-                                                                                              A Core is considered participating when it is part of the voter membership and has kept track of the leader.
+                                                                                              A core is considered participating when it is part of the voter membership and has kept track of the leader.
 | `votingMembers`                | string[] | no     | `[]`                                   | A member is considered a voting member when the leader has been receiving communication with it.
 
-                                                                                              List of member's `memberId` that are considered part of the voting set by this Core.
-| `isHealthy`                      | boolean  | no     | `true`                                 | Reflects that the local database of this member has not encountered a critical error preventing it from writing locally.
+                                                                                              List of member's `memberId` that are considered part of the voting set by this core.
+| `healthy`                      | boolean  | no     | `true`                                 | Reflects that the local database of this member has not encountered a critical error preventing it from writing locally.
 | `memberId`                     | string   | no     | `30edc1c4-519c-4030-8348-7cb7af44f591` | Every member in a cluster has it's own unique member id to identify it.
-                                                                                              Use `memberId` to distinguish between Core and Read Replica.
+                                                                                              Use `memberId` to distinguish between core and replica instances.
 | `leader`                       | string   | yes    | `80a7fb7b-c966-4ee7-88a9-35db8b4d68fe` | Follows the same format as `memberId`, but if it is null or missing, then the leader is unknown.
 | `millisSinceLastLeaderMessage` | number   | yes    | `1234`                                 | The number of milliseconds since the last heartbeat-like leader message.
                                                                                               Not relevant to Read Replicas, and hence is not included.
-| `raftCommandsPerSecond`        | number   | yes    | `124`                                  | An estimate of the average Raft state machine throughput over a sampling windown configurable via `causal_clustering.status_throughput_window` setting.
 |===
 
+In general, you will want to follow the pattern of first adding a new, updated instance, and then removing an old instance.
 After an instance has been switched on, you can access the status endpoint in order to make sure all the guarantees listed in the table below are met.
-
-To get the most accurate view of a cluster it is strongly recommended to access the _status endpoint_ on all core members and compare the result.
-The following table explains how results can be compared.
+This process can then be repeated until all old cores have been removed.
 
 .Measured values, accessed via the status endpoint
 [options="header", cols="<1,2,2"]
 |===
 | Name of check                            | Method of calculation                                                                                                                                        | Description
-| `allServersAreHealthy`                     | Every Core's status endpoint indicates `isHealthy`==`true`.                                                                                                   | We want to make sure the data across the entire cluster is healthy.
-                                                                                                                                                                                                            Whenever any Cores are false that indicates a larger problem.
-| `allVotingSetsAreEqual`                    | For any 2 Cores (A and B), status endpoint A's `votingMembers`== status endpoint B's `votingMembers`.                                                          | When the voting begins, all the Cores are equal to each other, and you know all members agree on membership.
-| `allVotingSetsContainAtLeastTargetCluster` | For all Cores (*S*), excluding Core Z (to be switched off), every member in *S* contains *S* in their voting set.
-                                             Membership is determined by using the `memberId` and `votingMembers` from the status endpoint.                                                                   | Sometimes network conditions will not be perfect and it may make sense to switch off a different Core to the one we originally wanted to switch off.
-                                                                                                                                                                                                            If you run this check for all Cores, the ones that match this condition can be switched off (providing other conditions are also met).
-| `hasOneLeader`                             | For any 2 Cores (A and B), `A.leader == B.leader && leader!=null`.                                                                                             | If the leader is different then there may be a partition (alternatively, this could also occur due to bad timing).
+| `allServersAreHealthy`                     | Every core's status endpoint indicates `dbHealth`==`true`.                                                                                                   | We want to make sure the data across the entire cluster is healthy.
+                                                                                                                                                                                                            Whenever any cores are false that indicates a larger problem.
+| `allVotingSetsAreEqual`                    | For any 2 cores (A and B), status endpoint A's `votingMembers`== status endpoint B's `votingMembers`.                                                          | When the voting begins, all the cores are equal to each other, and you know all members agree on membership.
+| `allVotingSetsContainAtLeastTargetCluster` | For all cores (*S*), excluding core Z (to be switched off), every member in *S* contains *S* in their voting set.
+                                             Membership is determined by using the `memberId` and `votingMembers` from the status endpoint.                                                                   | Sometimes network conditions will not be perfect and it may make sense to switch off a different core to the one we originally wanted to switch off.
+                                                                                                                                                                                                            If you run this check for all cores, the ones that match this condition can be switched off (providing other conditions are also met).
+| `hasOneLeader`                             | For any 2 cores (A and B), `A.leader == B.leader && leader!=null`.                                                                                             | If the leader is different then there may be a partition (alternatively, this could also occur due to bad timing).
                                                                                                                                                                                                             If the leader is unknown, that means the leader messages have actually timed out.
-| `noMembersLagging`                         | For Core A with `lastAppliedRaftIndex` = `min`, and Core B with `lastAppliedRaftIndex` = `max`, `B.lastAppliedRaftIndex-A.lastAppliedRaftIndex<raftIndexLagThreshold`. | If there is a large difference in the applied indexes between Cores, then it could be dangerous to switch off a Core.
+| `noMembersLagging`                         | For core A with `lastAppliedRaftIndex` = `min`, and core B with `lastAppliedRaftIndex` = `max`, `B.lastAppliedRaftIndex-A.lastAppliedRaftIndex<raftIndexLagThreshold`. | If there is a large difference in the applied indexes between cores, then it could be dangerous to switch off a core.
 |===
 
-For more information on rolling upgrades for causal clusters, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/current/upgrade/upgrade-4.0/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
+For more information on rolling upgrades for causal clusters, see xref:upgrade/causal-cluster.adoc#cc-upgrade-rolling[Rolling upgrade].
+
+
+[[causal-clustering-http-endpoints-core-servers]]
+== Endpoints for Core Servers
+
+xref:clustering/introduction.adoc#causal-clustering-core-servers[Core Servers] provide the following endpoints for status monitoring:
+
+* `/db/manage/server/core/writable` -- Used to direct `write` traffic to specific instances.
+* `/db/manage/server/core/read-only` -- Used to direct `read` traffic to specific instances.
+* `/db/manage/server/core/available` -- Available for the general case of directing arbitrary request types to instances that are available for processing read transactions.
+
+
+.Core HTTP endpoint responses
+[options="header", cols="<2a,1,<2a,<2a"]
+|===
+| Endpoint                                    | Instance state | Returned code   | Body text
+.2+<.^| `/db/manage/server/core/writable`    <| Leader         | `200 OK`        | `true`
+                                             <| Follower       | `404 Not Found` | `false`
+.2+<.^| `/db/manage/server/core/read-only`   <| Leader         | `404 Not Found` | `false`
+                                             <| Follower       | `200 OK`        | `true`
+.2+<.^| `/db/manage/server/core/available`   <| Leader         | `200 OK`        | `true`
+                                             <| Follower       | `200 OK`        | `true`
+|===
+
+
+.Use a Causal Clustering monitoring endpoint
+====
+From the command line, a common way to ask those endpoints is to use `curl`.
+With no arguments, `curl` will do an HTTP `GET` on the URI provided and will output the body text, if any.
+If you also want to get the response code, just add the `-v` flag for verbose output.
+Here are some examples:
+
+* Requesting `writable` endpoint on a Core Server that is currently elected leader with verbose output:
+
+[source, shell]
+--------------
+#> curl -v localhost:7474/db/manage/server/core/writable
+* About to connect() to localhost port 7474 (#0)
+*   Trying ::1...
+* connected
+* Connected to localhost (::1) port 7474 (#0)
+> GET /db/manage/server/core/writable HTTP/1.1
+> User-Agent: curl/7.24.0 (x86_64-apple-darwin12.0) libcurl/7.24.0 OpenSSL/0.9.8r zlib/1.2.5
+> Host: localhost:7474
+> Accept: */*
+>
+< HTTP/1.1 200 OK
+< Content-Type: text/plain
+< Access-Control-Allow-Origin: *
+< Transfer-Encoding: chunked
+< Server: Jetty(6.1.25)
+<
+* Connection #0 to host localhost left intact
+true* Closing connection #0
+--------------
+====
+
+
+[[causal-clustering-http-endpoints-read-replicas]]
+== Endpoints for Read Replicas
+
+xref:clustering/introduction.adoc#causal-clustering-read-replicas[Read Replicas] provides the following endpoint for status monitoring:
+
+* `/db/manage/server/read-replica/available` -- Available for the general case of directing arbitrary request types to instances that are available for processing read transactions.
+
+
+.Read Replica HTTP endpoint responses
+[options="header", cols="2,<1,<2"]
+|===
+| Endpoint                                   | Returned code | Body text
+| `/db/manage/server/read-replica/available` | `200 OK`      | `true`
+|===

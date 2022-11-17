@@ -1,289 +1,209 @@
 [role=enterprise-edition]
-[[auth-ldap-integration]]
-= Integration with LDAP directory services
+[[ldap-integration]]
+= Integration with LDAP
 :description: This section describes Neo4j support for integrating with LDAP systems. 
 
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-introduction[Introduction]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-parameters[LDAP configuration parameters]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider[Set Neo4j to use LDAP]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[Map the LDAP groups to the Neo4j roles]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad[Configure Neo4j to use Active Directory]
-** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-uid[Configure Neo4j to support LDAP user ID authentication]
-** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-sysaccount[Configure Neo4j to support `sAMAccountName` authentication by creating a system account]
-** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-ad-nosysaccount[Configure Neo4j to support `sAMAccountName` authentication by setting `user_dn_template`]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-configure-provider-openldap[Configure Neo4j to use OpenLDAP]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-search[Verify the LDAP configuration]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-clear-auth-cache[The auth cache]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-ad-encrypted[Available methods of encryption]
-** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-encrypted-starttls[Use LDAP with encryption via StartTLS]
-** xref:authentication-authorization/ldap-integration.adoc#auth-ldap-encrypted-ldaps[Use LDAP with encrypted LDAPS]
-* xref:authentication-authorization/ldap-integration.adoc#auth-ldap-self-signed-certificate[Use a self-signed certificate (SSL) in a test environment]
+This section describes the following:
+
+* xref:authentication-authorization/ldap-integration.adoc#ldap-introduction[Introduction]
+* xref:authentication-authorization/ldap-integration.adoc#ldap-configure-provider[Configure the LDAP auth provider]
+** xref:authentication-authorization/ldap-integration.adoc#ldap-configure-provider-ad[Configuration for Active Directory]
+** xref:authentication-authorization/ldap-integration.adoc#ldap-configure-provider-openldap[Configuration for openLDAP]
+* xref:authentication-authorization/ldap-integration.adoc#ldap-search[Use 'ldapsearch' to verify the configuration]
+* xref:authentication-authorization/ldap-integration.adoc#ldap-clear-auth-cache[The auth cache]
+* xref:authentication-authorization/ldap-integration.adoc#ldap-ad-encrypted[Available methods of encryption]
+** xref:authentication-authorization/ldap-integration.adoc#ldap-encrypted-starttls[Use LDAP with encryption via StartTLS]
+** xref:authentication-authorization/ldap-integration.adoc#ldap-encrypted-ldaps[Use LDAP with encrypted LDAPS]
+* xref:authentication-authorization/ldap-integration.adoc#ldap-self-signed-certificate[Use a self-signed certificate in a test environment]
 
 
-[[auth-ldap-introduction]]
+[[ldap-introduction]]
 == Introduction
 
-Neo4j supports LDAP, which allows for integration with Active Directory (AD), OpenLDAP, or other LDAP-compatible authentication services.
-This means that you use the LDAP service for managing federated users, while the native Neo4j user and role administration are completely turned off.
-
-The following configuration settings are important to consider when configuring LDAP.
-For a more detailed overview of the LDAP configuration options, see xref:reference/configuration-settings.adoc[Configuration settings].
-
-[[auth-ldap-parameters]]
-== LDAP configuration parameters
-
-[options="header",cols="<,<,<"]
-|===
-| Parameter name
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.user_dn_template[dbms.security.ldap.authentication.user_dn_template]
-| `uid=+{0}+,ou=users,dc=example,dc=com`
-| Converts usernames into LDAP-specific fully qualified names required for logging in.
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.user_search_base[dbms.security.ldap.authorization.user_search_base]
-| `ou=users,dc=example,dc=com`
-| Sets the base object or named context to search for user objects.
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.user_search_filter[dbms.security.ldap.authorization.user_search_filter]
-| `(&(objectClass=*)(uid=+{0}+))`
-| Sets up an LDAP search filter to search for a user principal.
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_membership_attributes[dbms.security.ldap.authorization.group_membership_attributes]
-| `memberOf`
-| Lists attribute names on a user object that contains groups to be used for mapping to roles.
-Common values: `memberOf` and `gidNumber`.
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_to_role_mapping[dbms.security.ldap.authorization.group_to_role_mapping]
-|
-| Lists an authorization mapping from groups to the pre-defined built-in roles `admin`, `architect`, `publisher`, `editor`, and `reader`, or to any other custom-defined roles.
-|===
-
-All settings are defined at server startup time in the default configuration file _xref:configuration/neo4j-conf.adoc[neo4j.conf]_.
+Neo4j supports the LDAP protocol which allows for integration with Active Directory, OpenLDAP or other LDAP-compatible authentication services.
+We will show example configurations where management of federated users is deferred to the LDAP service, using that service's facilities for administration.
+This means that we completely turn off native Neo4j user and role administration and map LDAP groups to the Neo4j xref:authentication-authorization/native-user-role-management/native-roles.adoc[native roles], and to custom roles.
 
 
-[[auth-ldap-configure-provider]]
-== Set Neo4j to use LDAP
+[[ldap-configure-provider]]
+== Configure the LDAP auth provider
 
-First, you configure Neo4j to use LDAP as an authentication and authorization provider.
+All settings need to be defined at server startup time in the default configuration file _neo4j.conf_.
+First configure Neo4j to use LDAP as authentication and authorization provider.
 
-. Uncomment the setting `dbms.security.auth_enabled=false` and change its value to `true` to turn on the security feature.
-. Uncomment the settings `dbms.security.authentication_providers` and `dbms.security.authorization_providers` and change their value to `ldap`.
-This way, the LDAP connector will be used as a security provider for both authentication and authorization.
-
-[[auth-ldap-map-ldap-roles]]
-== Map the LDAP groups to the Neo4j roles
-
-To access the user and role management procedures, you have to map the LDAP groups to the xref:authentication-authorization/built-in-roles.adoc[Neo4j built-in] and custom-defined roles.
-To do that, you need to know what privileges the Neo4j roles have, and based on these privileges, to create the mapping to the groups defined in the LDAP server.
-The map must be formatted as a semicolon separated list of key-value pairs, where the key is a comma-separated list of the LDAP group names and the value is a comma-separated list of the corresponding role names.
-For example, `group1=role1;group2=role2;group3=role3,role4,role5;group4,group5=role6`.
-
-.Example of LDAP groups to Neo4j roles mapping
-====
-[source, role=noheader]
-----
-dbms.security.ldap.authorization.group_to_role_mapping=\
-    "cn=Neo4j Read Only,cn=users,dc=example,dc=com"      = reader;    \ #<1>
-    "cn=Neo4j Read-Write,cn=users,dc=example,dc=com"     = editor,publisher; \ #<2>
-    "cn=Neo4j Read-Write,cn=users,dc=example,dc=com","cn=Neo4j Create Data,cn=users,dc=example,dc=com"     = publisher; \ #<3>
-    "cn=Neo4j Create Data,cn=users,dc=example,dc=com","cn=Neo4j Schema Manager,cn=users,dc=example,dc=com" = architect; \
-    "cn=Neo4j Administrator,cn=users,dc=example,dc=com"  = admin; \
-    "cn=Neo4j Procedures,cn=users,dc=neo4j,dc=com"       = rolename #<4>
-----
-
-<1> Mapping of an LDAP group to a Neo4j built-in role.
-<2> Mapping of an LDAP group to two Neo4j built-in roles.
-<3> Mapping of two LDAP groups to a Neo4j built-in role.
-<4> Mapping of an LDAP group to a custom-defined role.
-Custom-defined roles, such as `rolename`, must be explicitly created using the `CREATE ROLE rolename` command before they can be used to grant privileges.
-See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/security/users-and-roles[the Cypher Manual -> Creating roles].
-====
-
-[[auth-ldap-configure-provider-ad]]
-== Configure Neo4j to use Active Directory
-
-You configure Neo4j to use the LDAP security provider to access and manage your Active Directory.
-There are three alternative ways to do that depending on your specific use case.
-
-[[auth-ldap-configure-provider-ad-uid]]
-=== Configure Neo4j to support LDAP user ID authentication
-
-This option allows users to log in with their LDAP user ID.
-
-In the _neo4j.conf_ file, uncomment and configure the following settings:
-
-. Configure LDAP to point to the AD server:
-+
 [source, properties]
 ----
+# Turn on security:
+dbms.security.auth_enabled=true
+
+# Choose LDAP connector as security provider for both authentication and authorization:
+dbms.security.auth_provider=ldap
+----
+
+
+[[ldap-configure-provider-ad]]
+=== Configuration for Active Directory
+
+See below for an example configuration for Active Directory:
+
+
+[source, properties]
+----
+# Configure LDAP to point to the AD server:
 dbms.security.ldap.host=ldap://myactivedirectory.example.com
-----
 
-. Provide details on the user structure of the LDAP directory:
-+
-[source, properties]
-----
+# Provide details on user structure within the LDAP system:
 dbms.security.ldap.authentication.user_dn_template=cn={0},cn=Users,dc=example,dc=com
 dbms.security.ldap.authorization.user_search_base=cn=Users,dc=example,dc=com
 dbms.security.ldap.authorization.user_search_filter=(&(objectClass=*)(cn={0}))
 dbms.security.ldap.authorization.group_membership_attributes=memberOf
+
+# Configure the actual mapping between groups in the LDAP system and roles in Neo4j:
+dbms.security.ldap.authorization.group_to_role_mapping=\
+  "cn=Neo4j Read Only,cn=Users,dc=neo4j,dc=com"      = reader       ;\
+  "cn=Neo4j Read-Write,cn=Users,dc=neo4j,dc=com"     = publisher    ;\
+  "cn=Neo4j Schema Manager,cn=Users,dc=neo4j,dc=com" = architect    ;\
+  "cn=Neo4j Administrator,cn=Users,dc=neo4j,dc=com"  = admin        ;\
+  "cn=Neo4j Procedures,cn=Users,dc=neo4j,dc=com"     = allowed_role
+
+# In case defined users are not allowed to search for themselves, we can specify credentials for a user with read access to all users and groups.
+# Note that this account only needs read-only access to the relevant parts of the LDAP directory and does not need to have access rights to Neo4j or any other systems.
+# dbms.security.ldap.authorization.use_system_account=true
+# dbms.security.ldap.authorization.system_username=cn=search-account,cn=Users,dc=example,dc=com
+# dbms.security.ldap.authorization.system_password=secret
+
 ----
 
-. Map the groups in the LDAP system to the Neo4j built-in and custom roles.
-See xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[Map the LDAP groups to the Neo4j roles].
+Below is an alternative configuration for Active Directory that allows for logging in with `sAMAccountName`:
 
-[[auth-ldap-configure-provider-ad-sysaccount]]
-=== Configure Neo4j to support `sAMAccountName` authentication by creating a system account
-
-This is an alternative configuration for Active Directory that allows users to log in using `sAMAccountName`.
-You create a system account that has read-only access to the parts of the LDAP directory that you want.
-However, it does not need to have access rights to Neo4j or any other systems.
-
-In the _neo4j.conf_ file, uncomment and configure the following settings:
-
-. Configure LDAP to point to the AD server:
-+
 [source, properties]
 ----
+# Configure LDAP to point to the AD server:
 dbms.security.ldap.host=ldap://myactivedirectory.example.com
-----
 
-. Provide details on the user structure of the LDAP directory:
-+
-[source, properties]
-----
+# Provide details on user structure within the LDAP system:
 dbms.security.ldap.authorization.user_search_base=cn=Users,dc=example,dc=com
 dbms.security.ldap.authorization.user_search_filter=(&(objectClass=*)(samaccountname={0}))
 dbms.security.ldap.authorization.group_membership_attributes=memberOf
-----
 
-. Map the groups in the LDAP system to the Neo4j built-in and custom roles.
-See xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[Map the LDAP groups to the Neo4j roles].
+# Configure the actual mapping between groups in the LDAP system and roles in Neo4j:
+dbms.security.ldap.authorization.group_to_role_mapping=\
+  "cn=Neo4j Read Only,cn=Users,dc=neo4j,dc=com"      = reader       ;\
+  "cn=Neo4j Read-Write,cn=Users,dc=neo4j,dc=com"     = publisher    ;\
+  "cn=Neo4j Schema Manager,cn=Users,dc=neo4j,dc=com" = architect    ;\
+  "cn=Neo4j Administrator,cn=Users,dc=neo4j,dc=com"  = admin        ;\
+  "cn=Neo4j Procedures,cn=Users,dc=neo4j,dc=com"     = allowed_role
 
-. Configure Neo4j to use a system account with read access to all users and groups in the LDAP server.
-
-.. Set `dbms.security.ldap.authorization.use_system_account` value to `true`.
-
-.. Set `dbms.security.ldap.authorization.system_username` value to the full Distinguished Name (DN) as the `dbms.security.ldap.authentication.user_dn_template` will not be applied to this username.
-For example,
-+
-[source, properties]
-----
+# In case defined users are not allowed to search for themselves, we can specify credentials for a user with read access to all users and groups.
+# Note that this account only needs read-only access to the relevant parts of the LDAP directory and does not need to have access rights to Neo4j or any other systems.
+dbms.security.ldap.authorization.use_system_account=true
 dbms.security.ldap.authorization.system_username=cn=search-account,cn=Users,dc=example,dc=com
-----
+dbms.security.ldap.authorization.system_password=secret
 
-.. Configure the LDAP system account password.
-+
-[source, properties]
-----
-dbms.security.ldap.authorization.system_password=mypassword
-----
-+
-[NOTE]
-`sAMAccountName` requires `dbms.security.ldap.authorization.system_username` and `dbms.security.ldap.authorization.system_password` to be used, since there is no way to log in through LDAP directly with the `sAMAccountName`.
-Instead, the login name will be resolved to a DN that will be used to log in with.
-
-.. Add the following line to the _neoj.conf_ file:
-+
-[source, properties]
-----
+# Perform authentication with sAMAccountName instead of DN.
+# Using this setting requires dbms.security.ldap.authorization.system_username and dbms.security.ldap.authorization.system_password to be used, since there is no way to log in through LDAP directly with the sAMAccountName.
+# Instead, the login name will be resolved to a DN that will be used to log in with.
 dbms.security.ldap.authentication.use_samaccountname=true
 ----
 
-[[auth-ldap-configure-provider-ad-nosysaccount]]
-=== Configure Neo4j to support `sAMAccountName` authentication by setting `user_dn_template`
+Below is an alternative configuration for Active Directory that allows for authenticating users from different organizational units by using the Active Directory attribute `sAMAccountName`:
 
-This is an alternative configuration for Active Directory that allows all users from the specified domain to log in using `sAMAccountName`.
-With this option, you do not have to create a system account and store a system username/password in the config file.
-Instead, you set `+{0}+@example.com` as a value of the `user_dn_template` to enable the authentication to start at the root domain.
-This way, the whole tree is checked to find the user, regardless of where it is located within the LDAP directory tree.
-
-In the _neo4j.conf_ file, uncomment and configure the following settings:
-
-. Configure LDAP to point to the AD server:
-+
 [source, properties]
 ----
+# Configure LDAP to point to the AD server:
 dbms.security.ldap.host=ldap://myactivedirectory.example.com
-----
 
-. Provide details on the user structure of the LDAP directory:
-+
-[source, properties]
-----
 dbms.security.ldap.authentication.user_dn_template={0}@example.com
 dbms.security.ldap.authorization.user_search_base=dc=example,dc=com
 dbms.security.ldap.authorization.user_search_filter=(&(objectClass=user)(sAMAccountName={0}))
 dbms.security.ldap.authorization.group_membership_attributes=memberOf
+
+# Configure the actual mapping between groups in the LDAP system and roles in Neo4j:
+dbms.security.ldap.authorization.group_to_role_mapping=\
+"cn=Neo4j Read Only,cn=Users,dc=example,dc=com" = reader ;\
+"cn=Neo4j Read-Write,cn=Users,dc=example,dc=com" = publisher ;\
+"cn=Neo4j Schema Manager,cn=Users,dc=example,dc=com" = architect ;\
+"cn=Neo4j Administrator,cn=Users,dc=example,dc=com" = admin ;\
+"cn=Neo4j Procedures,cn=Users,dc=example,dc=com" = allowed_role
 ----
-+
 
-. Map the groups in the LDAP system to the Neo4j built-in and custom roles.
-For more information, see xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[Map the LDAP groups to the Neo4j roles].
+Specifying the `+{0}+@example.com` pattern in the `user_dn_template` enables the authentication to start at the root domain.
+The whole tree is checked to find the user, regardless of where it is located within the tree.
 
-[NOTE]
-The setting `dbms.security.ldap.authentication.use_samaccountname` is not configured.
+Note that the setting `dbms.security.ldap.authentication.use_samaccountname` is not configured in this example.
 
-[[auth-ldap-configure-provider-openldap]]
-== Configure Neo4j to use OpenLDAP
 
-You configure the LDAP security provider to access and manage your OpenLDAP directory service.
+[[ldap-configure-provider-openldap]]
+=== Configuration for openLDAP
 
-In the neo4j.conf file, uncomment and configure the following settings:
+See below for an example configuration for openLDAP:
 
-. Configure LDAP to point to the OpenLDAP server:
-+
 [source, properties]
 ----
+# Configure LDAP to point to the OpenLDAP server:
 dbms.security.ldap.host=myopenldap.example.com
-----
 
-. Provide details on the user structure of the LDAP directory:
-+
-[source, properties]
-----
+# Provide details on user structure within the LDAP system:
 dbms.security.ldap.authentication.user_dn_template=cn={0},ou=users,dc=example,dc=com
 dbms.security.ldap.authorization.user_search_base=ou=users,dc=example,dc=com
 dbms.security.ldap.authorization.user_search_filter=(&(objectClass=*)(uid={0}))
-dbms.security.ldap.authorization.group_membership_attributes=gidNumber
+dbms.security.ldap.authorization.group_membership_attributes=gidnumber
+
+# Configure the actual mapping between groups in the OpenLDAP system and roles in Neo4j:
+dbms.security.ldap.authorization.group_to_role_mapping=\
+  101 = reader       ;\
+  102 = publisher    ;\
+  103 = architect    ;\
+  104 = admin        ;\
+  105 = allowed_role
+
+# In case defined users are not allowed to search for themselves, we can specify credentials for a user with read access to all users and groups.
+# Note that this account only needs read-only access to the relevant parts of the LDAP directory and does not need to have access rights to Neo4j or any other systems.
+# dbms.security.ldap.authorization.use_system_account=true
+# dbms.security.ldap.authorization.system_username=cn=search-account,ou=users,dc=example,dc=com
+# dbms.security.ldap.authorization.system_password=search-account-password
 ----
 
-. Map the groups in the LDAP system to the Neo4j built-in and custom roles.
-For more information, see xref:authentication-authorization/ldap-integration.adoc#auth-ldap-map-ldap-roles[Map the LDAP groups to the Neo4j roles].
+We would like to draw attention to some details in the configuration examples.
+A comprehensive overview of LDAP configuration options is available in xref:reference/configuration-settings.adoc[Configuration settings].
 
-[[auth-ldap-search]]
-== Verify the LDAP configuration
+[options="header"]
+|===
+| Parameter name                                                                                                                        | Default value | Description
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.user_dn_template[dbms.security.ldap.authentication.user_dn_template]                     | `uid=+{0}+,ou=users,dc=example,dc=com` | Converts usernames into LDAP-specific fully qualified names required for logging in.
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.user_search_base[dbms.security.ldap.authorization.user_search_base]                       | `ou=users,dc=example,dc=com` | Sets the base object or named context to search for user objects.
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.user_search_filter[dbms.security.ldap.authorization.user_search_filter]                   | `(&(objectClass=*)(uid=+{0}+))` | Sets up an LDAP search filter to search for a user principal.
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_membership_attributes[dbms.security.ldap.authorization.group_membership_attributes] | `[memberOf]` | Lists attribute names on a user object that contains groups to be used for mapping to roles.
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authorization.group_to_role_mapping[dbms.security.ldap.authorization.group_to_role_mapping]             |  | Lists an authorization mapping from groups to the pre-defined built-in roles `admin`, `architect`, `publisher` and `reader`, or to any other custom-defined roles.
+|===
 
-You can verify that your LDAP configuration is correct, and that the LDAP server responds, by using the LDAP command-line tool `ldapsearch`.
+[[ldap-search]]
+== Use 'ldapsearch' to verify the configuration
 
-The `ldapsearch` command accepts the LDAP configuration setting values as input and verifies both the authentication (using the `simple` mechanism) and authorization of a user.
-See the https://docs.ldap.com/ldap-sdk/docs/tool-usages/ldapsearch.html[ldapsearch official documentation^] for more advanced usage and how to use SASL authentication mechanisms.
+We can use the LDAP command-line tool `ldapsearch` to verify that the configuration is correct, and that the LDAP server is actually responding.
+We do this by issuing a search command that includes LDAP configuration setting values.
 
-. Verify the authentication and authorization of a user.
-For example, `john`.
+These example searches verify both the authentication (using the `simple` mechanism) and authorization of user 'john'.
+See the `ldapsearch` documentation for more advanced usage and how to use SASL authentication mechanisms.
 
-* With `dbms.security.ldap.authorization.use_system_account=false` (default):
-+
-[source, shell, role=noplay]
+With `dbms.security.ldap.authorization.use_system_account=false` (default):
+
+[source, properties]
 ----
-# ldapsearch -v -H ldap://<dbms.security.ldap.host> -x -D <dbms.security.ldap.authentication.user_dn_template : replace {0}> -W -b <dbms.security.ldap.authorization.user_search_base> "<dbms.security.ldap.authorization.user_search_filter : replace {0}>" <dbms.security.ldap.authorization.group_membership_attributes>
-
+#ldapsearch -v -H ldap://<dbms.security.ldap.host> -x -D <dbms.security.ldap.authentication.user_dn_template : replace {0}> -W -b <dbms.security.ldap.authorization.user_search_base> "<dbms.security.ldap.authorization.user_search_filter : replace {0}>" <dbms.security.ldap.authorization.group_membership_attributes>
 ldapsearch -v -H ldap://myactivedirectory.example.com:389 -x -D cn=john,cn=Users,dc=example,dc=com -W -b cn=Users,dc=example,dc=com "(&(objectClass=*)(cn=john))" memberOf
 ----
 
-* With `dbms.security.ldap.authorization.use_system_account=true`:
-+
-[source, shell, role=noplay]
-----
-# ldapsearch -v -H ldap://<dbms.security.ldap.host> -x -D <dbms.security.ldap.authorization.system_username> -w <dbms.security.ldap.authorization.system_password> -b <dbms.security.ldap.authorization.user_search_base> "<dbms.security.ldap.authorization.user_search_filter>" <dbms.security.ldap.authorization.group_membership_attributes>
+With `dbms.security.ldap.authorization.use_system_account=true`:
 
-ldapsearch -v -H ldap://myactivedirectory.example.com:389 -x -D cn=search-account,cn=Users,dc=example,dc=com -w mypassword -b cn=Users,dc=example,dc=com "(&(objectClass=*)(cn=john))" memberOf
+[source, properties]
+----
+#ldapsearch -v -H ldap://<dbms.security.ldap.host> -x -D <dbms.security.ldap.authorization.system_username> -w <dbms.security.ldap.authorization.system_password> -b <dbms.security.ldap.authorization.user_search_base> "<dbms.security.ldap.authorization.user_search_filter>" <dbms.security.ldap.authorization.group_membership_attributes>
+ldapsearch -v -H ldap://myactivedirectory.example.com:389 -x -D cn=search-account,cn=Users,dc=example,dc=com -w secret -b cn=Users,dc=example,dc=com "(&(objectClass=*)(cn=john))" memberOf
 ----
 
-. Verify that the value of the returned membership attribute is a group that is mapped to a role in `dbms.security.ldap.authorization.group_to_role_mapping`.
-+
+Then verify that we get a successful response, and that the value of the returned membership attribute is a group that is mapped to a role in `dbms.security.ldap.authorization.group_to_role_mapping`.
+
 [source, properties]
 ----
 # extended LDIF
@@ -306,58 +226,50 @@ result: 0 Success
 # numEntries: 1
 ----
 
-[[auth-ldap-clear-auth-cache]]
+[[ldap-clear-auth-cache]]
 == The auth cache
 The _auth cache_ is the mechanism by which Neo4j caches the result of authentication via the LDAP server in order to aid performance.
-It is configured with the parameters `xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.cache_enabled[dbms.security.ldap.authentication.cache_enabled]`, and `xref:reference/configuration-settings.adoc#config_dbms.security.auth_cache_ttl[dbms.security.auth_cache_ttl]`.
+It is configured with the `xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.cache_enabled[dbms.security.ldap.authentication.cache_enabled]` and `xref:reference/configuration-settings.adoc#config_dbms.security.auth_cache_ttl[dbms.security.auth_cache_ttl]` parameters.
 
 [source, properties]
 ----
-# Turn on authentication caching to ensure performance.
-
+# Turn on authentication caching to ensure performance
 dbms.security.ldap.authentication.cache_enabled=true
 dbms.security.auth_cache_ttl=10m
 ----
-.Auth cache parameters
-[options="header", cols="<,<,<"]
+
+
+[options="header"]
 |===
-| Parameter name
-| Default value
-| Description
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.cache_enabled[dbms.security.ldap.authentication.cache_enabled]
-| `true`
-| Determines whether or not to cache the result of authentication via the LDAP server.
-
-Whether authentication caching should be enabled or not must be considered in view of your company's security guidelines.
-
-| xref:reference/configuration-settings.adoc#config_dbms.security.auth_cache_ttl[dbms.security.auth_cache_ttl]
-| `600 seconds`
-| Is the time to live (TTL) for cached authentication and authorization info.
-
-Setting the TTL to 0 disables all auth caching.
-
-A short TTL requires more frequent re-authentication and re-authorization, which can impact performance.
-
-A very long TTL means that changes to the users settings on an LDAP server may not be reflected in the Neo4j authorization behaviour in a timely manner.
-
+| Parameter name                                                                                                                        | Default value | Description
+| xref:reference/configuration-settings.adoc#config_dbms.security.ldap.authentication.cache_enabled[dbms.security.ldap.authentication.cache_enabled]                           | `true` | Determines whether or not to cache the result of authentication via the LDAP server. Whether authentication caching should be enabled or not must be considered in view of your company's security guidelines. It should be noted that when using the REST API, disabling authentication caching will result in re-authentication and possibly re-authorization of users on every request, which may severely impact performance on production systems, and put heavy load on the LDAP server.
+| xref:reference/configuration-settings.adoc#config_dbms.security.auth_cache_ttl[dbms.security.auth_cache_ttl]                                                                 | `600 seconds` | Is the time to live (TTL) for cached authentication and authorization info.
+Setting the TTL to 0 will disable all auth caching.
+A short TTL will require more frequent re-authentication and re-authorization, which can impact performance.
+A very long TTL will also mean that changes to the users settings on an LDAP server may not be reflected in the Neo4j authorization behaviour in a timely manner.
 Valid units are `ms`, `s`, `m`; default unit is `s`.
 |===
 
 
 An administrator can clear the auth cache to force the re-querying of authentication and authorization information from the federated auth provider system.
-Use Neo4j Browser or Neo4j Cypher Shell to execute this statement:
+
+.Clear the auth cache
+====
+
+Use Neo4j Browser or Neo4j Cypher Shell to execute this statement.
 
 [source, cypher]
 ----
 CALL dbms.security.clearAuthCache()
 ----
+====
 
-[[auth-ldap-ad-encrypted]]
+[[ldap-ad-encrypted]]
 == Available methods of encryption
 
-Specifying the `xref:reference/configuration-settings.adoc#config_dbms.security.ldap.host[dbms.security.ldap.host]` parameter configures using LDAP without encryption.
-Not specifying the protocol or port results in `ldap` being used over the default port `389`.
+All the following ways of specifying the `xref:reference/configuration-settings.adoc#config_dbms.security.ldap.host[dbms.security.ldap.host]` parameter are valid.
+Doing so will configure using LDAP without encryption.
+Not specifying the protocol or port will result in `ldap` being used over the default port `389`.
 
 [source, properties]
 ----
@@ -368,7 +280,7 @@ dbms.security.ldap.host=ldap://myactivedirectory.example.com:389
 ----
 
 
-[[auth-ldap-encrypted-starttls]]
+[[ldap-encrypted-starttls]]
 === Use LDAP with encryption via StartTLS
 
 To configure Active Directory with encryption via StartTLS, set the following parameters:
@@ -379,11 +291,12 @@ dbms.security.ldap.use_starttls=true
 dbms.security.ldap.host=ldap://myactivedirectory.example.com
 ----
 
-[[auth-ldap-encrypted-ldaps]]
+
+[[ldap-encrypted-ldaps]]
 === Use LDAP with encrypted LDAPS
 
 To configure Active Directory with encrypted LDAPS, set `xref:reference/configuration-settings.adoc#config_dbms.security.ldap.host[dbms.security.ldap.host]` to one of the following.
-If you do not specify the port, the default one `636` will be used.
+Not specifying the port will result in `ldaps` being used over the default port `636`.
 
 [source, properties]
 ----
@@ -391,19 +304,28 @@ dbms.security.ldap.host=ldaps://myactivedirectory.example.com
 dbms.security.ldap.host=ldaps://myactivedirectory.example.com:636
 ----
 
-[[auth-ldap-self-signed-certificate]]
-== Use a self-signed certificate (SSL) in a test environment
+This method of securing Active Directory is being deprecated and is therefore not recommended.
+Instead, use Active Directory with encryption via xref:authentication-authorization/ldap-integration.adoc#ldap-encrypted-starttls[StartTLS].
+
+[[ldap-self-signed-certificate]]
+== Use a self-signed certificate in a test environment
 
 Production environments should always use an SSL certificate issued by a Certificate Authority for secure access to the LDAP server.
-However, there are scenarios, for example in test environments, where you may want to use an SSL certificate on the LDAP server.
+However, there are scenarios, for example in test environments, where you may wish to use a self-signed certificate on the LDAP server.
+In these scenarios you will have to tell Neo4j about the local certificate.
+This is done by entering the details of the certificate using `dbms.jvm.additional` in _neo4j.conf_.
 
-To configure an SSL certificate on LDAP server, enter the details of the certificate using `dbms.jvm.additional` in _neo4j.conf_.
-The path to the certificate file `MyCert.jks` is an absolute path to the Neo4j server.
+.Specify details for self-signed certificate on LDAP server
+====
+
+This example shows how to specify details for a self-signed certificate on an LDAP server.
+The path to the certificate file `MyCert.jks` is an absolute path on the Neo4j server.
 
 [source, properties]
 ----
 dbms.jvm.additional=-Djavax.net.ssl.keyStore=/path/to/MyCert.jks
-dbms.jvm.additional=-Djavax.net.ssl.keyStorePassword=mypasword
+dbms.jvm.additional=-Djavax.net.ssl.keyStorePassword=secret
 dbms.jvm.additional=-Djavax.net.ssl.trustStore=/path/to/MyCert.jks
-dbms.jvm.additional=-Djavax.net.ssl.trustStorePassword=mypasword
+dbms.jvm.additional=-Djavax.net.ssl.trustStorePassword=secret
 ----
+====

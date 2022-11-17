@@ -3,123 +3,141 @@
 = Set up a local Causal Cluster
 :description: This tutorial walks through the basics of setting up a Neo4j Causal Cluster. The result is a local cluster of six instances: three Cores and three Read Replicas. 
 
+This tutorial describes the following:
 
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-introduction[Introduction]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-download-neo4j[Download Neo4j and configure the Core instances]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-core01[Configure the first Core instance]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-core02[Configure the second Core instance]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-core03[Configure the third Core instance]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-cores-start-core-servers[Start the Core Servers]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-check-status[Check the status of the cluster]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-read-replicas[Configure the Read Replicas]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-read-replica01[Configure the first Read Replica]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-read-replica02[Configure the second Read Replica]
+** xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-read-replica03[Configure the third Read Replica]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-configure-cores-start-read-replicas[Start the Read Replicas]
+* xref:tutorial/local-causal-cluster.adoc#tutorial-local-cluster-test-with-read-replicas[Test the cluster with Read Replicas]
+
+
+[discrete]
 [[tutorial-local-cluster-introduction]]
 == Introduction
 
-In this tutorial, you will learn how to deploy a Causal Cluster locally on a single machine.
+In this tutorial we will learn how to deploy a Causal Cluster locally, on a single machine.
+This is a useful learning exercise, and will get you started quickly with developing an application against a Neo4j Causal Cluster.
+Please note that in practice, a cluster on a single machine has no fault tolerance and is therefore not suitable for production use.
 
-[NOTE]
-====
-Keep in mind that a cluster on a single machine has no fault tolerance and is therefore not suitable for production use.
-====
+We will begin by configuring and starting a cluster of three Core instances.
+This is the minimal deployment for a fault-tolerant Causal Cluster (for a discussion on the number of servers required for a Causal Cluster, see xref:clustering/introduction.adoc#causal-clustering-core-servers[Core Servers]).
+The Core instances are responsible for keeping the data safe.
 
-A typical Causal Cluster consists of three Core instances and three Read Replicas.
-The Core instances are responsible for keeping the data safe, and the Read Replicas are responsible for scaling the capacity of the cluster.
-For details on the number of servers required for a Causal Cluster, see xref:clustering/introduction.adoc#causal-clustering-core-servers[Core Servers].
+After the Core of the cluster is operational we will add three Read Replicas.
+The Read Replicas are responsible for scaling the capacity of the cluster.
 
 The Core of the Causal Cluster is intended to remain stable over time.
-The roles within the Core may change as needed, but the Core itself is long-lived and stable. +
+The roles within the Core will change as needed, but the Core itself is long-lived and stable.
 Read Replicas live at the edge of the cluster and can be brought up and taken down without affecting the Core.
 They can be added as needed to increase the operational capacity of the cluster as a whole.
 
-For more information about Causal Clustering architecture, configuration, and operation, see xref:clustering/index.adoc[Clustering].
+In this tutorial we will be running all instances in the cluster on a single machine.
+Many of the default configuration settings work well out of the box in a production deployment, with multiple machines.
+Some of these we have to change when deploying multiple instances on a single machine, so that instances do not try to use the same network ports.
+We call out the settings that are specific to this scenario as we go along.
 
 
+[discrete]
 [[tutorial-local-cluster-download-neo4j]]
-== Download Neo4j
-
-You download Neo4j and prepare your local environment.
+== Download Neo4j and configure the Core instances
 
 . Create a local working directory.
-. Download a copy of the Neo4j Enterprise Edition from https://neo4j.com/download/other-releases/#releases[the Neo4j download site].
+. Download a copy of Neo4j Enterprise Edition from https://neo4j.com/download/other-releases/#releases[the Neo4j download site].
 . Unpack Neo4j in the working directory.
+. Make a copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory, and name it _core-01_.
+  We will need to keep the original directory to use when setting up the Read Replicas later.
+  The _core-01_ directory will contain the first Core instance.
 
 
-[[tutorial-local-cluster-configure-cores]]
-== Set up the Core servers
-You create and configure three Core instances.
-
-
+[discrete]
 [[tutorial-local-cluster-configure-core01]]
-=== Configure and start the first Core instance
+=== Configure the first Core instance
 
-You create and configure the first Core instance.
+All configuration that we will do takes place in the Neo4j configuration file, xref:configuration/neo4j-conf.adoc[_conf/neo4j.conf_].
+If you used a different package than in the download instructions above, see xref:configuration/file-locations.adoc[File locations] to locate the configuration file.
 
-. Make a copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _core-01_. +
-You have to keep the original directory for setting up the other Core instances and Read Replicas.
-The _core-01_ directory will contain the first Core instance.
-. Open the Neo4j configuration file, xref:configuration/neo4j-conf.adoc[_conf/neo4j.conf_], and configure the following settings:
-+
-[TIP]
-====
-If you cannot find the configuration file, see xref:configuration/file-locations.adoc[File locations].
-====
-.. Locate and uncomment the setting `dbms.mode=CORE`.
-.. Locate and uncomment the setting `causal_clustering.minimum_core_cluster_size_at_formation=3`.
-.. Locate and uncomment the setting `causal_clustering.minimum_core_cluster_size_at_runtime=3`.
-.. Locate and uncomment the setting `causal_clustering.initial_discovery_members=localhost:5000,localhost:5001,localhost:5002`.
-.. Locate and uncomment the setting `causal_clustering.discovery_listen_address=:5000`.
-.. Locate and uncomment the setting `causal_clustering.transaction_listen_address=:6000`.
-.. Locate and uncomment the setting `causal_clustering.raft_listen_address=:7000`.
-.. Locate and uncomment the setting `dbms.connector.bolt.listen_address=:7687`.
-.. Locate and uncomment the setting `dbms.connector.http.listen_address=:7474`.
-.. Locate and uncomment the setting `dbms.connector.https.listen_address`, and change the value to `:6474`.
-.. Locate and uncomment the setting `dbms.backup.listen_address=0.0.0.0:6362`.
-. Save the file.
-. Open a command-line tool and navigate to _core-01_ directory.
-. Run the following command to start _core-01_:
-+
+The first settings we will change represent the minimum configuration for a Core instance:
+
+. Locate and uncomment the setting `dbms.mode=CORE`.
+. Locate and uncomment the setting `causal_clustering.minimum_core_cluster_size_at_formation=3`.
+. Locate and uncomment the setting `causal_clustering.minimum_core_cluster_size_at_runtime=3`.
+. Locate and uncomment the setting `causal_clustering.initial_discovery_members=localhost:5000,localhost:5001,localhost:5002`.
+
+Since we are setting up the Causal Cluster to run on a single machine, we must do some additional configuration.
+Please note that these steps would not be necessary if the instances are running on different servers.
+
+. Locate and uncomment the setting `causal_clustering.discovery_listen_address=:5000`.
+. Locate and uncomment the setting `causal_clustering.transaction_listen_address=:6000`.
+. Locate and uncomment the setting `causal_clustering.raft_listen_address=:7000`.
+. Locate and uncomment the setting `dbms.connector.bolt.listen_address=:7687`.
+. Locate and uncomment the setting `dbms.connector.http.listen_address=:7474`.
+. Locate the `dbms.connector.https.listen_address` setting and change the value to `:6474`.
+. Locate the `dbms.backup.address` setting and change the value to `:6362`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-core02]]
+=== Configure the second Core instance
+
+We can now create the second Core instance.
+
+As mentioned above, we also need to amend some of the additional values in the  _neo4j.conf_ file so that our cluster can run on a single machine:
+
+. Make a copy of the _core-01_ directory and rename it _core-02_.
+. Open the _neo4j.conf_ file in the new _core-02_ directory.
+.. Locate the `causal_clustering.discovery_listen_address` setting and change the value to `:5001`.
+.. Locate the `causal_clustering.transaction_listen_address` setting and change the value to `:6001`.
+.. Locate the `causal_clustering.raft_listen_address` setting and change the value to `:7001`.
+.. Locate the `dbms.connector.bolt.listen_address` setting and change the value to `:7688`.
+.. Locate the `dbms.connector.http.listen_address` setting and change the value to `:7475`.
+.. Locate the `dbms.connector.https.listen_address` setting and change the value to `:6475`.
+.. Locate the `dbms.backup.address` setting and change the value to `:6363`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-core03]]
+=== Configure the third Core instance
+
+We can now create the third, and final Core instance.
+
+Again, we also need to amend some of the additional values in the  _neo4j.conf_ file so that our cluster can run on a single machine:
+
+. Make a copy of the _core-02_ directory and rename it _core-03_.
+. Open the _neo4j.conf_ file in the new _core-03_ directory.
+.. Locate the `causal_clustering.discovery_listen_address` setting and change the value to `:5002`.
+.. Locate the `causal_clustering.transaction_listen_address` setting and change the value to `:6002`.
+.. Locate the `causal_clustering.raft_listen_address` setting and change the value to `:7002`.
+.. Locate the `dbms.connector.bolt.listen_address` setting and change the value to `:7689`.
+.. Locate the `dbms.connector.http.listen_address` setting and change the value to `:7476`.
+.. Locate the `dbms.connector.https.listen_address` setting and change the value to `:6476`.
+.. Locate the `dbms.backup.address` setting and change the value to `:6364`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-cores-start-core-servers]]
+== Start the Core servers
+
+In any order, we can now start each of the Neo4j instances:
+
 [source, shell]
 ----
 core-01$ ./bin/neo4j start
 ----
 
-
-[[tutorial-local-cluster-configure-core02]]
-=== Create and configure the second Core instance
-
-You create and configure the second Core instance.
-
-. Make a new copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _core-02_.
-. Overwrite _core-02/conf/neo4j.conf_ with the just modified _core-01/conf/neo4j.conf_. Then in the new _core-02_ directory, open
-the _conf/neo4j.conf_ file and configure the following settings:
-.. Locate the setting `causal_clustering.discovery_listen_address` and change the value to `:5001`.
-.. Locate the setting `causal_clustering.transaction_listen_address` and change the value to `:6001`.
-.. Locate the setting `causal_clustering.raft_listen_address` and change the value to `:7001`.
-.. Locate the setting `dbms.connector.bolt.listen_address` and change the value to `:7688`.
-.. Locate the setting `dbms.connector.http.listen_address` and change the value to `:7475`.
-.. Locate the setting `dbms.connector.https.listen_address` and change the value to `:6475`.
-.. Locate the setting `dbms.backup.listen_address` and change the value to `0.0.0.0:6363`.
-. Save the file.
-. Open a command-line tool and navigate to _core-02_ directory.
-. Run the following command to start _core-02_:
-+
 [source, shell]
 ----
 core-02$ ./bin/neo4j start
 ----
 
-
-[[tutorial-local-cluster-configure-core03]]
-=== Create and configure the third Core instance
-
-You create and configure the third Core instance.
-
-. Make a new copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _core-03_.
-. Overwrite _core-03/conf/neo4j.conf_ with the just modified _core-02/conf/neo4j.conf_. Then in the new _core-03_ directory, open
-the _conf/neo4j.conf_ file and configure the following settings:
-.. Locate the setting `causal_clustering.discovery_listen_address` and change the value to `:5002`.
-.. Locate the setting `causal_clustering.transaction_listen_address` and change the value to `:6002`.
-.. Locate the setting `causal_clustering.raft_listen_address` and change the value to `:7002`.
-.. Locate the setting `dbms.connector.bolt.listen_address` and change the value to `:7689`.
-.. Locate the setting `dbms.connector.http.listen_address` and change the value to `:7476`.
-.. Locate the setting `dbms.connector.https.listen_address` and change the value to `:6476`.
-.. Locate the setting `dbms.backup.listen_address` and change the value to `0.0.0.0:6364`.
-. Save the file.
-. Open a command-line tool and navigate to _core-03_ directory.
-. Run the following command to start _core-03_:
-+
 [source, shell]
 ----
 core-03$ ./bin/neo4j start
@@ -128,25 +146,27 @@ core-03$ ./bin/neo4j start
 [TIP]
 .Startup Time
 ====
-To follow along with the startup of a server, check the messages in _<instance-home>/logs/neo4j.log_:
+If you want to follow along with the startup of a server you can follow the messages in _logs/neo4j.log_:
 
-* On a Unix system, run the command `tail -n100 logs/neo4j.log`.
-* On Windows Server, run `Get-Content .\logs\neo4j.log -Tail 10 -Wait`.
+* On a Unix system issue the command `tail -f logs/neo4j.log`.
+* On Windows Server run `Get-Content .\logs\neo4j.log -Tail 10 -Wait`.
 
 While an instance is joining the cluster, the server may appear unavailable.
 In the case where an instance is joining a cluster with lots of data, it may take a number of minutes for the new instance to download the data from the cluster and become available.
 ====
 
 
+[discrete]
 [[tutorial-local-cluster-check-status]]
 == Check the status of the cluster
 
-The minimal cluster of three Core servers is operational and is ready to serve requests.
+Now the minimal cluster of three Core Servers is operational and is ready to serve requests.
 
-Connect to any of the three Core instances to check the cluster status.
-
-. Open _core-01_ at http://localhost:7474[http://localhost:7474^].
+. Connect to any of the three Core instances to check the cluster status.
+  For example, for _core-01_ point your web browser to +http://localhost:7474+.
 . Authenticate with the default `neo4j/neo4j` credentials, and set a new password when prompted.
+  These credentials are not shared between cluster members.
+  A new password must be set on each instance when connecting for the first time.
 . Check the status of the cluster by running the following in Neo4j Browser:
 +
 [source, cypher]
@@ -154,22 +174,28 @@ Connect to any of the three Core instances to check the cluster status.
 :sysinfo
 ----
 +
-.A cluster of three Core instances.
+.Example of a Cluster overview, achieved by running `:sysinfo`
 ====
+The *Causal Cluster Members* table shows the status of instances in the cluster.
+The table below is an example of a test cluster:
+
 [options="header"]
 |===
-| Name | Address | Role	| Status | Default | Error
-| neo4j	| localhost:7689 | follower | online | true | -
-| neo4j	| localhost:7688 | follower | online | true | -
-| neo4j	| localhost:7687 | leader | online | true | -
-| system	| localhost:7689 | follower | online | - | -
-| system	| localhost:7688 | follower | online | - | -
-| system	| localhost:7687 | leader` | online | - | -
-
+| Roles	| Addresses | Actions
+| LEADER	| bolt://localhost:7687, +http://localhost:7474+, +https://localhost:6474+ | `Open`
+| FOLLOWER	| bolt://localhost:7688, +http://localhost:7475+, +https://localhost:6475+ | `Open`
+| FOLLOWER	| bolt://localhost:7689, +http://localhost:7476+, +https://localhost:6476+ | `Open`
 |===
+
+The three Core instances in this cluster are now operational.
 ====
 +
-. Run the following query to create nodes and relationships.
+Now you can run queries to create nodes and relationships, and see that the data gets replicated in the cluster.
++
+. Click the `Open` action on the instance that has the _LEADER_ role.
+  This will open a new Neo4j Browser session against the Leader of the cluster.
+. Authenticate and set a new password, as before.
+. Run the following query to create nodes and relationships:
 +
 [source, cypher]
 ----
@@ -179,9 +205,9 @@ MERGE (person2:Person {id: toInteger(100.0 * rand())})
 MERGE (person1)-[:FRIENDS]->(person2)
 ----
 +
-. Open a new tab and point your web browser to a follower, for example, _core-02_ at http://localhost:7475[http://localhost:7475^].
-. Authenticate with the credentials you have set up for _core-01_.
-. Run the following query to verify that the data has been replicated:
+. When the query has executed, choose an instance with the _FOLLOWER_ role from the sysinfo view.
+  Click the `Open` action to connect.
+. Run the following query to see that the data has been replicated:
 +
 [source, cypher]
 ----
@@ -191,124 +217,126 @@ LIMIT 10
 ----
 
 
+[discrete]
 [[tutorial-local-cluster-configure-read-replicas]]
-== Set up the Read Replicas
+== Configure the Read Replicas
 
-Because the Read Replicas do not participate in quorum decisions, their configuration is simpler than the configuration of the Core servers.
+Read Replicas instances do not participate in quorum decisions, so their configuration is simpler than the configuration of Core Servers as there are fewer settings to amend.
 
-You configure a Read Replica by setting the address of a Core instance that it can bind to in order to discover the cluster.
-For details, see xref:clustering-advanced/lifecycle.adoc#causal-clustering-discovery-protocol[Discovery protocol]. +
-After the initial discovery, the Read Replicas can choose a Core instance from which to catch up.
-For details, see xref:clustering-advanced/lifecycle.adoc#causal-clustering-catchup-protocol[Catchup protocol].
+All that a Read Replica needs to know is the addresses of Core Servers which they can bind to in order to discover the cluster.
+See xref:clustering-advanced/lifecycle.adoc#causal-clustering-discovery-protocol[Discovery protocol] for the details of how this works.
+Once it has completed the initial discovery, the Read Replica becomes aware of the currently available Core Servers and can choose an appropriate one from which to catch up.
+See xref:clustering-advanced/lifecycle.adoc#causal-clustering-catchup-protocol[Catchup protocol] for the details of how this works.
 
-
+[discrete]
 [[tutorial-local-cluster-configure-read-replica01]]
-=== Configure and start the first Read Replica
+=== Configure the first Read Replica
 
-You create and configure the first Read Replica.
-
-. Make a copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _replica-01_.
-. In the new _replica-01_ directory, open the _conf/neo4j.conf_ file and configure the following settings:
-.. Locate and uncomment the setting `dbms.mode`, and change the value to `READ_REPLICA`.
+. In your working directory, make a copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _replica-01_.
+. Open the _neo4j.conf_ file in the new _replica-01_ directory.
+  The first settings we will change represent the minimum configuration for a Read Replica:
+.. Locate and uncomment the `dbms.mode` setting and change the value to `READ_REPLICA`.
 .. Locate and uncomment the setting `causal_clustering.initial_discovery_members=localhost:5000,localhost:5001,localhost:5002`.
-.. Locate and uncomment the setting `causal_clustering.discovery_listen_address`, and change the value to `:5003`.
-.. Locate and uncomment the setting `causal_clustering.transaction_listen_address`, and change the value to `:6003`.
-.. Locate and uncomment the setting `dbms.connector.bolt.listen_address`, and change the value to `:7690`.
-.. Locate and uncomment the setting `dbms.connector.http.listen_address`, and change the value to `:7477`.
-.. Locate and uncomment the setting `dbms.connector.https.listen_address`, and change the value to `:6477`.
-.. Locate and uncomment the setting `dbms.backup.listen_address`, and change the values to `0.0.0.0:6365`.
-. Save the file.
-. Open a command-line tool and navigate to _replica-01_ directory.
-. Run the following command to start _replica-01_:
-+
+. Since we are setting up the Causal Cluster to run on a single machine, we must do some additional configuration.
+  Please note that the following steps would not be necessary if the instances are running on different servers:
+.. Locate and uncomment the `causal_clustering.transaction_listen_address` setting and change the value to `:6003`.
+.. Locate and uncomment the `dbms.connector.bolt.listen_address` setting and change the value to `:7690`.
+.. Locate and uncomment the `dbms.connector.http.listen_address` setting and change the value to `:7477`.
+.. Locate and uncomment the `dbms.connector.https.listen_address` setting and change the value to `:6477`.
+.. Locate and uncomment the `dbms.backup.address` setting and change the value to `:6365`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-read-replica02]]
+=== Configure the second Read Replica
+
+We can now create the second Read Replica.
+
+As mentioned above, we also need to amend some of the additional values in the  _neo4j.conf_ file so that our cluster can run on a single machine:
+
+. Make a copy of the _replica-01_ directory and rename it _replica-02_.
+. Open the _neo4j.conf_ file in the new _replica-02_ directory.
+.. Locate the `causal_clustering.transaction_listen_address` setting and change the value to `:6004`.
+.. Locate the `dbms.connector.bolt.listen_address` setting and change the value to `:7691`.
+.. Locate the `dbms.connector.http.listen_address` setting and change the value to `:7478`.
+.. Locate the `dbms.connector.https.listen_address` setting and change the value to `:6478`.
+.. Locate the `dbms.backup.address` setting and change the value to `:6366`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-read-replica03]]
+=== Configure the third Read Replica
+
+We can now create the third, and final Read Replica.
+
+Again, we also need to amend some of the additional values in the  _neo4j.conf_ file so that our cluster can run on a single machine:
+
+. Make a copy of the _replica-02_ directory and rename it _replica-03_.
+. Open the _neo4j.conf_ file in the new _replica-03_ directory.
+.. Locate the `causal_clustering.transaction_listen_address` setting and change the value to `:6005`.
+.. Locate the `dbms.connector.bolt.listen_address` setting and change the value to `:7692`.
+.. Locate the `dbms.connector.http.listen_address` setting and change the value to `:7479`.
+.. Locate the `dbms.connector.https.listen_address` setting and change the value to `:6479`.
+.. Locate the `dbms.backup.address` setting and change the value to `:6367`.
+
+
+[discrete]
+[[tutorial-local-cluster-configure-cores-start-read-replicas]]
+== Start the Read Replicas
+
+In any order, we can now start the Read Replica instances:
+
 [source, shell]
 ----
 replica-01$ ./bin/neo4j start
 ----
 
-
-[[tutorial-local-cluster-configure-read-replica02]]
-=== Configure and start the second Read Replica
-
-You create and configure the second Read Replica.
-
-. Make a new copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _replica-02_.
-. Overwrite _replica-02/conf/neo4j.conf_ with the just modified _replica-01/conf/neo4j.conf_. Then in the new _replica-02_ directory, open
-the _conf/neo4j.conf_ file and configure the following settings:
-.. Locate the setting `causal_clustering.discovery_listen_address` and change the value to `:5004`.
-.. Locate the setting `causal_clustering.transaction_listen_address` and change the value to `:6004`.
-.. Locate the setting `dbms.connector.bolt.listen_address` and change the value to `:7691`.
-.. Locate the setting `dbms.connector.http.listen_address` and change the value to `:7478`.
-.. Locate the setting `dbms.connector.https.listen_address` and change the value to `:6478`.
-.. Locate the setting `dbms.backup.listen_address` and change the value to `0.0.0.0:6366`.
-. Save the file.
-. Open a command-line tool and navigate to _replica-02_ directory.
-. Run the following command to start _replica-02_:
-+
 [source, shell]
 ----
 replica-02$ ./bin/neo4j start
 ----
 
-
-[[tutorial-local-cluster-configure-read-replica03]]
-=== Configure and start the third Read Replica
-
-You create and configure the third Read Replica.
-
-. Make a new copy of the _neo4j-enterprise-{neo4j-version-exact}_ directory and name it _replica-03_.
-. Overwrite _replica-03/conf/neo4j.conf_ with the just modified _replica-02/conf/neo4j.conf_. Then in the new _replica-03_ directory, open
-the _conf/neo4j.conf_ file and configure the following settings:
-.. Locate the setting `causal_clustering.discovery_listen_address` and change the value to `:5005`.
-.. Locate the setting `causal_clustering.transaction_listen_address` and change the value to `:6005`.
-.. Locate the setting `dbms.connector.bolt.listen_address` and change the value to `:7692`.
-.. Locate the setting `dbms.connector.http.listen_address` and change the value to `:7479`.
-.. Locate the setting `dbms.connector.https.listen_address` and change the value to `:6479`.
-.. Locate the setting `dbms.backup.listen_address` and change the value to `0.0.0.0:6367`.
-. Save the file.
-. Open a command-line tool and navigate to _replica-03_ directory.
-. Run the following command to start _replica-03_:
-+
 [source, shell]
 ----
 replica-03$ ./bin/neo4j start
 ----
 
 
+[discrete]
 [[tutorial-local-cluster-test-with-read-replicas]]
-== Check the status of the cluster
+== Test the cluster with Read Replicas
 
-Your cluster of three Core servers and three Read Replicas is operational and is ready to serve requests.
+To test the status of the cluster now that the Read Replicas are running, we will repeat the steps from earlier, but via a Read Replica:
 
-In your _core-01_ browser, check the cluster status by running the following in Neo4j Browser:
+. Connect to any of the three Read Replica instances.
+  For example, for _replica-01_ point your web browser to +http://localhost:7477+.
+. Authenticate with the default `neo4j/neo4j` credentials.
+  Once again, you will need to set a new password when prompted.
+. Check the status of the cluster by running the following in Neo4j Browser:
++
 [source, cypher]
 ----
 :sysinfo
 ----
-
-.A cluster of three Core instances and three Read Replicas.
++
+.Example of a cluster with both Core instances and Read Replicas, achieved by running `:sysinfo`
 ====
+The following table shows the status of a test cluster which now includes Read Replicas:
+
 [options="header"]
 |===
-| Name | Address | Role	| Status | Default | Error
-| neo4j	| localhost:7689 | follower | online | true | -
-| neo4j	| localhost:7688 | follower | online | true | -
-| neo4j	| localhost:7687 | leader | online | true | -
-| neo4j	| localhost:7692 | read_replica | online | true | -
-| neo4j	| localhost:7691 | read_replica | online | true | -
-| neo4j	| localhost:76890 | read_replica | online | true | -
-| system	| localhost:7689 | follower | online | - | -
-| system	| localhost:7688 | follower | online | - | -
-| system	| localhost:7687 | leader | online | - | -
-| system	| localhost:7692 | read_replica | online | - | -
-| system	| localhost:7691 | read_replica | online | - | -
-| system	| localhost:7690 | read_replica | online | - | -
+| Roles	| Addresses | Actions
+| LEADER	| bolt://localhost:7687, +http://localhost:7474+, +https://localhost:6474+ | `Open`
+| FOLLOWER	| bolt://localhost:7688, +http://localhost:7475+, +https://localhost:6475+ | `Open`
+| FOLLOWER	| bolt://localhost:7689, +http://localhost:7476+, +https://localhost:6476+ | `Open`
+| READ_REPLICA	| bolt://localhost:7690, +http://localhost:7477+, +https://localhost:6477+ | `Open`
+| READ_REPLICA	| bolt://localhost:7691, +http://localhost:7478+, +https://localhost:6478+ | `Open`
+| READ_REPLICA	| bolt://localhost:7692, +http://localhost:7479+, +https://localhost:6479+ | `Open`
 |===
 ====
-
-. Open a new tab and point your web browser to a Read Replica, for example, _replica-01_ at http://localhost:7477[http://localhost:7477^].
-. Login with `neo4j` and the previously set password and *use the `bolt://` schema*.
-. Run the following query to verify that the data has been replicated:
++
+. Click the `Open` action to connect to any of the Read Replicas.
+. Run the same query as before:
 +
 [source, cypher]
 ----

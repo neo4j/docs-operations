@@ -1,43 +1,50 @@
 [[connectors]]
 = Configure connectors
-:description: How to configure connectors (Bolt, HTTP, and HTTPS) for Neo4j. 
+:description: This section describes how to configure connectors for Neo4j. 
+
+This section describes the following:
+
+* xref:configuration/connectors.adoc#connectors-available-connectors[Available connectors]
+* xref:configuration/connectors.adoc#connectors-configuration-options[Configuration options]
+* xref:configuration/connectors.adoc#connectors-options-for-bolt-thread-pooling[Options for Bolt thread pooling]
+* xref:configuration/connectors.adoc#connectors-defaults-for-addresses[Defaults for addresses]
+
 
 [[connectors-available-connectors]]
 == Available connectors
 
 The table below lists the available Neo4j connectors:
 
-.Neo4j connectors and port number
+.Default connectors and their ports
 [options="header"]
 |===
-| Connector name         | Protocol | Default port number
-| `dbms.connector.bolt`  | Bolt     | `7687`
-| `dbms.connector.http`  | HTTP     | `7474`
-| `dbms.connector.https` | HTTPS    | `7473`
+| Connector name | Protocol | Default port number
+| `dbms.connector.bolt` | Bolt | `7687`
+| `dbms.connector.http` | HTTP | `7474`
+| `dbms.connector.https` | HTTPS | `7473`
 |===
 
-When configuring the HTTPS or Bolt connector, see also xref:security/ssl-framework.adoc[SSL framework] for details on how to work with SSL certificates.
+When configuring the HTTPS connector, see also xref:security/ssl-framework.adoc[SSL framework] for details on how to work with SSL certificates.
 
 
 [[connectors-configuration-options]]
 == Configuration options
 
-The connectors are configured by settings on the format `dbms.connector.<connector-name>.<setting-suffix>>`.
+The connectors are configured by settings on the format `<connector name>.<suffix>`.
 The available suffixes are described in the table below:
 
 .Configuration option suffixes for connectors
-[options="header",cols="15,25,60,60"]
+[options="header",cols="<15,<25,<60,<60"]
 |===
 | Option name
 | Default
 | Setting(s)
 | Description
 | `enabled`
-| `true` footnote:[When Neo4j is used in embedded mode, the default value is `false`.]
-| `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.enabled[dbms.connector.bolt.enabled]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.http.enabled[dbms.connector.http.enabled]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.https.enabled[dbms.connector.https.enabled]` footnote:[The default value for `xref:reference/configuration-settings.adoc#config_dbms.connector.https.enabled[dbms.connector.https.enabled]` is `false`.]
+| `true`
+| `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.enabled[dbms.connector.bolt.enabled]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.http.enabled[dbms.connector.http.enabled]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.https.enabled[dbms.connector.https.enabled]`
 | This setting allows the client connector to be enabled or disabled.
   When disabled, Neo4j does not listen for incoming connections on the relevant port.
-
 | `listen_address`
 | `127.0.0.1:<connector-default-port>`
 | `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.listen_address[dbms.connector.bolt.listen_address]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.https.listen_address[dbms.connector.https.listen_address]`, `xref:reference/configuration-settings.adoc#config_dbms.connector.http.listen_address[dbms.connector.http.listen_address]`
@@ -52,20 +59,15 @@ This is useful in a Causal Cluster as it allows each server to correctly adverti
 The advertised address consists of two parts; an address (fully qualified domain name, hostname, or IP address) and a port number (e.g. 7687), and is expressed in the format `<address>:<port-number>`.
 See below for an example of usage.
 | `tls_level`
-| `DISABLED`
+| `OPTIONAL`
 | `xref:reference/configuration-settings.adoc#config_dbms.connector.bolt.tls_level[dbms.connector.bolt.tls_level]`
 | This setting is only applicable to the Bolt connector.
 It allows the connector to accept encrypted and/or unencrypted connections.
-The default value is `DISABLED`, where only unencrypted client connections are to be accepted by this connector, and all encrypted connections will be rejected.
-
-Other values are `REQUIRED` and `OPTIONAL`.
+The default value is `OPTIONAL`, where either encrypted or unencrypted client connections are accepted by this connector.
+Other values are `REQUIRED` and `DISABLED`.
 Use `REQUIRED` when only encrypted client connections are to be accepted by this connector, and all unencrypted connections will be rejected.
-Use `OPTIONAL` where either encrypted or unencrypted client connections are accepted by this connector.
+Use `DISABLED` when only unencrypted client connections are to be accepted by this connector, and all encrypted connections will be rejected.
 |===
-
-
-[[connectors-configuration-options-note-2]]
-
 
 .Specify `listen_address` for the Bolt connector
 ====
@@ -96,10 +98,25 @@ See xref:performance/bolt-thread-pool-configuration.adoc[Bolt thread pool config
 It is possible to specify defaults for the configuration options with `listen_address` and `advertised_address` suffixes, as described below.
 Setting a default value will apply to all the connectors, unless specifically configured for a certain connector.
 
+[WARNING]
+====
+The default address settings can only accept the hostname or IP address portion of the full socket address.
+Port numbers are protocol-specific, and are added by the protocol-specific connector configuration.
+For example, `dbms.connectors.default_advertised_address=:7687`
 
-`xref:reference/configuration-settings.adoc#config_dbms.default_listen_address[dbms.default_listen_address]`::
+It is important to note that if the default address contains `:`, this will cause the value to be interpreted as an IPv6 address, and not as a port separator.
+
+For example, if you configure the default address value to be `example.com:9999`, you will get the following error in the console log:
+
+[source, shell]
+--
+Malformed IPv6 address at index 8: bolt://[example.com:9999]:7687
+--
+====
+
+`xref:reference/configuration-settings.adoc#config_dbms.connectors.default_listen_address[dbms.connectors.default_listen_address]`::
 This configuration option defines a default IP address of the settings with the `listen_address` suffix for all connectors.
-If the IP address part of the `listen_address` is not specified, it is inherited from the shared setting `dbms.default_listen_address`.
+If the IP address part of the `listen_address` is not specified, it is inherited from the shared setting `dbms.connectors.default_listen_address`.
 +
 .Specify `listen_address` for the Bolt connector
 ====
@@ -109,17 +126,17 @@ To listen for Bolt connections on all network interfaces (0.0.0.0) and on port 7
 dbms.connector.bolt.listen_address=0.0.0.0:7000
 ----
 
-This is equivalent to specifying the IP address by using the `dbms.default_listen_address` setting, and then specifying the port number for the Bolt connector.
+This is equivalent to specifying the IP address by using the `dbms.connectors.default_listen_address` setting, and then specifying the port number for the Bolt connector.
 ----
-dbms.default_listen_address=0.0.0.0
+dbms.connectors.default_listen_address=0.0.0.0
 
 dbms.connector.bolt.listen_address=:7000
 ----
 ====
 
-`xref:reference/configuration-settings.adoc#config_dbms.default_advertised_address[dbms.default_advertised_address]`::
+`xref:reference/configuration-settings.adoc#config_dbms.connectors.default_advertised_address[dbms.connectors.default_advertised_address]`::
 This configuration option defines a default address of the settings with the `advertised_address` suffix for all connectors.
-If the address part of the `advertised_address` is not specified, it is inherited from the shared setting `dbms.default_advertised_address`.
+If the address part of the `advertised_address` is not specified, it is inherited from the shared setting `dbms.connectors.default_advertised_address`.
 +
 .Specify `advertised_address` for the Bolt connector
 ====
@@ -130,19 +147,11 @@ Specify the address that clients should use for the Bolt connector:
 dbms.connector.bolt.advertised_address=server1:9000
 ----
 
-This is equivalent to specifying the address by using the `dbms.default_advertised_address` setting, and then specifying the port number for the Bolt connector.
+This is equivalent to specifying the address by using the `dbms.connectors.default_advertised_address` setting, and then specifying the port number for the Bolt connector.
 ----
-dbms.default_advertised_address=server1
+dbms.connectors.default_advertised_address=server1
 
 dbms.connector.bolt.advertised_address=:9000
 ----
 
-====
-
-[WARNING]
-====
-The default address settings can only accept the hostname or IP address portion of the full socket address.
-Port numbers are protocol-specific, and can only be added by the protocol-specific connector configuration.
-
-For example, if you configure the default address value to be `example.com:9999`, Neo4j will fail to start and you will get an error in xref:configuration/file-locations.adoc[_neo4j.log_].
 ====

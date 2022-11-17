@@ -1,0 +1,40 @@
+[[post-installation-wait-for-start]]
+= Poll Neo4j
+:description: This section gives an example of how to poll Neo4j, in order to know when it is ready for requests after starting up. 
+
+After starting Neo4j it may take some time before the database is ready to serve requests.
+Systems that depend on the database should be able to retry if it is unavailable in order to cope with network glitches and other brief outages.
+To specifically wait for Neo4j to be available after starting, poll the Bolt or HTTP endpoint until it gives a successful response.
+
+The details of how to poll depend upon:
+
+* Whether the client uses HTTP or Bolt.
+* Whether encryption or authentication are enabled.
+
+It is important to include a timeout in case Neo4j fails to start.
+Normally, ten seconds should be sufficient, but database recovery or upgrade may take much longer depending on the size of the store.
+If the instance is part of a cluster then the endpoint will not be available until other instances have started up, and the cluster has formed.
+
+Here is an example of polling (in Bash), using the HTTP endpoint with encryption and authentication disabled:
+
+[source, shell]
+----
+end="$((SECONDS+60))"
+while true; do
+    [[ "200" = "$(curl --silent --write-out %{http_code} --output /dev/null http://localhost:7474)" ]] && break
+    [[ "${SECONDS}" -ge "${end}" ]] && exit 1
+    sleep 1
+done
+----
+
+Using Bolt instead of HTTP, the example could look like this.
+
+[source, shell]
+----
+end="$((SECONDS+60))"
+while true; do
+    nc -w 2 localhost 7687 && break
+    [[ "${SECONDS}" -ge "${end}" ]] && exit 1
+    sleep 1
+done
+----

@@ -1,0 +1,83 @@
+[role=deprecated]
+[[ha-architecture]]
+= Architecture
+:description: This section describes the architecture of a Neo4j HA cluster. 
+
+A Neo4j HA cluster is comprised of a single master instance and zero or more slave instances.
+All instances in the cluster have full copies of the data in their local database files.
+The basic cluster configuration consists of three instances:
+
+.Neo4j HA cluster
+image::ha-architecture.svg[title="A Neo4j HA cluster", role="middle"]
+
+Each instance contains the logic needed in order to coordinate with the other members of the cluster for data replication and election management, represented by the green arrows in the picture above.
+Each slave instance that is not an arbiter instance (see below) communicates with the master to keep databases up to date, as represented by the blue arrows in the picture above.
+
+== Arbiter instance
+
+A special case of a slave instance is the arbiter instance.
+The arbiter instance comprises the full Neo4j software running in an arbiter mode, such that it participates in cluster communication, but it does not replicate a copy of the datastore.
+
+== Transaction propagation
+
+Write transactions performed directly on the master will execute as though the instance were running in non-cluster mode.
+On success the transaction will be pushed out to a configurable number of slaves.
+This is done optimistically, meaning that if the push fails, the transaction will still be successful.
+
+When performing a write transaction on a slave each write operation will be synchronized with the master.
+Locks will be acquired on both master and slave.
+When the transaction commits it will first be committed on the master and then, if successful, on the slave.
+To ensure consistency, a slave must be up to date with the master before performing a write operation.
+The automatic updating of slaves is built into the communication protocol between slave and master.
+
+== Failover
+
+Whenever a Neo4j database becomes unavailable, for example caused by hardware failure or network outage, the other instances in the cluster will detect that and mark it as temporarily failed.
+A database instance that becomes available after an outage will automatically catch up with the cluster.
+
+If the master goes down another member will be elected and have its role switched from slave to master after quorum (see below) has been reached within the cluster.
+When the new master has performed its role switch, it will broadcast its availability to all the other members of the cluster.
+Normally a new master is elected and started within seconds.
+During this time no writes can take place
+
+[discrete]
+=== Quorum
+A cluster must have quorum to elect a new master.
+Quorum is defined as: _more than 50% of active cluster members_.
+A rule of thumb when designing a cluster is:
+A cluster that must be able to tolerate *n* master instance failures requires *2n+1* instances to satisfy quorum and allow elections to take place.
+Therefore, the simplest valid cluster size is three instances, which allows for a single master failure.
+
+[discrete]
+=== Election Rules
+
+. If a master fails, or on a cold-start of the cluster, the slave with the highest committed transaction ID will be elected as the new master.
+This rule ensures that the slave with the most up-to-date datastore becomes the new master.
+. If a master fails and two or more slaves are tied, i.e. have the same highest committed transaction ID, the slave with the lowest ha.server_id value will be elected the new master.
+This is a good tie-breaker because the ha.server_id is unique within the cluster, and allows for configuring which instances can become master before others.
+
+== Branching
+
+Data branching can be caused in two different ways:
+
+* A slave falls too far behind the master and then leaves or re-joins the cluster.
+  This type of branching is harmless.
+* The master re-election happens and the old master has one or more committed transactions that the slaves did not receive before it died.
+  This type of branching is harmful and requires action.
+
+The database makes the best of the situation by creating a directory with the contents of the database files from before branching took place so that it can be reviewed and the situation be resolved.
+Data branching does not occur under normal operations.
+
+== Summary
+
+All this can be summarized as:
+
+* Write transactions can be performed on any database instance in a cluster.
+* A Neo4j HA cluster is fault tolerant and can continue to operate from any number of machines down to a single machine.
+* Slaves will be automatically synchronized with the master on write operations.
+* If the master fails, a new master will be elected automatically.
+* The cluster automatically handles instances becoming unavailable (for example due to network issues), and also makes sure to accept them as members in the cluster when they are available again.
+* Transactions are atomic, consistent and durable but eventually propagated out to other slaves.
+* Updates to slaves are eventually consistent by nature but can be configured to be pushed optimistically from master during commit.
+* If the master goes down, any running write transaction will be rolled back and new transactions will block or fail until a new master has become available.
+* Reads are highly available and the ability to handle read load scales with more database instances in the cluster.

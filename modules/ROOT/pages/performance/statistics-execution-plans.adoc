@@ -1,126 +1,83 @@
 [[statistics-execution-plans]]
 = Statistics and execution plans
-:description: This section describes how to configure the Neo4j statistics collection and the query replanning in the Cypher query engine. 
+:description: This section describes the configuration options that affect the gathering of statistics, and the replanning of query plans in the Cypher query engine. 
 
 When a Cypher query is issued, it gets compiled to an execution plan that can run and answer the query.
-The Cypher query engine uses the available information about the database, such as schema information about which indexes and constraints exist in the database.
+The Cypher query engine uses available information about the database, such as schema information about which indexes and constraints exist in the database.
 Neo4j also uses statistical information about the database to optimize the execution plan.
-For more information, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning[Cypher Manual -> Query tuning] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/execution-plans[Cypher Manual -> Execution plans].
 
-[[neo4j-statistics]]
-== Configure statistics collection
+For further details, please see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning[Cypher Manual -> Query tuning] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/execution-plans[Cypher Manual -> Execution plans].
 
-The Cypher query planner depends on accurate statistics to create efficient plans.
-Therefore, these statistics are kept up-to-date as the database evolves.
+The frequency of statistics gathering and the replanning of execution plans are described in the sections below.
 
-For each database in the DBMS, Neo4j collects the following statistical information and keeps it up-to-date:
 
-For graph entities::
-* The number of nodes with a certain label.
-* The number of relationships by type.
-* The number of relationships by type between nodes with a specific label. 
+== Statistics
 
-These numbers are updated whenever you set or remove a label from a node.
+The statistical information that Neo4j keeps is:
 
-For database schema::
-* Selectivity per index. 
+. The number of nodes having a certain label.
+. The number of relationships by type.
+. The number of relationships by type, ending or starting from a node with a specific label.
+. Selectivity per index.
 
-To produce a selectivity number, Neo4j runs a full index scan in the background.
-Because this could potentially be a very time-consuming operation, a full index scan is triggered only when the changed data reaches a specified threshold. 
+Neo4j keeps the statistics up to date in two different ways.
+For label and relationship counts, the number is updated whenever you set or remove a label from a node.
+For indexes, however, Neo4j needs to scan the full index to produce the selectivity number.
+Since this is potentially a very time-consuming operation, these numbers are collected in the background when enough data on the index has been changed.
 
-=== Automatic statistics collection
+The following settings allow you to control whether statistics are collected automatically, and at which rate:
 
-You can control whether and how often statistics are collected automatically by configuring the following settings:
-
-[options="header" cols="3m,m,3"]
+[options="header"]
 |===
-| Parameter name                                                                                      
-| Default value 
-| Description
-
+| Parameter name                                                                                      | Default value | Description
 | `xref:reference/configuration-settings.adoc#config_dbms.index_sampling.background_enabled[dbms.index_sampling.background_enabled]`
 | `true`
-| Enable the automatic (background) index sampling.
-
+| Controls whether indexes will automatically be re-sampled when they have been updated enough.
+The Cypher query planner depends on accurate statistics to create efficient plans, so it is important it is kept up to date as the database evolves.
 | `xref:reference/configuration-settings.adoc#config_dbms.index_sampling.update_percentage[dbms.index_sampling.update_percentage]`
 | `5`
-| Percentage of index updates of total index size required before sampling of a given index is triggered.
+| Controls the percentage of the index that has to have been updated before a new sampling run is triggered.
 |===
 
+It is possible to manually trigger index sampling, using the following built-in procedures:
 
-=== Manual statistics collection
-
-You can manually trigger index resampling by using the built-in procedures `db.resampleIndex()` and `db.resampleOutdatedIndexes()`.
-
-xref:reference/procedures.adoc#procedure_db_resampleindex[`db.resampleIndex()`]::
-Trigger resampling of a specified index.
-+
-[source, cypher]
-----
-CALL db.resampleIndex("indexName")
-----
-
-xref:reference/procedures.adoc#procedure_db_resampleoutdatedindexes[`db.resampleOutdatedIndexes()`]::
+`db.resampleIndex()`::
+Trigger resampling of an index.
+`db.resampleOutdatedIndexes()`::
 Trigger resampling of all outdated indexes.
-+
-[source, cypher]
+
+.Manually trigger index resampling
+====
+
+The following example illustrates how to trigger a resampling of the index on the label `Person` and property `name`, by calling `db.resampleIndex()`:
 ----
-CALL db.resampleOutdatedIndexes()
+CALL db.resampleIndex(":Person(name)");
 ----
 
-[[execution-plans]]
-== Configure the replanning of execution plans
+The following example illustrates how to call `db.resampleOutdatedIndexes()` in order to trigger a resampling of all outdated indexes:
+----
+CALL db.resampleOutdatedIndexes();
+----
+====
 
-Execution plans are cached and are not replanned until the statistical information used to produce the plan changes. 
 
-=== Automatic replanning 
+== Execution plans
 
-You can control how sensitive the replanning should be to database updates by configuring the following settings:
+Execution plans are cached and will not be replanned until the statistical information used to produce the plan has changed.
+The following setting enables you to control how sensitive replanning should be to updates of the database:
 
-[options="header" cols="3m,m,3"]
+[options="header"]
 |===
-| Parameter name                                                                                      
-| Default value 
-| Description
-
+| Parameter name                                                                                      | Default value | Description
 | `xref:reference/configuration-settings.adoc#config_cypher.statistics_divergence_threshold[cypher.statistics_divergence_threshold]`
 | `0.75`
-| The threshold for statistics above which a plan is considered stale. +
-When the changes to the underlying statistics of an execution plan meet the specified threshold, the plan is considered stale and is replanned.
-Change is calculated as `abs(a-b)/max(a,b)`. +
+| The threshold when a plan is considered stale.
+If any of the underlying statistics used to create the plan have changed more than this value, the plan will be considered stale and will be replanned. 
+Change is calculated as `abs(a-b)/max(a,b)`.
 This means that a value of `0.75` requires the database to approximately quadruple in size before replanning occurs.
- A value of `0` means that the query is replanned as soon as there is a change in the statistics and the replan interval elapses.
-
-|`xref:reference/configuration-settings.adoc#config_cypher.min_replan_interval[cypher.min_replan_interval]`
-| `10s`
-|  The minimum amount of time between two query replanning executions. 
-After this time, the graph statistics are evaluated, and if they have changed more than the value set in `cypher.statistics_divergence_threshold`, the query is replanned.
-Each time the statistics are evaluated, the divergence threshold is reduced until it reaches 10% after about 7h.
-This ensures that even moderately changing databases see query replanning after a sufficiently long time interval.
+A value of 0 means replan as soon as possible, with the soonest being defined by the parameter `xref:reference/configuration-settings.adoc#config_cypher.min_replan_interval[cypher.min_replan_interval]`, which defaults to 10s.
+After this interval the divergence threshold will slowly start to decline, reaching 10% after about 7h.
+This will ensure that long-running databases will still get query replanning on even modest changes, while not replanning frequently unless the changes are very large.
 |===
 
-=== Manual replanning 
 
-You can manually force the database to replan the execution plans that are already in the cache by using the following built-in procedures:
-
-xref:reference/procedures.adoc#procedure_db_clearquerycaches[`db.clearQueryCaches()`]::
-Clear all query caches. 
-Does not change the database statistics.
-+
-[source, cypher]
-----
-CALL db.clearQueryCaches()
-----
-
-xref:reference/procedures.adoc#procedure_db_prepareforreplanning[`db.prepareForReplanning()`]::
-Completely recalculates all database statistics to be used for any subsequent query planning.
-+
-The procedure triggers an index resampling, waits for it to complete, and clears all query caches.
-Afterwards, queries are planned based on the latest database statistics.
-+
-[source, cypher]
-----
-CALL db.prepareForReplanning()
-----
-
-For more information, see xref:reference/procedures.adoc[Procedures].

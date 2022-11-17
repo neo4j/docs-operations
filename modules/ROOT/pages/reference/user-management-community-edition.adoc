@@ -1,0 +1,225 @@
+[[ref-user-management-ce]]
+= User management for Community Edition
+:description: This section describes user and password management for Neo4j Community Edition. 
+
+User and password management for Community Edition is a subset of the functionality available in Enterprise Edition.
+The following sections provide comparisons between functionality available in Enterprise Edition and Community Edition:
+
+* xref:authentication-authorization/native-user-role-management/native-roles.adoc[Native roles] -- Descriptions of roles and privileges.
+* xref:authentication-authorization/native-user-role-management/procedures.adoc[Procedures for native user and role management] -- Listings of built-in procedures for user management.
+
+The following is true for user management in Community Edition:
+
+* It is possible to create multiple users.
+* All users assume the privileges of an `admin` for the available functionality.
+
+Users are managed by using built-in procedures through Cypher.
+This section gives a list of all the security procedures for user management along with some simple examples.
+Use Neo4j Browser or Neo4j Cypher Shell to run the examples provided.
+Unless stated otherwise, all arguments to the procedures described in this section must be supplied.
+
+[options="header"]
+|===
+| Name | Description
+| xref:reference/user-management-community-edition.adoc#userauth-change-your-password-ce[dbms.security.changePassword]| Change the current user's password
+| xref:reference/user-management-community-edition.adoc#userauth-add-user-ce[dbms.security.createUser]| Add a user
+| xref:reference/user-management-community-edition.adoc#userauth-delete-user-ce[dbms.security.deleteUser]| Delete a user
+| xref:reference/user-management-community-edition.adoc#userauth-list-all-users-ce[dbms.security.listUsers]| List all users
+| xref:reference/user-management-community-edition.adoc#userauth-show-details-for-current-user-ce[dbms.showCurrentUser]| Show details for the current user
+|===
+
+
+[[userauth-change-your-password-ce]]
+== Change the current user's password
+
+The xref:authentication-authorization/terminology.adoc#term-current-user[current user] is able to change their own password at any time.
+
+*Syntax:*
+
+`CALL dbms.security.changePassword(_password_)`
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name       | Type   | Description
+| `password` | String | This is the new password for the current user.
+|===
+
+*Exceptions:*
+
+|===
+| The password is the empty string.
+| The password is the same as the current user's previous password.
+|===
+
+.Change the current user's password
+====
+The following example changes the password of the xref:authentication-authorization/terminology.adoc#term-current-user[current user] to '*h6u4%kr*'.
+
+[source, cypher]
+----
+CALL dbms.security.changePassword('h6u4%kr')
+----
+====
+
+
+[[userauth-add-user-ce]]
+== Add a user
+
+The xref:authentication-authorization/terminology.adoc#term-current-user[current user] is able to add a xref:authentication-authorization/terminology.adoc#term-user[user] to the system.
+
+*Syntax:*
+
+`CALL dbms.security.createUser(_username_, _password_, _requirePasswordChange_)`
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name                    | Type    | Description
+| `username`              | String  | This is the user's username.
+| `password`              | String  | This is the user's password.
+| `requirePasswordChange` | Boolean | This is optional, with a default of `true`. If this is `true`, (i) the user will be forced to change their password when they log in for the first time, and (ii) until the user has changed their password, they will be forbidden from performing any other operation.
+|===
+
+*Exceptions:*
+
+|===
+| The username either contains characters other than the ASCII characters between `!` and `~`, or contains `:` and `,`.
+| The username is already in use within the system.
+| The password is the empty string.
+|===
+
+.Add a user
+====
+The following example creates a xref:authentication-authorization/terminology.adoc#term-user[user] with the username '*johnsmith*' and password '*h6u4%kr*'.
+When the user '*johnsmith*' logs in for the first time, he will be required to xref:reference/user-management-community-edition.adoc#userauth-change-your-password-ce[change his password].
+
+[source, cypher]
+----
+CALL dbms.security.createUser('johnsmith', 'h6u4%kr', true)
+----
+====
+
+
+[[userauth-delete-user-ce]]
+== Delete a user
+
+The xref:authentication-authorization/terminology.adoc#term-current-user[current user] is able to delete permanently a xref:authentication-authorization/terminology.adoc#term-user[user] from the system.
+
+*Syntax:*
+
+`CALL dbms.security.deleteUser(_username_)`
+
+*Arguments:*
+
+[options="header"]
+|===
+| Name       | Type   | Description
+| `username` | String | This is the username of the xref:authentication-authorization/terminology.adoc#term-user[user] to be deleted.
+|===
+
+*Exceptions:*
+
+|===
+| The username does not exist in the system.
+| The username matches that of the current user (i.e. deleting the current user is not permitted).
+|===
+
+*Considerations:*
+
+|===
+| Deleting a user will terminate with immediate effect all of the user's sessions and roll back any running transactions.
+| As it is not possible for the current user to delete themselves, there will always be at least one user in the system.
+|===
+
+.Delete a user
+====
+The following example deletes a xref:authentication-authorization/terminology.adoc#term-user[user] with the username '*janebrown*'.
+
+[source, cypher]
+----
+CALL dbms.security.deleteUser('janebrown')
+----
+====
+
+
+[[userauth-list-all-users-ce]]
+== List all native users
+
+The xref:authentication-authorization/terminology.adoc#term-current-user[current user] is able to view the details of every xref:authentication-authorization/terminology.adoc#term-user[user] in the system.
+
+*Syntax:*
+
+`CALL dbms.security.listUsers()`
+
+*Returns:*
+
+[options="header"]
+|===
+| Name      | Type          | Description
+| `username` | String       | This is the user's username.
+| `flags`  | List<String>   | This is a flag indicating whether the user needs to change their password.
+|===
+
+.List all users
+====
+The following example shows the username for each xref:authentication-authorization/terminology.adoc#term-user[user] in the system, and whether the user needs to change their password.
+
+[source, cypher]
+----
+CALL dbms.security.listUsers()
+----
+
+[queryresult]
+----
++-----------------------------------------+
+| username | flags                        |
++-----------------------------------------+
+| "neo4j"  | []                           |
+| "anne"   | ["password_change_required"] |
+| "bill"   | []                           |
++-----------------------------------------+
+3 rows
+----
+====
+
+
+[[userauth-show-details-for-current-user-ce]]
+== Show details for the current user
+
+The xref:authentication-authorization/terminology.adoc#term-current-user[current user] is able to view whether or not they need to change their password.
+
+*Syntax:*
+
+`CALL dbms.showCurrentUser()`
+
+*Returns:*
+
+[options="header"]
+|===
+| Name | Type      | Description
+| `username` | String  | This is the user's username.
+| `flags`  | List<String> | This is a flag indicating whether the user needs change their password.
+|===
+
+.Show details for the current user
+====
+The following example shows that the xref:authentication-authorization/terminology.adoc#term-current-user[current user] -- with the username '*johnsmith*' -- does not need to change his password.
+
+[source, cypher]
+----
+CALL dbms.showCurrentUser()
+----
+
+[queryresult]
+----
++---------------------+
+| username    | flags |
++---------------------+
+| "johnsmith" | []    |
++---------------------+
+1 row
+----
+====

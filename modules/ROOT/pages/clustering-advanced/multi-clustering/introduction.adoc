@@ -1,0 +1,50 @@
+[role=enterprise-edition]
+[[multi-clustering-intro]]
+= Introduction
+:description: This section provides an introduction to Neo4j multi-clustering--running multiple co-ordinated Causal Clusters with a shared discovery service. 
+
+This section contains the following:
+
+* xref:clustering-advanced/multi-clustering/introduction.adoc#multi-clustering-architecture[Architecture]
+* xref:clustering-advanced/multi-clustering/introduction.adoc#multi-clustering-limitations[Known limitations]
+
+[[multi-clustering-architecture]]
+== Architecture
+
+https://en.wikipedia.org/wiki/Multitenancy[Multitenancy], in the context of databases, refers to the concept of having a single database management system manage multiple separate databases.
+These databases may be looked up and queried by multiple separate clients.
+
+With Neo4j, this is achieved by organizing multiple Neo4j Causal Clusters, each managing its own database, into a multi-cluster with a shared discovery service.
+Each member of the multi-cluster is configured with a database name.
+Members configured to manage the same database are grouped by the multi-cluster's single discovery service and form multiple smaller xref:clustering-advanced/lifecycle.adoc#causal-clustering-transacting-via-raft-protocol[Raft consensus groups] -- that is, individual clusters.
+
+This is different from the default behaviour of Neo4j Causal Clustering, where the discovery service forms a Raft consensus group using all Core instances in a cluster.
+In fact, the default clustering behaviour is a special case of the multi-clustering behaviour, where every instance has the same (default) database name.
+
+Once formed, each constituent cluster is almost entirely distinct.
+They may be queried separately, and will contain different store contents as a result.
+Furthermore, the fault tolerance of one cluster does not depend on the fault tolerance of another.
+
+As an example, consider a Neo4j Causal Cluster containing fifteen instances, nine of which are xref:clustering/introduction.adoc#causal-clustering-core-servers[Core] instances, and six are xref:clustering/introduction.adoc#causal-clustering-read-replicas[Read Replicas].
+Sets of three cores and two Read Replicas are configured with the database names `foo`, `bar` and `baz` respectively.
+The figure below reflects this deployment.
+
+image::multicluster-high-level-example.svg[title="A multi-cluster with three distinct clusters.", role="middle"]
+
+In this scenario, all `foo` instances may go offline without affecting the ability of `bar` instances to answer queries.
+Similarly, elections in one cluster do not trigger elections in another.
+
+The difference from running three independent clusters is that all members of a multi-cluster share a discovery service.
+Members of any single cluster are aware of the members of all other clusters, and with the names of the databases they manage.
+This makes it possible to ask any routing member in the multi-cluster for routing information for any database by name.
+Client connector libraries, like the Neo4j drivers, can therefore provide a unified directory service where databases may be retrieved and written to by name.
+
+
+[[multi-clustering-limitations]]
+== Known limitations
+
+* Each cluster in a multi-cluster may only hold one distinct database.
+  For example, if we wish our multi-cluster to host two distinct databases, we must provision at least 4 Core instances (i.e. `xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[causal_clustering.minimum_core_cluster_size_at_formation]` must be set to a minimum of `2` for each cluster).
+* A single transaction may not read from, or update, multiple constituent clusters.
+* No data is automatically shared or replicated between constituent clusters.
+* If you stop and unbind the instances in a cluster, while the rest of the multi-cluster is still running, then you may need to restart all members from all clusters in order to have your recently unbound cluster rejoin the multi-cluster correctly.

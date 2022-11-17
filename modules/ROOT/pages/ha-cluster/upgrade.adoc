@@ -1,0 +1,61 @@
+[role=deprecated]
+[[ha-upgrade-guide]]
+= Upgrade
+:description: This section describes how to upgrade a Neo4j HA cluster. 
+
+Upgrading a Neo4j HA cluster requires following a specific process in order to ensure that the cluster remains consistent, and that all cluster instances are able to join and participate in the cluster following their upgrade.
+
+*Pre-upgrade steps*::
+
+* Read xref:upgrade/planning.adoc[Upgrade planning] thoroughly and perform all the steps listed there.
+* Verify that you have a xref:backup/performing.adoc[full backup] that is stored in a safe location.
+
+*Downtime*::
+
+Neo4j {neo4j-version-exact} does not support rolling upgrades for HA clusters, so the upgrade process can involve significant downtime for the entire cluster.
+A test upgrade on a production-like equipment provides information on the duration of the downtime.
+
+*Rollback*::
+
+Neo4j does not support downgrades.
+If the upgrade is not successful, you have to do a full rollback, including restoring a pre-upgrade backup.
+
+*Upgrade steps*::
+
+. Shut down the cluster
+.. Shut down the slave instances, one by one.
+.. Shut down the master last.
+
+. Upgrade the master
+.. Install Neo4j {neo4j-version-exact} on the master, keeping the database directory (in a default configuration: _xref:configuration/file-locations.adoc[data]/databases/graph.db_) untouched.
+.. Set `dbms.mode=SINGLE` in _neo4j.conf_ to disable HA in the configuration.
+.. Follow the xref:upgrade/deployment-upgrading.adoc[single instance upgrade] instructions to upgrade Neo4j.
+.. When upgrade has completed, shut down Neo4j again.
+.. Set `dbms.mode=HA` in _neo4j.conf_ to re-enable HA in the configuration.
+.. Make a full backup of the Neo4j database.
++
+Please note that backups taken before the upgrade are no longer valid for update via the incremental online backup.
+Therefore, it is important to perform a _full backup_, using an empty target directory, at this point.
+
+. Upgrade the slaves
++
+On each slave:
++
+.. Remove the database directory (in a default configuration: _xref:configuration/file-locations.adoc[data]/databases/graph.db_).
+.. Install Neo4j {neo4j-version-exact}.
+.. Review the settings in the configuration files in the previous installation, and transfer any custom settings to the {neo4j-version-exact} installation.
+.. If applicable, copy the security configuration from the master, since this is not propagated automatically.
++
+[TIP]
+--
+Alternatively, at this point you can manually copy the database directory from the master to the slaves.
+Doing so will avoid the need to sync from the master when starting.
+This can save considerable time when upgrading large databases.
+--
+
+
+. Restart the cluster
+.. Start the master instance.
+.. Start the slaves, one by one.
++
+Once a slave has joined the cluster, it will sync the database from the master instance.

@@ -1,0 +1,193 @@
+[role=enterprise-edition]
+[[tutorial-role-based-access-control]]
+= Manage users and roles
+:description: This section describes scenarios of using the Neo4j Security features for native user and role management. 
+
+In this section, we show two cases of how xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management] can be combined to cater for various real-world scenarios.
+These examples are not applicable to scenarios where LDAP is used.
+
+The examples in this section assume the existence of an xref:authentication-authorization/terminology.adoc#term-administrator[administrator] and a fictitious developer called Jane, who requires access to the database.
+
+
+== Creating a user and managing roles
+
+*Step 1: Administrator creates a user*
+
+The administrator creates a user on the system with username '*jane*' and password '*abracadabra*', requiring that as soon as Jane logs in for the first time, she is required to change her password immediately:
+
+====
+[source, cypher]
+----
+CALL dbms.security.createUser('jane', 'abracadabra', true)
+----
+====
+
+*Step 2: Administrator assigns the `publisher` role* to the user
+
+The administrator assigns the `publisher` role to Jane allowing her to both read and write data:
+
+====
+[source, cypher]
+----
+CALL dbms.security.addRoleToUser('publisher', 'jane')
+----
+====
+
+*Step 3: User logs in and changes her password*
+
+As soon as Jane logs in, she is prompted to change her password.
+
+She changes it to '*R0ckyR0ad88*':
+
+====
+[source, cypher]
+----
+CALL dbms.security.changePassword('R0ckyR0ad88')
+----
+====
+
+*Step 4: User writes data*
+
+Jane executes a query which inserts some data:
+
+====
+[source, cypher]
+----
+CREATE (:Person {name: 'Sam' age: 19})
+----
+
+[queryresult]
+----
++-------------------+
+| No data returned. |
++-------------------+
+Nodes created: 1
+Properties set: 2
+Labels added: 1
+----
+====
+
+*Step 5: Administrator removes the `publisher` role from the user*
+
+The administrator removes the `publisher` role from Jane.
+
+====
+[source, cypher]
+----
+CALL dbms.security.removeRoleFromUser('publisher', 'jane')
+----
+====
+
+*Step 6: User attempts to read data*
+
+Jane tries to execute a read query:
+
+====
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name
+----
+====
+
+The query fails, as Jane does not have the role allowing her to read data (in fact, she has no assigned roles):
+
+====
+[queryresult]
+----
+Read operations are not allowed for user 'jane' with no roles.
+----
+====
+
+*Step 7: Administrator assigns the `reader` role to the user*
+
+The administrator assigns the `reader` role to Jane:
+
+====
+[source, cypher]
+----
+CALL dbms.security.addRoleToUser('reader', 'jane')
+----
+====
+
+*Step 8: User attempts to write data*
+
+Jane tries to execute a write query:
+
+====
+[source, cypher]
+----
+CREATE (:Person {name: 'Bob' age: 52})
+----
+====
+
+The query fails, as Jane does not have the role allowing her to write data.
+
+====
+[queryresult]
+----
+Write operations are not allowed for user 'jane' with roles ['reader'].
+----
+====
+
+*Step 9: User attempts to read data*
+
+Jane tries to execute a read query:
+
+====
+[source, cypher]
+----
+MATCH (p:Person)
+RETURN p.name
+----
+====
+
+The query succeeds as she is assigned the `reader` role:
+
+====
+[queryresult]
+----
++-------+
+| name  |
++-------+
+| "Sam" |
++-------+
+1 row
+----
+====
+
+
+== Suspending and reactivating a user
+
+This scenario follows on from the one above.
+
+*Step 1: Administrator suspends the user*
+
+The administrator suspends Jane.
+
+====
+[source, cypher]
+----
+CALL dbms.security.suspendUser('jane')
+----
+====
+
+*Step 2: Suspended user tries to log in*
+
+Jane tries to log in to the system, and will fail to do so.
+
+*Step 3: Administrator activates suspended user*
+
+The administrator activates Jane.
+
+====
+[source, cypher]
+----
+CALL dbms.security.activateUser('jane')
+----
+====
+
+*Step 4: Activated user logs in*
+
+Jane is now able to log in successfully.
+

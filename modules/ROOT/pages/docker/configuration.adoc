@@ -52,8 +52,25 @@ For example:
 --env NEO4J_dbms_jvm_additional="-Dcom.sun.management.jmxremote.authenticate=true -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.password.file=$HOME/conf/jmx.password -Dcom.sun.management.jmxremote.access.file=$HOME/conf/jmx.access -Dcom.sun.management.jmxremote.port=3637"
 ----
 
+
+[role=enterprise-edition]
+[[docker-enterprise-edition-environment-variables]]
+=== Neo4j Enterprise Edition
+
+The following environment variables are specific to Causal Clustering, and are available in the Neo4j Enterprise Edition:
+
+* `NEO4J_dbms_mode`: the database mode, defaults to `SINGLE`, set to `CORE` or `READ_REPLICA` for Causal Clustering.
+* `+NEO4J_causal__clustering_expected__core__cluster__size+`: the initial cluster size (number of Core instances) at startup.
+* `+NEO4J_causal__clustering_initial__discovery__members+`: the network addresses of an initial set of Core cluster members.
+* `+NEO4J_causal__clustering_discovery__advertised__address+`: hostname/ip address and port to advertise for member discovery management communication.
+* `+NEO4J_causal__clustering_transaction__advertised__address+`: hostname/ip address and port to advertise for transaction handling.
+* `+NEO4J_causal__clustering_raft__advertised__address+`: hostname/ip address and port to advertise for cluster communication.
+
+See xref:docker/clustering.adoc[Clustering] for examples of how to configure Causal Clustering on Docker.
+
+
 [[docker-conf-volume]]
-== Mounting the _/conf_ volume
+== _/conf_ volume
 
 To make arbitrary modifications to the Neo4j configuration, provide the container with a _/conf_ volume.
 
@@ -75,7 +92,7 @@ Environment variables passed to the container by Docker will still override the 
 [NOTE]
 --
 If you use a configuration volume you must make sure to listen on all network interfaces.
-This can be done by setting `dbms.default_listen_address=0.0.0.0`.
+This can be done by setting `dbms.connectors.default_listen_address=0.0.0.0`.
 --
 
 To dump an initial set of configuration files, run the image with the `dump-config` command.
@@ -89,45 +106,27 @@ docker run --rm \
 
 
 [[docker-new-image]]
-== Customize а Neo4j Docker image
+== Building a new image
 
-To customize a Neo4j Docker image, you create a custom Dockerfile based on a Neo4j image (using the `FROM` instruction), build that image, and run a container based on it.
+For more complex customization of the image you can create a new image based on this one.
 
-[TIP]
-====
-It is recommended to specify an explicit version of the base Neo4j Docker image.
-For available Neo4j Docker images, see https://hub.docker.com/_/neo4j.
-====
-
-Additionally, you can pass `EXTENSION_SCRIPT` as an environment variable, pointing to a location in a folder you need to mount.
-You can use this script to perform an additional initialization or configuration of the environment, for example, loading credentials or dynamically setting _neo4j.conf_ settings, etc.
-The Neo4j image `entrypoint` script will check for the presence of an `EXTENSION_SCRIPT` environment variable.
-If set, it will first execute the `entrypoint` code, then the extension script specified, and finally, it will start Neo4j.
-
-The following is an example of how to create a custom Dockerfile based on a Neo4j image, build the image, and run a container based on it.
-It also shows how to use the `EXTENSION_SCRIPT` feature.
-
-[source, subs="attributes", role=noheader]
+[source, shell, subs="attributes"]
 ----
-# Create a custom Dockerfile based on a Neo4j image:
-
-/example/Dockerfile
-
-FROM neo4j:{neo4j-version-exact}-enterprise
-COPY extension_script.sh /extension_script.sh
-ENV EXTENSION_SCRIPT=/extension_script.sh
-
-/example/extension_script.sh
-
-echo "extension logic"
-
-# Build the custom image:
-
-docker build --file /example/Dockerfile --tag neo4j:{neo4j-version-exact}-enterprise-custom-container-1 /example
-
-# Create and run a container based on the custom image:
-
-docker run --interactive --tty --name custom-container-1 -p7687:7687 -p7474:7474 -p7473:7473 --env NEO4J_AUTH=neo4j/password --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes neo4j:{neo4j-version-exact}-enterprise-custom-container-1
+FROM neo4j:{neo4j-version}
 ----
 
-The recommended best practices and methods for building efficient Docker images can be found at link:https://docs.docker.com/develop/develop-images/dockerfile_best-practices/[the Docker documentation -> Best practices for writing Dockerfiles].
+If you need to make your own configuration changes, we provide a hook so you can do that in a script:
+
+[source, shell]
+----
+COPY extra_conf.sh /extra_conf.sh
+----
+
+Then you can pass in the `EXTENSION_SCRIPT` environment variable at runtime to source the script:
+
+[source, shell]
+----
+docker run -e "EXTENSION_SCRIPT=/extra_conf.sh" cafe12345678
+----
+
+When the extension script is sourced, the current working directory will be the root of the Neo4j installation.

@@ -1,0 +1,113 @@
+[role=enterprise-edition]
+[[backup-causal-clusters]]
+= Causal Clusters
+:description: This section discusses considerations when designing the backup strategy for a Neo4j Causal Cluster. 
+
+
+This section includes:
+
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-introduction[Introduction]
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-parameters[Configuration parameters]
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-encrypted[Encrypted backups]
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-read-replica[Running backups from a Read Replica]
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-core[Running backups from a Core Server]
+* xref:backup/causal-clusters.adoc#backup-causal-clusters-scenarios[Backup scenarios and examples]
+
+[[backup-causal-clusters-introduction]]
+== Introduction
+
+Backups of a Neo4j Causal Cluster can be configured in a variety of ways with regards to physical configuration and SSL implementation.
+This section discusses some considerations that should be taken into account before determining which backup configuration to use.
+
+
+[[backup-causal-clusters-parameters]]
+== Configuration parameters
+
+The table below lists the configuration parameters relevant to backups:
+
+.Configuration parameters backups; Causal Clusters
+[options="header"]
+|===
+| Parameter name | Default value | Description
+| `xref:reference/configuration-settings.adoc#config_dbms.backup.enabled[dbms.backup.enabled]` | `true` | Enable support for running online backups.
+| `xref:reference/configuration-settings.adoc#config_dbms.backup.address[dbms.backup.address]` | `127.0.0.1:6362` | Listening server for online backups.
+| `xref:reference/configuration-settings.adoc#config_dbms.backup.ssl_policy[dbms.backup.ssl_policy]` | | The SSL policy used on the backup port.
+|===
+
+
+[[backup-causal-clusters-encrypted]]
+== Encrypted backups
+
+Encrypted backups are available with Causal Clustering.
+
+Both the server running the backup, and the backup target, must be configured with the same xref:security/ssl-framework.adoc[SSL policy].
+This can be the same as that used for encrypting the regular cluster traffic (see xref:clustering/intra-cluster-encryption.adoc[Intra-cluster encryption]), or a separate one.
+The policy to be used for encrypting backup traffic must be assigned on both servers.
+
+For examples on how to configure encrypted backups, see xref:backup/causal-clusters.adoc#backup-causal-clusters-scenarios[Backup scenarios and examples].
+
+
+[[backup-causal-clusters-read-replica]]
+== Running backups from a Read Replica
+
+It is generally recommended to select Read Replicas to act as backup providers, since they are more numerous than Core Servers in typical cluster deployments.
+Furthermore, the possibility of performance issues on a Read Replica, caused by a large backup, will not affect the performance or redundancy of the Core Cluster.
+
+However, since Read Replicas are asynchronously replicated from Core Servers, it is possible for them to be fall behind in applying transactions with respect to the Core Cluster.
+It may even be possible for a Read Replica to become orphaned from a Core Server such that its contents are quite stale.
+
+We can use transaction IDs in order to avoid taking a backup from a Read Replica that has lagged too far behind the Core Cluster.
+Since transaction IDs are strictly increasing integer values, we can check the last transaction ID processed on the Read Replica and verify that it is sufficiently close to the latest transaction ID processed by the Core Server.
+If so, we can safely proceed to backup from our Read Replica in confidence that it is up-to-date with respect to the Core Servers.
+
+The latest transaction ID can be found by xref:monitoring/metrics/reference.adoc#causal-clustering-metrics[exposing Neo4j metrics] or via Neo4j Browser.
+To view the latest processed transaction ID (and other metrics) in Neo4j Browser, type `:sysinfo` at the prompt.
+
+
+[[backup-causal-clusters-core]]
+== Running backups from a Core Server
+
+In a Core-only cluster, we do not have access to Read Replicas for scaling out workload.
+Instead, we pick one of the Core Servers to run backups based on factors such as its physical proximity, bandwidth, performance, and liveness.
+// what does "liveliness" mean in this context?
+
+The cluster will function as normal even while large backups are taking place.
+However, the additional I/O burdens placed on the Core Server being used as a backup server, may impact its performance.
+
+A very conservative view would be to treat the backup server as an unavailable instance, assuming its performance will be lower than the other instances in the cluster.
+In such cases, it is recommended that there is sufficient redundancy in the cluster such that one slower server does not reduce the capacity to mask faults.
+
+We can factor this conservative strategy into our cluster planning.
+The equation `M = 2F + 1` demonstrates the relationship between `M` being the number of members in the cluster required to tolerate `F` faults.
+To tolerate the possibility of one slower machine in the cluster during backup we increase `F`.
+Thus if we originally envisaged a cluster of three Core Servers to tolerate one fault, we could increase that to five to maintain a plainly safe level of redundancy.
+
+
+[[backup-causal-clusters-scenarios]]
+== Backup scenarios and examples
+
+// Review this section once we have the appropriate images!
+As described in xref:backup/planning.adoc#backup-planning-network-considerations[Network protocols for backups], the `catchup` protocol is used both for keeping Read Replicas up-to-date within a Causal Cluster, and for backups.
+It is therefore possible to run backups by defining a separate `dbms.backup.address` for backup traffic, or by "listening to" the same messages as Read Replicas do for keeping in sync with the Core Cluster.
+
+To perform backups on a Causal Cluster, you will need to combine some settings and arguments.
+The table below illustrates the available options when using the `catchup` protocol:
+
+.Causal Clustering backup settings
+[options="header"]
+|===
+| Backup target address on database server        | Corresponding SSL policy setting on database server | Corresponding SSL policy setting on backup client | Default port
+| `dbms.backup.address`                           | `dbms.backup.ssl_policy`                            | `dbms.backup.ssl_policy`                          | `6362`
+| `causal_clustering.transaction_listen_address`  | `causal_clustering.ssl_policy`                      | `dbms.backup.ssl_policy`                          | `6000`
+|===
+
+
+Before performing a backup of a Causal Cluster, you need to consider which port you will be performing backup from.
+For example, if you are planning to perform a backup from the transaction port, the backup policy for your backup client should match the cluster policy of the server.
+Otherwise, if you are planning to perform the backup from the backup port, the backup policy for the backup client should match the server's backup policy.
+
+The images below illustrate the settings and arguments to be used when setting up backups for your cluster using either `dbms.backup.ssl_policy` or `causal_clustering.ssl_policy`:
+
+image::backup-backup_address.svg[title="Settings and arguments for `dbms.backup.ssl_policy`", role="middle"]
+
+image::backup-causal_clustering.transaction.svg[title="Settings and arguments for `causal_clustering.ssl_policy`", role="middle"]
