@@ -26,95 +26,50 @@ The `neo4j-admin backup` command also supports SSL/TLS.
 For more information, see xref:backup-restore/online-backup.adoc#online-backup-configurations[Online backup configurations].
 
 [NOTE]
-====
 `neo4j-admin backup` is not supported in https://neo4j.com/cloud/aura/[Neo4j Aura].
 
-`neo4j-admin backup` is not supported for use on the xref:/fabric/introduction.adoc#fabric-fabric-concepts[Fabric virtual database].
-It must be run directly on the databases that are part of the Fabric setup.
-====
 
 [[backup-command-syntax]]
 === Syntax
 
 [source,role=noheader]
 ----
-neo4j-admin backup  --backup-dir=<path>
+neo4j-admin backup --backup-dir=<path>
                    [--verbose]
-                   [--expand-commands]
                    [--from=<host:port>]
                    [--database=<database>]
                    [--fallback-to-full=<true/false>]
                    [--pagecache=<size>]
                    [--check-consistency=<true/false>]
                    [--report-dir=<path>]
+                   [--check-index-structure=<true/false>]
                    [--check-graph=<true/false>]
                    [--check-indexes=<true/false>]
-                   [--check-index-structure=<true/false>]
                    [--check-label-scan-store=<true/false>]
                    [--check-property-owners=<true/false>]
                    [--additional-config=<path>]
-                   [--include-metadata=<all/users/roles>]
-                   [--prepare-restore=<true/false>]
-                   [--parallel-recovery]
 ----
-
-[NOTE]
-====
-The following options have been deprecated:
-
-[source,role=noheader]
-----
-[--check-label-scan-store=<true/false>]
-[--check-property-owners=<true/false>]
-----
-
-Values for these settings will be ignored.
-====
-
 
 [[backup-command-options]]
 === Options
 
-[options="header",cols=",,a"]
+[options="header"]
 |===
 | Option                     | Default          | Description
 | `--backup-dir`             |                  | Target directory.
-| `--verbose`                |                  | Enable verbose output.
-| `--expand-commands`        |                  | Allow command expansion in config value evaluation.
+| `--verbose`                | `false`          | Enable verbose output.
 | `--from`                   | `localhost:6362` | Host and port of Neo4j.
-| `--database`               | `neo4j`          | Name of the remote database to back up. +
-The value can contain `*` and `?` for globbing, in which cases, all matching databases will be backed up. +
-[TIP]
-====
-With a single `*` as a value, you can back up all the databases of the DBMS.
-====
-| `--fallback-to-full`       | `true`           | If an incremental backup fails, backup will move the old backup to `<name>.err.<N>` and fallback on a full backup instead.
-| `--pagecache`              | `8m`             | The size of the page cache to use for the backup process.
+| `--database`               | `neo4j`          | Name of the database to back up. If a backup of the specified database exists in the target directory, then an incremental backup will be attempted.
+| `--fallback-to-full`       | `true`           | If an incremental backup fails backup will move the old backup to <name>.err.<N> and fallback on a full backup instead.
+| `--pagecache`              | `8M`             | The size of the page cache to use for the backup process.
 | `--check-consistency`      | `true`           | Run a consistency check against the database backup.
 | `--report-dir`             | `.`              | Directory where consistency report will be written.
 | `--check-graph`            | `true`           | Perform consistency checks between nodes, relationships, properties, types, and tokens.
 | `--check-indexes`          | `true`           | Perform consistency checks on indexes.
 | `--check-index-structure`  | `true`           | Perform structure checks on indexes.
-| [deprecated]#`--check-label-scan-store`# | `true`        | This option is deprecated, and its value is ignored.
-| [deprecated]#`--check-property-owners`#  | `false`       | This option is deprecated, and its value is ignored.
-| `--additional-config`      |                  | Configuration file to provide additional or override the existing configuration settings in the _neo4j.conf_ file.
-| `--include-metadata`       |                  | Include metadata in the backup. Metadata contains security settings related to the database. Cannot be used for backing up the `system` database.
-
-- `roles` - commands to create the roles and privileges (for both database and graph) that affect the use of the database. +
-- `users` - commands to create the users that can use the database and their role assignments. +
--  `all` - include roles and users.
-| `--prepare-restore`        | `true`           | Perform the recovery of the backup store by applying the latest pulled transactions. If disabled, the backup will be faster, but a recovery of the backup store will be required at a later time before restoring the data. +
-For more information on how to do that, see xref:backup-restore/prepare-restore.adoc[Prepare a database for restoring]. +
-[NOTE]
-====
-If `--prepare-restore` is set to `false`, `--check-consistency` is implicitly set to `false`, because the consistency of a non-recovered store cannot be checked.
-====
-| `--parallel-recovery`      |                  | Allow multiple threads to apply transactions to a backup in parallel. For some databases and workloads, this may reduce execution times significantly. +
-[NOTE]
-====
-`parallel-recovery` is an experimental option.
-Consult Neo4j support before use.
-====
+| `--check-label-scan-store` | `true`           | Perform consistency checks on the label scan store.
+| `--check-property-owners`  | `false`          | Perform additional consistency checks on property ownership. This check is *very* expensive in time and memory.
+| `--additional-config`      |                  | Provide additional configurations to the ones in the _neo4j.conf_ file.
 |===
 
 [[backup-command-exit-codes]]
@@ -123,7 +78,7 @@ Consult Neo4j support before use.
 Depending on whether the backup was successful or not, `neo4j-admin backup` exits with different codes.
 The error codes include details of what error was encountered.
 
-.Neo4j Admin backup exit codes when backing up one database
+.Neo4j Admin backup exit codes
 [cols="<1,<5", options="header"]
 |===
 | Code | Description
@@ -131,14 +86,6 @@ The error codes include details of what error was encountered.
 | `1`  | Backup failed.
 | `2`  | Backup succeeded but consistency check failed.
 | `3`  | Backup succeeded but consistency check found inconsistencies.
-|===
-
-.Neo4j Admin backup exit codes when backing multiple databases
-[cols="m,a", options="header"]
-|===
-| Code | Description
-| 0  | All databases are backed up successfully.
-| 1  | One or several backup failed.
 |===
 
 [[online-backup-configurations]]
@@ -278,29 +225,15 @@ To view the latest processed transaction IDs (and other metrics) in Neo4j Browse
 ====
 
 [[online-backup-example]]
-== Examples
+== Example
 
-The following are examples of how to back up a single database, e.g., the default database `neo4j`, and multiple databases, using the `neo4j-admin backup` command.
-The target directory _/mnt/backups/neo4j_ must exist before calling the command and the database(s) must be online.
+The following is an example of how to back up the default database `neo4j` using the `neo4j-admin backup` command.
+The target directory _/mnt/backups/neo4j_ must exist before calling the command and the database must be online.
 
-.Use `neo4j-admin backup` to back up a single database.
-====
 [source,shell]
 ----
 bin/neo4j-admin backup --backup-dir=/mnt/backups/neo4j --database=neo4j
 ----
-====
-
-To backup several databases that match database pattern you can use name globbing.
-For example, to backup all databases that start with *n* you should run:
-
-.Use `neo4j-admin backup` to back up multiple databases.
-====
-[source, shell]
-----
-neo4j-admin backup --from=192.168.1.34 --backup-dir=/mnt/backups/neo4j --database=n* --pagecache=4G
-----
-====
 
 [TIP]
 ====

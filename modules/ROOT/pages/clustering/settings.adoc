@@ -1,149 +1,114 @@
-:description: This section lists the important settings related to running a Neo4j cluster.
 [role=enterprise-edition]
-[[clustering-settings]]
+[[causal-clustering-settings]]
 = Settings reference
-:description: This section lists the important settings related to running a Neo4j cluster. 
+:description: This section lists the important settings related to running a Neo4j Causal Cluster. 
 
-[[cluster-settings-regular]]
-== Common server settings 
-
-[NOTE]
-====
-In the current version of Neo4j, the clustering-related parameters use the `causal_clustering` namespace.
-This will be replaced with a more suitable namespace in an upcoming release.
-====
-
-[options="header",width="100%",cols="2,1,3a"]
+[options="header",width="100%",cols="1,3a"]
 |===
 | Parameter
-| Instance type
 | Explanation
 
-| xref:reference/configuration-settings.adoc#config_dbms.clustering.enable[`dbms.clustering.enable`]
-| Single
-| This setting allows a `SINGLE` instance to form a cluster with one or more `READ_REPLICA` instances.
-Must be set to `TRUE` on the `SINGLE` instance only, as the setting is ignored on `CORE` and `READ_REPLICA` instances.
-
 | xref:reference/configuration-settings.adoc#config_dbms.mode[`dbms.mode`]
-| All
 | This setting configures the operating mode of the database.
-In version {neo4j-version}, there are three possible modes:
+For Causal Clustering, there are two possible modes: `CORE` or `READ_REPLICA`.
 
-. `SINGLE` and `READ_REPLICA` instances
-. `CORE` only instances
-. `CORE` and `READ_REPLICA` instances
-
-**Example**: `dbms.mode=READ_REPLICA` defines a Read Replica instance
+*Example:* `dbms.mode=READ_REPLICA` will define this server as a Read Replica.
 
 | xref:reference/configuration-settings.adoc#config_dbms.read_only[`dbms.read_only`]
-| -
 | This setting is not supported.
 
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_formation[`causal_clustering.minimum_core_cluster_size_at_formation`]
-| Core
-| Minimum number of Core instances as Primary servers required to form a Core cluster.
+| Minimum number of Core machines required to form a cluster.
 
-**Example:** `causal_clustering.minimum_core_cluster_size_at_formation=3` specifies that the cluster will form when at least three Core instances have discovered each other.
+*Example:* `causal_clustering.minimum_core_cluster_size_at_formation=3` will specify that the cluster will form when at least three Core members have discovered each other.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.minimum_core_cluster_size_at_runtime[`causal_clustering.minimum_core_cluster_size_at_runtime`]
-| Core
 | The minimum size of the dynamically adjusted voting set (which only Core members may be a part of).
 
-Adjustments to the voting set happen automatically as the availability of Core instances changes, due to explicit operations such as starting or stopping a member, or unintended issues such as network partitions.
+Adjustments to the voting set happen automatically as the availability of Core members changes, due to explicit operations such as starting or stopping a member, or unintended issues such as network partitions.
 Please note that this dynamic scaling of the voting set is generally desirable, as under some circumstances it can increase the number of instance failures which may be tolerated.
 
 A majority of the voting set must be available before members are voted in or out.
 
-**Example:** `causal_clustering.minimum_core_cluster_size_at_runtime=3` specifies that the cluster should not try to dynamically adjust below three Core instances in the voting set.
+*Example:* `causal_clustering.minimum_core_cluster_size_at_runtime=3` will specify that the cluster should not try to dynamically adjust below three Core members in the voting set.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.discovery_type[`causal_clustering.discovery_type`]
-| Core and Read Replica
-| This setting specifies the strategy that the instance uses to determine the addresses for other instances in the cluster to contact for _bootstrapping_.
+| This setting specifies the strategy that the instance will use to determine the addresses for other instances in the cluster to contact for _bootstrapping_.
 Possible values are: `LIST`, `DNS`, `SRV`, and `K8S`.
 
 [.compact]
 `LIST`::
-Treat `causal_clustering.initial_discovery_members` as a list of addresses of Core instances to contact for discovery.
+Treat `causal_clustering.initial_discovery_members` as a list of addresses of Core Servers to contact for discovery.
 `DNS`::
 Treat `causal_clustering.initial_discovery_members` as a domain name to resolve via DNS.
-Expect DNS resolution to provide A records with hostnames or IP addresses of Core instances to contact for discovery, on the port specified by `causal_clustering.initial_discovery_members`.
+Expect DNS resolution to provide A records with hostnames or IP addresses of Cores to contact for discovery, on the port specified by `causal_clustering.initial_discovery_members`.
 `SRV`::
 Treat `causal_clustering.initial_discovery_members` as a domain name to resolve via DNS.
-Expect DNS resolution to provide SRV records with hostnames or IP addresses and ports, of Core instances to contact for discovery.
+Expect DNS resolution to provide SRV records with hostnames or IP addresses, and ports, of Cores to contact for discovery.
 `K8S`::
-Access the Kubernetes list service API to derive addresses of Core instances to contact for discovery.
+Access the Kubernetes list service API to derive addresses of Cores to contact for discovery.
 Requires `causal_clustering.kubernetes.label_selector` to be a Kubernetes label selector for Kubernetes services running a Core each and `causal_clustering.kubernetes.service_port_name` to be a service port name identifying the discovery port of Core services.
 The value of `causal_clustering.initial_discovery_members` is ignored for this option.
 
 The value of this setting determines how `causal_clustering.initial_discovery_members` is interpreted.
-Detailed information about discovery and discovery configuration options is given in xref:clustering/discovery.adoc#clustering-discovery-dns[Discovery using DNS with multiple records].
+Detailed information about discovery and discovery configuration options is given in xref:clustering/discovery.adoc#causal-clustering-discovery-dns[Discovery using DNS with multiple records].
 
-**Example:** `causal_clustering.discovery_type=DNS` combined with `causal_clustering.initial_discovery_members=cluster01.example.com:5000` fetch all DNS A records for _cluster01.example.com_ and attempt to reach Neo4j instances listening on port `5000` for each A record's IP address.
+*Example:* `causal_clustering.discovery_type=DNS` combined with `causal_clustering.initial_discovery_members=cluster01.example.com:5000` will fetch all DNS A records for _cluster01.example.com_ and attempt to reach Neo4j instances listening on port `5000` for each A record's IP address.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[`causal_clustering.initial_discovery_members`]
-| Core and Read Replica
-| The network addresses of an initial set of Core instance members that are available to bootstrap this Core or Read Replica instance.
+| The network addresses of an initial set of Core cluster members that are available to bootstrap this Core or Read Replica instance.
 In the default case, the initial discovery members are given as a comma-separated list of address/port pairs, and the default port for the discovery service is `:5000`.
 
-It is good practice to set this parameter to the same value on all Core instances.
+It is good practice to set this parameter to the same value on all Core Servers.
 
 The behavior of this setting can be modified by configuring the setting `causal_clustering.discovery_type`.
-This is described in detail in xref:clustering/discovery.adoc#clustering-discovery-dns[Discovery using DNS with multiple records].
+This is described in detail in xref:clustering/discovery.adoc#causal-clustering-discovery-dns[Discovery using DNS with multiple records].
 
-**Example:** `causal_clustering.discovery_type=LIST` combined with `core01.example.com:5000,core02.example.com:5000,core03.example.com:5000` will attempt to reach Neo4j instances listening on _core01.example.com_, core01.example.com and core01.example.com; all on port `5000`.
+*Example:* `causal_clustering.discovery_type=LIST` combined with `core01.example.com:5000,core02.example.com:5000,core03.example.com:5000` will attempt to reach Neo4j instances listening on _core01.example.com_, core01.example.com and core01.example.com; all on port `5000`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.discovery_advertised_address[`causal_clustering.discovery_advertised_address`]
-| All
-| The address/port setting that specifies where the instance advertises that it listens for discovery protocol messages from other members of the cluster.
+| The address/port setting that specifies where the instance advertises that it will listen for discovery protocol messages from other members of the cluster.
 If this instance is included in the `initial_discovery_members` of other cluster members, the value there must **exactly** match this advertised address.
 
-**Example:** `causal_clustering.discovery_advertised_address=192.168.33.21:5001` indicates that other cluster members can communicate with this instance using the discovery protocol at host `192.168.33.20` and port `5001`.
+**Example**: `causal_clustering.discovery_advertised_address=192.168.33.21:5001` indicates that other cluster members can communicate with this instance using the discovery protocol at host `192.168.33.20` and port `5001`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.raft_advertised_address[`causal_clustering.raft_advertised_address`]
-| Core
-| The address/port setting that specifies where the Neo4j instance advertises to other members of the cluster that it listens for Raft messages within the Core cluster.
+| The address/port setting that specifies where the Neo4j instance advertises to other members of the cluster that it will listen for Raft messages within the Core cluster.
 
-**Example:** `causal_clustering.raft_advertised_address=192.168.33.20:7000` listens for for cluster communication in the network interface bound to `192.168.33.20` on port `7000`.
+*Example:* `causal_clustering.raft_advertised_address=192.168.33.20:7000` will listen for for cluster communication in the network interface bound to `192.168.33.20` on port `7000`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.transaction_advertised_address[`causal_clustering.transaction_advertised_address`]
-| All
-| The address/port setting that specifies where the instance advertises where it listens for requests for transactions in the transaction-shipping catchup protocol.
+| The address/port setting that specifies where the instance advertises where it will listen for requests for transactions in the transaction-shipping catchup protocol.
 
-**Example:** `causal_clustering.transaction_advertised_address=192.168.33.20:6001` listens for transactions from cluster members on the network interface bound to `192.168.33.20` on port `6001`.
+*Example:* `causal_clustering.transaction_advertised_address=192.168.33.20:6001` will listen for transactions from cluster members on the network interface bound to `192.168.33.20` on port `6001`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.discovery_listen_address[`causal_clustering.discovery_listen_address`]
-| All
-| The address/port setting that specifies which network interface and port the Neo4j instance binds to for the cluster discovery protocol.
+| The address/port setting that specifies which network interface and port the Neo4j instance will bind to for the cluster discovery protocol.
 
 **Example:** `causal_clustering.discovery_listen_address=0.0.0.0:5001` will listen for cluster membership communication on any network interface at port `5001`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.raft_listen_address[`causal_clustering.raft_listen_address`]
-| Core
-| The address/port setting that specifies which network interface and port the Neo4j instance binds to for cluster communication.
-This setting must be set in coordination with the address this instance advertises it listens at in the setting `causal_clustering.raft_advertised_address`.
+| The address/port setting that specifies which network interface and port the Neo4j instance will bind to for cluster communication.
+This setting must be set in coordination with the address this instance advertises it will listen at in the setting `causal_clustering.raft_advertised_address`.
 
-**Example:** `causal_clustering.raft_listen_address=0.0.0.0:7000` listens for cluster communication on any network interface at port `7000`.
+*Example:* `causal_clustering.raft_listen_address=0.0.0.0:7000` will listen for cluster communication on any network interface at port `7000`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.transaction_listen_address[`causal_clustering.transaction_listen_address`]
-| All
-| The address/port setting that specifies which network interface and port the Neo4j instance binds to for cluster communication.
-This setting must be set in coordination with the address this instance advertises it listens at in the setting `causal_clustering.transaction_advertised_address`.
+| The address/port setting that specifies which network interface and port the Neo4j instance will bind to for cluster communication.
+This setting must be set in coordination with the address this instance advertises it will listen at in the setting `causal_clustering.transaction_advertised_address`.
 
-**Example:** `causal_clustering.transaction_listen_address=0.0.0.0:6001` listens for cluster communication on any network interface at port `6001`.
+*Example:* `causal_clustering.transaction_listen_address=0.0.0.0:6001` will listen for cluster communication on any network interface at port `6001`.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.store_copy_max_retry_time_per_request[`causal_clustering.store_copy_max_retry_time_per_request`]
-| Core and Read Replica
-| Condition for when store copy should eventually fail.
-A request is allowed to retry for any amount of attempts as long as the configured time has not been met.
-For very large stores or other reason that might make transferring of files slow this could be increased.
+| Condition for when store copy should eventually fail. A request is allowed to retry for any amount of attempts as long as the configured time has not been met. For very large stores or other reason that might make transferring of files slow this could be increased.
 
-**Example:** `causal_clustering.store_copy_max_retry_time_per_request=60min`
+*Example:* `causal_clustering.store_copy_max_retry_time_per_request=60min`
 
 |===
 
 
-[[clustering-settings-multi-dc]]
+[[causal-clustering-settings-multi-dc]]
 == Multi-data center settings
 
 [options="header",width="100%",cols="1,3"]
@@ -161,17 +126,15 @@ For very large stores or other reason that might make transferring of files slow
 
 *Example:* `causal_clustering.server_groups=us,us-east` will add the current instance to the groups `us` and `us-east`.
 
-| xref:reference/configuration-settings.adoc#config_causal_clustering.leadership_priority_group[`+causal_clustering.leadership_priority_group.<database>+`]
+//MISSING| <<config_causal_clustering.leadership_priority_group,`+causal_clustering.leadership_priority_group.<database>+`>>
+| `+causal_clustering.leadership_priority_group.<database>+`
 |The group of servers which should be preferred when selecting leaders for the specified database.
 If the instance currently acting as leader for this database is not a member of the configured server group, then the cluster will attempt to transfer leadership to an instance which _is_ a member.
 It is not guaranteed that leadership will always be held by a server in the desired group.
 For example, if no member of the desired group is available or has up-to-date store contents.
 The cluster will seek to preserve availability, over respecting the `leadership_priority_group` setting.
 
-To set a default `leadership_priority_group` for all databases that do not have an explicitly set `leadership_priority_group`, the `<database>` can be omitted.
-See xref:reference/configuration-settings.adoc#config_causal_clustering.leadership_priority_group[`causal_clustering.leadership_priority_group`].
-
-*Example:* `causal_cluster.leadership_priority_group.foo=us` will ensure that if the leader for `foo` is not held by a server configured with `causal_clustering.server_groups=us`, the cluster will attempt to transfer leadership to a server which is.
+*Example:* `causal_clustering.leadership_priority_group.foo=us` will ensure that if the leader for `foo` is not held by a server configured with `causal_clustering.server_groups=us`, the cluster will attempt to transfer leadership to a server which is.
 
 | xref:reference/configuration-settings.adoc#config_causal_clustering.upstream_selection_strategy[`causal_clustering.upstream_selection_strategy`]
 | An ordered list in descending preference of the strategy which Read Replicas use to choose upstream database server from which to pull transactional updates.
@@ -194,14 +157,11 @@ One pre-defined plugin named `server_policies` is available by default.
 
 *Example:* `causal_clustering.load_balancing.plugin=server_policies` will enable custom policy definitions.
 
-| `+causal_clustering.load_balancing.config.server_policies.<policy-name>+`
+| `causal_clustering.load_balancing.config.server_policies.<policy-name>`
 | Defines a custom policy under the name `<policy-name>`.
 Note that load balancing policies are cluster-global configurations and should be defined the exact same way on all core machines.
 
-*Example:* `causal_clustering.load_balancing.config.server_policies.north1_only=groups(north1)->min(2); halt();` defines a load balancing policy named `north1_only`. +
-Queries are sent only to servers in the `north1` server group, provided there are two of them available.
-If there are less than two servers in `north1`, the chain is halted. 
-
-By default, the load balancer sends read requests only to replicas/followers, which means these two servers must be of that kind.
-To allow reads on the leader, set to xref:reference/configuration-settings.adoc#config_causal_clustering.cluster_allow_reads_on_leader[`causal_clustering.cluster_allow_reads_on_leader`] to `true`.
+*Example:* `causal_clustering.load_balancing.config.server_policies.north1_only=groups(north1)->min(2); halt();` will define a load balancing policy named `north1_only`.
+Queries are only sent to servers in the `north1` server group, provided there are two of them available.
+If there are less than two servers in `north1` then the chain is halted.
 |===

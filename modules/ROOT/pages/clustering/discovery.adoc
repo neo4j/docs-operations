@@ -1,62 +1,55 @@
-:description: This section describes how members of a cluster discover each other.
 [role=enterprise-edition]
-[[clustering-discovery]]
+[[causal-clustering-discovery]]
 = Discovery
-:description: This section describes how members of a cluster discover each other. 
+:description: How members of a cluster discover each other. 
 
 
-[[clustering-discovery-overview]]
+[[causal-clustering-discovery-overview]]
 == Overview
 
-In order to form or connect to a running cluster, a Core or a Read Replica instance needs to know the addresses of some of the Primary Servers.
-This information is used to bind to the Primary servers in order to run the discovery protocol and get the full information about the cluster.
-The best way to do this depends on the configuration in each specific case.
-
-[NOTE]
-====
-A Single instance used as a Primary server does not need to be configured for discovery.
-However, `discovery_advertised_address` and `discovery_listen_address` can be configured if other addresses than the default are desired.
-====
+In order to form or connect to a running cluster, a Core Server or a Read Replica needs to know the addresses of some of the Core Servers.
+This information is used to bind to the Core Servers in order to run the discovery protocol and get the full information about the cluster.
+The way in which this is best done depends on the configuration in each specific case.
 
 If the addresses of the other cluster members are known upfront, they can be listed explicitly.
 This is convenient, but has limitations:
 
-* If Core instances are replaced and the new members have different addresses, the list will become outdated.
+* If Core members are replaced and the new members have different addresses, the list will become outdated.
 An outdated list can be avoided by ensuring that the new members can be reached via the same address as the old members, but this is not always practical.
 * Under some circumstances the addresses are unknown when configuring the cluster.
-This can be the case, for example, when using container orchestration to deploy a cluster.
+This can be the case, for example, when using container orchestration to deploy a Causal Cluster.
 
 Additional mechanisms for using DNS are provided for the cases where it is not practical or possible to explicitly list the addresses of cluster members to discover.
 
 The discovery configuration is just used for initial discovery and a running cluster will continuously exchange information about changes to the topology.
-The behavior of the initial discovery is determined by the parameters `xref:reference/configuration-settings.adoc#config_causal_clustering.discovery_type[causal_clustering.discovery_type]` and `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering.initial_discovery_members]`.
+The behavior of the initial discovery is determined by the parameters `xref:reference/configuration-settings.adoc#config_causal_clustering.discovery_type[causal_clustering.discovery_type]` and `xref:reference/configuration-settings.adoc#config_causal_clustering.initial_discovery_members[causal_clustering.initial_discovery_members]`, and is described in the following sections.
 
 
-[[clustering-discovery-list]]
+[[causal-clustering-discovery-list]]
 === Discovery using a list of server addresses
 
 If the addresses of the other cluster members are known upfront, they can be listed explicitly.
-In this case, we use the default `causal_clustering.discovery_type=LIST` and hard code the addresses in the configuration of each machine.
-This alternative is illustrated by xref:clustering/deploy.adoc#clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
+We use the default `causal_clustering.discovery_type=LIST` and hard code the addresses in the configuration of each machine.
+This alternative is illustrated by xref:clustering/deploy.adoc#causal-clustering-new-cluster-example-configure-a-core-only-cluster[Configure a Core-only cluster].
 
 
-[[clustering-discovery-dns]]
+[[causal-clustering-discovery-dns]]
 === Discovery using DNS with multiple records
 
 When using initial discovery with DNS, a DNS record lookup is performed when an instance starts up.
-Once an instance has joined a cluster, further membership changes are communicated amongst Core instances as part of the discovery service.
+Once an instance has joined a cluster, further membership changes are communicated amongst Core members as part of the discovery service.
 
-The following DNS-based mechanisms can be used to get the addresses of Core instances for discovery:
+The following DNS-based mechanisms can be used to get the addresses of Core Cluster members for discovery:
 
 `causal_clustering.discovery_type=DNS`::
 With this configuration, the initial discovery members will be resolved from _DNS A_ records to find the IP addresses to contact.
 The value of `causal_clustering.initial_discovery_members` should be set to a single domain name and the port of the discovery service.
 For example: `causal_clustering.initial_discovery_members=cluster01.example.com:5000`.
-The domain name should return an A record for every Core instance when a DNS lookup is performed.
-Each A record returned by DNS should contain the IP address of the Core instance.
-The configured Primary server will use all the IP addresses from the A records to join or form a cluster.
+The domain name should return an A record for every Core member when a DNS lookup is performed.
+Each A record returned by DNS should contain the IP address of the Core Server.
+The configured Core Server will use all the IP addresses from the A records to join or form a cluster.
 +
-The discovery port must be the same on all Core instances when using this configuration.
+The discovery port must be the same on all Cores when using this configuration.
 If this is not possible, consider using the discovery type `SRV` instead.
 
 `causal_clustering.discovery_type=SRV`::
@@ -65,25 +58,19 @@ The value of `causal_clustering.initial_discovery_members` should be set to a si
 For example: `causal_clustering.initial_discovery_members=cluster01.example.com:0`.
 The domain name should return a single SRV record when a DNS lookup is performed.
 The SRV record returned by DNS should contain the IP address or hostname, and the discovery port, for the Core Servers to be discovered.
-The configured Primary server will use all the addresses from the SRV record to join or form a cluster.
-
-[NOTE]
-====
-In the current version of Neo4j, the clustering-related parameters use the `causal_clustering` namespace.
-This will be replaced with a more suitable namespace in an upcoming release.
-====
+The configured Core Server will use all the addresses from the SRV record to join or form a cluster.
 
 
-[[clustering-discovery-k8s]]
+[[causal-clustering-discovery-k8s]]
 === Discovery in Kubernetes
 
-A special case is when a cluster is running in https://kubernetes.io/[Kubernetes^] and each Primary server is running as a Kubernetes service.
-Then, the addresses of the Core instances can be obtained using the List Service API, as described in the https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#list-service-v1-core[Kubernetes API documentation^].
+A special case is when a Causal Cluster is running in https://kubernetes.io/[Kubernetes^] and each Core Server is running as a Kubernetes service.
+Then, the addresses of the Core Cluster members can be obtained using the List Service API, as described in the https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#list-service-v1-core[Kubernetes API documentation^].
 
 The following settings are used to configure for this scenario:
 
 * Set `causal_clustering.discovery_type=K8S`.
-* Set `xref:reference/configuration-settings.adoc#config_causal_clustering.kubernetes.label_selector[causal_clustering.kubernetes.label_selector]` to the label selector for the cluster services.
+* Set `xref:reference/configuration-settings.adoc#config_causal_clustering.kubernetes.label_selector[causal_clustering.kubernetes.label_selector]` to the label selector for the Causal Cluster services.
 For more information, see the https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors[Kubernetes official documentation^].
 * Set `xref:reference/configuration-settings.adoc#config_causal_clustering.kubernetes.service_port_name[causal_clustering.kubernetes.service_port_name]` to the name of the service port used in the Kubernetes service definition for the Core's discovery port.
 For more information, see the https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#serviceport-v1-core[Kubernetes official documentation^]
