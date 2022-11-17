@@ -1,0 +1,135 @@
+[role=enterprise-edition]
+[[multi-clustering-monitoring]]
+= Monitor a multi-cluster
+:description: This section describes specific monitoring facilities for a Neo4j multi-cluster. 
+
+A number of procedures are available that provide information about a multi-cluster.
+This section describes the following:
+
+* xref:clustering-advanced/multi-clustering/monitor.adoc#multi-clustering-dbms.cluster.overview[Gain an overview over the instances in a multi-cluster]
+* xref:clustering-advanced/multi-clustering/monitor.adoc#dbms.cluster.routing.getRoutersForAllDatabases[Get routing information for all databases in a multi-cluster]
+* xref:clustering-advanced/multi-clustering/monitor.adoc#dbms.cluster.routing.getRoutersForDatabase[Get routing information for a given database in a multi-cluster]
+
+
+The image below gives an overview of the procedures available for finding out information about a multi-cluster:
+
+image::multicluster-monitoring.svg[title="The procedures available to monitor a multi-cluster.", role="middle"]
+
+
+[[multi-clustering-dbms.cluster.overview]]
+== Gain an overview over all the instances in a multi-cluster
+
+The `dbms.cluster.overview()` procedure is described in detail in xref:monitoring/causal-cluster/procedures.adoc#dbms.cluster.overview[Gain an overview over the instances in the cluster].
+It provides an overview of the whole multi-cluster, regardless of which cluster member is used to run the query, and which constituent cluster that member belongs to.
+The name of the database managed by each cluster member is provided by the "database" column.
+
+Unlike when xref:monitoring/causal-cluster/procedures.adoc[monitoring a single Causal Cluster], the cluster overview output will contain multiple members with the role of Leader.
+This is to be expected, as each constituent cluster will have its own instance filling the Leader role.
+
+
+[[dbms.cluster.routing.getRoutersForAllDatabases]]
+== Get routing information for all databases in a multi-cluster
+
+Use this procedure for discovery of routing-capable endpoints for all databases in a multi-cluster.
+
+*Syntax:*
+
+`CALL dbms.cluster.routing.getRoutersForAllDatabases()`
+
+*Returns:*
+
+A json map containing the following fields:
+
+[options="header"]
+|===
+| Name         | Description
+| `ttl`        | Time To Live (TTL) for this information.
+| `routers`    | A list of routers available for this configuration.
+| `addresses`  | A list of addresses available for routing.
+| `database`   | The database name that this information is applicable to.
+|===
+
+*Considerations:*
+
+This information is not primarily intended for humans, but for consumption by a client-side directory program, which can then issue a full routing request (see link:{neo4j-docs-base-uri}/driver-manual/1.7/client-applications#routing_drivers_bolt_routing[bolt+routing]) to one of the returned addresses.
+
+.Get routers for all the databases in a multi-cluster
+====
+
+In order to see routing-capable endpoints in the multi-cluster containing the databases `foo`, `bar` and `baz`, run the following query against any Core Server in the multi-cluster:
+
+[source, cypher]
+----
+CALL dbms.cluster.routing.getRoutersForAllDatabases()
+----
+
+The result is a list of addresses of members that support routing in the `foo`, `bar` and `baz` clusters, together with the time to live (TTL) for this information.
+
+[source, json]
+----
+ttl: 300,
+routers: [
+  {
+    addresses: [neo20:7687,neo21:7687,neo22:7687],
+    database: "foo"
+  }, {
+    addresses: [neo23:7687,neo24:7687,neo25:7687],
+    database: "bar"
+  }, {
+    addresses: [neo26:7687,neo27:7687,neo28:7687],
+    database: "baz"
+  }
+]
+----
+====
+
+
+[[dbms.cluster.routing.getRoutersForDatabase]]
+== Get routing information for a given database in a multi-cluster
+
+Use this procedure for discovery of routing-capable endpoints for a given database in a multi-cluster.
+
+*Syntax:*
+
+`CALL dbms.cluster.routing.getRoutersForDatabase(_database-name_)`
+
+*Returns:*
+
+A json map containing the following fields:
+
+[options="header"]
+|===
+| Name         | Description
+| `ttl`        | Time To Live (TTL) for this information.
+| `routers`    | A list of routers available for this configuration.
+| `addresses`  | A list of addresses available for routing.
+| `database`   | The database name that this information is applicable to.
+|===
+
+*Considerations:*
+
+This information is not primarily intended for humans, but for consumption by a client-side directory program, which can then issue a full routing request (see link:{neo4j-docs-base-uri}/driver-manual/1.7/client-applications#routing_drivers_bolt_routing[bolt+routing]) to one of the returned addresses.
+
+.Get routers for a given database in a multi-cluster
+====
+In order to see routing-capable endpoints (see link:{neo4j-docs-base-uri}/driver-manual/1.7/client-applications#routing_drivers_bolt_routing[bolt+routing]) in the cluster hosting the `foo` database, run the following query against any instance in the multi-cluster:
+
+[source, cypher]
+----
+CALL dbms.cluster.routing.getRoutersForDatabase("foo")
+----
+
+The result is a list of addresses of members that support routing in the `foo` cluster, together with the time to live (TTL) for this information.
+This information is not primarily intended for humans, but for consumption by a client-side directory program, which can then issue a full routing request to one of the returned addresses.
+
+[source, json]
+----
+ttl: 300,
+routers: [
+  {
+    addresses: [neo20:7687,neo21:7687,neo22:7687],
+    database: "foo"
+  }
+]
+----
+====

@@ -1,0 +1,118 @@
+[role=enterprise-edition]
+[[backup-planning]]
+= Backup planning
+:description: This section introduces how to prepare for backing up a Neo4j database. 
+
+This section includes:
+
+* xref:backup/planning.adoc#backup-planning-introduction[Introduction]
+* xref:backup/planning.adoc#backup-planning-online-vs-offline[Online and offline backups]
+* xref:backup/planning.adoc#backup-planning-storage-considerations[Storage considerations]
+* xref:backup/planning.adoc#backup-planning-network-considerations[Network protocols for backups]
+* xref:backup/planning.adoc#backup-planning-memory-considerations[Memory configuration]
+* xref:backup/planning.adoc#backup-planning-additional-files[Additional files to back up]
+
+
+[[backup-planning-introduction]]
+== Introduction
+
+Designing an appropriate backup strategy for your Neo4j database is a fundamental part of database operations.
+The backup strategy should take into account elements such as:
+
+* Demands on performance during backup actions.
+* Tolerance for data loss in case of failure.
+* Tolerance for downtime in case of failure.
+* Data volumes.
+
+The backup strategy will answer question such as:
+
+* What type of backup method used; online or offline backups?
+* What physical setup meets our demands?
+* What backup media -- offline or remote storage, cloud storage etc. -- should we use?
+* How long do we archive backups for?
+* With what frequency should we perform backups;
++
+If using online backups:
+
+** How often should we perform full backups?
+** How often should we perform incremental backups?
+* How do we test recovery routines, and how often?
+
+
+[[backup-planning-online-vs-offline]]
+== Online and offline backups
+
+Online backups are typically required for production environments, but it is also possible to perform offline backups.
+
+Offline backups are a more limited method for backing up a database.
+For example:
+
+* Online backups run against a live Neo4j instance, while offline backups require that the database is shut down.
+* Online backups can be full or incremental, but there is no support for backing up incrementally with offline backups.
+
+For more details about offline backups, see xref:tools/dump-load.adoc[Dump and load databases].
+
+The remainder of this chapter is dedicated to describing _online_ backups.
+
+
+[[backup-planning-storage-considerations]]
+== Storage considerations
+
+For any backup it is important that you store your data separately from the production system, where there are no common dependencies, and preferably off-site.
+If you are running Neo4j in the cloud, you should use a different availability zone within the same cloud, or use a separate cloud for backups.
+
+Since backups are kept for a long time, the longevity of archival storage should be considered as part of backup planning.
+
+You may also want to override the settings used for pruning and rotating transaction log files.
+The transaction log files are files that keep track of recent changes.
+Recovery from backups with the same transaction log files as the source server can be helpful, but it isn't always necessary.
+Please note that removing transactions manually can result in a broken backup.
+
+Recovered servers do not need all of the transaction log files that have already been applied, so it is possible to reduce storage size even further by reducing the size of the files to the bare minimum.
+
+This can be done by setting `dbms.tx_log.rotation.size=1M` and `dbms.tx_log.rotation.retention_policy=3 files` in either
+the default backup configuration (`$NEO4J_HOME/conf/neo4j.conf`), or in the `$NEO4J_CONF` config file.
+Alternatively you can use the `--additional-config` override.
+
+
+[[backup-planning-network-considerations]]
+== Network protocols for backups
+
+The backup client can use two different protocols:
+
+* Backups of members of a xref:clustering/index.adoc[Causal Cluster], whether Core Servers or Read Replicas, should use the xref:clustering-advanced/lifecycle.adoc#causal-clustering-catchup-protocol[_catchup protocol_].
+  This is the same protocol that used for keeping Read Replicas up-to-date within a Causal Cluster.
+* Backups of single-instance servers should use the _common backup protocol_
+
+An online backup will use the protocol specified by the `xref:backup/performing.adoc#backup-performing-commands[--protocol]` option.
+It is recommended to set this option explicitly, as described in xref:backup/performing.adoc#backup-performing-commands[Backup commands].
+
+
+[[backup-planning-memory-considerations]]
+== Memory configuration
+
+The following options are available for controlling memory allocation to the backup client:
+
+Configure heap size for the backup::
+
+This is done by setting the environment variable `HEAP_SIZE` before starting the backup program.
+If not specified by `HEAP_SIZE`, the Java Virtual Machine will choose a value based on server resources.
+`HEAP_SIZE` configures the maximum heap size allocated for the backup process.
+
+Configure page cache for the backup::
+
+The page cache size can be determined for the backup program by using the `--pagecache` option to the `neo4j-admin backup` command.
+If not explicitly defined, the page cache will default to 8MB.
+
+
+[[backup-planning-additional-files]]
+== Additional files to back up
+
+The files listed below are not included in online and offline backups.
+Make sure to back them up separately.
+
+* If you have a cluster, it may be relevant to back up xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
+* If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], back up the _xref:configuration/file-locations.adoc[data]/dbms_ directory.
+* Back up all the files used for encryption, i.e. private key, public certificate, and the contents of the _trusted_ and _revoked_ directories.
+  The locations of these are described in xref:security/ssl-framework.adoc[SSL framework].
+  If you have a cluster, you should back up these files on each server in the cluster.

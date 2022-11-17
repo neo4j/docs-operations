@@ -1,0 +1,164 @@
+[role=enterprise-edition]
+[[causal-clustering-seeding]]
+= Seed a cluster
+:description: This section describes how to seed a new Neo4j Causal Cluster with existing data. 
+
+This section includes:
+
+* xref:clustering/seed-cluster.adoc#causal-clustering-seeding-introduction[Introduction]
+* xref:clustering/seed-cluster.adoc#causal-clustering-seeding-from-backup[Seed from an online backup]
+* xref:clustering/seed-cluster.adoc#causal-clustering-seeding-from-dump[Seed from an offline backup]
+* xref:clustering/seed-cluster.adoc#causal-clustering-seeding-using-import[Seed using the import tool]
+
+[[causal-clustering-seeding-introduction]]
+== Introduction
+
+In xref:clustering/setup-new-cluster.adoc[Create a new cluster] we learned how to create a cluster with an empty store.
+However, regardless if we are just playing around with Neo4j or setting up a production environment, it is likely that we have some existing data that we wish to transfer into our cluster.
+
+This section outlines how to create a Causal Cluster containing data either seeded from an existing online or offline Neo4j database, or imported from some other data source using the import tool.
+The general steps to seed a cluster will follow the same pattern, regardless which format our data is in:
+
+. Create a new Neo4j Core-only cluster.
+. Seed the cluster.
+. Start the cluster.
+
+
+[NOTE]
+====
+The database which you are using to seed the cluster must be of the same version of Neo4j as the cluster itself.
+====
+
+
+[[causal-clustering-seeding-from-backup]]
+== Seed from an online backup
+
+For this example, it is assumed that we already have a healthy backup of an existing Neo4j database as a result of an online backup from a running Neo4j instance (for details on online backups, please refer to xref:backup/index.adoc[Backup]).
+This could be a standalone Neo4j instance, a Neo4j Highly Available cluster, or a running instance of another Neo4j Causal Cluster.
+The process described here can also be used to seed a new Causal Cluster from an existing Read Replica.
+This can be useful, for example, in disaster recovery where some servers have retained operability during a catastrophic event.
+
+. Create a new Neo4j Core-only cluster.
++
+Follow the instructions in xref:clustering/setup-new-cluster.adoc#causal-clustering-new-multi-machine-cluster[Configure a Core-only cluster] to create a new Neo4j Core-only cluster.
+If you start the cluster in order to test that it works, you have to subsequently stop it and perform `xref:tools/unbind.adoc[neo4j-admin unbind]` on each of the instances.
+
+. Seed the cluster.
++
+Use `neo4j-admin restore` to restore the seeding store from the backed-up database on all the Core instances in the cluster.
+Since all instances are seeded with the store, the cluster will be fully available right away once the instances are started.
++
+.Restore the backup to seed all Core members.
+====
+
+This example assumes that the database name is the default `graph.db` and that we have a valid backup residing under the _seed-dir_ directory.
+If you have a different setup, change the command line arguments accordingly.
+
+[source, shell]
+----
+neo4j-01$ ./bin/neo4j-admin restore --from=seed-dir --database=graph.db
+----
+
+[source, shell]
+----
+neo4j-02$ ./bin/neo4j-admin restore --from=seed-dir --database=graph.db
+----
+
+[source, shell]
+----
+neo4j-03$ ./bin/neo4j-admin restore --from=seed-dir --database=graph.db
+----
+====
+. Start the cluster.
++
+At this point, all of the instances in the Core cluster have the store that contains our graph data.
+Between them the Core Servers have everything necessary to form a cluster.
+We are ready to start all instances.
+The cluster will form and data will be replicated between the instances.
++
+[[example-causal-clustering-seeding-start-each-instance]]
+.Start each of the Core instances.
+====
+[source, shell]
+----
+neo4j-01$ ./bin/neo4j start
+----
+
+[source, shell]
+----
+neo4j-02$ ./bin/neo4j start
+----
+
+[source, shell]
+----
+neo4j-03$ ./bin/neo4j start
+----
+====
+
+
+[[causal-clustering-seeding-from-dump]]
+== Seed from an offline backup
+
+There are cases where we may want to seed a database in an offline fashion, for example if we are upgrading from Neo4j Community to Enterprise, or if we choose to transplant a database from one Enterprise site to another.
+To handle offline backups, we use `neo4j-admin dump` and `neo4j-admin load`.
+For more detailed instructions on these, please refer to xref:tools/dump-load.adoc[Dump and load databases].
+
+The overall process for seeding from an offline backup is the same as for an online backup.
+
+. Create a new Neo4j Core-only cluster.
++
+Follow the instructions in xref:clustering/setup-new-cluster.adoc#causal-clustering-new-multi-machine-cluster[Configure a Core-only cluster] to create a new Neo4j Core-only cluster.
+If you start the cluster in order to test that it works, you have to subsequently stop it and perform `xref:tools/unbind.adoc[neo4j-admin unbind]` on each of the instances.
+. Seed the cluster.
++
+Seed the cluster by loading the dump file into each of the newly created Core member using `xref:tools/dump-load.adoc[neo4j-admin dump]`.
++
+.Load the database into each Cluster member
+====
+
+In this example we assume that we have an offline backup of your Neo4j database as a result of using `xref:tools/dump-load.adoc[neo4j-admin dump]`.
+The database name is the default `graph.db` and we have a dump file called _graph.dump_ in the _seed-dir_ directory.
+If you have a different setup, change the command line arguments accordingly.
+
+[source, shell]
+----
+neo4j-01$ ./bin/neo4j-admin load --from=seed-dir/graph.dump --database=graph.db
+----
+
+[source, shell]
+----
+neo4j-02$ ./bin/neo4j-admin load --from=seed-dir/graph.dump --database=graph.db
+----
+
+[source, shell]
+----
+neo4j-03$ ./bin/neo4j-admin load --from=seed-dir/graph.dump --database=graph.db
+----
+====
+. Start the cluster.
++
+At this point all the instances of the Core cluster have the store that contains our graph data.
+We are ready to start all instances the same way that is illustrated in xref:clustering/seed-cluster.adoc#example-causal-clustering-seeding-start-each-instance[Start each of the Core instances.].
+
+
+[[causal-clustering-seeding-using-import]]
+== Seed using the import tool
+
+In order to create a cluster based on imported data, it is recommended to first import the data and then use the resulting database to seed the cluster.
+
+. Import the data.
+.. Create a new Neo4j database.
+.. Import the data using the xref:tools/import/index.adoc[import tool].
+. Create an offline backup of the data.
++
+Use `xref:tools/dump-load.adoc[neo4j-admin dump]` to create an offline backup.
+. Use the offline backup to seed a new cluster.
++
+Follow the instructions in xref:clustering/seed-cluster.adoc#causal-clustering-seeding-from-dump[Seed from an offline backup].
+
+[CAUTION]
+====
+Using copy-and-paste to move the internal _data_ directory, in order to transfer and seed databases is not supported.
+If you have an existing Neo4j database whose data you wish to use for a new cluster, it is recommended to create an offline backup using `xref:tools/dump-load.adoc[neo4j-admin dump]`.
+The resulting backup can then be used to seed the cluster by following the instructions in xref:clustering/seed-cluster.adoc#causal-clustering-seeding-from-dump[Seed from an offline backup].
+====

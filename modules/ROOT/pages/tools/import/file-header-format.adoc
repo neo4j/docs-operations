@@ -1,0 +1,354 @@
+[[import-tool-header-format]]
+= CSV file header format
+:description: This section explains the header format of CSV files when using the Neo4j import tool. 
+
+This section describes the following:
+
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-header-files[Header files]
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-properties[Properties]
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-nodes[Node files]
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-rels[Relationship files]
+* xref:tools/import/file-header-format.adoc#import-tool-id-spaces[Using ID spaces]
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-skip-columns[Skipping columns]
+* xref:tools/import/file-header-format.adoc#import-tool-header-format-compressed-files[Compressed files]
+
+
+[[import-tool-header-format-header-files]]
+== Header files
+
+The header file of each data source specifies how the data fields should be interpreted.
+You must use the same delimiter for the header file and for the data files.
+
+The header contains information for each field, with the format `<name>:<field_type>`.
+The `<name>` is used for properties and node IDs.
+In all other cases, the `<name>` part of the field is ignored.
+
+
+[[import-tool-header-format-properties]]
+== Properties
+
+For properties, the `<name>` part of the field designates the property key, while the `<field_type>` part assigns a data type (see below).
+You can have properties in both node data files and relationship data files.
+
+Data types::
+Use one of `int`, `long`, `float`, `double`, `boolean`, `byte`, `short`, `char`, `string`, `point`, `date`, `localtime`, `time`, `localdatetime`,
+`datetime`, and `duration` to designate the data type for properties.
+If no data type is given, this defaults to `string`.
+To define an array type, append `[]` to the type.
+By default, array values are separated by `;`.
+A different delimiter can be specified with `--array-delimiter`.
+Boolean values are _true_ if they match exactly the text `true`. All other values are _false_.
+Values that contain the delimiter character need to be escaped by enclosing in double quotation marks, or by using a different delimiter character with the `--delimiter` option.
+
++
+.Header format with data types
+====
+
+This example illustrates several different data types specified in the CSV header.
+
+[source, csv]
+----
+:ID,name,joined:date,active:boolean,points:int
+user01,Joe Soap,2017-05-05,true,10
+user02,Jane Doe,2017-08-21,true,15
+user03,Moe Know,2018-02-17,false,7
+----
+
+====
+
+Special considerations for the `point` data type::
+A point is specified using the Cypher syntax for maps.
+The map allows the same keys as the input to the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/spatial[Cypher Manual -> Point function].
+The point data type in the header can be amended with a map of default values used for all values of that column, e.g. `point{crs: 'WGS-84'}`.
+Specifying the header this way allows you to have an incomplete map in the value position in the data file.
+Optionally, a value in a data file may override default values from the header.
++
+.Property format for `point` data type
+====
+
+This example illustrates various ways of using the `point` data type in the import header and the data files.
+
+We are going to import the name and location coordinates for cities.
+First, we define the header as:
+
+[source, csv]
+----
+:ID,name,location:point{crs:WGS-84}
+----
+
+We then define cities in the data file.
+
+* The first city's location is defined using `latitude` and `longitude`, as expected when using the coordinate system defined in the header.
+* The second city uses `x` and `y` instead.
+This would normally lead to a point using the coordinate reference system `cartesian`.
+Since the header defines `crs:WGS-84`, that coordinate reference system will be used.
+* The third city overrides the coordinate reference system defined in the header, and sets it explicitly to `WGS-84-3D`.
+
+[source, csv]
+----
+:ID,name,location:point{crs:WGS-84}
+city01,"Malmö","{latitude:55.6121514, longitude:12.9950357}"
+city02,"London","{y:51.507222, x:-0.1275}"
+city03,"San Mateo","{latitude:37.554167, longitude:-122.313056, height: 100, crs:'WGS-84-3D'}"
+----
+
+Note that all point maps are within double quotation marks `"` in order to prevent the enclosed `,` character from being interpreted as a column separator.
+An alternative approach would be to use `--delimiter='\t'` and reformat the file with tab separators, in which case the `"` characters are not required.
+
+[source, csv]
+----
+:ID name    location:point{crs:WGS-84}
+city01  Malmö   {latitude:55.6121514, longitude:12.9950357}
+city02  London  {y:51.507222, x:-0.1275}
+city03  San Mateo   {latitude:37.554167, longitude:-122.313056, height: 100, crs:'WGS-84-3D'}
+----
+
+====
+
+Special considerations for temporal data types::
+The format for all temporal data types must be defined as described in link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/temporal#cypher-temporal-instants[Cypher Manual -> Temporal instants syntax] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/temporal#cypher-temporal-durations[Cypher Manual -> Durations syntax].
+Two of the temporal types, _Time_ and _DateTime_, take a time zone parameter which might be common between all or many of the values in the data file.
+It is therefor possible to specify a default time zone for _Time_ and _DateTime_ values in the header, for example: `time{timezone:+02:00}` and: `datetime{timezone:Europe/Stockholm}`.
+If no default time zone is specified, the default timezone is determined by the `xref:reference/configuration-settings.adoc#config_db.temporal.timezone[db.temporal.timezone]` configuration setting.
+The default time zone can be explicitly overridden in the values in the data file.
++
+.Property format for temporal data types
+====
+
+This example illustrates various ways of using the `datetime` data type in the import header and the data files.
+
+First, we define the header with two _DateTime_ columns.
+The first one defines a time zone, but the second one does not:
+
+[source, csv]
+----
+:ID,date1:datetime{timezone:Europe/Stockholm},date2:datetime
+----
+
+We then define dates in the data file.
+
+* The first row has two values that do not specify an explicit timezone.
+The value for `date1` will use the `Europe/Stockholm` time zone that was specified for that field in the header.
+The value for `date2` will use the configured default time zone of the database.
+* In the second row, both `date1` and `date2` set the time zone explicitly to be `Europe/Berlin`.
+This overrides the header definition for `date1`, as well as the configured default time zone of the database.
+
+[source, csv]
+----
+1,2018-05-10T10:30,2018-05-10T12:30
+2,2018-05-10T10:30[Europe/Berlin],2018-05-10T12:30[Europe/Berlin]
+----
+
+====
+
+
+[[import-tool-header-format-nodes]]
+== Node files
+
+Files containing node data can have an `ID` field, a `LABEL` field as well as properties.
+
+ID::
+  Each node must have a unique ID if it is to be connected by any relationships created in the import.
+  The IDs are used to find the correct nodes when creating relationships.
+  Note that the ID has to be unique across all nodes in the import; even for nodes with different labels.
+  The unique ID can be persisted in a property whose name is defined by the `<name>` part of the field definition `<name>:ID`.
+  If no such property name is defined, the unique ID will be used for the purpose of the import but not be available for reference later.
+  If no ID is specified, the node will be imported but it will not be able to be connected by any relationships during the import.
+LABEL::
+  Read one or more labels from this field.
+  Like array values, multiple labels are separated by `;`, or by the character specified with `--array-delimiter`.
+
+.Define nodes files
+====
+
+We define the headers for movies in the _movies_header.csv_ file.
+Movies have the properties `movieId`, `year` and `title`.
+We also specify a field for labels.
+
+[source, csv]
+----
+movieId:ID,title,year:int,:LABEL
+----
+
+We define three movies in the _movies.csv_ file.
+They contain all the properties defined in the header file.
+All the movies are given the label `Movie`.
+Two of them are also given the label `Sequel`.
+
+[source, csv]
+----
+tt0133093,"The Matrix",1999,Movie
+tt0234215,"The Matrix Reloaded",2003,Movie;Sequel
+tt0242653,"The Matrix Revolutions",2003,Movie;Sequel
+----
+
+Similarly, we also define three actors in the _actors_header.csv_ and _actors.csv_ files.
+They all have the properties `personId` and `name`, and the label `Actor`.
+
+[source, csv]
+----
+personId:ID,name,:LABEL
+----
+
+[source, csv]
+----
+keanu,"Keanu Reeves",Actor
+laurence,"Laurence Fishburne",Actor
+carrieanne,"Carrie-Anne Moss",Actor
+----
+====
+
+
+[[import-tool-header-format-rels]]
+== Relationship files
+
+Files containing relationship data have three mandatory fields and can also have properties.
+The mandatory fields are:
+
+TYPE::
+  The relationship type to use for this relationship.
+START_ID::
+  The ID of the start node for this relationship.
+END_ID::
+  The ID of the end node for this relationship.
+
+The `START_ID` and `END_ID` refer to the unique node ID defined in one of the node data sources, as explained in the previous section.
+None of these takes a name, e.g. if `<name>:START_ID` or `<name>:END_ID` is defined, the `<name>` part will be ignored.
+
+
+.Define relationships files
+====
+
+In this example we assume that the two nodes files from the previous example are used together with the following relationships file.
+
+We define relationships between actors and movies in the files _roles_header.csv_ and _roles.csv_.
+Each row connects a start node and an end node with a relationship of relationship type `ACTED_IN`.
+Notice how we use the unique identifiers `personId` and `movieId` from the nodes files above.
+The name of character that the actor is playing in this movie is stored as a `role` property on the relationship.
+
+[source, csv]
+----
+:START_ID,role,:END_ID,:TYPE
+----
+
+[source, csv]
+----
+keanu,"Neo",tt0133093,ACTED_IN
+keanu,"Neo",tt0234215,ACTED_IN
+keanu,"Neo",tt0242653,ACTED_IN
+laurence,"Morpheus",tt0133093,ACTED_IN
+laurence,"Morpheus",tt0234215,ACTED_IN
+laurence,"Morpheus",tt0242653,ACTED_IN
+carrieanne,"Trinity",tt0133093,ACTED_IN
+carrieanne,"Trinity",tt0234215,ACTED_IN
+carrieanne,"Trinity",tt0242653,ACTED_IN
+----
+====
+
+[[import-tool-id-spaces]]
+== Using ID spaces
+
+By default, the import tool assumes that node identifiers are unique across node files.
+In many cases the ID is only unique across each entity file, for example when our CSV files contain data extracted from a relational database and the ID field is pulled from the primary key column in the corresponding table.
+To handle this situation we define _ID spaces_.
+ID spaces are defined in the `ID` field of node files using the syntax `ID(<ID space identifier>)`.
+To reference an ID of an ID space in a relationship file, we use the syntax `START_ID(<ID space identifier>)` and `END_ID(<ID space identifier>)`.
+
+.Define and use ID spaces
+====
+
+Define a `Movie-ID` ID space in the _movies_header.csv_ file.
+
+[source, csv]
+----
+movieId:ID(Movie-ID),title,year:int,:LABEL
+----
+
+[source, csv]
+----
+1,"The Matrix",1999,Movie
+2,"The Matrix Reloaded",2003,Movie;Sequel
+3,"The Matrix Revolutions",2003,Movie;Sequel
+----
+
+Define an `Actor-ID` ID space in the header of the _actors_header.csv_ file.
+
+[source, csv]
+----
+personId:ID(Actor-ID),name,:LABEL
+----
+
+[source, csv]
+----
+1,"Keanu Reeves",Actor
+2,"Laurence Fishburne",Actor
+3,"Carrie-Anne Moss",Actor
+----
+
+Now use the previously defined ID spaces when connecting the actors to movies.
+
+[source, csv]
+----
+:START_ID(Actor-ID),role,:END_ID(Movie-ID),:TYPE
+----
+
+[source, csv]
+----
+1,"Neo",1,ACTED_IN
+1,"Neo",2,ACTED_IN
+1,"Neo",3,ACTED_IN
+2,"Morpheus",1,ACTED_IN
+2,"Morpheus",2,ACTED_IN
+2,"Morpheus",3,ACTED_IN
+3,"Trinity",1,ACTED_IN
+3,"Trinity",2,ACTED_IN
+3,"Trinity",3,ACTED_IN
+----
+====
+
+
+[[import-tool-header-format-skip-columns]]
+== Skipping columns
+
+IGNORE::
+If there are fields in the data that we wish to ignore completely, this can be done using the `IGNORE` keyword in the header file.
+`IGNORE` must be prepended with a `:`.
++
+.Skip a column
+====
+
+In this example, we are not interested in the data in the third column of the nodes file and wish to skip over it.
+Note that the `IGNORE` keyword is prepended by a `:`.
+
+[source, csv]
+----
+personId:ID,name,:IGNORE,:LABEL
+----
+
+[source, csv]
+----
+keanu,"Keanu Reeves","male",Actor
+laurence,"Laurence Fishburne","male",Actor
+carrieanne,"Carrie-Anne Moss","female",Actor
+----
+====
+
+If all your superfluous data is placed in columns located to the right of all the columns that you wish to import, you can instead use the command line option `xref:tools/import/options.adoc#import-tool-option-ignore-extra-columns[--ignore-extra-columns]`.
+
+
+[[import-tool-header-format-compressed-files]]
+== Import compressed files
+
+The import tool can handle files compressed with `zip` or `gzip`.
+Each compressed file must contain a single file.
+
+.Perform an import using compressed files
+====
+
+[source, sh]
+----
+neo4j_home$ ls import
+actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-header.csv  roles.csv.gz
+neo4j_home$ bin/neo4j-admin import --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
+----
+====

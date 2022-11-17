@@ -1,15 +1,19 @@
 [role=enterprise-edition]
-[[causal-clustering-intra-cluster-encryption]]
+[[intra-cluster-encryption]]
 = Intra-cluster encryption
-:description: How to secure the cluster communication between server instances. 
+:description: This chapter describes how to secure the cluster communication between server instances. 
 
-[CAUTION]
-====
-Securing client to server communication is not covered in this chapter (e.g. Bolt, HTTPS, Backup).
-====
+This section includes:
+
+* xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-introduction[Introduction]
+* xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-example-deployment[Example deployment]
+** xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-cryptographic[Generate and install cryptographic objects]
+** xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-ssl_policy[Create an SSL policy]
+** xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-configure_ssl_policy[Configure Causal Clustering with the SSL policy]
+** xref:clustering/intra-cluster-encryption.adoc#intra-cluster-encryption-validate[Validate the secure operation of the cluster]
 
 
-[[causal-clustering-intra-cluster-encryption-introduction]]
+[[intra-cluster-encryption-introduction]]
 == Introduction
 
 The security solution for cluster communication is based on standard SSL/TLS technology (referred to jointly as SSL).
@@ -25,17 +29,18 @@ It should be noted that the deployment of a secure key management infrastructure
 The example deployment illustrated below is for reference purposes only.
 
 
-[[causal-clustering-intra-cluster-encryption-example-deployment]]
+[[intra-cluster-encryption-example-deployment]]
 == Example deployment
 
 The following steps will create an example deployment, and each step is expanded in further detail below.
 
  - Generate and install xref:security/ssl-framework.adoc#term-ssl-cryptographic-objects[cryptographic objects]
+ - Create an SSL policy
  - Configure Causal Clustering with the SSL policy
  - Validate the secure operation of the cluster
 
 
-[[causal-clustering-intra-cluster-encryption-cryptographic]]
+[[intra-cluster-encryption-cryptographic]]
 === Generate and install cryptographic objects
 
 The generation of cryptographic objects is for the most part outside the scope of this manual.
@@ -58,6 +63,9 @@ In this example we will deploy a mutual authentication setup, which means that b
 To enable mutual authentication the SSL policy must have `client_auth` set to `REQUIRE` (which is the default).
 Servers are by default required to authenticate themselves, so there is no corresponding server setting.
 
+Neo4j is able to generate self-signed certificates but a deployment using these should generally be regarded as a special case.
+It can make sense in some circumstances and even a mutual authenticated setup can be created by sharing the self-generated certificates among instances.
+
 If the certificate for a particular server is compromised it is possible to revoke it by installing a xref:security/ssl-framework.adoc#term-ssl-certificate-revocation-list[Certificate Revocation List (_CRL_)] in the `revoked` directory.
 It is also possible to redeploy using a new CA.
 For contingency purposes, it is advised that you have a separate intermediate CA specifically for the cluster which can be substituted in its entirety should it ever become necessary.
@@ -65,7 +73,7 @@ This approach would be much easier than having to handle revocations and ensurin
 
 .Generate and install cryptographic objects
 ====
-In this example we assume that the private key and certificate file are named _private.key_ and _public.crt_, respectively.
+In this example we assume a plan to name the SSL policy `cluster`, and that the private key and certificate file are named _private.key_ and _public.crt_, respectively.
 If you want to use different names you may override the policy configuration for the key and certificate names/locations.
 We want to use the default configuration for this server so we create the appropriate directory structure and install the certificate:
 
@@ -81,11 +89,8 @@ $neo4j-home> cp $some-dir/public.crt certificates/cluster
 ====
 
 
-[[causal-clustering-intra-cluster-encryption-ssl-config]]
-=== Configure the cluster SSL policy
-
-By default, cluster communication is unencrypted.
-To configure a Causal Cluster to encrypt its intra-cluster communication, set `dbms.ssl.policy.cluster.enabled` to `true`.
+[[intra-cluster-encryption-ssl_policy]]
+=== Create an SSL policy
 
 An SSL policy utilizes the installed cryptographic objects and additionally allows parameters to be configured.
 We will use the following parameters in our configuration:
@@ -106,22 +111,26 @@ It has no known security vulnerabilities and uses the most modern algorithms for
 
 In the following example we will create and configure an SSL policy that we will use in our cluster.
 
-.Configure the cluster SSL policy
+.Create an SSL policy
 ====
 In this example we assume that the directory structure has been created, and certificate files have been installed, as per the previous example.
+We wish to create a cluster SSL policy called `cluster`.
+We do this by defining the following parameter.
 
+[source, properties]
+----
+dbms.ssl.policy.cluster.base_directory=certificates/cluster
+----
+
+Since our policy is named `cluster` the corresponding settings will be available to configure under the `dbms.ssl.policy.cluster.*` group.
 We add the following content to our _neo4j.conf_ file:
 
 [source, properties]
 ----
-dbms.ssl.policy.cluster.enabled=true
 dbms.ssl.policy.cluster.tls_versions=TLSv1.2
 dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
 dbms.ssl.policy.cluster.client_auth=REQUIRE
 ----
-
-Any user data communicated between instances will now be secured.
-Please note that an instance which is not correctly setup would not be able to communicate with the others.
 ====
 
 Note that the policy must be configured on every server with the same settings.
@@ -129,7 +138,31 @@ The actual cryptographic objects installed will be mostly different since they d
 The trusted CA certificate will be shared however.
 
 
-[[causal-clustering-intra-cluster-encryption-validate]]
+[[intra-cluster-encryption-configure_ssl_policy]]
+=== Configure Causal Clustering with the SSL policy
+
+There is no default SSL policy for Causal Clusters.
+This means that by default, cluster communication is unencrypted.
+To configure a Causal Cluster to encrypt its intra-cluster communication, set `xref:reference/configuration-settings.adoc#config_causal_clustering.ssl_policy[causal_clustering.ssl_policy]` to the name of a valid SSL policy.
+
+
+.Configure Causal Clustering with the SSL policy
+====
+
+In this example we assume that the tasks in the previous two examples have been performed.
+We now configure our cluster to use the SSL policy that we have named `cluster`.
+
+[source, properties]
+----
+causal_clustering.ssl_policy=cluster
+----
+
+Any user data communicated between instances will now be secured.
+Please note that an instance which is not correctly setup would not be able to communicate with the others.
+====
+
+
+[[intra-cluster-encryption-validate]]
 === Validate the secure operation of the cluster
 
 To make sure that everything is secured as intended it makes sense to validate using external tooling such as, for example, the open source assessment tools `nmap` or `OpenSSL`.

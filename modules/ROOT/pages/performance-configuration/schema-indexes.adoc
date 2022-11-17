@@ -1,0 +1,143 @@
+[[index-configuration-schema-indexes]]
+= Schema indexes
+:description: This section describes schema indexes. 
+
+
+This section describes the following:
+
+* xref:performance-configuration/schema-indexes.adoc#index-configuration-schema-indexes-introduction[Introduction]
+* xref:performance-configuration/schema-indexes.adoc#index-configuration-index-providers[Index providers]
+* xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations[Limitations of the default index provider]
+** xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations-key-sizes[Key size]
+** xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations-contains-ends-with[Queries  using `CONTAINS` and `ENDS WITH`]
+** xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations-workarounds[Workarounds to address limitations]
+* xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations-lucene[Limitations of deprecated index providers]
+* xref:performance-configuration/schema-indexes.adoc#index-configuration-upgrade-considerations[Upgrade considerations]
+
+[[index-configuration-schema-indexes-introduction]]
+== Introduction
+
+Neo4j uses a combination of native indexes and https://lucene.apache.org/[Apache Lucene] for its indexing functionality.
+The native index is an implementation of the classic https://en.wikipedia.org/wiki/B%2B_tree[B+Tree].
+
+For performance reasons, it is recommended to use native indexes whenever possible.
+
+For more information on the different index types, refer to link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/schema[Cypher manual -> Indexes].
+
+
+[[index-configuration-index-providers]]
+== Index providers
+
+The index provider used when creating new indexes is controlled by the setting xref:reference/configuration-settings.adoc#config_dbms.index.default_schema_provider[dbms.index.default_schema_provider].
+If not configured explicitly, `dbms.index.default_schema_provider` will default to use the newest provider available in that particular version of Neo4j.
+
+The table below lists the available index providers and their support for native indexing:
+
+[options="header"]
+|===
+| Index provider                    | Value types supported for native indexing          | Type of native index supported
+| `native-btree-1.0`                | spatial, temporal, numeric, string, array, boolean | Single-property and composite indexes
+| [deprecated]#`lucene+native-2.0`# | spatial, temporal, numeric, string                 | Single-property indexes
+| [deprecated]#`lucene+native-1.0`# | spatial, temporal, numeric                         | Single-property indexes
+| [deprecated]#`lucene-1.0`#        | spatial, temporal                                  | Single-property indexes
+|===
+
+
+[[index-configuration-lucene-deprecation-notice]]
+.Deprecated index providers
+[DEPRECATED]
+====
+Index providers `lucene-1.0`, `lucene+native-1.0`, and `lucene+native-2.0` have been deprecated, and will be removed in a future release.
+
+The recommended index provider to use is `native-btree-1.0`.
+
+The only reason to use a deprecated provider should be due to the limitations, as described in xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations[Limitations of the default index provider.].
+There are currently no alternatives to cover these limitations, and deprecated providers will not be removed until there is.
+====
+
+
+[[index-configuration-limitations]]
+== Limitations of the default index provider.
+
+Typically, the newest index provider version will provide the best performance, in this version `native-btree-1.0`.
+However, the native B+Tree implementation has some limitations which may require special handling.
+
+
+[[index-configuration-limitations-key-sizes]]
+=== Key size
+
+The native B+Tree index has a key size limit of 4036 bytes.
+This limit manifests itself in different ways depending on whether the key holds a single string, a single array, or multiple values (i.e. is the key in a _composite index_).
+
+If a transaction reaches the key size limit for one or more of its changes, that transaction will fail before committing any changes.
+If the limit is reached during index population, the resulting index will be in a failed state, thus not be usable for any queries.
+
+See xref:performance-configuration/schema-indexes-key-size-calcuations.adoc[Index key calculations] for details on how to calculate key sizes for native indexes.
+
+
+[[index-configuration-limitations-contains-ends-with]]
+=== Queries  using `CONTAINS` and `ENDS WITH`
+
+Native B+Tree indexes have limited support for `ENDS WITH` and `CONTAINS` queries.
+These queries will not be able to do an optimized search the way they do for queries that use `STARTS WITH`, `=` and `<>`.
+Instead, the index result will be a stream of an index scan with filtering.
+
+For details about execution plans, refer to  link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/execution-plans[Cypher Manual -> Execution plans].
+For details about string operators, refer to  link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/operators#query-operators-comparison[Cypher Manual -> Operators].
+
+This limitation is also applicable to index provider `lucene+native-2.0`.
+
+
+[[index-configuration-limitations-workarounds]]
+=== Workarounds to address limitations
+
+If any of the limitations described in this section becomes a problem, a workaround is to specify an index provider that uses Lucene for that particular index.
+This can be done using either of the following methods:
+
+Option 1; change the config::
+
+. Configure the setting `dbms.index.default_schema_provider` to the one required.
+. Restart Neo4j.
+. Drop and recreate the relevant index.
+. Change `dbms.index.default_schema_provider` back to the original value.
+. Restart Neo4j.
+
+Option 2; use a built-in procedure::
+
+There are built-in procedures that can be used to specify index provider on index creation, unique property constraint creation, and node key creation (for details on constraints, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/schema/constraints[Cypher manual -> Constraints].
+For more information, see xref:reference/procedures.adoc[Built-in procedures].
+
+
+[[index-configuration-limitations-lucene]]
+== Limitations of deprecated indexes
+
+[discrete]
+=== Limitations of index provider `lucene+native-2.0`:
+
+In this index provider, non-composite string indexes are provided natively, and composite string indexes are supported by Lucene.
+Therefore, the limitations are different for these two variants of string indexes.
+
+* In non-composite string indexes:
+** Strings have a key size limit of 4039 bytes.
+** There is limited support for `ENDS WITH` and `CONTAINS` queries.
+  See the section describing this xref:performance-configuration/schema-indexes.adoc#index-configuration-limitations-contains-ends-with[above].
+* In composite string indexes:
+** Strings have a string size limit of 32766 bytes per indexed property.
+
+[discrete]
+=== Limitations of index providers `lucene+native-1.0` and `lucene-1.0`:
+
+Lucene has a string size limit of 32766 bytes when a string is encoded using UTF-8.
+In a composite index, this limit is applicable to each individual property.
+This means that a composite index key can hold values that together are larger than 32766 bytes, but no single value can be larger.
+
+
+[[index-configuration-upgrade-considerations]]
+== Upgrade considerations
+
+When creating an index, the current index provider will be assigned to it and will remain the provider for that index until it is dropped.
+Therefore, when upgrading to newer versions of Neo4j, an existing index needs to be dropped and recreated in order to take advantage of improved indexing features.
+
+The caching of indexes takes place in different memory areas for different index providers.
+See xref:performance/memory-configuration.adoc[Memory configuration].
+It can be useful to run `neo4j-admin memrec --database` before and after the rebuilding of indexes, and adjust memory settings in accordance with the findings.

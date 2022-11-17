@@ -1,0 +1,568 @@
+[[tutorial-import-tool]]
+== Use the Import tool
+
+This tutorial walks us through a series of examples to illustrate the capabilities of the Import tool.
+
+When using CSV files for loading a database, each node must have a unique ID to be able to be referenced when creating relationships between nodes in the same import.
+In cases where the node ID is only unique within files, using _ID spaces_ is a way to ensure uniqueness across all nodes files.
+Please see below and xref:tools/import/file-header-format.adoc#import-tool-id-spaces[Using ID spaces] for more information.
+
+Relationships are created by connecting the node IDs.
+In the examples below, the node IDs are stored as properties on the nodes.
+Node IDs may be of interest later for cross-reference to other systems, traceability etc., but they are not mandatory.
+If you do not want the IDs to persist after a completed import, then do not specify a property name in the `:ID` field.
+
+It is possible to import only nodes using the import tool by omitting a relationships file when calling `neo4j-admin import`.
+Any relationships between the imported nodes will have to be created later by another method, since the import tool works for initial graph population only.
+
+For this tutorial we will use a data set containing movies, actors and roles.
+If not stated otherwise, the examples assume that the name of the database is `graph.db` (the default name) and that all CSV files are located in the xref:configuration/file-locations.adoc[_import_] directory.
+Note that if you wish to run one example after another you have to remove the database in between.
+
+[NOTE]
+.Header files
+====
+For the basic examples we will use the first row of the data file for the header.
+This is fine when experimenting, but when working with anything but the smallest datasets we recommend keeping the header in a separate file.
+====
+
+[[import-tool-basic-example]]
+=== Basic example
+
+First we will look at the movies.
+Each movie has an ID, which is used for referring to it from other data sources.
+Moreover, each movie also has a title and a year.
+Along with these properties we also add the node labels `Movie` and `Sequel`:
+
+.movies.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies.csv[]
+----
+
+Next up are the actors.
+They have an ID - in this case a shorthand of their name - and a name.
+All the actors have the node label `Actor`:
+
+.actors.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors.csv[]
+----
+
+[NOTE]
+====
+The node ID is needed to create relationships, but the node labels are optional.
+====
+
+Finally we have the roles that an actor plays in a movie, which will be represented by relationships in the database.
+There are three mandatory fields for relationships; `START_ID`, `END_ID` and `:TYPE`.
+
+In order to create a relationship between nodes we use the IDs defined in `actors.csv` and `movies.csv` for the `START_ID` and `END_ID` fields.
+We also need to provide a relationship type (in this case `ACTED_IN`) for the `:TYPE` field:
+
+.roles.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-example.adoc[]
+----
+
+[NOTE]
+====
+In Community Edition, the database `graph.db` must be empty before the import, or else the import will fail.
+If `graph.db` is not empty, the entire directory may be deleted as it is created on import if non-existent.
+However, in Enterprise Edition, if there is an unfinished import in the `graph.db` file, the tool will attempt to complete that import but fail if it cannot.
+====
+
+Now start up a database from the target directory:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-start.adoc[]
+----
+
+To see your imported data in the graph, try a simple command:
+[source, cypher]
+----
+MATCH (n)
+RETURN count(n) as count
+----
+
+
+[[import-tool-configuration-example]]
+=== Customizing configuration options
+
+We can customize the configuration options that the import tool uses (see xref:tools/import/options.adoc[Options]) if our data does not fit the default format.
+The following CSV files are delimited by `;`,  use `|` as the array delimiter and use `'` for quotes:
+
+.movies2.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies2.csv[]
+----
+
+.actors2.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors2.csv[]
+----
+
+.roles2.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles2.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-custom-delimiter-quotation.adoc[]
+----
+
+
+[[import-tool-separate-headers-example]]
+=== Using separate header files
+
+When dealing with very large CSV files it is more convenient to have the header in a separate file.
+This makes it easier to edit the header as you avoid having to open a huge data file just to change it.
+The header file must be specified before the rest of the files in each file group.
+
+The import tool can also process single file compressed archives, for example:
+. `--nodes nodes.csv.gz`
+. `--relationships rels.zip`
+
+We will use the same data as in the previous example but put the headers in separate files:
+
+.movies3-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies3-header.csv[]
+----
+
+.movies3.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies3.csv[]
+----
+
+.actors3-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors3-header.csv[]
+----
+.actors3.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors3.csv[]
+----
+
+.roles3-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles3-header.csv[]
+----
+
+.roles3.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles3.csv[]
+----
+
+The call to `neo4j-admin import` would look as follows, note how the file groups are enclosed in quotation marks in the command:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-separate-header-example.adoc[]
+----
+
+[NOTE]
+====
+The header line for a file group, whether it is the first line of a file in the group or a dedicated header file, must be the _first_ line in the file group.
+====
+
+
+[[import-tool-multiple-input-files-example]]
+=== Multiple input files
+
+In addition to using a separate header file you can also provide multiple nodes or relationships files.
+This may be useful for example for processing the output from a Hadoop pipeline.
+Files within such an input group can be specified with multiple match strings, delimited by `,`, where each match string can be either the exact file name or a regular expression matching one or more files.
+Multiple matching files will be sorted according to their characters and their natural number sort order for file names containing numbers:
+
+
+.movies4-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies4-header.csv[]
+----
+
+.movies4-part1.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies4-part1.csv[]
+----
+
+.movies4-part2.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies4-part2.csv[]
+----
+
+.actors4-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors4-header.csv[]
+----
+
+.actors4-part1.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors4-part1.csv[]
+----
+
+.actors4-part2.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors4-part2.csv[]
+----
+
+.roles4-header.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles4-header.csv[]
+----
+
+.roles4-part1.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles4-part1.csv[]
+----
+
+.roles4-part2.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles4-part2.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-multiple-input-files.adoc[]
+----
+
+
+See also xref:tutorial/import-tool.adoc#import-tool-multiple-input-files-regex-example[Using regular expressions for specifying multiple input files].
+
+[[import-tool-multiple-input-files-regex-example]]
+==== Using regular expressions for specifying multiple input files
+
+File names can be specified using regular expressions in order to simplify using the command line when there are many data source files.
+Each file name that matches the regular expression will be included.
+
+As mentioned in a previous section, for the import to work correctly, the header file must be first in the file group.
+When using regular expressions to specify the input files, the list of files will be sorted according to the names of the files that match the expression.
+The matching is aware of numbers inside the file names and will sort them accordingly, without the need for padding with zeros.
+
+For example, let's assume that we have the following files:
+
+* _movies4-header.csv_
+* _movies4-data1.csv_
+* _movies4-data2.csv_
+* _movies4-data12.csv_
+
+If we use the regular expression `+movies4.*+`, the sorting will place the header file last and the import will fail.
+A better alternative would be to name the header file explicitly and use a regular expression that only matches the names of the data files.
+For example: `+--nodes "import/movies4-header.csv,movies-data.*"+` will accomplish this.
+
+Using the same data files as in the previous example, the call to `neo4j-admin import` can be simplified to:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-multiple-input-files-regex.adoc[]
+----
+
+[NOTE]
+====
+The use of regular expressions should not be confused with https://en.wikipedia.org/wiki/Glob_(programming)[file globbing].
+
+The expression `+.*+` means: "zero or more occurrences of any character except line break".
+Therefore, the regular expression `+movies4.*+` will list all files starting with `movies4`.
+Conversely, with file globbing, `+ls movies4.*+` will list all files starting with `movies4.`.
+
+Another important difference to pay attention to is the sorting order.
+The result of a regular expression matching will place the file `movies4-part2.csv` before the file `movies4-part12.csv`.
+If doing `+ls movies4-part*+` in a directory containing the above listed files, the file `movies4-part12.csv` will be listed before the file `movies4-part2.csv`.
+====
+
+
+[[import-tool-types-labels]]
+=== Types and labels
+
+
+[[import-tool-same-label-for-every-node-example]]
+==== Using the same label for every node
+
+If you want to use the same node label(s) for every node in your nodes file you can do this by specifying the appropriate value as an option to `neo4j-admin import`.
+There is then no need to specify the `:LABEL` field in the node file if you pass it as a command line option.
+If you do then both the label provided in the file and the one provided on the command line will be added to the node.
+
+In this example we put the label `Movie` on every node specified in `movies5a.csv`, and we put the labels `Movie` and `Sequel` on the nodes specified in `sequels5a.csv`:
+
+
+.movies5a.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies5a.csv[]
+----
+
+.sequels5a.csv
+[source]
+----
+include::example$/tutorial/import-tool/sequels5a.csv[]
+----
+
+.actors5a.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors5a.csv[]
+----
+
+.roles5a.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles5a.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-same-node-label-everywhere.adoc[]
+----
+
+
+[[import-tool-same-relationship-type-for-every-relationship-example]]
+==== Using the same relationship type for every relationship
+
+If you want to use the same relationship type for every relationship in your relationships file this can be done by specifying the appropriate value as an option to `neo4j-admin import`.
+If you provide a relationship type both on the command line and in the relationships file, the one in the file will be applied.
+In this example we put the relationship type `ACTED_IN` on every relationship specified in `roles5b.csv`:
+
+.movies5b.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies5b.csv[]
+----
+
+.actors5b.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors5b.csv[]
+----
+
+.roles5b.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles5b.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-same-relationship-type-everywhere.adoc[]
+----
+
+
+[[import-tool-property-types-example]]
+=== Property types
+
+The type for properties specified in nodes and relationships files is defined in the header row.
+(see xref:tools/import/file-header-format.adoc[CSV file header format])
+
+The following example creates a small graph containing one actor and one movie connected by an `ACTED_IN` relationship.
+There is a `roles` property on the relationship which contains an array of the characters played by the actor in a movie:
+
+.movies6.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies6.csv[]
+----
+
+.actors6.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors6.csv[]
+----
+
+.roles6.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles6.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-property-types.adoc[]
+----
+
+
+[[import-tool-id-handling]]
+=== ID handling
+
+A node ID is used to find the correct nodes when creating relationships.
+Each node processed by `neo4j-admin import` must provide an ID if it is to be connected in any relationships.
+
+
+[[import-tool-sequential-identifiers-example]]
+==== Working with sequential or auto incrementing identifiers
+
+The import tool makes the assumption that identifiers are unique across node files.
+This may not be the case for data sets which use sequential, auto incremented or otherwise colliding identifiers.
+Those data sets can define ID spaces where identifiers are unique within their respective ID space.
+
+For example, if movies and people both use sequential identifiers then we would define `Movie` and `Actor` ID spaces:
+
+.movies7.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies7.csv[]
+----
+
+.actors7.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors7.csv[]
+----
+
+We also need to reference the appropriate ID space in our relationships file so it knows which nodes to connect together:
+
+.roles7.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles7.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-id-spaces.adoc[]
+----
+
+
+[[import-tool-bad-input-data-example]]
+=== Bad input data
+
+The import tool has no tolerance for bad entities (relationships or nodes) and will fail the import on the first bad entity.
+You can specify explicitly that you want it to ignore rows that contain bad entities.
+
+There are two different types of bad input: bad relationships and bad nodes.
+We will have a closer look at these in the following examples.
+
+
+[[import-tool-rels-to-missing-nodes-example]]
+==== Relationships referring to missing nodes
+
+Relationships that refer to missing node IDs, either for `:START_ID` or `:END_ID` are considered bad relationships.
+Whether or not such relationships are skipped is controlled with `--ignore-missing-nodes` flag which can have the values `true` or `false` or no value, which means `true`.
+The default is `false`, which means that any bad relationship is considered an error and will fail the import.
+For more information, see the `xref:tools/import/options.adoc#import-tool-option-ignore-missing-nodes[--ignore-missing-nodes]` option.
+
+In the following example there is a missing `emil` node referenced in the roles file:
+
+.movies8a.csv
+[source]
+----
+include::example$/tutorial/import-tool/movies8a.csv[]
+----
+
+.actors8a.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors8a.csv[]
+----
+
+.roles8a.csv
+[source]
+----
+include::example$/tutorial/import-tool/roles8a.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-bad-relationships-default.adoc[]
+----
+
+Since there was a bad relationship in the input data, the import process will fail completely.
+
+Let's see what happens if we append the `--ignore-missing-nodes` flag:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-bad-relationships-ignore-missing-nodes.adoc[]
+----
+
+The data files are successfully imported and the bad relationship is ignored.
+An entry is written to the _import.report_ file.
+
+.ignore bad relationships
+[source]
+----
+include::partial$/tutorial/import-tool/import.report.bad-relationships-ignore-missing-nodes.adoc[]
+----
+
+
+[[import-tool-multiple-nodes-same-id-example]]
+==== Multiple nodes with same ID within same ID space
+
+Nodes that specify `:ID` which has already been specified within the ID space are considered bad nodes.
+Whether or not such nodes are skipped is controlled with `--ignore-duplicate-nodes` flag which can have the values `true` or `false` or no value, which means `true`.
+The default is `false`, which means that any duplicate node is considered an error and will fail the import.
+For more information, see the `xref:tools/import/options.adoc#import-tool-option-ignore-duplicate-nodes[--ignore-duplicate-nodes]` option.
+
+In the following example there is a node ID that is specified twice within the same ID space:
+
+.actors8b.csv
+[source]
+----
+include::example$/tutorial/import-tool/actors8b.csv[]
+----
+
+The call to `neo4j-admin import` would look like this:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-bad-duplicate-nodes-default.adoc[]
+----
+
+Since there was a bad node in the input data, the import process will fail completely.
+
+Let's see what happens if we append the `--ignore-duplicate-nodes` flag:
+
+[source]
+----
+include::partial$/tutorial/import-tool/command-bad-duplicate-nodes-ignore-duplicate-nodes.adoc[]
+----
+
+The data files are successfully imported and the bad node is ignored.
+An entry is written to the _import.report_ file.
+
+.ignore bad nodes
+[source]
+----
+include::partial$/tutorial/import-tool/import.report.bad-duplicate-nodes-ignore-duplicate-nodes.adoc[]
+----

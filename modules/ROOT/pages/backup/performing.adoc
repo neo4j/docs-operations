@@ -1,0 +1,159 @@
+[role=enterprise-edition]
+[[backup-performing]]
+= Perform a backup
+:description: This section describes how to perform a backup of a Neo4j database. 
+
+This section includes:
+
+* xref:backup/performing.adoc#backup-performing-commands[Backup commands]
+* xref:backup/performing.adoc#backup-performing-full[Full backups]
+* xref:backup/performing.adoc#backup-performing-incremental[Incremental backups]
+* xref:backup/performing.adoc#backup-performing-exit-codes[Exit codes]
+
+[[backup-performing-commands]]
+== Backup commands
+
+A Neo4j database can be backed up in online mode, using the `backup` command of `neo4j-admin`.
+Note that it is *not* recommended to use an NFS mount for backup purposes as this is likely to corrupt and slow down the backup.
+
+*Syntax*
+
+[source, shell]
+----
+neo4j-admin backup --backup-dir=<backup-path> --name=<graph.db-backup>
+                    [--from=<address>] [--protocol=<any|catchup|common>]
+                    [--fallback-to-full[=<true|false>]]
+                    [--pagecache=<pagecache>]
+                    [--timeout=<timeout>]
+                    [--check-consistency[=<true|false>]]
+                    [--additional-config=<config-file-path>]
+                    [--cc-graph[=<true|false>]]
+                    [--cc-indexes[=<true|false>]]
+                    [--cc-label-scan-store[=<true|false>]]
+                    [--cc-property-owners[=<true|false>]]
+                    [--cc-report-dir=<directory>]
+----
+
+*Options*
+
+[options="header"]
+|===
+| Option                   | Default        | Description
+|  --backup-dir            |                | Directory to place backup in.
+|  --name                  |                | Name of backup. If a backup with this name already exists an incremental backup will be attempted.
+|  --from                  | localhost:6362 | Host and port of Neo4j.
+|  --protocol              | any            | Protocol over which to perform backup.
+                                              If set to `any`, then `catchup` will be tried first.
+                                              If that fails, then it will attempt to fall back to `common`.
+                                              It is recommended to set this option explicitly.
+                                              Set it to `catchup` for Causal Cluster backups, and to `common` for HA or single-instance backups.
+                                              For more information, see xref:backup/causal-clusters.adoc#backup-causal-clusters-scenarios[Backup scenarios and examples].
+|  --fallback-to-full      | true           | If an incremental backup fails backup will move the old backup to <name>.err.<N> and fallback to a full backup instead.
+|  --pagecache             | 8M             | The size of the page cache to use for the backup process.
+|  --timeout               | 20m            | Timeout in the form <time>[ms\|s\|m\|h], where the default unit is seconds.
+                                              This is a debugging option that should only be used if instructed to by Neo4j Professional Services.
+|  --check-consistency     | true           | If a consistency check should be made.
+|  --additional-config     |                | Configuration file to supply additional configuration in.
+|  --cc-graph              | true           | Perform checks between nodes, relationships, properties, types and tokens.
+|  --cc-indexes            | true           | Perform checks on indexes.
+|  --cc-label-scan-store   | true           | Perform checks on the label scan store.
+|  --cc-property-owners    | false          | Perform additional checks on property ownership. This check is *very* expensive in time and memory.
+|  --cc-report-dir         | .              | Directory where consistency report will be written.
+|===
+
+
+[[backup-performing-full]]
+== Full backups
+
+A full backup is performed whenever there is no backup directory specified.
+
+.Back up a database
+====
+In this example, set environment variables in order to xref:backup/planning.adoc#backup-planning-memory-considerations[control memory usage].
+
+The page cache is defined by using the command line option `--pagecache`.
+Further, the `HEAP_SIZE` environment variable will specify the maximum heap size allocated to the backup.
+
+Now you can perform a full backup:
+
+[source, shell]
+----
+$neo4j-home> export HEAP_SIZE=2G
+$neo4j-home> mkdir /mnt/backup
+$neo4j-home> bin/neo4j-admin backup --from=192.168.1.34 --backup-dir=/mnt/backup --name=graph.db-backup --pagecache=4G
+Doing full backup...
+2017-02-01 14:09:09.510+0000 INFO  [o.n.c.s.StoreCopyClient] Copying neostore.nodestore.db.labels
+2017-02-01 14:09:09.537+0000 INFO  [o.n.c.s.StoreCopyClient] Copied neostore.nodestore.db.labels 8.00 kB
+2017-02-01 14:09:09.538+0000 INFO  [o.n.c.s.StoreCopyClient] Copying neostore.nodestore.db
+2017-02-01 14:09:09.540+0000 INFO  [o.n.c.s.StoreCopyClient] Copied neostore.nodestore.db 16.00 kB
+...
+...
+...
+----
+
+
+If you do a directory listing of _/mnt/backup_ you will now see that you have a backup of Neo4j called `graph-db.backup`.
+====
+
+
+[[backup-performing-incremental]]
+== Incremental backups
+
+An incremental backup is performed whenever an existing backup directory is specified, and the transaction logs are present since the last backup.
+The backup command will then copy any new transactions from Neo4j and apply them to the backup.
+The result will be an updated backup that is consistent with the current server state.
+
+The transaction log files should be rotated and pruned based on the provided configuration.
+For example, setting `xref:reference/configuration-settings.adoc#config_dbms.tx_log.rotation.retention_policy[dbms.tx_log.rotation.retention_policy]=3 files` will keep backup transaction logs to 3 files.
+You can use the `--additional-config` parameter to override this configuration.
+
+.Perform an incremental backup
+====
+
+This example assumes that you have performed a full backup as per the previous example.
+In the same way as before, make sure to control the memory usage.
+
+To perform an incremental backup you need to specify the location of your previous backup:
+
+[source, shell]
+----
+$neo4j-home> export HEAP_SIZE=2G
+$neo4j-home> bin/neo4j-admin backup --from=192.168.1.34 --backup-dir=/mnt/backup --name=graph.db-backup --fallback-to-full=true --check-consistency=true --pagecache=4G
+Destination is not empty, doing incremental backup...
+Backup complete.
+----
+====
+
+The incremental backup will fail if the existing directory does not contain a valid backup and `--fallback-to-full=false`.
+It will also fail if the required transaction logs have been removed and `--fallback-to-full=false`.
+Setting `--fallback-to-full=true` is a safeguard which will result in a full backup in case an incremental backup cannot be performed.
+
+It is important to note that `--check-consistency` is `true` by default.
+For a quicker incremental backup we can set this to `--check-consistency=false` and `--fallback-to-full=false`.
+
+[NOTE]
+====
+When copying outstanding transactions, the server needs access to the transaction logs.
+
+These logs are maintained by Neo4j and are automatically removed after a period of time, based on the parameter `xref:reference/configuration-settings.adoc#config_dbms.tx_log.rotation.retention_policy[dbms.tx_log.rotation.retention_policy]`.
+
+When designing your backup strategy it is important to configure `xref:reference/configuration-settings.adoc#config_dbms.tx_log.rotation.retention_policy[dbms.tx_log.rotation.retention_policy]` such that transaction logs are kept between incremental backups.
+
+====
+
+
+[[backup-performing-exit-codes]]
+== Exit codes
+
+`neo4j-admin backup` will exit with different codes depending on success or error.
+In the case of error, this includes details of what error was encountered.
+
+.Neo4j Admin backup exit codes
+[cols="<1,<5", options="header"]
+|===
+| Code | Description
+| `0`  | Success.
+| `1`  | Backup failed.
+| `2`  | Backup succeeded but consistency check failed.
+| `3`  | Backup succeeded but consistency check found inconsistencies.
+|===

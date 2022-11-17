@@ -1,0 +1,146 @@
+[role=deprecated]
+[[ha-tutorial-setup-local-cluster]]
+= Set up a local HA cluster
+:description: This tutorial walks through the basics of setting up a Neo4j HA cluster on one machine. The result is a local cluster of three instances: one master and two slaves. 
+
+If you want to start a cluster similar to the one described above, but for development and testing purposes, it is convenient to run all Neo4j instances on the same machine.
+However, this will require some additional configuration, as the defaults will conflict with each other.
+Furthermore, the default `dbms.memory.pagecache.size` assumes that Neo4j has the machine to itself.
+
+If we, in this example, assume that the machine has 4 gigabytes of memory, and that each JVM consumes 500 megabytes of memory, then we can allocate 500 megabytes of memory to the page cache of each server.
+
+== Download and configure
+
+. Download Neo4j Enterprise Edition from https://neo4j.com/download/other-releases/#releases[the Neo4j download site], and unpack into three separate directories on your test machine.
+. Configure the HA related settings for each installation as outlined below.
+
+Neo4j instance #1 -- ~/neo4j-01::
++
+[source, properties]
+.conf/neo4j.conf
+----
+# Reduce the default page cache memory allocation
+dbms.memory.pagecache.size=500m
+
+# Port to listen to for incoming backup requests.
+dbms.backup.address = 127.0.0.1:6366
+
+# Unique server id for this Neo4j instance
+# can not be negative id and must be unique
+ha.server_id = 1
+
+# List of other known instances in this cluster
+ha.initial_hosts = 127.0.0.1:5001,127.0.0.1:5002,127.0.0.1:5003
+
+# IP and port for this instance to bind to for communicating cluster information
+# with the other neo4j instances in the cluster.
+ha.host.coordination = 127.0.0.1:5001
+
+# IP and port for this instance to bind to for communicating data with the
+# other neo4j instances in the cluster.
+ha.host.data = 127.0.0.1:6363
+
+# HA - High Availability
+# SINGLE - Single mode, default.
+dbms.mode=HA
+
+dbms.connector.http.type=HTTP
+dbms.connector.http.enabled=true
+dbms.connector.http.address=0.0.0.0:7474
+----
+
+Neo4j instance #2 -- ~/neo4j-02::
++
+[source, properties]
+.conf/neo4j.conf
+----
+# Reduce the default page cache memory allocation
+dbms.memory.pagecache.size=500m
+
+# Port to listen to for incoming backup requests.
+dbms.backup.address = 127.0.0.1:6367
+
+# Unique server id for this Neo4j instance
+# can not be negative id and must be unique
+ha.server_id = 2
+
+# List of other known instances in this cluster
+ha.initial_hosts = 127.0.0.1:5001,127.0.0.1:5002,127.0.0.1:5003
+
+# IP and port for this instance to bind to for communicating cluster information
+# with the other neo4j instances in the cluster.
+ha.host.coordination = 127.0.0.1:5002
+
+# IP and port for this instance to bind to for communicating data with the
+# other neo4j instances in the cluster.
+ha.host.data = 127.0.0.1:6364
+
+# HA - High Availability
+# SINGLE - Single mode, default.
+dbms.mode=HA
+
+dbms.connector.http.type=HTTP
+dbms.connector.http.enabled=true
+dbms.connector.http.address=0.0.0.0:7475
+----
+
+Neo4j instance #3 -- ~/neo4j-03::
++
+[source, properties]
+.conf/neo4j.conf
+----
+# Reduce the default page cache memory allocation
+dbms.memory.pagecache.size=500m
+
+# Port to listen to for incoming backup requests.
+dbms.backup.address = 127.0.0.1:6368
+
+# Unique server id for this Neo4j instance
+# can not be negative id and must be unique
+ha.server_id = 3
+
+# List of other known instances in this cluster
+ha.initial_hosts = 127.0.0.1:5001,127.0.0.1:5002,127.0.0.1:5003
+
+# IP and port for this instance to bind to for communicating cluster information
+# with the other neo4j instances in the cluster.
+ha.host.coordination = 127.0.0.1:5003
+
+# IP and port for this instance to bind to for communicating data with the
+# other neo4j instances in the cluster.
+ha.host.data = 127.0.0.1:6365
+
+# HA - High Availability
+# SINGLE - Single mode, default.
+dbms.mode=HA
+
+dbms.connector.http.type=HTTP
+dbms.connector.http.enabled=true
+dbms.connector.http.address=0.0.0.0:7476
+----
+
+=== Start the Neo4j Servers
+
+Start the Neo4j servers as usual.
+Note that the startup order does not matter.
+
+[source, shell]
+----
+localhost:~/neo4j-01$ ./bin/neo4j start
+----
+[source, shell]
+----
+localhost:~/neo4j-02$ ./bin/neo4j start
+----
+[source, shell]
+----
+localhost:~/neo4j-03$ ./bin/neo4j start
+----
+
+Now, you should be able to access the three servers and check their HA status.
+Open the locations below in a web browser and issue the following command in the editor after having set a password for the database:
+`:play sysinfo`
+
+* http://127.0.0.1:7474/
+* http://127.0.0.1:7475/
+* http://127.0.0.1:7476/

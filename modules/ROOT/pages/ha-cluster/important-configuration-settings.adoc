@@ -1,0 +1,80 @@
+[role=deprecated]
+[[ha-important-configuration-settings]]
+= Important configuration settings
+:description: This section lists the most important configuration options for setting up an HA cluster. 
+
+
+At startup of a Neo4j HA cluster, each Neo4j instance contacts the other instances as configured.
+When an instance establishes a connection to any other, it determines the current state of the cluster and ensures that it is eligible to join.
+To be eligible the Neo4j instance must host the same database store as other members of the cluster (although it is allowed to be in an older state), or be a new deployment without a database store.
+
+Please note that IP addresses or hostnames should be explicitly configured for the machines participating in the cluster.
+In the absence of a specified IP address, Neo4j will attempt to find a valid interface for binding.
+This is not recommended practice.
+
+`xref:reference/configuration-settings.adoc#config_dbms.mode[dbms.mode]`::
+
+`dbms.mode` configures the operating mode of the database.
++
+For cluster mode it is set to: `dbms.mode=HA`
+
+`xref:reference/configuration-settings.adoc#config_ha.server_id[ha.server_id]`::
+
+`ha.server_id` is the cluster identifier for each instance.
+It must be a positive integer and must be unique among all Neo4j instances in the cluster.
++
+For example, `ha.server_id=1`.
+
+`xref:reference/configuration-settings.adoc#config_ha.host.coordination[ha.host.coordination]`::
+
+`ha.host.coordination` is an address/port setting that specifies where the Neo4j instance will listen for cluster communication.
+The default port is `5001`.
++
+For example, `ha.host.coordination=192.168.33.22:5001` will listen for cluster communications on port 5001.
+
+`xref:reference/configuration-settings.adoc#config_ha.initial_hosts[ha.initial_hosts]`::
+
+`ha.initial_hosts` is a comma separated list of address/port pairs, which specifies how to reach other Neo4j instances in the cluster (as configured via their `ha.host.coordination` option).
+These hostname/ports will be used when the Neo4j instances start, to allow them to find and join the cluster.
+When cold starting the cluster, i.e. when no cluster is available yet, the database will be unavailable until all members listed in ha.initial_hosts are online and communicating with each other. 
+It is good practice to configure all the instances in the cluster to have the exact same entries in ha.initial_hosts, for the cluster to come up quickly and cleanly.
++
+Do not use any whitespace in this configuration option.
++
+For example, `ha.initial_hosts=192.168.33.21:5001,192.168.33.22:5001,192.168.33.23:5001` will initiate a cluster containing the hosts 192.168.33.21-33, all listening on the same port, 5001.
+
+`xref:reference/configuration-settings.adoc#config_ha.host.data[ha.host.data]`::
+
+`ha.host.data` is an address/port setting that specifies where the Neo4j instance will listen for transactions from the cluster master.
+The default port is `6001`.
++
+`ha.host.data` must use a different port than `ha.host.coordination`.
++
+For example, `ha.host.data=192.168.33.22:6001` will listen for transactions from the cluster master on port 6001.
+
+
+`xref:reference/configuration-settings.adoc#config_ha.join_timeout[ha.join_timeout]`::
+
+`ha.join_timeout` describes the time limit for all members of the `ha.initial_hosts` to start before giving up forming the cluster.
+The default value is 30 seconds.
+With the default value each of the instances defined in `ha.initial_hosts` must be started within those 30 seconds for the cluster to successfully form.
++
+[TIP]
+.Address and port formats
+====
+
+The `ha.host.coordination` and `ha.host.data` configuration options are specified as `<hostname or IP address>:<port>`.
+
+For `ha.host.data` the address must be an address assigned to one of the host's network interfaces.
+
+For `ha.host.coordination` the address must be an address assigned to one of the host's network interfaces, or the value `0.0.0.0`, which will cause Neo4j to listen on every network interface.
+
+Either the address or the port can be omitted, in which case the default for that part will be used.
+If the hostname or IP address is omitted, then the port must be preceded with a colon (eg. `:5001`).
+
+The syntax for setting a port range is: `<hostname or IP address>:<first port>[-<second port>]`.
+In this case, Neo4j will test each port in sequence, and select the first that is unused.
+Note that this usage is not permitted when the hostname is specified as `0.0.0.0` (the "all interfaces" address).
+====
+
+

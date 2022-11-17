@@ -1,0 +1,104 @@
+[[deployment-upgrading]]
+= Upgrade a single instance
+:description: This section describes how to upgrade a single Neo4j instance. 
+
+For instructions on upgrading a Neo4j Causal Cluster, see xref:upgrade/causal-cluster.adoc[Upgrade a Causal Cluster].
+For instructions on upgrading a Neo4j HA cluster, see xref:ha-cluster/upgrade.adoc[Upgrade].
+
+
+[[upgrade-instructions-2x]]
+== Upgrade from 2.x
+
+If you use Debian, refer to xref:installation/linux/debian.adoc#debian-upgrade[Upgrade].
+
+*Pre-upgrade steps*::
+
+Read xref:upgrade/planning.adoc[Upgrade planning] thoroughly and perform all the steps listed there.
+
+*Shutdown and backup*::
+
+. If the database is running, shut it down cleanly.
+. Make a backup copy of the database directory (in a default configuration: _xref:configuration/file-locations.adoc[data]/databases/graph.db_).
++
+If using the xref:backup/index.adoc[online backup tool], ensure that backups have completed successfully.
+. Back up xref:configuration/file-locations.adoc[_neo4j.conf_].
+
+*Upgrade*::
+
+. Install Neo4j {neo4j-version-exact}.
+. Review the settings in the configuration files of the previous installation and transfer any custom settings to the {neo4j-version-exact} installation:
+
+** Since many settings have been changed between Neo4j 2.x and {neo4j-version-exact}, it is advisable to use the `2.x-config-migrator` (available in the _tools_ directory) to migrate the configuration files for you.
++
+For example, the `2.x-config-migrator` can be invoked with a command like:
++
+`java -jar 2.x-config-migrator.jar path/to/neo4j2.3 path/to/neo4j{neo4j-version-exact}`.
+** Take note of any warnings printed, and manually review the edited configuration files produced.
+. Use the following to import your data from the old installation:
++
+`neo4j-admin import --mode=database --database=<database-name> --from=<source-directory>`
+. If the database is not called _graph.db_, set `dbms.active_database` in _neo4j.conf_ to the name of the database.
+. Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in _neo4j.conf_ of the {neo4j-version-exact} installation.
+Neo4j will fail to start without this configuration.
+. Start up Neo4j {neo4j-version-exact}.
+The database upgrade will take place during startup.
++
+The xref:monitoring/logging/general-logging.adoc#general-logging-log-files[_neo4j.log_] file contains valuable information on how many steps the upgrade will involve and how far it has progressed.
+For large upgrades, it is a good idea to monitor this log continuously.
+
+*Post-upgrade steps*::
+
+. When the upgrade has finished, `dbms.allow_upgrade` should be set to `false` or be removed.
+. Restart the database.
+. It is good practice to make a full backup immediately after the upgrade.
+
+
+[[upgrade-instructions-3x]]
+== Upgrade from 3.x
+
+*Pre-upgrade steps*::
+
+Read xref:upgrade/planning.adoc[Upgrade planning] thoroughly and perform all the steps listed there.
+
+*Shutdown and backup*::
+
+. If the database is running, shut it down cleanly.
+. Perform and verify backups:
+* Back up xref:configuration/file-locations.adoc[_neo4j.conf_].
+* If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], back up the _xref:configuration/file-locations.adoc[data]/dbms_ directory.
+* Back up all the files used for encryption, i.e. private key, public certificate, and the contents of the _trusted_ and _revoked_ directories.
+  The locations of these are described in xref:security/ssl-framework.adoc[SSL framework].
+* Verify that you have a full backup that is stored in a safe location, either using the xref:backup/index.adoc[online backup tool] or xref:tools/dump-load.adoc[offline backups].
+
+*Upgrade*::
+
+. Install Neo4j {neo4j-version-exact} using one of the following methods, specific to your technology:
+.. If using a tarball or zipfile for installation:
+... Untar or unzip Neo4j {neo4j-version-exact}.
+... Transfer any custom settings to the {neo4j-version-exact} installation, as noted under the _Apply configuration changes_ step in xref:upgrade/planning.adoc[Upgrade planning].
+... Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in _neo4j.conf_ of the {neo4j-version-exact} installation.
+Neo4j will fail to start without this configuration.
+... If using xref:authentication-authorization/native-user-role-management/index.adoc[native user and role management], copy the _xref:configuration/file-locations.adoc[data]/dbms_ directory into the new location.
+... Copy the files used for encryption from the old installation to the new one.
+... Copy the xref:configuration/file-locations.adoc[_data_] directory from the old installation to the new one.
+This step is not applicable if you have `dbms.directories.data` pointing to a directory outside of _NEO4J_HOME_.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+.. If using a Debian or RPM distribution:
+... Set xref:reference/configuration-settings.adoc#config_dbms.allow_upgrade[`dbms.allow_upgrade=true`] in _neo4j.conf_.
+... Install Neo4j {neo4j-version-exact}.
+... When prompted, review the differences between the _neo4j.conf_ files of the previous version and Neo4j {neo4j-version-exact}.
+Transfer any custom settings to the {neo4j-version-exact} installation, as noted under the _Apply configuration changes_ step in xref:upgrade/planning.adoc[Upgrade planning].
+Make sure to preserve `dbms.allow_upgrade=true` as set in the instruction above.
+Neo4j will fail to start without this configuration.
+... If using custom plugins, place the plugins that are adjusted for the new version in the xref:configuration/file-locations.adoc[_/plugins_] directory.
+. Start up Neo4j {neo4j-version-exact}.
+The database upgrade will take place during startup.
++
+The xref:monitoring/logging/general-logging.adoc#general-logging-log-files[_neo4j.log_] file contains valuable information on how many steps the upgrade will involve and how far it has progressed.
+For large upgrades, it is a good idea to monitor this log continuously.
+
+*Post-upgrade steps*::
+
+. When the upgrade has finished, `dbms.allow_upgrade` should be set to `false` or be removed.
+. Restart the database.
+. It is good practice to make a full backup immediately after the upgrade.
