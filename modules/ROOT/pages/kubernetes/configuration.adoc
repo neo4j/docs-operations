@@ -1,4 +1,4 @@
-:description: This section describes how to configure and install a Neo4j helm deployment in a Kubernetes cluster using a customized Helm Chart.
+:description: This section describes how to configure and install a Neo4j helm deployment in a Kubernetes cluster using a customized Helm chart.
 [[kubernetes-neo4j-configuration]]
 = Configure a Neo4j Helm deployment
 
@@ -13,14 +13,14 @@ For more information, see link:https://helm.sh/docs/intro/using_helm/#customizin
 [[create-yaml]]
 == Create a custom _values.yaml_ file
 
-. Ensure your Neo4j Helm Chart repository is up to date and get the latest charts.
-For more information, see xref:kubernetes/helm-charts-setup.adoc[Configure the Neo4j Helm Chart repository].
-. To see what options are configurable on the Neo4j helm chart that you want to deploy, use `helm show values` and the Helm Chart, such as _neo4j/neo4j-standalone_, _neo4j/neo4j-cluster-core_, _neo4j/neo4j-cluster-read-replica_, _neo4j/neo4j-cluster-headless-service_, and _neo4j/neo4j-cluster-loadbalancer_.
+. Ensure your Neo4j Helm chart repository is up to date and get the latest charts.
+For more information, see xref:kubernetes/helm-charts-setup.adoc[Configure the Neo4j Helm chart repository].
+. To see what options are configurable on the Neo4j helm chart that you want to deploy, use `helm show values` and the Helm chart _neo4j/neo4j_.
 For example:
 +
 [source, shell]
 --
-helm show values neo4j/neo4j-standalone
+helm show values neo4j/neo4j
 --
 +
 [source, yaml]
@@ -31,12 +31,16 @@ helm show values neo4j/neo4j-standalone
 neo4j:
   # Name of your cluster
   name: ""
-
-  # If the password is not set or empty a random password will be generated during installation
+  # If password is not set or empty a random password will be generated during installation
   password: ""
 
   # Neo4j Edition to use (community|enterprise)
   edition: "community"
+
+  # Minimum number of machines initially required to form a clustered database. The StatefulSet will not reach the ready state
+  # until at least this many members have discovered each other. The default is 1 (standalone)
+  #minimumClusterSize: 1
+
   # set edition: "enterprise" to use Neo4j Enterprise Edition
   #
   # To use Neo4j Enterprise Edition you must have a Neo4j license agreement.
@@ -56,15 +60,18 @@ neo4j:
     cpu: "1000m"
     memory: "2Gi"
 
+  #add labels if required
+  labels:
+
 # Volumes for Neo4j
 volumes:
   data:
     # REQUIRED: specify a volume mode to use for data
     # Valid values are share|selector|defaultStorageClass|volume|volumeClaimTemplate|dynamic
-    # To get up and running quickly, for development or testing, use "defaultStorageClass" for a dynamically provisioned volume of the default storage class.
+    # To get up-and-running quickly, for development or testing, use "defaultStorageClass" for a dynamically provisioned volume of the default storage class.
     mode: ""
 
-    # Only used if the mode is set to "selector"
+    # Only used if mode is set to "selector"
     # Will attach to existing volumes that match the selector
     selector:
       storageClassName: "manual"
@@ -86,7 +93,7 @@ volumes:
       requests:
         storage: 10Gi
 
-    # Only used if the mode is set to "dynamic"
+    # Only used if mode is set to "dynamic"
     # Dynamic provisioning using the provided storageClass
     dynamic:
       storageClassName: "neo4j"
@@ -100,7 +107,7 @@ volumes:
     volume:
       # If set an init container (running as root) will be added that runs:
       #   `chown -R <securityContext.fsUser>:<securityContext.fsGroup>` AND `chmod -R g+rwx`
-      # on the volume. This is useful for some file systems (e.g. NFS) where Kubernetes fsUser or fsGroup settings are not respected
+      # on the volume. This is useful for some filesystems (e.g. NFS) where Kubernetes fsUser or fsGroup settings are not respected
       setOwnerAndGroupWritableFilePermissions: false
 
       # Example (using a specific Persistent Volume Claim)
@@ -151,6 +158,21 @@ volumes:
     share:
       name: "data"
 
+#add additional volumes and their respective mounts
+additionalVolumes: []
+#  - name: neo4j1-conf
+#    emptyDir: {}
+additionalVolumeMounts: []
+#  - mountPath: "/config/neo4j1.conf"
+#    name: neo4j1-conf
+
+
+#nodeSelector labels
+#please ensure the respective labels are present on one of the cluster nodes or else helm charts will throw an error
+nodeSelector: {}
+#  "label1: "value1"
+#  "label2: "value2"
+
 # Services for Neo4j
 services:
   # A ClusterIP service with the same name as the Helm Release name should be used for Neo4j Driver connections originating inside the
@@ -177,10 +199,32 @@ services:
     ports:
       http:
         enabled: true #Set this to false to remove HTTP from this service (this does not affect whether http is enabled for the neo4j process)
+        # uncomment to publish http on port 80 (neo4j default is 7474)
+        # port: 80
       https:
         enabled: true #Set this to false to remove HTTPS from this service (this does not affect whether https is enabled for the neo4j process)
+        # uncomment to publish http on port 443 (neo4j default is 7474)
+        # port: 443
       bolt:
         enabled: true #Set this to false to remove BOLT from this service (this does not affect whether https is enabled for the neo4j process)
+        # Uncomment to explicitly specify the port to publish Neo4j Bolt (7687 is the default)
+        # port: 7687
+      backup:
+        enabled: false #Set this to true to expose backup port externally (n.b. this could have security implications. Backup is not authenticated by default)
+        # Uncomment to explicitly specify the port to publish Neo4j Backup (6362 is the default)
+        # port: 6362
+
+    selector:
+      "helm.neo4j.com/neo4j.loadbalancer": "include"
+      # By default the load balancer will match all Neo4j instance types.
+      # When Neo4j drivers connect from outside K8s using the load balancer they will not fetch a routing table.
+      # In this case drivers can only use instances included in the load balancer.
+      # To only include Neo4j Core instances uncomment the setting below.
+      # To only route to Neo4j Read Replicas uncomment the setting and change the value to "READ_REPLICA"
+      # "helm.neo4j.com/clustering": "false"
+
+    #this flag allows you to open internal neo4j ports necessary in multi zone /region neo4j cluster scenario
+    multiCluster: false
 
   # A service for admin/ops tasks including taking backups
   # This service is available even if the deployment is not "ready"
@@ -200,11 +244,30 @@ services:
     annotations: { }
     # n.b. there is no ports object for this service. Ports are autogenerated based on the neo4j configuration
 
+
 # Neo4j Configuration (yaml format)
 config:
-  dbms.config.strict_validation: "true"
+  server.config.strict_validation.enabled: "false"
+#  dbms.cluster.minimum_initial_system_primaries_count: "3"
+  # The amount of memory to use for mapping the store files.
+  # The default page cache memory assumes the machine is dedicated to running
+  # Neo4j, and is heuristically set to 50% of RAM minus the Java heap size.
+  #dbms.memory.pagecache.size: "74m"
 
-# securityContext defines privilege and access control settings for a Pod or Container. Making sure that you do not run Neo4j as root user.
+  #The number of Cypher query execution plans that are cached.
+  #dbms.query_cache_size: "10"
+
+  # Java Heap Size: by default the Java heap size is dynamically calculated based
+  # on available system resources. Uncomment these lines to set specific initial
+  # and maximum heap size.
+  #dbms.memory.heap.initial_size: "317m"
+  #dbms.memory.heap.max_size: "317m"
+
+#apoc_config:
+#  apoc.trigger.enabled: "true"
+#  apoc.jdbc.apoctest.url: "jdbc:foo:bar"
+
+# securityContext defines privilege and access control settings for a Pod or Container. Making sure that we dont run Neo4j as root user.
 securityContext:
   runAsNonRoot: true
   runAsUser: 7474
@@ -230,8 +293,8 @@ livenessProbe:
 
 # Startup probes are used to know when a container application has started.
 # If such a probe is configured, it disables liveness and readiness checks until it succeeds
-# When restoring Neo4j from a backup, it's important that the startup probe gives time for Neo4j to recover and/or upgrade store files
-# When using Neo4j clusters, it's important that the startup probe gives the Neo4j cluster time to form
+# When restoring Neo4j from a backup it's important that startup probe gives time for Neo4j to recover and/or upgrade store files
+# When using Neo4j clusters it's important that startup probe give the Neo4j cluster time to form
 startupProbe:
   failureThreshold: 1000
   periodSeconds: 5
@@ -269,24 +332,87 @@ clusterDomain: "cluster.local"
 image:
   imagePullPolicy: IfNotPresent
   # set a customImage if you want to use your own docker image
-  # customImage: my-image:my-tag
+#  customImage: eu.gcr.io/neo4j-helm/neo4j:v5
+
+  #imagePullSecrets list
+  #  imagePullSecrets:
+  #    - "demo"
+
+  #imageCredentials list for which secret of type docker-registry will be created automatically using the details provided
+  # registry , username , password , email are compulsory field for an imageCredential , without any ,  helm chart will throw an error
+  # imageCredential name should be part of the imagePullSecrets list or else the respective imageCredential will be ignored and no secret creation will be done
+#  imageCredentials:
+#    - registry: ""
+#      username: ""
+#      password: ""
+#      email: ""
+#      name: ""
+
+statefulset:
+  metadata:
+    #Annotations for Neo4j StatefulSet
+    annotations:
+#      imageregistry: "https://hub.docker.com/"
+#      demo: alpha
 
 # additional environment variables for the Neo4j Container
 env: {}
 
 # Other K8s configuration to apply to the Neo4j pod
 podSpec:
+
+  #Annotations for Neo4j pod
+  annotations: {}
+#   imageregistry: "https://hub.docker.com/"
+#   demo: alpha
+
+  nodeAffinity: {}
+#    requiredDuringSchedulingIgnoredDuringExecution:
+#      nodeSelectorTerms:
+#        - matchExpressions:
+#            - key: topology.kubernetes.io/zone
+#              operator: In
+#              values:
+#                - antarctica-east1
+#                - antarctica-west1
+#    preferredDuringSchedulingIgnoredDuringExecution:
+#      - weight: 1
+#        preference:
+#          matchExpressions:
+#            - key: another-node-label-key
+#              operator: In
+#              values:
+#                - another-node-label-value
+
   # Anti Affinity
   # If set to true then an anti-affinity rule is applied to prevent database pods with the same `neo4j.name` running on a single Kubernetes node.
   # If set to false then no anti-affinity rules are applied
   # If set to an object then that object is used for the Neo4j podAntiAffinity
   podAntiAffinity: true
 
+  #Add tolerations to the Neo4j pod
+  tolerations: []
+#    - key: "key1"
+#      operator: "Equal"
+#      value: "value1"
+#      effect: "NoSchedule"
+#    - key: "key2"
+#      operator: "Equal"
+#      value: "value2"
+#      effect: "NoSchedule"
+
+  #Priority indicates the importance of a Pod relative to other Pods.
+  # More Information : https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/
+  priorityClassName: ""
+
+  #This indicates that the neo4j instance be included to the loadbalancer. Can be set to exclude to not add the stateful set to loadbalancer
+  loadbalancer: "include"
+
   # Name of service account to use for the Neo4j Pod (optional)
   # this is useful if you want to use Workload Identity to grant permissions to access cloud resources e.g. cloud object storage (AWS S3 etc.)
   serviceAccountName: ""
 
-  # How long the Neo4j pod is permitted to keep running after it has been signaled by Kubernetes to stop. Once this timeout elapses the Neo4j process is forcibly terminated.
+  # How long the Neo4j pod is permitted to keep running after it has been signalled by Kubernetes to stop. Once this timeout elapses the Neo4j process is forcibly terminated.
   # A large value is used because Neo4j takes time to flush in-memory data to disk on shutdown.
   terminationGracePeriodSeconds: 3600
 
@@ -304,43 +430,112 @@ jvm:
   # If true any additional arguments are added after the Neo4j default jvm arguments.
   # If false Neo4j default jvm arguments are not used.
   useNeo4jDefaultJvmArguments: true
-  # additionalJvmArguments is a list of strings. Each jvm argument should be a separate element
+  # additionalJvmArguments is a list of strings. Each jvm argument should be a separate element:
   additionalJvmArguments: []
   # - "-XX:+HeapDumpOnOutOfMemoryError"
   # - "-XX:HeapDumpPath=/logs/neo4j.hprof"
-----
-+
-You can amend any of these settings.
-Passing that file during installation overrides the default Helm Chart configuration of the Neo4j installation on Kubernetes and the configuration of the Neo4j database itself.
-+
-. Create the _neo4j-values.yaml_ file with your preferred configuration.
-For example:
-+
-[source, yaml]
-----
-# neo4j-values.yaml
+  # - "-XX:MaxMetaspaceSize=180m"
+  # - "-XX:ReservedCodeCacheSize=40m"
 
-neo4j:
-  password: "my-password"
-  resources:
-    cpu: "2"
-    memory: "5Gi"
-
-volumes:
-  data:
-    mode: "defaultStorageClass"
-
-# Neo4j configuration (yaml format)
-config:
-  dbms.default_database: "neo4j"
-  dbms.config.strict_validation: "true"
+logging:
+  serverLogsXml: |-
+#    <?xml version="1.0" encoding="UTF-8"?>
+#    <!-- Example JSON logging configuration -->
+#    <Configuration status="ERROR" monitorInterval="30" packages="org.neo4j.logging.log4j">
+#        <Appenders>
+#            <!-- Default debug.log, please keep -->
+#            <RollingRandomAccessFile name="DebugLog" fileName="${config:server.directories.logs}/debug.log"
+#                                     filePattern="$${config:server.directories.logs}/debug.log.%02i">
+#                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+#                <Policies>
+#                    <SizeBasedTriggeringPolicy size="20 MB"/>
+#                </Policies>
+#                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+#            </RollingRandomAccessFile>
+#
+#            <RollingRandomAccessFile name="HttpLog" fileName="${config:server.directories.logs}/http.log"
+#                                     filePattern="$${config:server.directories.logs}/http.log.%02i">
+#                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+#                <Policies>
+#                    <SizeBasedTriggeringPolicy size="20 MB"/>
+#                </Policies>
+#                <DefaultRolloverStrategy fileIndex="min" max="5"/>
+#            </RollingRandomAccessFile>
+#
+#            <RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+#                                     filePattern="$${config:server.directories.logs}/query.log.%02i">
+#                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/QueryLogJsonLayout.json"/>
+#                <Policies>
+#                    <SizeBasedTriggeringPolicy size="20 MB"/>
+#                </Policies>
+#                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+#            </RollingRandomAccessFile>
+#
+#            <RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+#                                     filePattern="$${config:server.directories.logs}/security.log.%02i">
+#                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+#                <Policies>
+#                    <SizeBasedTriggeringPolicy size="20 MB"/>
+#                </Policies>
+#                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+#            </RollingRandomAccessFile>
+#        </Appenders>
+#
+#        <Loggers>
+#            <!-- Log levels. One of DEBUG, INFO, WARN, ERROR or OFF -->
+#
+#            <!-- The debug log is used as the root logger to catch everything -->
+#            <Root level="INFO">
+#                <AppenderRef ref="DebugLog"/> <!-- Keep this -->
+#            </Root>
+#            <!-- The query log, must be named "QueryLogger" -->
+#            <Logger name="QueryLogger" level="INFO" additivity="false">
+#                <AppenderRef ref="QueryLog"/>
+#            </Logger>
+#            <!-- The http request log, must be named "HttpLogger" -->
+#            <Logger name="HttpLogger" level="INFO" additivity="false">
+#                <AppenderRef ref="HttpLog"/>
+#            </Logger>
+#            <!-- The security log, must be named "SecurityLogger" -->
+#            <Logger name="SecurityLogger" level="INFO" additivity="false">
+#                <AppenderRef ref="SecurityLog"/>
+#            </Logger>
+#        </Loggers>
+#    </Configuration>
+  userLogsXml: |-
+#    <?xml version="1.0" encoding="UTF-8"?>
+#    <!-- Example JSON logging configuration -->
+#    <Configuration status="ERROR" monitorInterval="30" packages="org.neo4j.logging.log4j">
+#    <Appenders>
+#        <RollingRandomAccessFile name="Neo4jLog" fileName="${config:server.directories.logs}/neo4j.log"
+#                                 filePattern="$${config:server.directories.logs}/neo4j.log.%02i">
+#            <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+#            <Policies>
+#                <SizeBasedTriggeringPolicy size="20 MB"/>
+#            </Policies>
+#            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+#        </RollingRandomAccessFile>
+#        <!-- Only used by "neo4j console", will be ignored otherwise -->
+#        <Console name="ConsoleAppender" target="SYSTEM_OUT">
+#            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+#        </Console>
+#    </Appenders>
+#    <Loggers>
+#        <!-- Log level for the neo4j log. One of DEBUG, INFO, WARN, ERROR or OFF -->
+#        <Root level="INFO">
+#            <AppenderRef ref="Neo4jLog"/>
+#            <AppenderRef ref="ConsoleAppender"/>
+#        </Root>
+#    </Loggers>
+#    </Configuration>
 ----
 +
 . Pass the _neo4j-values.yaml_ file during installation.
+The `neo4j.name` parameter is mandatory and can be supplied either in `neo4j-values.yaml` or by using the `--set` argument.
 +
 [source, shell]
 ----
-helm install <release-name> neo4j/neo4j-standalone -f neo4j-values.yaml
+helm install <release-name> neo4j/neo4j --set "neo4j.name=my-neo4j-db" -f neo4j-values.yaml
 ----
 +
 [TIP]
@@ -357,10 +552,26 @@ Some examples of possible Neo4j configurations::
 * All Neo4j configuration (_neo4j.conf_) settings can be set directly on the `config` object in the _values.yaml_ file.
 * Neo4j can be configured to use SSL certificates contained in Kubernetes Secrets by modifying the `ssl` object in the values file.
 
+[[configure-neo4j-name]]
+== Set neo4j.name parameter
+Starting from Neo4j 5.0.0, standalone servers and cluster servers have no distinction. 
+This means a standalone server can be upgraded to a cluster by adding more servers.
+Therefore, the `neo4j.name` parameter, which value links together servers in a cluster, is mandatory, and the installation will fail if it is not specified.
+`neo4j.name` must be unique within a namespace.
+
+[[configure-neo4j-cluster-size]]
+== Set neo4j.minimumClusterSize parameter
+By default, servers in a cluster can host primary and secondary databases.
+See the xref:clustering/introduction.adoc[clustering documentation] for more details. +
+`neo4j.minimumClusterSize` is set to 1 by default, which means the server starts without waiting for the other servers.
+When installing a cluster, you should set `neo4j.minimumClusterSize` to the number of desired members in the cluster.
+If you later decide to add an extra cluster server in excess of `neo4j.minimumClusterSize`, you need to manually enable it using the Cypher command `ENABLE SERVER`.
+For more information on enabling new servers, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster].
+
 [[configure-neo4j-in-kubernetes]]
 == Set Neo4j configuration
 
-The Neo4j Helm Chart does not use a `neo4j.conf` file.
+The Neo4j Helm chart does not use a `neo4j.conf` file.
 Instead, the Neo4j configuration is set in the Helm deployment's _values.yaml_ file under the `config` object.
 
 The `config` object should contain a string map of _neo4j.conf_ setting name to value.
@@ -370,11 +581,10 @@ For example, this `config` object configures the Neo4j metrics:
 ----
 # Neo4j configuration (yaml format)
 config:
-  metrics.enabled: "true"
-  metrics.namespaces.enabled: "false"
-  metrics.csv.interval: "10s"
-  metrics.csv.rotation.keep_number: "2"
-  metrics.csv.rotation.compression: "NONE"
+  server.metrics.enabled: "true"
+  server.metrics.csv.interval: "10s"
+  server.metrics.csv.rotation.keep_number: "2"
+  server.metrics.csv.rotation.compression: "NONE"
 ----
 
 [NOTE]
@@ -383,7 +593,7 @@ All Neo4j `config` values must be YAML strings.
 It is important to put quotes around the values, such as `"true"`, `"false"`, and `"2"`, so that they are handled correctly as strings.
 ====
 
-All _neo4j.conf_ settings are supported except for `dbms.jvm.additional`.
+All _neo4j.conf_ settings are supported except for `server.jvm.additional`.
 Additional JVM settings can be set on the `jvm` object in the Helm deployment _values.yaml_ file, as shown in the example:
 
 [source, java]
@@ -402,7 +612,7 @@ To find out more about configuring Neo4j and the _neo4j.conf_ file, see xref:con
 
 You can set an initial password for accessing Neo4j in the _values.yaml_ file.
 If no initial password is set, the Neo4j helm chart will automatically generate one.
-In cluster deployments, the same password must be set on all cluster members.
+In cluster deployments, the same password must be set for all cluster members.
 
 [source, properties]
 ----
@@ -431,8 +641,8 @@ Once you change the password in Neo4j, the password stored in _Kubernetes Secret
 [[configure-ssl]]
 == Configure SSL
 
-The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm Charts.
-SSL policy objects can be specified for `bolt`, `https`, `cluster`, `backup`, and `fabric`.
+The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm chart.
+SSL policy objects can be specified for `bolt`, `https`, `cluster`, and `backup`.
 SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes Secrets_.
 
 To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
@@ -456,7 +666,7 @@ To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `
 [NOTE]
 ====
 Unencrypted `http` is not disabled automatically when `https` is enabled.
-If `https` is enabled, add `dbms.connector.http.enabled: "false"` to the `config` object to disable `http`.
+If `https` is enabled, add `server.http.enabled: "false"` to the `config` object to disable `http`.
 ====
 
 [[configure-sso]]
@@ -464,7 +674,7 @@ If `https` is enabled, add `dbms.connector.http.enabled: "false"` to the `config
 
 Neo4j supports SSO authentication and authorization through identity providers implementing the OpenID Connect (OIDC) standard.
 
-To configure the Neo4j helm deployment to use SSO authentication, first you need to configure your identity provider for authentication and authorization using ID tokens.
+To configure the Neo4j helm deployment to use SSO authentication, first, you need to configure your identity provider for authentication and authorization using ID tokens.
 And then, you configure the Neo4j helm deployment to use that identity provider for authentication by adding all the SSO configurations to the _values.yaml_ file.
 
 For more information on how to configure your identity provider and what settings you should define, see xref:tutorial/tutorial-sso-configuration.adoc[Neo4j Single Sign-On (SSO) configuration].
@@ -473,18 +683,18 @@ For more information on how to configure your identity provider and what setting
 [source, properties]
 ----
 config:
-  dbms.security.oidc.azure.audience: "00f3a7d3-d855-4849-9e3c-57d7b6e12794"
-  dbms.security.oidc.azure.params: "client_id=00f3a7d3-d855-4849-9e3c-57d7b6e12794;response_type=code;scope=openid profile email"
-  dbms.security.oidc.azure.well_known_discovery_uri: "https://login.microsoftonline.com/da501982-4ca7-420c-8926-1e65b5bf565f/v2.0/.well-known/openid-configuration"
-  dbms.security.authorization_providers: "oidc-azure,native"
-  dbms.security.authentication_providers: "oidc-azure,native"
-  dbms.security.oidc.azure.display_name: "Azure SSO on K8s"
-  dbms.security.oidc.azure.auth_flow: "pkce"
-  token_type_principal=id_token;token_type_authentication=id_token"
-  dbms.security.oidc.azure.config: "principal=unique_name;code_challenge_method=S256;
-  dbms.security.oidc.azure.claims.username: "sub"
-  dbms.security.oidc.azure.claims.groups: "groups"
-  dbms.security.oidc.azure.authorization.group_to_role_mapping: "e197354c-bd75-4524-abbc-d44325904567=editor;fa31ce67-9e4d-4999-bf6d-25c55258d116=publisher"
+  server.security.oidc.azure.audience: "00f3a7d3-d855-4849-9e3c-57d7b6e12794"
+  server.security.oidc.azure.params: "client_id=00f3a7d3-d855-4849-9e3c-57d7b6e12794;response_type=code;scope=openid profile email"
+  server.security.oidc.azure.well_known_discovery_uri: "https://login.microsoftonline.com/da501982-4ca7-420c-8926-1e65b5bf565f/v2.0/.well-known/openid-configuration"
+  server.security.authorization_providers: "oidc-azure,native"
+  server.security.authentication_providers: "oidc-azure,native"
+  server.security.oidc.azure.display_name: "Azure SSO on K8s"
+  server.security.oidc.azure.auth_flow: "pkce"
+  server_type_principal=id_token;token_type_authentication=id_token"
+  server.security.oidc.azure.config: "principal=unique_name;code_challenge_method=S256;
+  server.security.oidc.azure.claims.username: "sub"
+  server.security.oidc.azure.claims.groups: "groups"
+  server.security.oidc.azure.authorization.group_to_role_mapping: "e197354c-bd75-4524-abbc-d44325904567=editor;fa31ce67-9e4d-4999-bf6d-25c55258d116=publisher"
 ----
 
 [IMPORTANT]
@@ -539,9 +749,9 @@ Error: template: neo4j-standalone/templates/_helpers.tpl:157:11: executing "neo4
 ====
 
 *JVM heap and page cache*::
-You configure Neo4j to use the memory provided to the container by setting the parameters `dbms.memory.heap.max_size` and `dbms.memory.pagecache.size`.
+You configure Neo4j to use the memory provided to the container by setting the parameters `server.memory.heap.initial_size` and `server.memory.pagecache.size`.
 Combined, they must not exceed the memory configuration of the Neo4j container. +
-In Kubernetes, running processes in the Neo4j container that exceed the configured memory limit are killed by the underlying operating system.
+In Kubernetes, running processes in the Neo4j container, which exceed the configured memory limit are killed by the underlying operating system.
 Therefore, it is recommended to allow an additional 1GB of memory headroom so that `heap + pagecache + 1GB < available memory`.
 +
 For example, a 5GB container could be configured like this:
@@ -555,13 +765,13 @@ neo4j:
 
 # Neo4j configuration (yaml format)
 config:
-  dbms.memory.heap.initial_size: "3G"
-  dbms.memory.heap.max_size: "3G"
-  dbms.memory.pagecache.size: "1G"
+  server.memory.heap.initial_size: "3G"
+  server.memory.heap.max_size: "3G"
+  server.memory.pagecache.size: "1G"
 ----
 +
-`dbms.memory.pagecache.size` and `dbms.memory.heap.initial_size` are not the only settings available in Neo4j to manage memory usage.
-For full details of how to configure memory usage in Neo4j, see xref:memory-configuration[Performance - Memory Configuration].
+`server.memory.pagecache.size` and `server.memory.heap.initial_size` are not the only settings available in Neo4j to manage memory usage.
+For full details of how to configure memory usage in Neo4j, see xref:performance/memory-configuration.adoc[Performance - Memory Configuration].
 
 [[k8s-service-accounts]]
 == Configure a service account
@@ -585,13 +795,13 @@ podSpec:
 [NOTE]
 ====
 The service account must already exist.
-The Neo4j Helm Charts do not create or configure Service Accounts.
+The Neo4j Helm chart does not create or configure Service Accounts.
 ====
 
 [[configure-custom-image]]
 == Configure a custom container image
 
-The helm chart uses the official Neo4j Docker image that matches the version of the Helm Chart.
+The helm chart uses the official Neo4j Docker image that matches the version of the Helm chart.
 To configure the helm chart to use a different container image, set the `image.customImage` property in the _values.yaml_ file.
 
 This can be necessary when public container repositories are not accessible for security reasons.
@@ -619,8 +829,10 @@ Instead, you can configure the helm deployment to use APOC core by upgrading the
 [source, properties]
 ----
 config:
-  dbms.directories.plugins: "/var/lib/neo4j/labs"
+  server.directories.plugins: "/var/lib/neo4j/labs"
   dbms.security.procedures.unrestricted: "apoc.*"
+  server.config.strict_validation.enabled: "false"
+  dbms.security.procedures.allowlist: "gds.*,apoc.*"
 ----
 +
 . Under `apoc_config`, configure the APOC settings you want, for example:
@@ -637,7 +849,7 @@ apoc_config:
 +
 [source, shell]
 ----
-helm upgrade <release-name> neo4j/neo4j-standalone -f values.yaml
+helm upgrade <release-name> neo4j/neo4j -f values.yaml
 ----
 
 . After the Helm upgrade rollout is complete, verify that APOC core has been configured by running the following Cypher query using `cypher-shell` or Neo4j Browser:
@@ -645,13 +857,6 @@ helm upgrade <release-name> neo4j/neo4j-standalone -f values.yaml
 [source, cypher]
 ----
 RETURN apoc.version()
-----
-+
-. Verify the APOC configs using the `apoc.config.list()` procedure:
-+
-[source, cypher]
-----
-CALL apoc.config.list() YIELD key, value WHERE key = "apoc.jdbc.neo4j.url" RETURN *;
 ----
 
 [[operations-installing-plugins]]
@@ -736,7 +941,7 @@ config:
 === Add plugins using a custom container image
 
 The best method for adding plugins to Neo4j running in Kubernetes is to create a new Docker container image that contains both Neo4j and the Neo4j plugins.
-This way, you can ensure when building the container that the correct plugin version for the Neo4j version of the container is used, and the resulting image encapsulates all Neo4j runtime dependencies.
+This way, you can ensure when building the container that the correct plugin version for the Neo4j version of the container is used and that the resulting image encapsulates all Neo4j runtime dependencies.
 
 [NOTE]
 ====
@@ -744,7 +949,7 @@ The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a lic
 To obtain a valid license, reach out to your Neo4j account representative or write to licensing@neo4j.com.
 ====
 
-Building a Docker container image that is based on the official Neo4j Docker image and does not override the official image's `ENTRYPOINT` and `COMMAND` is the recommended method to use with the Neo4j Helm Chart, as shown in this example Dockerfile:
+Building a Docker container image that is based on the official Neo4j Docker image and does not override the official image's `ENTRYPOINT` and `COMMAND` is the recommended method to use with the Neo4j Helm chart, as shown in this example Dockerfile:
 
 [source, Dockerfile, subs=attributes]
 ----
@@ -780,7 +985,7 @@ For more details, see xref:kubernetes/configuration.adoc#configure-custom-image[
 Many plugins require additional Neo4j configuration to work correctly.
 Plugin configuration should be set on the `config` object in the Helm deployment's _values.yaml_ file.
 In some cases, plugin configuration can cause Neo4j's strict config validation to fail.
-Strict config validation can be disabled by setting `dbms.config.strict_validation: "false"`.
+Strict config validation can be disabled by setting `server.config.strict_validation.enabled: "false"`.
 ====
 
 [[plugins-volume]]
@@ -795,7 +1000,7 @@ The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a lic
 To obtain a valid license, reach out to your Neo4j account representative or write to licensing@neo4j.com.
 ====
 
-The simplest way to set up a persistent plugins volume is to share the Persistent Volume that is used for storing Neo4j data.
+The simplest way to set up a persistent `plugins` volume is to share the Persistent Volume that is used for storing Neo4j data.
 This example shows how to configure that in the Neo4j Helm deployment _values.yaml_ file:
 
 [source, properties]
@@ -814,7 +1019,7 @@ volumes:
 
 Details of different ways to configure volume mounts are covered in xref:kubernetes/persistent-volumes.adoc#volume-mounts[Mapping volume mounts to persistent volumes].
 
-The Neo4j container now has an empty `/plugins` directory backed by a persistent volume.
+The Neo4j container now has an empty _/plugins_ directory backed by a persistent volume.
 Plugin jar files can be copied onto the volume using `kubectl cp`.
 Because it is backed by a persistent volume, plugin files will persist even if the Neo4j pod is restarted or moved.
 
@@ -828,7 +1033,7 @@ For example:
 
 [source, shell]
 ----
-# Copy plugin files into Neo4j container
+# Copy plugin files into the Neo4j container
 kubectl cp my-plugins/* <namespace>/<neo4j-pod-name>:/plugins/
 
 # Restart Neo4j
@@ -838,4 +1043,4 @@ kubectl rollout restart statefulset/<neo4j-statefulset-name>
 kubectl exec <neo4j-pod-name> -- ls /plugins
 ----
 
-// Neo4j Browser, Data Import,  fabric?
+// Neo4j Browser, Data Import,  composite databases?

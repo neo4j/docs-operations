@@ -3,19 +3,19 @@
 [[cc-access-inside-k8s]]
 = Access the Neo4j cluster from inside Kubernetes
 
-By default, client-side routing is used for accessing a Neo4j cluster from inside Kubernetes. 
+By default, client-side routing is used for accessing a Neo4j cluster from inside Kubernetes.
 
 [[cc-access-cypher-shell]]
 == Access the Neo4j cluster using a specific member
 
-You run `cypher-shell` in a new pod and point it directly to one of the core members.
+You run `cypher-shell` in a new pod and point it directly to one of the servers.
 
-. Run `cypher-shell` in a pod to access, for example, `core-3`:
+. Run `cypher-shell` in a pod to access, for example, `server-3`:
 +
 [source, shell, subs="attributes"]
 ----
 kubectl run --rm -it --image "neo4j:{neo4j-version-exact}-enterprise" cypher-shell \
-     -- cypher-shell -a "neo4j://core-3.default.svc.cluster.local:7687" -u neo4j -p "my-password"
+     -- cypher-shell -a "neo4j://server-3.default.svc.cluster.local:7687" -u neo4j -p "my-password"
 ----
 +
 [source, result, subs="attributes", role=nocopy]
@@ -23,12 +23,12 @@ kubectl run --rm -it --image "neo4j:{neo4j-version-exact}-enterprise" cypher-she
 If you don't see a command prompt, try pressing enter.
 
 
-Connected to Neo4j using Bolt protocol version {neo4j-version} at neo4j://core-3.default.svc.cluster.local:7687 as user neo4j.
+Connected to Neo4j using Bolt protocol version {neo4j-version} at neo4j://server-3.default.svc.cluster.local:7687 as user neo4j.
 Type :help for a list of available commands or :exit to exit the shell.
 Note that Cypher queries must end with a semicolon.
 ----
 
-. Run the Cypher command `SHOW DATABASES` to verify that all cluster members are online:
+. Run the Cypher command `SHOW DATABASES` to verify that all cluster servers are online.
 +
 [source, shell, subs="attributes"]
 ----
@@ -37,23 +37,40 @@ SHOW DATABASES;
 +
 [source, result, subs="attributes", role=nocopy]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name     | type       | aliases | access       | address                                 | role        | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "neo4j"  | "standard" | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "secondary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "system" | "system"   | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "secondary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address                                 | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "standard" | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
-8 rows
+6 rows
 ready to start consuming query after 27 ms, results consumed after another 243 ms
 ----
+. Run the Cypher command `SHOW SERVERS` to verify that all cluster servers are enabled:
++
+[source, shell, subs="attributes"]
+----
+SHOW SERVERS;
+----
++
+[source, result, subs="attributes", role=nocopy]
+----
++----------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                 | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------------------------------+
+| "ad5c3cf1-541a-44f8-a19b-28bc36030914" | "server-3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "cbdebc59-64c2-4542-a041-24a1f051e64f" | "server-1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "f37e98a7-15ec-4dc4-a6bf-df9e418a7488" | "server-2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
++----------------------------------------------------------------------------------------------------------------------------------+
 
+3 rows
+ready to start consuming query after 27 ms, results consumed after another 363 ms
+----
 . Exit `cypher-shell`.
 Exiting `cypher-shell` automatically deletes the pod created to run it.
 +
@@ -72,45 +89,43 @@ pod "cypher-shell" deleted
 [[cc-access-headless]]
 == Access the Neo4j cluster using headless service
 
-To allow for an application running inside Kubernetes to access the Neo4j cluster without using a specific core for bootstrapping, you need to install the _neo4j-cluster-headless-service_ Helm Chart. 
-This will create a K8s Service with a xref:kubernetes/accessing-cluster.adoc#cluster-access-inside-k8s-dns[DNS entry] that includes all the Neo4j cores. 
-You can use the created DNS entry to bootstrap drivers connecting to the cluster as shown in the image:
+To allow for an application running inside Kubernetes to access the Neo4j cluster without using a specific server for bootstrapping, you need to install the _neo4j-cluster-headless-service_ Helm chart.
+This will create a K8s Service with a xref:kubernetes/accessing-neo4j.adoc#cluster-access-inside-k8s-dns[DNS entry] that includes all the Neo4j servers.
+You can use the created DNS entry to bootstrap drivers connecting to the cluster.
 
-image:dns-resolution.png[]
-
-The headless service is a Kubernetes term for a service that has no ClusterIP. 
+The headless service is a Kubernetes term for a service that has no ClusterIP.
 For more information, see the https://kubernetes.io/docs/concepts/services-networking/service/#headless-services[Kubernetes official documentation].
 
-. Install the headless service using the release name `headless`, _neo4j/neo4j-cluster-headless-service_ Helm Chart, and the name of your cluster as a value of the `neo4j.name` parameter.
+. Install the headless service using the release name `headless`, _neo4j/neo4j-cluster-headless-service_ Helm chart, and the name of your cluster as a value of the `neo4j.name` parameter.
 +
 [NOTE]
 ====
 Alternatively, you can create a _values.yaml_ file with all the configurations for the service.
-To see what options are configurable on the _neo4j/neo4j-cluster-headless-service_ Helm Chart, use `helm show values neo4j/neo4j-cluster-headless-service`. 
+To see what options are configurable on the _neo4j/neo4j-cluster-headless-service_ Helm chart, use `helm show values neo4j/neo4j-headless-service`.
 ====
 +
 [source, shell, subs="attributes"]
 ----
-helm install headless neo4j/neo4j-cluster-headless-service --set neo4j.name=my-cluster    
+helm install headless neo4j/neo4j-headless-service --namespace neo4j --set neo4j.name=my-cluster
 ----
 +
 [source, result, subs="attributes", role=nocopy]
-----                      
+----
 NAME: headless
-LAST DEPLOYED: Fri Nov  5 16:58:54 2021
-NAMESPACE: default
+LAST DEPLOYED: Wed Oct 26 13:11:14 2022
+NAMESPACE: neo4j
 STATUS: deployed
 REVISION: 1
 TEST SUITE: None
 NOTES:
 Thank you for installing neo4j-cluster-headless-service.
 
-Your release "headless" has been installed in namespace "default".
+Your release "headless" has been installed in namespace "neo4j".
 
-Once rollout is complete you can connect to your Neo4j cluster using "neo4j://headless-neo4j.default.svc.cluster.local:7687". Try:
+Once rollout is complete you can connect to your Neo4j cluster using "neo4j://headless-neo4j.neo4j.svc.cluster.local:7687". Try:
 
-  $ kubectl run --rm -it --image "neo4j:{neo4j-version-exact}-enterprise" cypher-shell \
-     -- cypher-shell -a "neo4j://headless-neo4j.default.svc.cluster.local:7687"
+  $ kubectl run --rm -it --namespace "neo4j" --image "neo4j:{neo4j-version-exact}-enterprise" cypher-shell \
+     -- cypher-shell -a "neo4j://headless-neo4j.neo4j.svc.cluster.local:7687"
 
 Graphs are everywhere!
 ----
@@ -121,70 +136,70 @@ Graphs are everywhere!
 
 // [source, role=noheader]
 // ----
-// Error: INSTALLATION FAILED: execution error at (neo4j-cluster-headless-service/templates/_helper.tpl:16:12): port re-mapping is not allowed in headless service. 
+// Error: INSTALLATION FAILED: execution error at (neo4j-headless-service/templates/_helper.tpl:16:12): port re-mapping is not allowed in headless service.
 // Please remove custom port 80 from values.yaml.
 // ----
-// ==== 
+// ====
 
 . Check that the `headless` service is available:
-+ 
++
 [source, shell]
----- 
-kubectl get services | grep head
+----
+export NEO4J_NAME=my-cluster
+kubectl get service ${NEO4J_NAME}-headless
 ----
 +
 [source, result, role=nocopy]
----- 
-NAME               TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                                                   AGE
-headless-neo4j     ClusterIP      None            <none>          7474/TCP,7473/TCP,7687/TCP                                                3m22s
+----
+NAME                  TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                      AGE
+my-cluster-headless   ClusterIP   None         <none>        7474/TCP,7473/TCP,7687/TCP   113s
 ----
 
 . Use `kubectl describe service` to see the service details:
 +
 [source, shell]
 ----
-kubectl describe service headless-neo4j
+kubectl describe service ${NEO4J_NAME}-headless
 ----
 +
 [source, result, subs="attributes", role=nocopy]
 ----
-Name:              headless-neo4j
-Namespace:         default
+Name:              my-cluster-headless
+Namespace:         neo4j
 Labels:            app=my-cluster
                    app.kubernetes.io/managed-by=Helm
                    helm.neo4j.com/neo4j.name=my-cluster
-                   helm.neo4j.com/service=neo4j
 Annotations:       cloud.google.com/neg: {"ingress":true}
                    meta.helm.sh/release-name: headless
-                   meta.helm.sh/release-namespace: default
-Selector:          app=my-cluster,helm.neo4j.com/dbms.mode=CORE,helm.neo4j.com/neo4j.loadbalancer=include,helm.neo4j.com/neo4j.name=my-cluster
+                   meta.helm.sh/release-namespace: neo4j
+Selector:          app=my-cluster,helm.neo4j.com/neo4j.loadbalancer=include
 Type:              ClusterIP
-IP Families:       <none>
+IP Family Policy:  SingleStack
+IP Families:       IPv4
 IP:                None
 IPs:               None
 Port:              http  7474/TCP
 TargetPort:        7474/TCP
-Endpoints:         10.108.1.19:7474,10.108.2.14:7474,10.108.4.37:7474
+Endpoints:         10.24.0.131:7474,10.24.1.3:7474,10.24.1.67:7474
 Port:              https  7473/TCP
 TargetPort:        7473/TCP
-Endpoints:         10.108.1.19:7473,10.108.2.14:7473,10.108.4.37:7473
+Endpoints:         10.24.0.131:7473,10.24.1.3:7473,10.24.1.67:7473
 Port:              tcp-bolt  7687/TCP
 TargetPort:        7687/TCP
-Endpoints:         10.108.1.19:7687,10.108.2.14:7687,10.108.4.37:7687
+Endpoints:         10.24.0.131:7687,10.24.1.3:7687,10.24.1.67:7687
 Session Affinity:  None
 Events:            <none>
 ----
 +
-You should see three “endpoints” for each port in the service -- these are the IP addresses of the three Neo4j cores servers.
-These endpoints are contacted to bootstrap the drivers used by applications running in Kubernetes. 
+You should see three “endpoints” for each port in the service -- these are the IP addresses of the three Neo4j servers.
+These endpoints are contacted to bootstrap the drivers used by applications running in Kubernetes.
 The drivers will use them to obtain the initial routing table.
 
-. Run `cypher-shell` in another pod and connect to the cluster nodes via the headless service:
+. Run `cypher-shell` in another pod and connect to the cluster servers via the headless service:
 +
 [source, shell, subs="attributes"]
 ----
-kubectl run --rm -it --image "neo4j:{neo4j-version-exact}-enterprise" cypher-shell \
-     -- cypher-shell -a "neo4j://headless-neo4j.default.svc.cluster.local:7687" -u neo4j -p "my-password"
+kubectl run --rm -it --namespace "neo4j" --image "neo4j:{neo4j-version-exact}-enterprise"cypher-shell -- cypher-shell -a \  "neo4j://my-cluster-headless.neo4j.svc.cluster.local:7687" -u neo4j -p "my-password"
 ----
 +
 [source, result, subs="attributes", role=nocopy]
@@ -195,7 +210,7 @@ Type :help for a list of available commands or :exit to exit the shell.
 Note that Cypher queries must end with a semicolon.
 ----
 
-. Run the Cypher command `SHOW DATABASES` to verify that all cluster members are online.
+. Run the Cypher command `SHOW DATABASES` to verify that all cluster servers are online.
 +
 [source, shell, subs="attributes"]
 ----
@@ -204,20 +219,17 @@ SHOW DATABASES;
 +
 [source, shell, subs="attributes", role=nocopy]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name     | type       | aliases | access       | address                                 | role        | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "neo4j"  | "standard" | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "neo4j"  | "standard" | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "secondary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "system" | "system"   | []      | "read-write" | "core-1.default.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "core-3.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "core-2.default.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "system" | "system"   | []      | "read-write" | "rr-1.default.svc.cluster.local:7687"   | "secondary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-
-8 rows
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address                                 | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "standard" | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "server-3.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-2.neo4j.svc.cluster.local:7687" | "primary" | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server-1.neo4j.svc.cluster.local:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+6 rows
 ready to start consuming query after 4 ms, results consumed after another 42 ms
 ----
 
@@ -229,7 +241,7 @@ Exiting `cypher-shell` automatically deletes the pod created to run it.
 :exit;
 ----
 +
-[source, result, subs="attributes", role=nocopy] 
+[source, result, subs="attributes", role=nocopy]
 ----
 Bye!
 Session ended, resume using 'kubectl attach cypher-shell -c cypher-shell -i -t' command when the pod is running
