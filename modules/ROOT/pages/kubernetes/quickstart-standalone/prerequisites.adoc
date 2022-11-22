@@ -76,7 +76,6 @@ Make sure you complete the AWS configuration step (https://docs.aws.amazon.com/c
 [source, shell]
 ----
 export AWS_DEFAULT_REGION="eu-west-1"
-export AWS_AVAILABILITY_ZONE="eu-west-1c"
 ----
 . If you do not have an AWS Elastic Kubernetes Service (EKS) cluster, you can create a single-node one using the following command:
 +
@@ -93,13 +92,36 @@ ssh-keygen -t rsa -C "your-name@example.com"
 +
 [source, shell]
 ----
-eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --node-zones "${AWS_AVAILABILITY_ZONE}" --nodes-min 1 --nodes-max 2 --node-type c4.xlarge --nodes 1 --node-volume-size 10 --ssh-access --with-oidc
+eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --nodes-min 1 --nodes-max 2 --node-type c4.xlarge --nodes 1 --node-volume-size 10 --ssh-access --with-oidc
+----
+. Create an IAM role (e.g., `AmazonEKS_EBS_CSI_DriverRole`) and attach the required AWS-managed policy to it (e.g., `AmazonEBSCSIDriverPolicy`).
++
+[source, shell]
+----
+eksctl create iamserviceaccount \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster my-neo4j-eks-cluster \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --role-only \
+  --role-name AmazonEKS_EBS_CSI_DriverRole
+----
+
+. Add the EBS CSI Driver as an Amazon EKS add-on to your cluster:
++
+[source, shell]
+----
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster my-neo4j-eks-cluster \
+  --service-account-role-arn arn:aws:iam::<aws-account-id>:role/AmazonEKS_EBS_CSI_DriverRole \
+  --force
 ----
 +
 [NOTE]
 ====
-If you want to use high-performance SSD `(gp3)` disks for the database or manually allocate disks, you must install the EBS CSI Driver.
-See the link:https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html[AWS documentation] for instructions on installing the driver.
+Make sure to replace `<aws-account-id>` with your AWS account ID.
 ====
 . Configure `kubectl` to use your EKS cluster using:
 +
