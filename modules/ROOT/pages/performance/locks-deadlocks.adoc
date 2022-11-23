@@ -66,9 +66,9 @@ Dense nodes store this data in a concurrent data structure, and so can avoid exc
  
 A deadlock occurs when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction. In such a scenario, neither of the transactions will be able to proceed.
 
-When Neo4j detects a deadlock, the transaction is cancelled (with the transient error message code `Neo.TransientError.Transaction.DeadlockDetected`).
+When Neo4j detects a deadlock, the transaction is terminated (with the transient error message code `Neo.TransientError.Transaction.DeadlockDetected`).
 
-For example, running the following two transactions in https://neo4j.com/docs/operations-manual/current/tools/cypher-shell/[Cypher-shell] will result in a deadlock because they are attempting to modify the same node properties concurrently.
+For example, running the following two queries in https://neo4j.com/docs/operations-manual/current/tools/cypher-shell/[Cypher-shell] at the same time, will result in a deadlock because they are attempting to modify the same node properties concurrently.
 
 .Transaction A
 [source, cypher, indent=0]
@@ -90,17 +90,26 @@ CALL apoc.util.sleep(5000)
 MATCH (m:Test) SET m.prop = 1;
 ----
 
-.The following error message is thrown by running the above example:
-[source, cypher, indent=0]
+The following error message is thrown:
+
+[source, output, role="noheader", indent=0]
 ----
 The transaction will be rolled back and terminated. Error: ForsetiClient[transactionId=6698, clientId=1] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=6697, clientId=3]} on NODE(27), because holders of that lock are waiting for ForsetiClient[transactionId=6698, clientId=1].
  Wait list:ExclusiveLock[
 Client[6697] waits for [ForsetiClient[transactionId=6698, clientId=1]]]
 ----
- 
-Most likely, a deadlock will be resolved by retrying the transaction.
- 
-To avoid deadlocks, it is recommended that updates occur in the same order (first A, then B).
+
+== Avoiding deadlocks
+
+Most likely, a deadlock will be resolved by retrying the transaction. 
+This will, however, impact the cost of the total throughput of the transaction, so it is useful to know about strategies to avoid deadlocks. 
+
+Neo4j assists transactions by internally sorting operations.
+However, this internal sorting only applies for the locks taken when creating or deleting relationships.
+Users are, therefore, encouraged to sort their operations in cases where Neo4j does not internally assist, such as when locks are taken for property updates. 
+This is done by ensuring that updates occur in the same order.
+For example, if the three locks `A`, `B`, and `C` are always taken in the same order (e.g. `A->B->C`), then a transaction will never hold lock `B` while waiting for lock `A` to be released, and so a deadlock will not occur. 
+
 Another option is to avoid lock contention by not modifying the same entities concurrently.
  
 For more information about deadlocks, see https://neo4j.com/docs/java-reference/5/transaction-management/#transactions-deadlocks[Neo4j's Java-reference manual on transaction management].
