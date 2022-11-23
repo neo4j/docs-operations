@@ -1,0 +1,223 @@
+[[tutorial-ssl-certificate]]
+:description: Tutorial on how to get SSL certificates for Neo4j.
+= Getting a certificate for Neo4j
+
+Using Neo4j's link:https://neo4j.com/developer/neo4j-cloud-vms/[cloud virtual machines], a common question is how to set up valid SSL to protect data in transit. 
+It is necessary to have valid SSL certificates in order for the browser and various client applications to trust that your site is what it says it is.
+This tutorial covers how to do it.
+
+[NOTE]
+====
+The following instructions work with any public cloud-hosted instance of Neo4j.
+====
+
+== Prerequisites
+
+If you have created a Neo4j instance in a public cloud and you have seen browser warnings about "this site is untrusted" or "add a special excepcion", it means that you need valid certificates to solve this.
+
+First, make sure that your machine has a valid DNS address in order to have a valid SSL certificate.
+Certificates typically are not granted for bare IP addresses because it is a lot harder to prove that you own/control a bare IP address.
+
+[NOTE]
+====
+If you are doing this for a causal cluster, you must do it for each machine in the cluster.
+This tutorial does not cover how to get a valid DNS address, as the process is different for each cloud, and each network setup. +
+Before using these instructions, ensure that you have a DNS name for your machine, and verify that it resolves correctly to the IP of your machine before proceeding.
+====
+
+== Generating certificates
+
+On each machine, install `certbot`, a tool which generates certificates. 
+Use the following commands for that:
+
+[source, c-shell, role=noplay]
+----
+sudo apt-get update
+sudo apt-get install software-properties-common
+sudo add-apt-repository ppa:certbot/certbot
+sudo apt-get update
+sudo apt-get install -y certbot
+----
+
+In order for `certbot` to work and verify that you have the domain that you claim, ensure via the firewall that port 80 is temporarily open.
+
+[NOTE]
+====
+Port 80 is not normally open for Neo4j cloud instances, so make sure to set that up as a separate step.
+====
+
+To generate the certificate:
+
+. Use `sudo certbot certonly` on Terminal.
+. Choose option 1 to create a temporary webserver on port 80 for verification.
+. Provide the domain name the certificate is being generated for (node2.cluster.graph.center).
+
+== Configuring Neo4j
+
+Depending on what certificate authority you choose, it may keep certificates in a directory called "live".
+These are actually `symlinks` to files in another directory.
+This layer of indirection allows the `certbot` prpogram to update the certificates periodically as needed, so that you do not have to change `cert` locations.
+
+[NOTE]
+====
+When placing these into the Neo4j structure, ensure to create `symlinks` and not copy of the files. 
+By doing so, you can take advantage of the refresh abilities that might be wanted later.
+====
+
+Here are the steps to be followed:
+
+. Adjust the permissions on the certificates directory by changing group ownership to `neo4j` and make them readable by Neo4j.
+. Set up `symlinks` and the directory structure Neo4j expects. +
++
+[WARNING]
+====
+Follow the right instructions for your Neo4j version. 
+Everything up until this point will work with both Neo4j 3.5 and Neo4j 4+.
+Make sure to follow *only one set* of the following two blocks for your Neo4j version, because in version 4+ directory structure and config have changed.
+====
+
+== Neo4j 5 instructions
+
+Since the 4.x series, there is a directory of certificates per "connector" (bolt, HTTPS, cluster):
+
+[source, c-shell, role=noplay]
+----
+cd /var/lib/neo4j/certificates
+----
+
+. From there, move old default content into a backup directory:
++
+[source, c-shell, role=noplay]
+----
+sudo mkdir bak
+----
++
+Or for `certsource` in bolt cluster https, use:
++
+[source, c-shell, role=noplay]
+----
+sudo mv $certsource bak/
+----
+
+. Export `MY_DOMAIN=graph.somehost.com` for `certsource` in bolter cluster https:
++
+[source, c-shell, role=noplay]
+----
+sudo ln -s /etc/letsencrypt/live/$MY_DOMAIN/fullchain.pem $certsource/neo4j.cert
+sudo ln -s /etc/letsencrypt/live/$MY_DOMAIN/privkey.pem $certsource/neo4j.key
+sudo mkdir $certsource/trusted
+sudo ln -s /etc/letsencrypt/live/$MY_DOMAIN/fullchain.pem $certsource/trusted/neo4j.cert ;
+----
+
+. Make sure everything is readable to the database:
++
+[source, c-shell, role=noplay]
+----
+sudo chgrp -R neo4j *
+sudo chmod -R g+rx *
+----
+
+. Make adjustments to the new Neo4j configuration file:
++
+[NOTE]
+====
+Keep in mind that if you are using cloud VM images, this is `/etc/neo4j/neo4j.template`.
+In other environments, it is `/etc/neo4j/neo4j.conf`.
+====
++
+[source, c-shell, role=noplay]
+----
+dbms.default_listen_address=0.0.0.0
+dbms.default_advertised_address=your.hostname.com
+# BOLT Connector
+dbms.connector.bolt.tls_level=REQUIRED
+dbms.ssl.policy.bolt.enabled=true
+dbms.ssl.policy.bolt.private_key=/var/lib/neo4j/certificates/bolt/neo4j.key
+dbms.ssl.policy.bolt.public_certificate=/var/lib/neo4j/certificates/bolt/neo4j.cert
+dbms.ssl.policy.bolt.client_auth=NONE
+# HTTPS connector
+dbms.connector.https.enabled=true
+dbms.ssl.policy.https.enabled=true
+dbms.ssl.policy.https.client_auth=NONE
+dbms.ssl.policy.https.private_key=/var/lib/neo4j/certificates/https/neo4j.key
+dbms.ssl.policy.https.public_certificate=/var/lib/neo4j/certificates/https/neo4j.cert
+# Directories
+dbms.ssl.policy.bolt.base_directory=/var/lib/neo4j/certificates/bolt
+dbms.ssl.policy.https.base_directory=/var/lib/neo4j/certificates/https
+----
++
+You can find a complete reference about these configurations in the xref:security/ssl-framework.adoc[Neo4j SSL Framework] documentation.
+
+. Restart Neo4j after adjusting the configurations:
++
+[source, c-shell, role=noplay]
+----
+sudo systemctl restart neo4j
+----
+
+== Clusters instructions
+
+If you are using a Neo4j Enterprise causal cluster the xref:/tutorial/tutorial-ssl-certificate.adoc#_neo4j_5_instructions[instructions] are the same, except that you have to do this once per machine in the cluster.
+You also need to verify that each machine has a *different address or hostname* that it advertises, so that routing client queries will work correctly.
+
+Another difference is that in the Neo4j 5 configuration section, you will also need to set up the connector for "cluster" rather than just bolt and https in order to ensure that intra-cluster communication is secured using the same certification.
+
+== Troubleshooting
+
+A very important thing about SSL certificates is that they prove a server's identity by a domain name. 
+In this tutorial, suppose you request a certificate for `mygraph.mycompany.com`. 
+That certificate proves that machine is secure _when addressed by that name_.
+
+However, users might SSH into that box and then run:
+
+[source, c-shell, role=noplay]
+----
+cypher-shell -a neo4j+s://localhost:7687
+----
+
+[NOTE]
+====
+Take note of the hostname. 
+====
+
+Here you are asking for a secure connection to `localhost`.
+This is going to fail validation, because when connected, you will get proof that the server is `mygraph.mycompany.com`, and cypher-shell will fail the connect because it is not `localhost`.
+
+Further, you might see something like this in Neo4j's `debug.log`:
+
+[source, role=noplay]
+----
+022-02-15 13:22:27.498+0000 ERROR [o.n.b.t.TransportSelectionHandler] Fatal error occurred when initialising pipeline: [id: 0x00ceb907, L:/127.0.0.1:7687 ! R:/127.0.0.1:37498]
+io.netty.handler.codec.DecoderException: javax.net.ssl.SSLHandshakeException: Received fatal alert: certificate_unknown
+(...)
+Caused by: javax.net.ssl.SSLHandshakeException: Received fatal alert: certificate_unknown
+----
+
+This is the error on the server side showing that certificate validation failed. 
+To fix that, address the server *by its verified name* and not by a bare IP address or different hostname.
+This will permit the validation to succeed.
+
+== Renewing certificates on a schedule
+
+By running `certbot` with a renew flag, you can update certificates to push out the expiry date.
+This can be done, for example, monthly, via a cron job.
+
+You can check if there are no errors by running:
+
+[source, c-shell, role=noplay]
+----
+sudo certbot renew --dry-run
+----
+
+One of the advantages of using a `symlink` structure is that links are always pointing to the certificates in the "live" directory, which themselves are `symlinks` to whatever the latest `certbot` has created.
+For this reason, certificates are automatically kept fresh with `certbot`.
+
+[NOTE]
+====
+Keep in mind that for the challenge/response, you need to keep port 80 open for the periodic renewal to function.
+====
+
+== Optional configurations
+
+* If you are using certificates and SSL, you should strongly consider disabling HTTP access on port 7474 to your Neo4j instance. 
+* Though you may wish to configure Neo4j's ports to use port 443 for HTTPS rather than the usual port 7473, this just makes it more convenient for users to hit your instance by going to https://mycool.host.name/.
