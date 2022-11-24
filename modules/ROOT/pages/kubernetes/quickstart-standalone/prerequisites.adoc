@@ -76,7 +76,6 @@ Make sure you complete the AWS configuration step (https://docs.aws.amazon.com/c
 [source, shell]
 ----
 export AWS_DEFAULT_REGION="eu-west-1"
-export AWS_AVAILABILITY_ZONE="eu-west-1c"
 ----
 . If you do not have an AWS Elastic Kubernetes Service (EKS) cluster, you can create a single-node one using the following command:
 +
@@ -93,8 +92,37 @@ ssh-keygen -t rsa -C "your-name@example.com"
 +
 [source, shell]
 ----
-eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --node-zones "${AWS_AVAILABILITY_ZONE}" --nodes-min 1 --nodes-max 2 --node-type c4.xlarge --nodes 1 --node-volume-size 10 --ssh-access --with-oidc
+eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --nodes-min 1 --nodes-max 2 --node-type c4.xlarge --nodes 1 --node-volume-size 10 --ssh-access --with-oidc
 ----
+. Create an IAM role (e.g., `AmazonEKS_EBS_CSI_DriverRole`) and attach the required AWS-managed policy to it (e.g., `AmazonEBSCSIDriverPolicy`).
++
+[source, shell]
+----
+eksctl create iamserviceaccount \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster my-neo4j-eks-cluster \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --role-only \
+  --role-name AmazonEKS_EBS_CSI_DriverRole
+----
+
+. Add the EBS CSI Driver as an Amazon EKS add-on to your cluster:
++
+[source, shell]
+----
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster my-neo4j-eks-cluster \
+  --service-account-role-arn arn:aws:iam::<aws-account-id>:role/AmazonEKS_EBS_CSI_DriverRole \
+  --force
+----
++
+[NOTE]
+====
+Make sure to replace `<aws-account-id>` with your AWS account ID.
+====
 . Configure `kubectl` to use your EKS cluster using:
 +
 [source, shell]
@@ -117,33 +145,28 @@ az configure --defaults group=<MyResourceGroup>
 az configure --defaults location=<MyAzureLocation>
 ----
 +
-[NOTE]
-====
-If you do not have an AKS cluster, follow the steps to create a single-node one.
-
-. Create a cluster by running:
+. If you do not have an AKS cluster, follow the steps to create a single-node one.
+.. Create a cluster by running:
 +
 [source, shell]
 ----
 az aks create --name my-neo4j-aks-cluster --node-count=1
 ----
-
-. Configure `kubectl` to use your AKS cluster using:
+.. Configure `kubectl` to use your AKS cluster using:
 +
 [source, shell]
 ----
 az aks get-credentials --name my-neo4j-aks-cluster --admin
 ----
-====
 ======
 
 [.include-with-docker-desktop]
 ======
 
-* Install Docker Desktop for macOS.
+. Install Docker Desktop for macOS.
 For more information, see link:https://docs.docker.com/docker-for-mac/install/[Docker official documentation].
-* Enable the Docker Desktop Kubernetes engine.
+. Enable the Docker Desktop Kubernetes engine.
 For more information, see link:https://docs.docker.com/desktop/kubernetes/[Docker official documentation].
-* Verify that you do not have a running instance of Neo4j (e.g., via Neo4j Desktop or Neo4j Browser) to avoid port clashes.
+. Verify that you do not have a running instance of Neo4j (e.g., via Neo4j Desktop or Neo4j Browser) to avoid port clashes.
 ======
 =====
