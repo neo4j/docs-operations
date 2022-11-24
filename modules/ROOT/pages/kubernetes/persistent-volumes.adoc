@@ -1,6 +1,8 @@
 :description: This section describes the volume mounts created by the Neo4j Helm charts and the `PersistentVolume` types that can be used.
 [[persistent-volumes]]
-= Volume mounts and persistent volumes with the Neo4j Helm charts 
+= Volume mounts and persistent volumes with the Neo4j Helm charts
+
+Neo4j Helm chart uses volume mounts and persistent volumes to manage the storage of data and other Neo4j files. 
 
 [[volume-mounts]]
 == Volume mounts
@@ -14,7 +16,7 @@ The Neo4j Helm chart creates the following volume mounts:
 * `import` mounted at _/import_
 * `licenses` mounted at _/licenses_
 * `logs` mounted at _/logs_
-* `metrics` mounted at _/metrics_ (Neo4j Community Edition does not generate `metrics`)
+* `metrics` mounted at _/metrics_ (Neo4j Community Edition does not generate `metrics`.)
 
 It is also possible to specify a `plugins` volume mount (mounted at _/plugins_), but this is not created by the default Helm charts.
 For more information, see xref:kubernetes/configuration.adoc#plugins-volume[Add plugins using a plugins volume].
@@ -33,15 +35,16 @@ Some PV types are not suitable for use with Neo4j at all.
 The volume type used for the `data` volume mount is particularly important.
 Neo4j supports the following PV types for the `data` volume mount:
 
-* `awsElasticBlockStore`
-* `azureDisk`
-* `gcePersistentDisk`
+* `persistentVolumeClaim`
 * `hostPath` when using Docker Desktop footnote:[Not recommended because of inconsistencies in Docker Desktop handling of `hostPath` volumes.].
 
-Neo4j `data` volume mounts do not support:
+Neo4j `data` volume mount does not support `azureFile` and `nfs`.
 
-* `azureFile`
-* `nfs`
+[NOTE]
+====
+`awsElasticBlockStore`, `azureDisk`, `gcePersistentDisk` are now https://kubernetes.io/docs/concepts/storage/volumes/[deprecated volume types] in Kubernetes and their use is no longer supported by the Neo4j Helm chart.
+If you currently use one of these volume types, consult your Kubernetes vendor's documentation on migrating to Container Storage Interface (CSI) driver-based storage.
+====
 
 For volume mounts other than the `data` volume mount, generally, all PV types are presumed to work.
 
@@ -56,11 +59,37 @@ It is also not recommended to use an HDD or cloud storage, such as AWS S3 mounte
 [[mounts-volumes-mapping]]
 == Mapping volume mounts to persistent volumes
 
-By default, the Neo4j Helm chart uses a single PV, named `data`, to support all charts' volume mounts.
+By default, the Neo4j Helm chart uses a single PV, named `data`, to support volume mounts.
 
 The volume used for each volume mount can be changed by modifying the `volumes.<volume name>` object in the Helm chart values.
 
 The Neo4j Helm chart `volumes` object supports different modes:
+
+=== `mode: dynamic` label:Recommended[]
+
+Description::
+Dynamic volumes are recommended for most production workloads due to ease of management.
+The volume mount is backed by a PV that Kubernetes dynamically provisions using a dedicated `StorageClass`.
+The `StorageClass` is specified in the `storageClassName` field.
+
+Example::
+The data volume uses a dedicated storage class:
++
+.storage-class-values.yaml
+[source, properties]
+----
+neo4j:
+  name: standalone-with-storage-class
+volumes:
+  data:
+    mode: dynamic
+    dynamic:
+      storageClassName: "neo4j-data"
+      requests:
+        storage: 10Gi
+----
++ 
+See <<dynamic-pv-mode>> for more information.
 
 === `mode: share`
 
@@ -96,37 +125,13 @@ volumes:
       requests:
         storage: 10Gi
 ----
-
++
 [NOTE]
 ====
-For the `data` volume, if `requests.storage` is not set, `defaultStorageClass` will default to a `10Gi` volume.
+For the `data` volume, if `requests.storage` is not set, `defaultStorageClass` defaults to a `10Gi` volume.
 For all other volumes, `defaultStorageClass.requests.storage` must be set explicitly when using `defaultStorageClass` mode.
 ====
 
-=== `mode: dynamic`
-
-Description::
-The volume mount is backed by a PV that Kubernetes dynamically provisions using the specified `StorageClass`.
-
-Example::
-A dynamically provisioned `import` volume with a size of `1Ti` using the `neo4j` storage class.
-+
-[source, properties]
-----
-volumes:
-  import:
-    mode: dynamic
-    dynamic:
-      storageClassName: "neo4j"
-      requests:
-        storage: 1Ti
-----
-
-[NOTE]
-====
-For the `data` volume, if `requests.storage` is not set, `dynamic` will default to a `100Gi` volume.
-For all other volumes, `dynamic.requests.storage` must be set explicitly when using `dynamic` mode.
-====
 
 
 === `mode: volume`
@@ -136,36 +141,17 @@ A complete Kubernetes `volume` object can be specified for the volume mount.
 Generally, volumes specified in this way have to be manually provisioned.
 +
 `volume` can be any valid Kubernetes volume type.
-This mode can be used in a variety of ways:
+This mode is typically used to mount a pre-existing Persistent Volume Claim (PVC).
 +
-* Attach an existing PersistentVolume by name.
-* Attach cloud disks/volumes, e.g., `gcePersistentDisk`, `azureDisk`, or `awsElasticBlockStore` without creating Kubernetes PersistentVolumes.
-* Attach the contents of a `ConfigMap` or `Secret` (as a read-only volume).
-+
-For details of how to specify `volume` objects, see link:https://kubernetes.io/docs/concepts/storage/volumes/[the Kubernetes documentation].
-
-Example - mount an AWS EBS volume::
-The `data` volume mount, backed by the specified EBS volume.
-When this method is used, the EBS volume must already exist.
-+
-[source, properties]
-----
-volumes:
-  data:
-    mode: volume
-    volume:
-      awsElasticBlockStore:
-        volumeID: "vol-0795be227aff63b2a"
-        fsType: ext4
-----
+For details on how to specify `volume` objects, see link:https://kubernetes.io/docs/concepts/storage/volumes/[the Kubernetes documentation].
 
 Set file permissions on mounted volumes::
-The Neo4j helm chart supports an additional field not present in normal Kubernetes `volume` objects: `setOwnerAndGroupWritableFilePermissions: true|false`.
+The Neo4j Helm chart supports an additional field not present in normal Kubernetes `volume` objects: `setOwnerAndGroupWritableFilePermissions: true|false`.
 If set to `true`, an `initContainer` will be run to modify the file permissions of the mounted volume, so that the contents can be written and read by the Neo4j process.
 This is to help with certain volume implementations that are not aware of the `SecurityContext` set on pods using them.
 
 Example - reference an existing PersistentVolume::
-The `backups` volume mount, backed by the specified PVC.
+The `backups` volume mount is backed by the specified PVC.
 When this method is used, the `persistentVolumeClaim` object must already exist.
 +
 [source, properties]
@@ -174,7 +160,6 @@ volumes:
   backups:
     mode: volume
     volume:
-      setOwnerAndGroupWritableFilePermissions: true
       persistentVolumeClaim:
         claimName: my-neo4j-pvc
 ----
@@ -182,13 +167,13 @@ volumes:
 === `mode: selector`
 
 Description::
-The volume to use is chosen from the existing PVs based on the provided `selector` object and a PVC, which is dynamically generated.
+The volume to use is chosen from the existing PVs based on the provided `selector` object and a PVC that is dynamically generated.
 +
 If no matching PVs exist, the Neo4j pod will be unable to start.
 To match, a PV must have the specified `StorageClass`, match the label `selectorTemplate`, and have sufficient storage capacity to meet the requested storage amount.
 
 Example::
-The `data` volume, chosen from the available volumes with the `neo4j` storage class and the label `developer: alice`.
+The `data` volume is chosen from the available volumes with the `neo4j` storage class and the label `developer: alice`.
 +
 [source, properties]
 ----
@@ -206,7 +191,7 @@ volumes:
 
 [NOTE]
 ====
-For the `data` volume, if `requests.storage` is not set, `selector` will default to a `100Gi` volume.
+For the `data` volume, if `requests.storage` is not set, `selector` defaults to a `100Gi` volume.
 For all other volumes, `selector.requests.storage` must be set explicitly when using `selector` mode.
 ====
 
@@ -214,9 +199,25 @@ For all other volumes, `selector.requests.storage` must be set explicitly when u
 
 Description::
 A complete Kubernetes `volumeClaimTemplate` object is specified for the volume mount.
-Generally, volumes specified in this way are dynamically provisioned.
-For details of how to specify `volumeClaimTemplate` objects, see link:https://kubernetes.io/docs/home/[the Kubernetes documentation].
+Volumes specified in this way are dynamically provisioned.
 
+Example - provision Neo4j storage using a volume claim template::
+The data volume uses a dynamically provisioned PVC from the `default` storage class.
++
+[source,properties]
+----
+volumes:
+  data:
+    mode: volumeClaimTemplate
+    volumeClaimTemplate:
+      storageClassName: "default"
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+----
++
 [NOTE]
 ====
 In all cases, do not forget to set the `mode` field when customizing the volumes object.
@@ -226,79 +227,467 @@ If not set, the default `mode` is used, regardless of the other properties set o
 [[persistent-volume-use]]
 == Provision persistent volumes with Neo4j Helm chart
 
-With the Neo4j Helm charts, you can provision a PV manually or dynamically, using the default or a custom `StorageClass`.
+[[dynamic-pv]]
+=== Provision persistent volumes dynamically
 
-* xref:kubernetes/persistent-volumes.adoc#static-pv[Manual provisioning of persistent volumes]. label:Recommended[] label:Default[] +
-Must be labeled with an `app` label that matches the release name of your Neo4j Helm deployment.
-* Dynamic provisioning using the default `StorageClass`.
-Recommended only for small-scale development work.
-* Dynamic provisioning using a dedicated `StorageClass`.
-
-[[static-pv]]
-=== Provision persistent volumes manually
-
-You provision a PV for Neo4j to use by explicitly creating it (for example, using `kubectl create -f persistentVolume.yaml`) before installing the Neo4j Helm release.
-If no suitable PV exists, the Neo4j pod will not start.
-
-Why prefer manual provisioning?::
-
-* Manual provisioning provides the strongest protection against the automatic removal of volumes containing critical data.
-* The performance of Neo4j is very dependent on the latency, IOPS capacity, and throughput of the storage it is using.
-Manual provisioning is the best way to ensure the underlying storage is configured for Neo4j performance.
-* Explicitly configuring the underlying storage before installing Neo4j is worthwhile because changing the underlying storage after installation while preserving the data stored in Neo4j, is difficult and may cause significant Neo4j downtime.
-
-[[static-pv-link-release]]
-==== Link a Neo4j Helm release to the manually provisioned volumes
-
-A Neo4j Helm release uses only manually provisioned PVs that have:
-
-* storageClassName set to `manual`
-* An `app` label -- set in their metadata, which matches the name of the Neo4j Helm release.
-* Sufficient storage capacity -- the PV capacity must be greater than or equal to the value of `volumes.data.selector.requests.storage` set for the Neo4j Helm release (default is `100Gi`).
-
-For example, if the release name is `my-neo4j-release` and the requested storage is `100Gi`, then the PV object must have `storageClassName`, `app` label, and `capacity` as shown in this example:
-
-[source, properties]
-----
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  labels:
-    app: "my-neo4j-release"
-spec:
-  capacity:
-    Storage: 100Gi
-  storageClassName: "manual"
-----
-
-Then, you install the Neo4j release using the same name:
+With the Neo4j Helm chart, you can provision a PV dynamically using the default or a custom `StorageClass`.
+To see a list of available storage classes in your Kubernetes cluster, run the following command:
 
 [source, shell]
 ----
-helm install "my-neo4j-release" neo4j/neo4j-standalone
+kubectl get storageclass
 ----
 
-[[static-pv-config-helm]]
-==== Configure the Neo4j Helm release for manual provisioning
+[[dynamic-pv-mode]]
+==== Provision a PV using a dedicated `StorageClass` label:Recommended[]
 
-The Neo4j helm chart uses manual provisioning by default, so it is unnecessary to set any chart values explicitly.
-The following default values are used for manual provisioning:
+For production workloads, it is recommended to create a dedicated storage class for Neo4j, which uses the `Retain` reclaim policy.
+This is to avoid data loss when disks are deleted after removing the persistent volume resource.
 
+Example: Deploy Neo4j using a dedicated `StorageClass`::
+The following example shows how to deploy a Neo4j server with a dynamically provisioned PV that uses a dedicated `storageClass`.
+
+. Create a dedicated storage class that uses the `Retain` reclaim policy:
++
+[.tabbed-example]
+==========
+[.include-with-gke]
+======
+. Create a storage class in GKE that uses the `Retain` reclaim policy and `pd-ssd` high-performance SSD disks:
++
+[source, shell]
+----
+cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: neo4j-data
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-ssd
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
+----
+. Check the storage class is created:
++
+[source, shell]
+----
+kubectl get storageclass neo4j-data
+----
++
+[source, role=noheader]
+----
+NAME                 PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+neo4j-data           pd.csi.storage.gke.io   Retain          WaitForFirstConsumer   true                   7s
+----
+======
+[.include-with-aws]
+======
+. Create a storage class in EKS that uses the `Retain` reclaim policy and `gp3` high-performance SSD disks:
++
+[NOTE]
+====
+The EBS CSI Driver addon is required to provision EBS disks in EKS clusters.
+See the https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html[AWS documentation] for instructions on installing the driver.
+====
++
+[source, shell]
+----
+cat <<EOF | kubectl apply -f -
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: neo4j-data
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+EOF
+----
+. Check the storage class is created:
++
+[source, shell]
+----
+kubectl get storageclass neo4j-data
+----
++
+[source, role=noheader]
+----
+NAME            PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+neo4j-data      ebs.csi.aws.com         Retain          WaitForFirstConsumer   true                   2m41s
+----
+======
+[.include-with-azure]
+======
+. Create a storage class in GKE that uses the `Retain` reclaim policy and `pd-ssd` high-performance SSD disks:
++
+[source, shell]
+----
+cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: neo4j-data
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: Premium_LRS
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
+----
+. Check the storage class is created:
++
+[source, shell]
+----
+kubectl get storageclass neo4j-data
+----
++
+[source, role=noheader]
+----
+NAME                 PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+neo4j-data           disk.csi.azure.com      Retain          WaitForFirstConsumer   true                   7s
+----
+======
+==========
+
+. Install a Neo4j server with a data volume that uses the new storage class:
+.. Create a file _storage-class-values.yaml_ that configures the data volume to use the new storage class:
++
+.storage-class-values.yaml
+[source, properties]
+----
+neo4j:
+  name: standalone-with-storage-class
+volumes:
+  data:
+    mode: dynamic
+    dynamic:
+      storageClassName: "neo4j-data"
+      requests:
+        storage: 10Gi
+----
+.. Install a single Neo4j server:
++
+[source, shell]
+----
+helm install standalone-with-storage-class neo4j -f storage-class-values.yaml
+----
+.. When the installation completes, verify that a PVC has been created:
++
+[source, shell]
+----
+kubectl get pvc
+----
++
+[source,role=noheader]
+----
+NAME                                   STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+data-standalone-with-storage-class-0   Bound    pvc-5d400f06-f99f-43ac-bf37-6079d692eaac   10Gi       RWO            neo4j-data     23m
+----
+
+. Clean up the resources:
++
+The storage class uses the `Retain` retention policy, meaning the disk will *not* be deleted after removing the PVC. To delete the disk, patch the PVC to use the `Delete` retention policy and delete the PVC:
++
+[source, shell]
+----
+export pv_name=$(kubectl get pvc data-standalone-with-storage-class-0 -o jsonpath='{.spec.volumeName}')
+
+kubectl patch pv $pv_name -p '{"spec":{"persistentVolumeReclaimPolicy": "Delete"}}'
+
+kubectl delete pvc data-standalone-with-storage-class-0
+----
++
+[NOTE]
+====
+For the `data` volume, if `requests.storage` is not set, `dynamic` defaults to a `100Gi` volume.
+For all other volumes, `dynamic.requests.storage` must be set explicitly when using `dynamic` mode.
+====
+
+[[dynamic-pv-default]]
+==== Provision a PV using `defaultStorageClass`
+
+Using the default `StorageClass` of the running Kubernetes cluster is the quickest way to spin up and run Neo4j for simple tests, handling small amounts of data.
+However, it is not recommended for large amounts of data, as it may lead to performance issues.
+
+Example: Deploy Neo4j using `defaultStorageClass`::
+The following example shows how to deploy a Neo4j server with a dynamically provisioned PV that uses the default `StorageClass`.
++
+. Create a file _default-storage-class-values.yaml_ that configures the data volume to use the default `StorageClass` and a storage size `100Gi`:
++
+.storage-class-values.yaml
 [source, properties]
 ----
 volumes:
   data:
-    mode: "selector"
-    selector:
-      storageClassName: "manual"
+    mode: "defaultStorageClass"
+    defaultStorageClass:
       requests:
         storage: 100Gi
 ----
+. Install a single Neo4j server:
++
+[source, shell]
+----
+helm install standalone-with-default-storage-class neo4j -f default-storage-class-values.yaml
+----
 
-With this method, a PVC is dynamically generated for the manually provisioned PV.
+[[static-pv]]
+=== Provision persistent volumes manually
+
+Optionally, the Helm chart can use manually created disks for Neo4j storage.
+This installation option has more steps than using dynamic volumes, but it does provide more control over how disks are provisioned.
+
+The instructions for the manual provisioning of PVs vary according to the type of PV being used and the underlying infrastructure.
+In general, there are two steps:
+
+. Create the disk/volume to be used for storage in the underlying infrastructure.
+For example:
+* If using a `csi` volume -- create the Persistent Disk using the cloud provider CLI or console.
+* If using a `hostPath` volume -- on the host node, create the path (directory).
+
+. Create a PV in Kubernetes that references the underlying resource created in step 1.
+.. Ensure that the created PV’s `app` label matches the name of the Neo4j Helm release.
+.. Ensure that the created PV’s `capacity.storage` matches the storage available on the underlying infrastructure.
+
+If no suitable PV or PVC exists, the Neo4j pod will not start.
+
+[[static-pv-link-release]]
+==== Provision a PV for Neo4j Storage using a PV selector
+
+The Neo4j StatefulSet can select a persistent volume to use based on its labels.
+A Neo4j Helm release uses only manually provisioned PVs that have:
+
+* `storageClassName` that uses the provisioner `kubernetes.io/no-provisioner`.
+* An `app` label -- set in their metadata, which matches the name of the `neo4j.name` value of the Helm installation.
+* Sufficient storage capacity -- the PV capacity must be greater than or equal to the value of `volumes.data.selector.requests.storage` set for the Neo4j Helm release (default is `100Gi`).
+
+[NOTE]
+====
+The neo4j/neo4j-persistent-volume Helm chart provides a convenient way to provision the persistent volume.
+====
+
+Example: Deploy Neo4j using a selector volume::
+The following example shows how to deploy Neo4j using a selector volume.
++
+[.tabbed-example]
+==========
+[.include-with-gke]
+======
+. Create a file _persistent-volume-selector.yaml_ that configures the data volume to use a selector:
++
+.storage-class-values.yaml
+[source, properties]
+----
+neo4j:
+  name: volume-selector
+volumes:
+  data:
+    mode: selector
+    selector:
+      storageClassName: "manual"
+      accessModes:
+        - ReadWriteOnce
+      requests:
+        storage: 10Gi
+----
+. Export environment variables to be used by the commands:
++
+[source, shell]
+----
+export RELEASE_NAME=volume-selector
+export GCP_ZONE="$(gcloud config get compute/zone)"
+export GCP_PROJECT="$(gcloud config get project)"
+----
+. Create the disks to be used by the persistent volume:
++
+[source, shell]
+----
+gcloud compute disks create --size 10Gi --type pd-ssd "${RELEASE_NAME}"
+----
++
+. Use the _neo4j/neo4j-persistent-volume_ chart to configure the persistent volume. 
+This command will create a persistent volume and a manual storage class that uses the `kubernetes.io/no-provisioner` provisioner.
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}"-disk neo4j/neo4j-persistent-volume \
+       --set neo4j.name="${RELEASE_NAME}" \
+       --set data.driver=pd.csi.storage.gke.io \
+       --set data.storageClassName="manual" \
+       --set data.reclaimPolicy="Delete" \
+       --set data.createPvc=false \
+       --set data.createStorageClass=true \
+       --set data.volumeHandle="projects/${GCP_PROJECT}/zones/${GCP_ZONE}/disks/${RELEASE_NAME}" \
+       --set data.capacity.storage=10Gi
+----
+. Now install Neo4j using the `persistent-volume-selector.yaml` created earlier:
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}" neo4j/neo4j -f persistent-volume-selector.yaml
+----
+. Clean up the helm installation and disks created for the example:
++
+[source, shell]
+----
+helm uninstall ${RELEASE_NAME} ${RELEASE_NAME}-disk
+kubectl delete pvc data-${RELEASE_NAME}-0
+gcloud compute disks delete ${RELEASE_NAME} --quiet
+----
+======
+[.include-with-aws]
+======
+The EBS CSI Driver addon is required to provision EBS disks in EKS clusters.
+You can run the command `kubectl get daemonset ebs-csi-node -n kube-system` to check if it is installed
+See the https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html[AWS Documentation] for instructions on installing the driver.
+
+. Create a file `persistent-volume-selector.yaml` that configures the data volume to use a selector:
++
+.storage-class-values.yaml
+[source, properties]
+----
+neo4j:
+  name: volume-selector
+volumes:
+  data:
+    mode: selector
+    selector:
+      storageClassName: "manual"
+      accessModes:
+        - ReadWriteOnce
+      requests:
+        storage: 10Gi
+----
+. Export environment variables to be used by the commands:
++
+[source, shell]
+----
+readonly RELEASE_NAME=volume-selector
+readonly AWS_ZONE={availability zone of EKS cluster}
+----
+. Create the disks to be used by the persistent volume:
++
+[source, shell]
+----
+export volumeId=$(aws ec2 create-volume \
+                    --availability-zone="${AWS_ZONE}" \
+                    --size=10 \
+                    --volume-type=gp3 \
+                    --tag-specifications 'ResourceType=volume,Tags=[{Key=volume,Value='"${RELEASE_NAME}"'}]' \
+                    --no-cli-pager \
+                    --output text \
+                    --query VolumeId)
+----
+. Use the _neo4j/neo4j-persistent-volume_ chart to configure the persistent volume.
+This command will create a persistent volume and a manual storage class that uses the `kubernetes.io/no-provisioner` provisioner.
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}"-disk neo4j-persistent-volume \
+    --set neo4j.name="${RELEASE_NAME}" \
+    --set data.driver=ebs.csi.aws.com \
+    --set data.reclaimPolicy="Delete" \
+    --set data.createPvc=false \
+    --set data.createStorageClass=true \
+    --set data.volumeHandle="${volumeId}" \
+    --set data.capacity.storage=10Gi
+----
+. Now install Neo4j using the `persistent-volume-selector.yaml` created earlier:
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}" neo4j/neo4j -f persistent-volume-selector.yaml
+----
+. Clean up the helm installation and disks created for the example:
++
+[source, shell]
+----
+helm uninstall ${RELEASE_NAME} ${RELEASE_NAME}-disk
+    kubectl delete pvc data-${RELEASE_NAME}-0
+    aws ec2 delete-volume --volume-id ${volumeId}
+
+----
+======
+[.include-with-azure]
+======
+. Create a file `persistent-volume-selector.yaml` that configures the data volume to use a selector:
++
+.storage-class-values.yaml
+[source, properties]
+----
+neo4j:
+  name: volume-selector
+volumes:
+  data:
+    mode: selector
+    selector:
+      storageClassName: "manual"
+      accessModes:
+        - ReadWriteOnce
+      requests:
+        storage: 10Gi
+----
+. Export environment variables to be used by the commands:
++
+[source, shell]
+----
+readonly AKS_CLUSTER_NAME={AKS Cluster name}
+readonly AZ_RESOURCE_GROUP={Resource group of cluster}
+readonly AZ_LOCATION={Location of cluster}
+----
+. Create the disks to be used by the persistent volume:
++
+[source, shell]
+----
+export node_resource_group=$(az aks show --resource-group "${AZ_RESOURCE_GROUP}" --name "${AKS_CLUSTER_NAME}" --query nodeResourceGroup -o tsv)
+export disk_id=$(az disk create --name "${RELEASE_NAME}" --size-gb "10" --max-shares 1 --resource-group "${node_resource_group}" --location ${AZ_LOCATION} --output tsv --query id)
+----
+. Use the _neo4j/neo4j-persistent-volume_ chart to configure the persistent volume.
+This command will create a persistent volume and a manual storage class that uses the `kubernetes.io/no-provisioner` provisioner.
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}"-disk neo4j-persistent-volume \
+    --set neo4j.name="${RELEASE_NAME}" \
+    --set data.driver=disk.csi.azure.com \
+    --set data.storageClassName="manual" \
+    --set data.reclaimPolicy="Delete" \
+    --set data.createPvc=false \
+    --set data.createStorageClass=true \
+    --set data.volumeHandle="${disk_id}" \
+    --set data.capacity.storage=10Gi
+----
+. Now install Neo4j using the `persistent-volume-selector.yaml` created earlier:
++
+[source, shell]
+----
+helm install "${RELEASE_NAME}" neo4j/neo4j -f persistent-volume-selector.yaml
+----
+. Clean up the helm installation and disks created for the example:
++
+[source, shell]
+----
+helm uninstall ${RELEASE_NAME} ${RELEASE_NAME}-disk
+kubectl delete pvc data-${RELEASE_NAME}-0
+az disk delete --name ${RELEASE_NAME} -y
+----
+======
+==========
+
+[[static-pv-config-helm]]
+==== Provision a PVC for Neo4j Storage
 
 An alternative method for manual provisioning is to use a manually provisioned PVC.
 This is supported by the Neo4j Helm chart using the `volume` mode.
+
+The _neo4j/neo4j-persistent-volume_ Helm chart can be used to create a PV and PVC for a manually provisioned disk.
+A full example can be found in the https://github.com/neo4j/helm-charts/tree/feature/5.0-release/examples/persistent-volume-manual[Neo4j GitHub repository]
 For example, to use a pre-existing PVC called `my-neo4j-pvc` set these values:
 
 [source, properties]
@@ -311,37 +700,10 @@ volumes:
         claimName: my-neo4j-pvc
 ----
 
-[[static-pv-config]]
-==== Configure manual provisioning of persistent volumes
-
-The instructions for manually provisioning PVs vary according to the type of PV being used and the underlying infrastructure.
-In general, there are two steps:
-
-. Create the disk/volume to be used for storage in the underlying infrastructure.
-For example:
-* If using a `gcePersistentDisk` volume -- in Google Compute Engine, create the Persistent Disk.
-* If using a `hostPath` volume -- on the host node, create the path (directory).
-
-. Create a PV in Kubernetes that references the underlying resource created in step 1.
-.. Ensure that the created PV’s `app` label matches the name of the Neo4j Helm release.
-.. Ensure that the created PV’s `capacity.storage` matches the storage available on the underlying infrastructure.
-
-[NOTE]
-====
-The performance of Neo4j is very dependent on the latency, IOPS capacity, and throughput of the storage it is using.
-For the best performance of Neo4j, use the best available disks (e.g., SSD) and set IOPS throttling/quotas to high values.
-For some cloud providers, IOPS throttling is proportional to the size of the volume.
-In these cases, the best performance is achieved by setting the size of the volume based on the desired IOPS rather than the amount required for data storage.
-====
-
-[[static-pv-provision]]
-==== Provision a persistent volume
-
-
 [[static-pv-reuse]]
 ==== Reuse a persistent volume
 
-After uninstalling the Neo4j Helm chart, both the PVC and the PV remain and can be reused by a new install of the helm chart.
+After uninstalling the Neo4j Helm chart, both the PVC and the PV remain and can be reused by a new install of the Helm chart.
 If you delete the PVC, the PV moves into a `Released` status and will not be reusable.
 
 To be able to reuse the PV by a new install of the Neo4j Helm chart, remove its connection to the previous PVC:
@@ -353,60 +715,8 @@ To be able to reuse the PV by a new install of the Neo4j Helm chart, remove its 
 kubectl edit pv <pv-name>
 ----
 +
-. Remove the section `spec.claimRef`.
-
+. Remove the section `spec.claimRef`. +
 The PV goes back to the `Available` status and can be reused by a new install of the Neo4j Helm chart.
-
-[[dynamic-pv]]
-=== Provision persistent volumes dynamically
-
-When using dynamic provisioning, the Neo4j release depends on Kubernetes to create a PV on-demand when Neo4j is installed. +
-For more information on dynamic provisioning, see link:https://kubernetes.io/docs/concepts/storage/dynamic-provisioning/[the Kubernetes official documentation].
-
-Why use dynamic provisioning?::
-Dynamic provisioning of PV for Neo4j is a good choice for development and test environments, where the ease of installation is more important than flexibility in managing the underlying storage and preservation of the stored data in all situations.
-With dynamic provisioning, a Neo4j Helm release uses either a specific Kubernetes `StorageClass` or the default `StorageClass` of the running Kubernetes cluster.
-+
-Using the default `StorageClass` is the quickest way to spin up and run Neo4j for simple tests, handling small amounts of data.
-However, it is not recommended for large amounts of data, as it may lead to performance issues.
-+
-It is recommended to create a dedicated `StorageClass` for Neo4j so that the underlying storage configuration can be specified to match the Neo4j usage as much as possible.
-
-The `volumes` object in the Neo4j _values.yaml_ file is used to configure dynamic provisioning.
-
-[[dynamic-pv-default]]
-==== Use the default `StorageClass` to dynamically provision persistent volumes
-
-To use the default `StorageClass` and a storage size `100Gi`, set the following values:
-
-[source, properties]
-----
-volumes:
-  data:
-    mode: "defaultStorageClass"
-    defaultStorageClass:
-      requests:
-        storage: 100Gi
-----
-
-[[dynamic-pv-custom]]
-==== Use a dedicated `StorageClass` to dynamically provision persistent volumes
-
-To use a dedicated `StorageClass`, you define it in a YAML file and create it using `kubectl create`.
-The permitted specification values depend on the provisioner being used.
-Full details of `StorageClass` specification are covered in the link:https://kubernetes.io/docs/concepts/storage/storage-classes/[Kubernetes official documentation].
-
-.`StorageClass` called `neo4j-storage` that has a storage size `100Gi`
-[source, properties]
-----
-volumes:
-  import:
-    mode: dynamic
-    dynamic:
-      storageClassName: "neo4j-storage"
-      requests:
-        storage: 1Ti
-----
 
 [NOTE]
 ====
@@ -415,4 +725,3 @@ For the best performance of Neo4j, use the best available disks (e.g., SSD) and 
 For some cloud providers, IOPS throttling is proportional to the size of the volume.
 In these cases, the best performance is achieved by setting the size of the volume based on the desired IOPS rather than the amount required for data storage.
 ====
-//TODO: Examples of how to create a StorageClass?
