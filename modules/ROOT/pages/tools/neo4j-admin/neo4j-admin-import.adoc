@@ -416,16 +416,17 @@ The `high_limit` format is available for Enterprise Edition only.
 [[import-tool-incremental]]
 == Incremental import
 
+The `neo4j-admin database import incremental` command imports a large amount of data from CSV files into an existing, non-empty database.
+
 [WARNING]
 ====
 Incremental import needs to be used with care.
 These options should not be used for experimentation.
 
-You will need to append any incremental import command with `--force`.
+You need to append any incremental import command with `--force`.
 
 For more information, please contact Neo4j Professional Services.
 ====
-
 
 [[import-tool-incremental-syntax]]
 === Syntax
@@ -464,14 +465,55 @@ neo4j-admin database import incremental [-h]
                                         <database>
 ----
 
+=== Usage and limitations
+
+The incremental import command can be used to add:
+
+* New nodes with labels and properties.
+* New relationships between existing or new nodes.
+
+The incremental import command cannot be used to:
+
+* Add new properties to existing nodes or relationships.
+* Update or delete properties in nodes or relationships.
+* Update or delete labels in nodes.
+* Delete existing nodes and relationships.
+
+The importer works well on single instances. 
+In clustering environments with multiple copies of the database, the updated database must be reseeded.
+
+
 [[import-tool-incremental-examples]]
 === Examples
+
+There are two ways of importing data incrementally:
+
+* If downtime is not a concern, you can run a single command with the option `--stage=all`.
+This option requires the database to be stopped.
+* If you cannot afford a full downtime of your database, you can run the import in three stages:
+  
+** _prepare_ stage:
++
+During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
+The import command is run with the option `--stage=prepare` and the database must be stopped. 
+  
+** _build_ stage:
++
+During this stage, the import tool imports the data into the database.
+This is the longest stage and you can put the database in read-only mode to allow read access.
+The import command is run with the option `--stage=build`.
+
+** _merge_ stage:
++
+During this stage, the import tool merges the new with the existing data in the database.
+It also updates the affected indexes and upholds the affected uniqueness constraints and property existence constraints.
+The import command is run with the option `--stage=merge` and the database must be stopped.
 
 .Incremental import in a single command
 ====
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1;
+neo4j@system> STOP DATABASE db1 WAIT;
 ...
 $ bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-data/incremental-import/b.csv db1
 ----
@@ -479,32 +521,47 @@ $ bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-d
 
 .Incremental import in stages
 ====
-. The `prepare` stage:
-+
-The database must be stopped in order to run `--stage=prepare`.
+. `prepare` stage:
+.. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+The database must be stopped to run `--stage=prepare`.
 +
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1;
-...
+neo4j@system> STOP DATABASE db1 WAIT;
+----
+.. Run the incremental import command with the `--stage=prepare` option:
++
+[source, shell, role=noplay]
+----
 $ bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/c.csv db1
 ----
-. The `build` stage:
+. `build` stage:
+.. Put the database in read-only mode:
 +
-While the database must be stopped in order to run `--stage=prepare`, you can run `--stage=build` on a started database in read-only mode.
+[source, shell, role=noplay]
+----
+ALTER DATABASE db1 SET ACCESS READ ONLY;
+----
+.. Run the incremental import command with the `--stage=build` option:
 +
 [source, shell, role=noplay]
 ----
 $ bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw-data/incremental-import/c.csv db1
 ----
-. The `merge` stage:
+. `merge` stage:
 +
 It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
 +
+.. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
++
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1;
-...
+neo4j@system> STOP DATABASE db1 WAIT;
+----
+.. Run the incremental import command with the `--stage=merge` option:
++
+[source, shell, role=noplay]
+----
 $ bin/neo4j-admin database import incremental --stage=merge db1
 ----
 ====
