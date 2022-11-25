@@ -38,7 +38,7 @@ That said, even in large graphs, a deadlock can occur if two or more transaction
 | Deleting a node | Node lock
 | Creating a relationship* | If node is sparse: node lock.
 
-If node is dense: node delete prevention lock.
+If node is dense: node delete prevention lock.**
 | Updating a relationship property | Relationship lock
 | Deleting a relationship* | If node is sparse: node lock.
 
@@ -48,7 +48,10 @@ Relationship lock for both sparse and dense nodes.
 |===
 *_Applies for both source nodes and target nodes._
 
-Additional locks are taken to maintain indexes and other internal structures. 
+**_A node is considered dense when it has 50 or more relationships, and sparse when it has less than 50 relationships._
+
+Additional locks are often taken to maintain indexes and other internal structures, depending on how other data in the graph is affected by a transaction. 
+For these additional locks, no assumptions or guarantees can be made with regard to which lock will or will not be taken. 
 
 == Locks and dense nodes
 
@@ -99,10 +102,16 @@ The transaction will be rolled back and terminated. Error: ForsetiClient[transac
 Client[6697] waits for [ForsetiClient[transactionId=6698, clientId=1]]]
 ----
 
+[NOTE] 
+==== 
+The Cypher clause `MERGE` takes locks out of order to ensure uniqueness of the data, and this may prevent Neo4j's internal sorting operations from ordering transactions in a way which avoids deadlocks.
+When possible, users are, therefore, encouraged to use the Cypher clause `CREATE` instead, which does not take locks out of order. 
+====
+
 == Avoiding deadlocks
 
 Most likely, a deadlock will be resolved by retrying the transaction. 
-This will, however, impact the cost of the total throughput of the transaction, so it is useful to know about strategies to avoid deadlocks. 
+This will, however, negatively impact the cost of the total throughput of the transaction, so it is useful to know about strategies to avoid deadlocks. 
 
 Neo4j assists transactions by internally sorting operations.
 However, this internal sorting only applies for the locks taken when creating or deleting relationships.
