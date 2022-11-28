@@ -740,11 +740,11 @@ config:
 Init containers are specialized containers that run before the main containers (in this case, the Neo4j container) in a pod.
 You can use an init container to add plugins that have already been downloaded on an internal file server and are available to you via the internal network.
 
-In the following example a YAML file, called _plugin_initContainer.yaml_ file, configures an init container to download the Apoc plugin from an internal file server to the _/plugins_ directory, which is backed by a persistent volume.
+In the following example a YAML file, called _plugin_initContainer.yaml_ file, configures an init container to download the plugins, in this case `apoc`, from an internal file server to the _/plugins_ directory, which is backed by a persistent volume.
 Then, it deploys a Neo4j standalone server. 
-When the Neo4j container starts, it automatically installs the plugin from the /plugins directory.
+When the Neo4j container starts, it automatically installs the plugins from the /plugins directory.
 
-. Configure what operations the init container runs using the `initContainers` property in the _plugin_initContainer.yaml_ file.
+. Configure what operations the init container should run using the `initContainers` property in the _plugin_initContainer.yaml_ file.
 +
 [NOTE]
 ====
@@ -792,17 +792,17 @@ config:
 
 apoc_config:
   apoc.trigger.enabled: "true"
-  apoc.jdbc.my.url: "jdbc:foo:bar"
+  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
   apoc.import.file.enabled: "true"
 ----
 
-. Deploy a Neo4j standalone server and the init container:
+. Deploy a Neo4j standalone server using the _plugin_initContainer.yaml_ file and the _neo4j/standalone_ Helm chart:
 +
 [source, shell]
 ----
 helm install neo4j neo4j/neo4j-standalone -f ~/path/to/plugin_initContainer.yaml
 ----
-. Verify that the plugin is installed:
+. After the pod changes its status from `Init` to `Running`, verify that the mount has the _apoc.jar_:
 +
 [source, role=noheader]
 ----
@@ -818,8 +818,18 @@ total 21140
 21140 -rw-r--r-- 1 neo4j neo4j 21645102 Nov 28 12:03 apoc.jar
 ----
 +
-When the pod gets into a READY state, the Neo4j container will be using the APOC plugin.
-
+Wait for the pod to change its state to `READY`.
+. Using the `<EXTERNAL-IP>` of the LoadBalancer service, open the Neo4j Browser at _http://<EXTERNAL-IP>:7474/browser_.
+. Use the password that you have configured in the _plugin_initContainer.yaml_ file.
+. Run a query to verify that the Apoc plugin is installed and configured.
+For example, you can use the following query to get the value of your jdbc URL:
++
+[source, shell]
+----
+CALL apoc.config.list() YIELD key, value WHERE key = "apoc.jdbc.neo4j.url" RETURN *;
+----
++
+It should return `"jdbc:foo:bar"` as configured in the `apoc.config`.
 
 [[custom-container]]
 === Add plugins using a custom container image
