@@ -73,12 +73,11 @@ kubeconfig entry generated for my-neo4j-gke-cluster.
 . Install the `aws` command-line interface (CLI) (https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html).
 Make sure you complete the AWS configuration step (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-quickstart.html).
 . Install the `eksctl` command-line interface (CLI) (https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html).
-. All the shell commands in this guide assume that the AWS region and availability zone to use, have been set using the `AWS_DEFAULT_REGION` and `AWS_AVAILABILITY_ZONE` environment variables, for example:
+. All the shell commands in this guide assume that the AWS region to use has been set using the `AWS_DEFAULT_REGION` environment variable, for example:
 +
 [source, shell]
 ----
 export AWS_DEFAULT_REGION="eu-west-1"
-export AWS_AVAILABILITY_ZONE="eu-west-1c"
 ----
 . If you do not have an AWS Elastic Kubernetes Service (EKS) cluster, you can create a multi-node cluster (one node per Neo4j instance) using the following command:
 +
@@ -95,8 +94,36 @@ ssh-keygen -t rsa -C "your-name@example.com"
 +
 [source, shell]
 ----
-eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --node-zones "${AWS_AVAILABILITY_ZONE}" --nodes-min 1 --nodes-max 4 --node-type c4.xlarge --nodes 4 --node-volume-size 10 --ssh-access --with-oidc
+eksctl create cluster --name "my-neo4j-eks-cluster" --region "${AWS_DEFAULT_REGION}" --nodegroup-name "neo4j-nodes" --nodes-min 1 --nodes-max 4 --node-type c4.xlarge --nodes 4 --node-volume-size 10 --ssh-access --with-oidc
 ----
+. Create an IAM role (e.g., `AmazonEKS_EBS_CSI_DriverRole`) and attach the required AWS-managed policy to it (e.g., `AmazonEBSCSIDriverPolicy`):
++
+[source, shell]
+----
+eksctl create iamserviceaccount \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster my-neo4j-eks-cluster \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --role-only \
+  --role-name AmazonEKS_EBS_CSI_DriverRole
+----
+. Add the EBS CSI Driver as an Amazon EKS add-on to your cluster:
++
+[source, shell]
+----
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster my-neo4j-eks-cluster \
+  --service-account-role-arn arn:aws:iam::<aws-account-id>:role/AmazonEKS_EBS_CSI_DriverRole \
+--force
+----
++
+[NOTE]
+====
+Make sure to replace `<aws-account-id>` with your AWS account ID.
+====
 
 . Configure `kubectl` to use your EKS cluster using:
 +
