@@ -111,7 +111,7 @@ docker run --interactive --tty --name <containerID/name> \
 +
 [source, shell]
 ----
-docker exec --interactive --tty <containerID/name> cypher-shell -u neo4j -p neo4j
+docker exec --interactive --tty <containerID/name> cypher-shell -u neo4j -p <password>
 ----
 
 . Retrieve some data.
@@ -139,28 +139,86 @@ neo4j@neo4j> match (n:Actors)-[r]->(m:Movies) return n.name AS Actors, m.title A
 [[docker-cypher-shell-script]]
 === Pass a Cypher script file to a Neo4j Docker container
 
-Because `cypher-shell` does not support file streams, such as `cypher-shell -a localhost -u <username> -p <password> --file myscript.cypher`, you can use the commands `cat` or `curl` to pipe the contents of your script file into your container.
+There are different ways to pass a Cypher script file to a Neo4j Docker container, all of them using the Cypher Shell tool.
+
+* Using the `--file` option of the `cypher-shell` command followed by the file name.
+After the statements are executed `cypher-shell` shuts down.
+
+* Using the `:source` command followed by the file name when in the Cypher interactive shell.
+
+* Using the commands `cat` or `curl` with `cypher-shell` to pipe the contents of your script file into your container.
+
+[NOTE]
+====
+To use the `--file` option or the `:source` command of Cypher Shell, the Cypher script file must be readable from inside the container, otherwise `cypher-shell` will not be able to open the file.
+The folder containing the examples must be mounted to the container when the container is started.
+====
+
 The following are syntax examples of how to use these commands:
+
+._example.cypher_ script
+[source, shell]
+----
+match (n:Actors)-[r]->(m:Movies) return n.name AS Actors, m.title AS Movies, m.year AS MovieYear;
+----
+
+.Invoke `cypher-shell` with the `--file` option
+[source, shell, subs="attributes"]
+----
+# Put the example.cypher file in the local folder ./examples. 
+
+# Start a Neo4j container and mount the ./examples folder inside the container:
+
+docker run --rm \
+--volume /path/to/local/examples:/examples \
+--publish=7474:7474 \
+--publish=7687:7687 \
+--env NEO4J_AUTH=neo4j/<password> \
+neo4j:{neo4j-version-exact}
+
+# Run the Cypher Shell tool with the --file option passing the example.cypher file:
+
+docker exec --interactive --tty <containerID/name> cypher-shell -u neo4j -p <password> --file /examples/example.cypher
+----
+
+.Use the `:source` command to run a Cypher script file
+[source, shell, subs="attributes"]
+----
+# Put the example.cypher file in the local folder ./examples. 
+
+# Start a Neo4j container and mount the ./examples folder inside the container:
+
+docker run --rm \
+--volume /path/to/local/examples:/examples \
+--publish=7474:7474 \
+--publish=7687:7687 \
+--env NEO4J_AUTH=neo4j/<password> \
+neo4j:{neo4j-version-exact}
+
+# Use the container ID or name to get into the container, and then, run the cypher-shell command and authenticate.
+
+docker exec --interactive --tty <containerID/name> cypher-shell -u neo4j -p <password>
+
+# Invoke the :source command followed by the file name.
+
+neo4j@neo4j> :source example.cypher
+----
 
 .Invoke `curl` with Cypher Shell
 [source, shell]
 ----
-curl http://mysite.com/config/script.cypher | sudo docker exec --interactive <containerID/name> cypher-shell -u neo4j -p neo4j
+curl http://mysite.com/config/example.cypher | sudo docker exec --interactive <containerID/name> cypher-shell -u neo4j -p <password>
 ----
 
 .Invoke `cat` with Cypher Shell
 [source, shell]
 ----
-# Prepare the example.cypher script, for instance, containing the query:
+cat example.cypher | sudo  docker exec --interactive  <containerID/name> cypher-shell -u neo4j -p <password>
+----
 
-match (n:Actors)-[r]->(m:Movies) return n.name AS Actors, m.title AS Movies, m.year AS MovieYear;
-
-# Run the following command:
-
-cat example.cypher | sudo  docker exec --interactive  <containerID/name> cypher-shell -u neo4j -p neo4j
-
-# The command runs the script and returns the following result:
-
+.Example output
+[source, shell, role="noheader"]
+----
 Actors, Movies, MovieYear
 "Keanu Reeves", "The Matrix Revolutions", 2003
 "Keanu Reeves", "The Matrix Reloaded", 2003
@@ -173,8 +231,8 @@ Actors, Movies, MovieYear
 "Carrie-Anne Moss", "The Matrix", 1999
 ----
 
-These commands take the contents of the script file and pass it into the Docker container.
-Then, they run `cypher-shell`, authenticate with the provided `<username>` and `<password>`, and execute a cypher example, LOAD CSV dataset, which might be hosted somewhere on a server (with `curl`), create indexes, constraints, or do other administrative operations.
+These commands take the contents of the script file and pass it into the Docker container using Cypher Shell.
+Then, they run a Cypher example, `LOAD CSV` dataset, which might be hosted somewhere on a server (with `curl`), create indexes, constraints, or do other administrative operations.
 
 [[docker-procedures]]
 == Install user-defined procedures
