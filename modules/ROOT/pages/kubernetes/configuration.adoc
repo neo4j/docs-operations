@@ -577,7 +577,7 @@ Instead, the Neo4j configuration is set in the Helm deployment's _values.yaml_ f
 The `config` object should contain a string map of _neo4j.conf_ setting name to value.
 For example, this `config` object configures the Neo4j metrics:
 
-[source, properties]
+[source, yaml]
 ----
 # Neo4j configuration (yaml format)
 config:
@@ -614,7 +614,7 @@ You can set an initial password for accessing Neo4j in the _values.yaml_ file.
 If no initial password is set, the Neo4j helm chart will automatically generate one.
 In cluster deployments, the same password must be set for all cluster members.
 
-[source, properties]
+[source, yaml]
 ----
 neo4j:
  # If not set or empty a random password will be generated
@@ -648,7 +648,7 @@ SSL public certificates and private keys to use with a Neo4j Helm deployment mus
 To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
 This example shows how to configure the `bolt` SSL policy:
 
-[source, properties]
+[source, yaml]
 ----
 ssl:
  bolt:
@@ -680,7 +680,7 @@ And then, you configure the Neo4j helm deployment to use that identity provider 
 For more information on how to configure your identity provider and what settings you should define, see xref:tutorial/tutorial-sso-configuration.adoc[Neo4j Single Sign-On (SSO) configuration].
 
 .An example of configuring Neo4j to use Azure SSO for authentication
-[source, properties]
+[source, yaml]
 ----
 config:
   server.security.oidc.azure.audience: "00f3a7d3-d855-4849-9e3c-57d7b6e12794"
@@ -714,7 +714,7 @@ The resources (CPU, memory) for the Neo4j container are configured by setting `n
 In the resource _requests_, you can specify how much CPU and memory the Neo4j container needs, while in the resource _limits_, you can set a limit on these resources in case the container tries to use more resources than its _requests_ allow.
 //For more information, see link:https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[the Kubernetes container resources documentation].
 +
-[source, properties]
+[source, yaml]
 ----
 neo4j:
   resources:
@@ -728,7 +728,7 @@ neo4j:
 +
 If no resource _requests_ and resource _limits_ are specified, the values set in the `resources` object are used for both the Neo4j container's resource _requests_ and resource _limits_.
 +
-[source, properties]
+[source, yaml]
 ----
 neo4j:
   resources:
@@ -756,7 +756,7 @@ Therefore, it is recommended to allow an additional 1GB of memory headroom so th
 +
 For example, a 5GB container could be configured like this:
 +
-[source, properties]
+[source, yaml]
 ----
 neo4j:
   resources:
@@ -782,7 +782,7 @@ To configure the Neo4j pod to use a Kubernetes service account, set `podSpec.ser
 
 For example:
 
-[source, properties]
+[source, yaml]
 ----
 # neo4j-values.yaml
 neo4j:
@@ -826,7 +826,7 @@ Instead, you can configure the helm deployment to use APOC core by upgrading the
 
 . Configure APOC core:
 +
-[source, properties]
+[source, yaml]
 ----
 config:
   server.directories.plugins: "/var/lib/neo4j/labs"
@@ -837,7 +837,7 @@ config:
 +
 . Under `apoc_config`, configure the APOC settings you want, for example:
 +
-[source, properties]
+[source, yaml]
 ----
 apoc_config:
   apoc.trigger.enabled: "true"
@@ -866,6 +866,7 @@ There are three recommended methods for adding Neo4j plugins to Neo4j Helm chart
 You can use:
 
 * <<automatic-plugin-download, an automatic plugin download>>
+* <<init-container-plugin-installation, an init container>>
 * <<custom-container, a custom container image>>.
 * <<plugins-volume, a `plugins` volume>>.
 
@@ -880,7 +881,7 @@ If licenses are required for the plugins, you must provide the licenses in a sec
 GDS Community Edition does not require a license.
 To add the GSD CE, configure the Neo4j _values.yaml_ and set the `env` to download the plugins:
 
-[source, properties]
+[source, yaml]
 ----
 neo4j:
   name: licenses
@@ -908,7 +909,7 @@ kubectl create secret  generic --from-file=gds.license,bloom.license gds-bloom-l
 ----
 . Configure the Neo4j _values.yaml_ file using the secret as the _/licenses_ volume mount, and set the `env` to download the plugins:
 +
-[source, properties]
+[source, yaml]
 ----
 neo4j:
   name: licenses
@@ -936,6 +937,103 @@ config:
   dbms.security.http_auth_allowlist: "/,/browser.*,/bloom.*"
   dbms.bloom.license_file: "/licenses/bloom.license"
 ----
+
+[[init-container-plugin-installation]]
+=== Add plugins using an init container
+
+Init containers are specialized containers that run before the main containers (in this case, the Neo4j container) in a pod.
+You can use an init container to add plugins that have already been downloaded on an internal file server and are available to you via the internal network.
+
+In the following example a YAML file, called _plugin_initContainer.yaml_ file, configures an init container to download the plugins, in this case, `apoc`, from an internal file server to the _/plugins_ directory, which is backed by a persistent volume.
+Then, it deploys a Neo4j standalone server. 
+When the Neo4j container starts, it automatically installs the plugins from the _/plugins_ directory.
+
+. Configure what operations the init container should run using the `initContainers` property in the _plugin_initContainer.yaml_ file.
++
+[NOTE]
+====
+Some Neo4j plugins, such as Bloom and GDS Enterprise, require a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
+To obtain a valid license, reach out to your Neo4j account representative or write to licensing@neo4j.com.
+====
++
+[source, yaml]
+----
+neo4j:
+  resources:
+    cpu: "0.5"
+    memory: "2G"
+​
+  password: "password"
+​
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+​
+​
+volumes:
+  data:
+    mode: defaultStorageClass
+  plugins:
+    mode: "share"
+    share:
+      name: "data"
+# licenses:
+  # mode: "share"
+  # share:
+  #   name: "data"
+podSpec:
+  initContainers:
+    - name: get-plugins
+      command: ["wget", "/path/to/the/downloaded/plugin-file/apoc-version-all.jar", "-O", "/plugins/apoc.jar"] 
+  # - name: get-licenses
+  #   command: ["wget", "/path/to/the/downloaded/plugin-file/plugin-file-version-all.jar", "-O", "/licenses/plugin-file.license"] 
+​
+config:
+  dbms.directories.plugins: "/plugins"
+  # dbms.directories.licenses: "/licenses"
+  dbms.security.procedures.unrestricted: "apoc.*"  
+  dbms.config.strict_validation: "false"
+  dbms.security.procedures.allowlist: "apoc.*"
+
+apoc_config:
+  apoc.trigger.enabled: "true"
+  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
+  apoc.import.file.enabled: "true"
+----
+
+. Deploy a Neo4j standalone server using the _plugin_initContainer.yaml_ file and the _neo4j/standalone_ Helm chart:
++
+[source, shell]
+----
+helm install neo4j neo4j/neo4j-standalone -f ~/path/to/plugin_initContainer.yaml
+----
+. After the pod changes its status from `Init` to `Running`, verify that the mount has the _apoc.jar_:
++
+[source, role=noheader]
+----
+k exec -it standalone-0 -- bash
+----
++
+.Example output
+[source, role=noheader]
+----
+neo4j@standalone-0:/$ cd /plugins
+neo4j@standalone-0:/plugins$ ls -lst
+total 21140
+21140 -rw-r--r-- 1 neo4j neo4j 21645102 Nov 28 12:03 apoc.jar
+----
++
+Wait for the pod to change its state to `READY`.
+. Using the `<EXTERNAL-IP>` of the LoadBalancer service, open the Neo4j Browser at _http://<EXTERNAL-IP>:7474/browser_.
+. Use the password that you have configured in the _plugin_initContainer.yaml_ file.
+. Run a query to verify that the Apoc plugin is installed and configured.
+For example, you can use the following query to get the value of your jdbc URL:
++
+[source, shell]
+----
+CALL apoc.config.list() YIELD key, value WHERE key = "apoc.jdbc.neo4j.url" RETURN *;
+----
++
+It should return `"jdbc:foo:bar"` as configured in the `apoc.config`.
 
 [[custom-container]]
 === Add plugins using a custom container image
@@ -1000,10 +1098,10 @@ The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a lic
 To obtain a valid license, reach out to your Neo4j account representative or write to licensing@neo4j.com.
 ====
 
-The simplest way to set up a persistent `plugins` volume is to share the Persistent Volume that is used for storing Neo4j data.
+The simplest way to set up a persistent _/plugins_ volume is to share the Persistent Volume that is used for storing Neo4j data.
 This example shows how to configure that in the Neo4j Helm deployment _values.yaml_ file:
 
-[source, properties]
+[source, yaml]
 ----
 # neo4j-values.yaml
 volumes:
@@ -1033,14 +1131,14 @@ For example:
 
 [source, shell]
 ----
-# Copy plugin files into the Neo4j container
+# Copy plugin files into the Neo4j container:
+
 kubectl cp my-plugins/* <namespace>/<neo4j-pod-name>:/plugins/
 
 # Restart Neo4j
 kubectl rollout restart statefulset/<neo4j-statefulset-name>
 
-# Verify plugins are still present after restart
+# Verify plugins are still present after the restart:
+
 kubectl exec <neo4j-pod-name> -- ls /plugins
 ----
-
-// Neo4j Browser, Data Import,  composite databases?
