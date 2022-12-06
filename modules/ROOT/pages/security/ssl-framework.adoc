@@ -993,11 +993,35 @@ dbms.ssl.policy.cluster.private_key_password=<password>
 dbms.ssl.policy.backup.private_key_password=<password>
 ----
 
-If hardcoding of clear text private key password is not feasible due to security constraints, it can be set up to use dynamic password pickup:
+If hardcoding of clear text private key password is not feasible due to security constraints, it can be set up to use dynamic password pickup by following these steps:
 
-[source, properties]
+. Create a file containing the `cleartext` password for the private key password and encrypt it with the certificate (assuming private key for cert has password set and certificate is in `pwd`):
++
+[source]
 ----
-dbms.ssl.policy.bolt.private_key_password=$(openssl aes-256-cbc -a -d -in /opt/neo4j/etc/neo4j/neo4j_cert_pwd.enc -kfile  /opt/neo4j/var/lib/neo4j/certificates/bolt/neo4j.cert)
+echo "password123" > passwordfile
+
+openssl aes-256-cbc -a -salt -in passwordfile -out password.enc -pass file:certificate.crt
+----
++
+[NOTE]
+====
+Delete the password file and set file permissions for `password.enc` to `400` (e.g. `chmod 400 password.enc`).
+====
+
+. Verify that encrypted password can be read from password.enc:
++
+[source]
+----
+openssl aes-256-cbc -a -d -in password.enc -pass file:certificate.crt
+----
+
+. Set the neo4j.conf `dbms.ssl.policy.<type>.private_key_password` to be able to read out encrypted password.
+To adjust paths to cert and encrypted password file, use full paths:
++
+[source]
+----
+dbms.ssl.policy.bolt.private_key_password=$(openssl aes-256-cbc -a -d -in password.enc -pass file:certificate.crt)
 ----
 
 [NOTE]
