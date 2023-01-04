@@ -641,8 +641,8 @@ Once you change the password in Neo4j, the password stored in _Kubernetes Secret
 [[configure-ssl]]
 == Configure SSL
 
-The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm chart.
-SSL policy objects can be specified for `bolt`, `https`, `cluster`, and `backup`.
+The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm charts.
+You can specify SSL policy objects for `bolt`, `https`, `cluster`, and `backup`.
 SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes Secrets_.
 
 To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
@@ -668,6 +668,458 @@ To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `
 Unencrypted `http` is not disabled automatically when `https` is enabled.
 If `https` is enabled, add `server.http.enabled: "false"` to the `config` object to disable `http`.
 ====
+
+For more information on configuring SSL policies, see xref:security/ssl-framework.adoc#ssl-framework-configuration[SSL Framework configuration].
+
+The following examples show how to deploy a Neo4j cluster with configured SSL policies.
+
+[[configure-ssl-with-self-signed-certificates]]
+
+=== Create a self-signed certificate
+
+If you do not have a self-signed certificate to use, follow the steps to create one:
+
+. Create a new folder for the self-signed certificate.
+This example uses the _/neo4j-ssl_ folder.
++
+[source, shell]
+----
+mkdir neo4j-ssl
+cd neo4j-ssl
+----
+. Create the `private.key` and `public.crt` for the self-signed certificate by using the `openssl` command and passing all the values in the `subj` argument:
++
+[source, shell]
+----
+openssl req -newkey rsa:2048 -nodes -keyout private.key -x509 -days 365 -out public.crt -subj "/C=GB/ST=London/L=London/O=Neo4j/OU=IT Department"
+----
+. Verify that the _private.key_ and _public.crt_ files are created:
++
+[source, shell]
+----
+ls -lst
+----
++
+.Example output
+----
+-rw-r--r--  1 user  staff  1679  28 Dec 15:00 private.key
+-rw-r--r--  1 user  staff  1679  28 Dec 15:00 public.crt
+----
+
+== Create a `neo4j` namespace and configure it to be used in the current context
+
+[source, shell]
+----
+kubectl create namespace neo4j
+kubectl config set-context --current --namespace=neo4j
+----
+
+=== Configure an SSL policy using a `tls` Kubernetes secret
+
+This example shows how to configure an SSL policy for intra-cluster communication using a self-signed certificate stored in a `tls` Kubernetes secret.
+
+. Create a Kubernetes TSL secret using the _public.crt_ and _private.key_ files:
++
+[NOTE]
+You must have a Kubernetes cluster running and the `kubectl` command installed.
+For more information, see xref:kubernetes/quickstart-cluster/prerequisites.adoc[Prerequisites].
+
+.. To create a TLS secret, use the `tls` option and a secret name, e.g., `neo4j-tls`:
++
+[source, shell]
+----
+kubectl create secret tls neo4j-tls --cert=/path/to/neo4j-ssl/public.crt --key=/path/to/neo4j-ssl/private.key
+----
+.. Verify that the secret is created:
++
+[source, shell]
+----
+kubectl get secret
+----
++
+.Example output
+----
+NAME                  TYPE                                  DATA   AGE
+neo4j-tls             kubernetes.io/tls                     2      4s
+----
+.. Verify that the secret contains the _public.crt_ and _private.key_ files:
++
+[source, shell]
+----
+kubectl get secret neo4j-tls -o yaml
+----
++
+.Example output
+[source, yaml]
+----
+apiVersion: v1
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURLakNDQWhJQ0NRRGRYYVg1Y29mczdEQU5CZ2txaGtpRzl3MEJBUXNGQURCWE1Rc3dDUVlEVlFRR0V3SkgKUWpFUE1BMEdBMVVFQ0F3R1RHOXVaRzl1TVE4d0RRWURWUVFIREFaTWIyNWtiMjR4RGpBTUJnTlZCQW9NQlU1bApielJxTVJZd0ZBWURWUVFMREExSlZDQkVaWEJoY25SdFpXNTBNQjRYRFRJeU1USXlPREl4TURjeU5sb1hEVEl6Ck1USXlPREl4TURjeU5sb3dWekVMTUFrR0ExVUVCaE1DUjBJeER6QU5CZ05WQkFnTUJreHZibVJ2YmpFUE1BMEcKQTFVRUJ3d0dURzl1Wkc5dU1RNHdEQVlEVlFRS0RBVk9aVzgwYWpFV01CUUdBMVVFQ3d3TlNWUWdSR1Z3WVhKMApiV1Z1ZERDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTDBRc0c2Ukwrd3hxZSt3CjJGSWljZldVaUFtdmNqeVdlS0lKaThuT2tBSGIvSTYzUUU2L3ZpR3RNeEI3S28xdUJLNlVPZXBaeU91UzE2bUMKaitpMDAwbmFnWkR3RGNyRXd3UUE1cTBGMC90VXB5UHBaL1p3clhEaGFDOXhzVnFnVms0TXl5aUtTNzRIOUc2UgprUUV4dHBaNFArcTlaRHVFVk1KVGVaL2pQNGZoTkg2MUpSTVdORTJ3NjNUWkx2ZGMyUitXL2U5N3h2TGQ5Y0FnCjlqTm9FMHo5UHRmczB2L2lyUGhuUHpzWHQ5bzE0MWlnOVFZNjNtMzBxQ0NaYnpMRlR6WFgvdTUvTSsycFB3WXoKcUNOTUZYYW1ITlAxdlRPWFlRTG1iYW1JdVplYnVPNEVlUHZ6WUVXSmEyUi9oTmhtUDNvM2tRVFAzdmF1UEFjZQpSQlJZS09NQ0F3RUFBVEFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBWVh6SkIzNU55cExDUEdvQXVJdGt5dHBFCk1ZeSs5YnlrV3BEVnhRaXZLUHQ3d1NUaWZjNU1QdW5NUy9xYmxnaWprWm5IaWVLeEdoU3lQL283QndtMzJDSnAKQUFsSjJ3RjhIVXVSSGpYcUU5dkNQeFdtVlVJS2ExOWN5V0tUYWhySWU1eWZkQWNkbUJmRzJNWnY0dEdFeWxsUgo0Vk81STdRNjVWZDlGQnB0U3JjS3R1WUtBUzg2RTBHZmlmMWxCakdUZTFZbkhvK1RZTVpoVEUvN3RlNHZ1M251CjA4Y1BmbS9RYThSNFBXZDZNbXVDaTJYcDduWVlEMmp3WklCSENtMUU3U1RrdS9JRk5kOWFWRW91VG5KR1pCWFcKeWVzWG9OMXhOb3kvMXZFdElhV2xXZW1GcGo4clJ6VGJQekQ1TEpiNDBSRFVOTXN3NytLUXczV3BBMjVKUHc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQzlFTEJ1a1Mvc01hbnYKc05oU0luSDFsSWdKcjNJOGxuaWlDWXZKenBBQjIveU90MEJPdjc0aHJUTVFleXFOYmdTdWxEbnFXY2pya3RlcApnby9vdE5OSjJvR1E4QTNLeE1NRUFPYXRCZFA3VktjajZXZjJjSzF3NFdndmNiRmFvRlpPRE1zb2lrdStCL1J1CmtaRUJNYmFXZUQvcXZXUTdoRlRDVTNtZjR6K0g0VFIrdFNVVEZqUk5zT3QwMlM3M1hOa2ZsdjN2ZThieTNmWEEKSVBZemFCTk0vVDdYN05MLzRxejRaejg3RjdmYU5lTllvUFVHT3Q1dDlLZ2dtVzh5eFU4MTEvN3VmelB0cVQ4RwpNNmdqVEJWMnBoelQ5YjB6bDJFQzVtMnBpTG1YbTdqdUJIajc4MkJGaVd0a2Y0VFlaajk2TjVFRXo5NzJyandICkhrUVVXQ2pqQWdNQkFBRUNnZ0VBTmF6OVNnYXlJazVmUG90b2Zya0V2WUh6dFR3NEpIZGJ2RFVWbUsrcU5yenIKME9DNXd5R3dxd0x2RW1qRlJlM01Lbnd1alJmOGNOVDVvVWhON3ZVWFgwcEhxb3hjZmdxcWl3SnVld1RDa0FJUwppYUdFUUhUdzZMRTEwUEpvTmFCN29DRUZ0SGErMWk2UCtLd2ZETVcrWHEyNUI3M0pMUlIrczhUYkxNZHBpL3VvCjRmTFNJV0xDV09MZThUTlU0ck5vVDQ0enY0eUhUOXAyV3liSUNrL3F5bVV3bTlhRHFnYzRJRzk4YXVVNG5JYVQKenk2T3NBODdONW9FME0rcHlUdEFJcmxRZFBXUzBBZ28xZUJCcWplL1I3MTI4TmdHVzhOTzVMWDBtNit2YzhyVgpaTHh0N1d0NThucXR2WlI3QTF5SU9lbWtocHl2Q3hrNVRxSmZQRlJxRVFLQmdRRGlOL3NBZncrZ1dvTFpLbTNyCm50WVkyRW9TOTBkQ0wwd293SGFGa0lsL2hIWXduQi9qaWlnMU5ZbEhDNzNPVDdDc2UycS9tS0xhMzZBVHlpTHcKZjN1T0J3NmNFZ2RJZlU5aDBtZjJCNFZXdEVEeDJMSU94MEtZU2VrYldTTVZQZ2w2SkhNb3hLdjNMbEx5R1RiMApZQmtKVmpRdkVLS1dpa1FLMUdPYnZtdzFWUUtCZ1FEVjlJLzc5WFJuN1EzZ3M4Z2JqZWhDejRqNHdtNWdpNFM2CkVsVzVJWkFidDh3QWZPdVIzUm4wQW41NFl0ZW1HUk1seDF0L1ZUM1IzK0J5bmVTZEgzbUJ6eVJEQysvRGhBTlYKNVZPckk5SFhnVTRMSElVMmNwVVZxYVo3N1J1b2JnTmlDenBmOVZPVkNadzdmQzRPYkFqcTMzQ3RtT2taR0hRbAo2dkJtNm1ubFZ3S0JnQ2FnOW95TUplZjA3TGtXcExTQ1ovN1FHRDRLMmJFMGtHVzVEOFFZL1ZHNEZkS1JKbVRkCmQ2WTJZUjJ2cEpheFJ2TDlGQ3BwYncyKzkvL0pHWlJGd0p4dEdoS09oWTNjVUF6ZE9BRnNJVm0vNkFNa1JLdC8KWFNEU0ppc1VXb2hMRXFVM3lpNWcveGh6WVppVHM2MmhKMFZQNGhOVFhPQWw5aDUvVEE4UlFqc05Bb0dBTm84Twp5R2xuTGJrOWVMZGZwK2NmK3ltQS9DNVloellNdW9aQ1pkc3hMR0JLSFRXOXZJeHRPZFFJL0JuNGM5cWhEMWt1CjgrR0F5aXdVeUNXTFRxWGdEa0lNTlN5dUQyVnlsRXpPY1MzSkxQTkVPNEVpVnlnUTdGMCtud3R2cWh1anNUUzcKeGd5Qks5Z3ZodHU3d3VHNXhHc0dDTDZkY2xEU0RYbERwSHJTVmpFQ2dZQWx0STNjMzJxaG5KU2xHSGhjdW1wRwpReGpvYnJBUUxUa3dyOWk2TkNuS0EyNVR1SVFXa1NiN2JUWWtuUi80WDhOT2w2U2EvYm9QK2dncWNJM0haSk05CkxJRnpPUTFWT1luQ2ZYZVd0SmlHQklwUExadFdobnA3NGVhdmJKYW9udlhVVGNZcm5qcytIWGhpaFhjOUhENWsKeEJEaWJKYUlEbXg2T1FpVWI2RndJZz09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+kind: Secret
+metadata:
+  creationTimestamp: "2023-01-04T13:53:14Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:tls.crt: {}
+        f:tls.key: {}
+      f:type: {}
+    manager: kubectl
+    operation: Update
+    time: "2023-01-04T13:53:14Z"
+  name: neo4j-tls
+  namespace: neo4j
+  resourceVersion: "212009"
+  uid: b1be45dd-4cbe-41c9-a6e5-c814c5e39c25
+type: kubernetes.io/tls
+----
+. Configure `ssl` object in the _ssl-values.yaml_ file using the created secret:
++
+[source, yaml]
+----
+ssl:
+# setting per "connector" matching neo4j config
+  bolt:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: tls.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: tls.crt
+  https:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: tls.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: tls.crt
+    trustedCerts:
+      sources:
+      - secret:
+          name: neo4j-tls
+          items:
+          - key: tls.crt
+            path: public.crt
+  cluster:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: tls.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: tls.crt
+    trustedCerts:
+      sources:
+      - secret:
+          name: neo4j-tls
+          items:
+          - key: tls.crt
+            path: public.crt
+    revokedCerts:
+      sources: [ ]
+----
+
+Now you are ready to <<deploy-neo4j-cluster-ssl, deploy the Neo4j cluster>> using the configured _ssl-values.yaml_ file and the Neo4j Helm charts.  
+
+=== Configure an SSL policy using a `generic` Kubernetes secret
+
+This example shows how to configure an SSL policy for intra-cluster communication using a self-signed certificate stored in a `generic` Kubernetes secret.
+
+. Create a Kubernetes `generic` secret using the _public.crt_ and _private.key_ files:
++
+[NOTE]
+You must have a Kubernetes cluster running and the `kubectl` command installed.
+For more information, see xref:kubernetes/quickstart-cluster/prerequisites.adoc[Prerequisites].
+
+.. Get the Base64-encoded value of your _public.crt_ and _private.key_:
++
+[source, shell]
+----
+cat public.crt| base64 
+----
++
+[source, shell]
+----
+cat private.key| base64
+----
+.. Using the Base64-encoded values of your _public.crt_ and _private.key_, create a _secret.yaml_ file:
++
+[source, yaml]
+----
+apiVersion: v1
+data:
+  public.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURLakNDQWhJQ0NRRGRYYVg1Y29mczdEQU5CZ2txaGtpRzl3MEJBUXNGQURCWE1Rc3dDUVlEVlFRR0V3SkgKUWpFUE1BMEdBMVVFQ0F3R1RHOXVaRzl1TVE4d0RRWURWUVFIREFaTWIyNWtiMjR4RGpBTUJnTlZCQW9NQlU1bApielJxTVJZd0ZBWURWUVFMREExSlZDQkVaWEJoY25SdFpXNTBNQjRYRFRJeU1USXlPREl4TURjeU5sb1hEVEl6Ck1USXlPREl4TURjeU5sb3dWekVMTUFrR0ExVUVCaE1DUjBJeER6QU5CZ05WQkFnTUJreHZibVJ2YmpFUE1BMEcKQTFVRUJ3d0dURzl1Wkc5dU1RNHdEQVlEVlFRS0RBVk9aVzgwYWpFV01CUUdBMVVFQ3d3TlNWUWdSR1Z3WVhKMApiV1Z1ZERDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTDBRc0c2Ukwrd3hxZSt3CjJGSWljZldVaUFtdmNqeVdlS0lKaThuT2tBSGIvSTYzUUU2L3ZpR3RNeEI3S28xdUJLNlVPZXBaeU91UzE2bUMKaitpMDAwbmFnWkR3RGNyRXd3UUE1cTBGMC90VXB5UHBaL1p3clhEaGFDOXhzVnFnVms0TXl5aUtTNzRIOUc2UgprUUV4dHBaNFArcTlaRHVFVk1KVGVaL2pQNGZoTkg2MUpSTVdORTJ3NjNUWkx2ZGMyUitXL2U5N3h2TGQ5Y0FnCjlqTm9FMHo5UHRmczB2L2lyUGhuUHpzWHQ5bzE0MWlnOVFZNjNtMzBxQ0NaYnpMRlR6WFgvdTUvTSsycFB3WXoKcUNOTUZYYW1ITlAxdlRPWFlRTG1iYW1JdVplYnVPNEVlUHZ6WUVXSmEyUi9oTmhtUDNvM2tRVFAzdmF1UEFjZQpSQlJZS09NQ0F3RUFBVEFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBWVh6SkIzNU55cExDUEdvQXVJdGt5dHBFCk1ZeSs5YnlrV3BEVnhRaXZLUHQ3d1NUaWZjNU1QdW5NUy9xYmxnaWprWm5IaWVLeEdoU3lQL283QndtMzJDSnAKQUFsSjJ3RjhIVXVSSGpYcUU5dkNQeFdtVlVJS2ExOWN5V0tUYWhySWU1eWZkQWNkbUJmRzJNWnY0dEdFeWxsUgo0Vk81STdRNjVWZDlGQnB0U3JjS3R1WUtBUzg2RTBHZmlmMWxCakdUZTFZbkhvK1RZTVpoVEUvN3RlNHZ1M251CjA4Y1BmbS9RYThSNFBXZDZNbXVDaTJYcDduWVlEMmp3WklCSENtMUU3U1RrdS9JRk5kOWFWRW91VG5KR1pCWFcKeWVzWG9OMXhOb3kvMXZFdElhV2xXZW1GcGo4clJ6VGJQekQ1TEpiNDBSRFVOTXN3NytLUXczV3BBMjVKUHc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  private.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQzlFTEJ1a1Mvc01hbnYKc05oU0luSDFsSWdKcjNJOGxuaWlDWXZKenBBQjIveU90MEJPdjc0aHJUTVFleXFOYmdTdWxEbnFXY2pya3RlcApnby9vdE5OSjJvR1E4QTNLeE1NRUFPYXRCZFA3VktjajZXZjJjSzF3NFdndmNiRmFvRlpPRE1zb2lrdStCL1J1CmtaRUJNYmFXZUQvcXZXUTdoRlRDVTNtZjR6K0g0VFIrdFNVVEZqUk5zT3QwMlM3M1hOa2ZsdjN2ZThieTNmWEEKSVBZemFCTk0vVDdYN05MLzRxejRaejg3RjdmYU5lTllvUFVHT3Q1dDlLZ2dtVzh5eFU4MTEvN3VmelB0cVQ4RwpNNmdqVEJWMnBoelQ5YjB6bDJFQzVtMnBpTG1YbTdqdUJIajc4MkJGaVd0a2Y0VFlaajk2TjVFRXo5NzJyandICkhrUVVXQ2pqQWdNQkFBRUNnZ0VBTmF6OVNnYXlJazVmUG90b2Zya0V2WUh6dFR3NEpIZGJ2RFVWbUsrcU5yenIKME9DNXd5R3dxd0x2RW1qRlJlM01Lbnd1alJmOGNOVDVvVWhON3ZVWFgwcEhxb3hjZmdxcWl3SnVld1RDa0FJUwppYUdFUUhUdzZMRTEwUEpvTmFCN29DRUZ0SGErMWk2UCtLd2ZETVcrWHEyNUI3M0pMUlIrczhUYkxNZHBpL3VvCjRmTFNJV0xDV09MZThUTlU0ck5vVDQ0enY0eUhUOXAyV3liSUNrL3F5bVV3bTlhRHFnYzRJRzk4YXVVNG5JYVQKenk2T3NBODdONW9FME0rcHlUdEFJcmxRZFBXUzBBZ28xZUJCcWplL1I3MTI4TmdHVzhOTzVMWDBtNit2YzhyVgpaTHh0N1d0NThucXR2WlI3QTF5SU9lbWtocHl2Q3hrNVRxSmZQRlJxRVFLQmdRRGlOL3NBZncrZ1dvTFpLbTNyCm50WVkyRW9TOTBkQ0wwd293SGFGa0lsL2hIWXduQi9qaWlnMU5ZbEhDNzNPVDdDc2UycS9tS0xhMzZBVHlpTHcKZjN1T0J3NmNFZ2RJZlU5aDBtZjJCNFZXdEVEeDJMSU94MEtZU2VrYldTTVZQZ2w2SkhNb3hLdjNMbEx5R1RiMApZQmtKVmpRdkVLS1dpa1FLMUdPYnZtdzFWUUtCZ1FEVjlJLzc5WFJuN1EzZ3M4Z2JqZWhDejRqNHdtNWdpNFM2CkVsVzVJWkFidDh3QWZPdVIzUm4wQW41NFl0ZW1HUk1seDF0L1ZUM1IzK0J5bmVTZEgzbUJ6eVJEQysvRGhBTlYKNVZPckk5SFhnVTRMSElVMmNwVVZxYVo3N1J1b2JnTmlDenBmOVZPVkNadzdmQzRPYkFqcTMzQ3RtT2taR0hRbAo2dkJtNm1ubFZ3S0JnQ2FnOW95TUplZjA3TGtXcExTQ1ovN1FHRDRLMmJFMGtHVzVEOFFZL1ZHNEZkS1JKbVRkCmQ2WTJZUjJ2cEpheFJ2TDlGQ3BwYncyKzkvL0pHWlJGd0p4dEdoS09oWTNjVUF6ZE9BRnNJVm0vNkFNa1JLdC8KWFNEU0ppc1VXb2hMRXFVM3lpNWcveGh6WVppVHM2MmhKMFZQNGhOVFhPQWw5aDUvVEE4UlFqc05Bb0dBTm84Twp5R2xuTGJrOWVMZGZwK2NmK3ltQS9DNVloellNdW9aQ1pkc3hMR0JLSFRXOXZJeHRPZFFJL0JuNGM5cWhEMWt1CjgrR0F5aXdVeUNXTFRxWGdEa0lNTlN5dUQyVnlsRXpPY1MzSkxQTkVPNEVpVnlnUTdGMCtud3R2cWh1anNUUzcKeGd5Qks5Z3ZodHU3d3VHNXhHc0dDTDZkY2xEU0RYbERwSHJTVmpFQ2dZQWx0STNjMzJxaG5KU2xHSGhjdW1wRwpReGpvYnJBUUxUa3dyOWk2TkNuS0EyNVR1SVFXa1NiN2JUWWtuUi80WDhOT2w2U2EvYm9QK2dncWNJM0haSk05CkxJRnpPUTFWT1luQ2ZYZVd0SmlHQklwUExadFdobnA3NGVhdmJKYW9udlhVVGNZcm5qcytIWGhpaFhjOUhENWsKeEJEaWJKYUlEbXg2T1FpVWI2RndJZz09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+kind: Secret
+metadata:
+  name: neo4j-tls
+  namespace: neo4j
+type: Opaque
+----
+.. Create the generic secret using the `kubectl create` command and the _secret.yaml_ file:
++
+[source, shell]
+----
+kubectl create -f /path/to/secret.yaml
+----
++
+.Example output
+----
+secret/neo4j-tls created
+----
+.. Verify that the secret is created:
++
+[source, shell]
+----
+kubectl get secret
+----
++
+.Example output
+----
+NAME        TYPE     DATA   AGE
+neo4j-tls   Opaque   2      85s
+----
+
+. Configure the `ssl` object in the _ssl-values.yaml_ file using the created secret:
++
+[source, yaml]
+----
+ssl:
+# setting per "connector" matching neo4j config
+  bolt:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: private.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: public.crt
+  https:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: private.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: public.crt
+    trustedCerts:
+      sources:
+      - secret:
+          name: neo4j-tls
+          items:
+          - key: public.crt
+            path: public.crt
+  cluster:
+    privateKey:
+      secretName: neo4j-tls
+      subPath: private.key
+    publicCertificate:
+      secretName: neo4j-tls
+      subPath: public.crt
+    trustedCerts:
+      sources:
+      - secret:
+          name: neo4j-tls
+          items:
+          - key: public.crt
+            path: public.crt
+    revokedCerts:
+      sources: [ ]
+----
+
+Now you are ready to deploy the Neo4j cluster using the _ssl-values.yaml_ file and the Neo4j Helm charts. 
+
+[[deploy-neo4j-cluster-ssl]]
+=== Deploy a Neo4j cluster with SSL certificates
+
+Deploy a Neo4j cluster using the Neo4j Helm chart and the _ssl-values.yaml_ file.
+
+. Install the server-1:
++
+[source, shell]
+----
+helm install server-1 neo4j/neo4j --namespace neo4j --set neo4j.acceptLicenseAgreement=yes --set neo4j.password=my-password --set neo4j.name="my-cluster" --set neo4j.minimumClusterSize=3 --set neo4j.edition="enterprise" --set volumes.data.mode=defaultStorageClass -f ~/Documents/neo4j-ssl/ssl-values.yaml
+----
+. Repeat the command from the previous step for `server-2` and `server-3`.
+. Verify that the Neo4j cluster is running:
++
+[source, shell]
+----
+kubectl get pods
+----
++
+.Example output
+----
+NAME                       READY   STATUS    RESTARTS   AGE
+server-1-0                   1/1     Running   0          2m
+server-2-0                   1/1     Running   0          2m
+server-3-0                   1/1     Running   0          2m
+----
+. Connect to one of the servers and verify that the _/certificates/cluster_ directory contains the certificates:
++
+[source, shell]
+----
+kubectl exec -it server-1-0 -- bash
+----
++
+[source, shell]
+----
+neo4j@server-1-0:~$ cd certificates/
+neo4j@server-1-0:~/certificates$ ls -lst
+----
++
+.Example output
+----
+total 12
+4 drwxr-xr-x 2 root root 4096 Jan  4 13:55 bolt
+4 drwxr-xr-x 3 root root 4096 Jan  4 13:55 cluster
+4 drwxr-xr-x 3 root root 4096 Jan  4 13:55 https
+----
++
+[source, shell]
+----
+neo4j@server-1-0:~/certificates$ cd cluster/
+neo4j@server-1-0:~/certificates/cluster$ ls -lst
+----
++
+.Example output
+----
+total 8
+0 drwxrwsrwt 3 root neo4j  100 Jan  4 13:56 trusted
+4 -rw-r--r-- 1 root neo4j 1704 Jan  4 13:56 private.key
+4 -rw-r--r-- 1 root neo4j 1159 Jan  4 13:56 public.crt
+----
++
+[source, shell]
+----
+neo4j@server-1-0:~/certificates/cluster$ cd trusted/
+neo4j@server-1-0:~/certificates/cluster/trusted$ ls -lst
+----
++
+.Example output
+----
+total 0
+0 lrwxrwxrwx 1 root neo4j 17 Jan  4 13:56 public.crt -> ..data/public.crt
+----
+. Exit the pod:
++
+[source, shell]
+----
+exit
+----
+. Check that the LoadBalancer service is available using the `neo4j.name` used for the installation:
++
+[source, shell]
+----
+export NEO4J_NAME=my-cluster
+kubectl get service ${NEO4J_NAME}-lb-neo4j
+----
++
+.Example output
+----
+NAME                  TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)                                        AGE
+my-cluster-lb-neo4j   LoadBalancer   10.0.134.210   20.237.50.207   7474:31168/TCP,7473:31045/TCP,7687:32708/TCP   3m30s
+----
+. Connect to the Neo4j cluster using one of the following options:
++
+* Neo4j Browser:
+.. Open a web browser and type _https://lb-EXTERNAL_IP:7473_ (in this example, https://20.237.50.207:7473/browser/).
+You should see the Neo4j browser.
+.. Authenticate using the user `neo4j` and the password you set when deploying the cores, in this example, `my-password`.
+.. Verify that the cluster is online by running `:sysinfo` or `SHOW SERVERS`:
++
+image::cluster-sysinfo.png[Cluster sysinfo]
+.. Run `CALL dbms.listConfig('ssl') YIELD name, value` to verify that the configuration is deployed as expected.
+
+* Cypher Shell:
+.. Open a terminal and connect to one of the cluster pods:
++
+[source, shell]
+----
+kubectl exec -it server-1-0 -- bash
+----
+.. Navigate to the _bin_ directory and connect to server-1 using `cypher-shell`:
++
+[source, shell]
+----
+neo4j@server-1-0:~$ cd bin
+neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a neo4j+ssc://server-1.neo4j.svc.cluster.local:7687
+----
++
+.Example output
+----
+Connected to Neo4j using Bolt protocol version 5.3 at neo4j+ssc://server-1.neo4j.svc.cluster.local:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+neo4j@neo4j>
+----
+.. Verify that the cluster is online by running `SHOW SERVERS`:
++
+[source, shell]
+----
+neo4j@server-1-0:~/bin$ SHOW SERVERS;
+----
++
+.Example output
+----
++-----------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                  | state     | health      | hosting             |
++-----------------------------------------------------------------------------------------------------------------------------------+
+| "1c5946b1-0eb5-43b9-a549-5601087c57f2" | "server-3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]  |
+| "ba63cd32-3e7d-4042-9935-c8eba925a98f" | "server-1.neo4j.svc.cluster.local:7687"  | "Enabled" | "Available" | ["neo4j", "system"] |
+| "cbad7ed6-0c13-4ba7-b6a1-f20c5552dfcd" | "server-2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]  |
++-----------------------------------------------------------------------------------------------------------------------------------+
+----
+.. Run `CALL dbms.listConfig('ssl') YIELD name, value;` to verify that the configuration is deployed as expected.
++
+.Example output
+----
++----------------------------------------------------------------------------------------------------+
+| name                                           | value                                             |
++----------------------------------------------------------------------------------------------------+
+| "dbms.netty.ssl.provider"                      | "JDK"                                             |
+| "dbms.ssl.policy.bolt.base_directory"          | "/var/lib/neo4j/certificates/bolt"                |
+| "dbms.ssl.policy.bolt.ciphers"                 | "No Value"                                        |
+| "dbms.ssl.policy.bolt.client_auth"             | "NONE"                                            |
+| "dbms.ssl.policy.bolt.enabled"                 | "true"                                            |
+| "dbms.ssl.policy.bolt.private_key"             | "/var/lib/neo4j/certificates/bolt/private.key"    |
+| "dbms.ssl.policy.bolt.private_key_password"    | "No Value"                                        |
+| "dbms.ssl.policy.bolt.public_certificate"      | "/var/lib/neo4j/certificates/bolt/public.crt"     |
+| "dbms.ssl.policy.bolt.revoked_dir"             | "/var/lib/neo4j/certificates/bolt/revoked"        |
+| "dbms.ssl.policy.bolt.tls_versions"            | "TLSv1.2"                                         |
+| "dbms.ssl.policy.bolt.trust_all"               | "false"                                           |
+| "dbms.ssl.policy.bolt.trusted_dir"             | "/var/lib/neo4j/certificates/bolt/trusted"        |
+| "dbms.ssl.policy.bolt.verify_hostname"         | "false"                                           |
+| "dbms.ssl.policy.cluster.base_directory"       | "/var/lib/neo4j/certificates/cluster"             |
+| "dbms.ssl.policy.cluster.ciphers"              | "No Value"                                        |
+| "dbms.ssl.policy.cluster.client_auth"          | "REQUIRE"                                         |
+| "dbms.ssl.policy.cluster.enabled"              | "true"                                            |
+| "dbms.ssl.policy.cluster.private_key"          | "/var/lib/neo4j/certificates/cluster/private.key" |
+| "dbms.ssl.policy.cluster.private_key_password" | "No Value"                                        |
+| "dbms.ssl.policy.cluster.public_certificate"   | "/var/lib/neo4j/certificates/cluster/public.crt"  |
+| "dbms.ssl.policy.cluster.revoked_dir"          | "/var/lib/neo4j/certificates/cluster/revoked"     |
+| "dbms.ssl.policy.cluster.tls_versions"         | "TLSv1.2"                                         |
+| "dbms.ssl.policy.cluster.trust_all"            | "false"                                           |
+| "dbms.ssl.policy.cluster.trusted_dir"          | "/var/lib/neo4j/certificates/cluster/trusted"     |
+| "dbms.ssl.policy.cluster.verify_hostname"      | "false"                                           |
+| "dbms.ssl.policy.https.base_directory"         | "/var/lib/neo4j/certificates/https"               |
+| "dbms.ssl.policy.https.ciphers"                | "No Value"                                        |
+| "dbms.ssl.policy.https.client_auth"            | "NONE"                                            |
+| "dbms.ssl.policy.https.enabled"                | "true"                                            |
+| "dbms.ssl.policy.https.private_key"            | "/var/lib/neo4j/certificates/https/private.key"   |
+| "dbms.ssl.policy.https.private_key_password"   | "No Value"                                        |
+| "dbms.ssl.policy.https.public_certificate"     | "/var/lib/neo4j/certificates/https/public.crt"    |
+| "dbms.ssl.policy.https.revoked_dir"            | "/var/lib/neo4j/certificates/https/revoked"       |
+| "dbms.ssl.policy.https.tls_versions"           | "TLSv1.2"                                         |
+| "dbms.ssl.policy.https.trust_all"              | "false"                                           |
+| "dbms.ssl.policy.https.trusted_dir"            | "/var/lib/neo4j/certificates/https/trusted"       |
+| "dbms.ssl.policy.https.verify_hostname"        | "false"                                           |
++----------------------------------------------------------------------------------------------------+
+
+37 rows
+ready to start consuming query after 212 ms, results consumed after another 11 ms
+----
 
 [[configure-sso]]
 == Configure SSO
