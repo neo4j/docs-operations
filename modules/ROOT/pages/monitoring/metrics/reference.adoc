@@ -72,13 +72,260 @@ By default, database metrics include:
 [[metrics-general-purpose]]
 == General-purpose metrics
 
-include::partial$/neo4j-metrics/available-metrics.adoc[leveloffset=+1]
+.Bolt metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.bolt.connections_opened|The total number of Bolt connections opened since startup. This includes both succeeded and failed connections. Useful for monitoring load via the Bolt drivers in combination with other metrics. (counter)
+|<prefix>.bolt.connections_closed|The total number of Bolt connections closed since startup. This includes both properly and abnormally ended connections. Useful for monitoring load via Bolt drivers in combination with other metrics. (counter)
+|<prefix>.bolt.connections_running|The total number of Bolt connections that are currently executing Cypher and returning results. Useful to track the overall load on Bolt connections. This is limited to the number of Bolt worker threads that have been configured via `dbms.connector.bolt.thread_pool_max_size`. Reaching this maximum indicated the server is running at capacity. (gauge)
+|<prefix>.bolt.connections_idle|The total number of Bolt connections that are not currently executing Cypher or returning results. (gauge)
+|<prefix>.bolt.messages_received|The total number of messages received via Bolt since startup. Useful to track general message activity in combination with other metrics. (counter)
+|<prefix>.bolt.messages_started|The total number of messages that have started processing since being received. A received message may have begun processing until a Bolt worker thread becomes available. A large gap observed between `bolt.messages_received` and `bolt.messages_started` could indicate the server is running at capacity. (counter)
+|<prefix>.bolt.messages_done|The total number of Bolt messages that have completed processing whether successfully or unsuccessfully. Useful for tracking overall load. (counter)
+|<prefix>.bolt.messages_failed|The total number of messages that have failed while processing. A high number of failures may indicate an issue with the server and further investigation of the logs is recommended. (counter)
+|<prefix>.bolt.accumulated_queue_time|(unsupported feature) When `internal.server.bolt.thread_pool_queue_size` is enabled,  the total time in milliseconds that a Bolt message waits in the processing queue before a Bolt worker thread becomes available to process it. Sharp increases in this value indicate that the server is running at capacity. If `internal.server.bolt.thread_pool_queue_size` is disabled, the value should be `0`, meaning that messages are directly handed off to worker threads. (counter)
+|<prefix>.bolt.accumulated_processing_time|The total amount of time in milliseconds that worker threads have been processing messages. Useful for monitoring load via Bolt drivers in combination with other metrics. (counter)
+|===
+
+.Database checkpointing metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.check_point.events|The total number of checkpoint events executed so far. (counter)
+|<prefix>.check_point.total_time|The total time, in milliseconds, spent in checkpointing so far. (counter)
+|<prefix>.check_point.duration|The duration, in milliseconds, of the last checkpoint event. Checkpoints should generally take several seconds to several minutes. Long checkpoints can be an issue, as these are invoked when the database stops, when a hot backup is taken, and periodically as well. Values over `30` minutes or so should be cause for some investigation. (gauge) 
+|<prefix>.check_point.pages_flushed|The number of pages that were flushed during the last checkpoint event. (gauge)
+|<prefix>.check_point.io_performed|The number of IOs from Neo4j perspective performed during the last check point event. (gauge)
+|<prefix>.check_point.io_limit|The IO limit used during the last checkpoint event. (gauge)
+|===
+
+.Cypher metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cypher.replan_events|The total number of times Cypher has decided to re-plan a query. Neo4j caches 1000 plans by default. Seeing sustained replanning events or large spikes could indicate an issue that needs to be investigated. (counter)
+|<prefix>.cypher.replan_wait_time|The total number of seconds waited between query replans. (counter)
+|===
+
+.Database data count metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.neo4j.count.relationship|The total number of relationships in the database. (gauge)
+|<prefix>.neo4j.count.node|The total number of nodes in the database. A rough metric of how big your graph is. And if you are running a bulk insert operation you can see this tick up. (gauge)
+|===
+
+.Database neo4j pools metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.pool.<pool>.<database>.used_heap|Used or reserved heap memory in bytes. (gauge)
+|<prefix>.pool.<pool>.<database>.used_native|Used or reserved native memory in bytes. (gauge)
+|<prefix>.pool.<pool>.<database>.total_used|Sum total used heap and native memory in bytes. (gauge)
+|<prefix>.pool.<pool>.<database>.total_size|Sum total size of capacity of the heap and/or native memory pool. (gauge)
+|<prefix>.pool.<pool>.<database>.free|Available unused memory in the pool, in bytes. (gauge)
+|===
+
+.Database operation count metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.db.operation.count.create|Count of successful database create operations. (counter)
+|<prefix>.db.operation.count.start|Count of successful database start operations. (counter)
+|<prefix>.db.operation.count.stop|Count of successful database stop operations. (counter)
+|<prefix>.db.operation.count.drop|Count of successful database drop operations. (counter)
+|<prefix>.db.operation.count.failed|Count of failed database operations. (counter)
+|<prefix>.db.operation.count.recovered|Count of database operations that failed previously but have recovered. (counter)
+|===
+
+.Database data metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.ids_in_use.relationship_type|The total number of different relationship types stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
+|<prefix>.ids_in_use.property|The total number of different property names used in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
+|<prefix>.ids_in_use.relationship|The total number of relationships stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
+|<prefix>.ids_in_use.node|The total number of nodes stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
+|===
+
+.Global neo4j pools metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.dbms.pool.<pool>.used_heap|Used or reserved heap memory in bytes. (gauge)
+|<prefix>.dbms.pool.<pool>.used_native|Used or reserved native memory in bytes. (gauge)
+|<prefix>.dbms.pool.<pool>.total_used|Sum total used heap and native memory in bytes. (gauge)
+|<prefix>.dbms.pool.<pool>.total_size|Sum total size of the capacity of the heap and/or native memory pool. (gauge)
+|<prefix>.dbms.pool.<pool>.free|Available unused memory in the pool, in bytes. (gauge)
+|===
+
+.Database page cache metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.page_cache.eviction_exceptions|The total number of exceptions seen during the eviction process in the page cache. (counter)
+|<prefix>.page_cache.flushes|The total number of page flushes executed by the page cache. (counter)
+|<prefix>.page_cache.merges|The total number of page merges executed by the page cache. (counter)
+|<prefix>.page_cache.unpins|The total number of page unpins executed by the page cache. (counter)
+|<prefix>.page_cache.pins|The total number of page pins executed by the page cache. (counter)
+|<prefix>.page_cache.evictions|The total number of page evictions executed by the page cache. (counter)
+|<prefix>.page_cache.evictions.cooperative|The total number of cooperative page evictions executed by the page cache due to low available pages. (counter)
+|<prefix>.page_cache.page_faults|The total number of page faults happened in the page cache. If this continues to rise over time, it could be an indication that more page cache is needed. (counter)
+|<prefix>.page_cache.page_fault_failures|The total number of failed page faults happened in the page cache. (counter)
+|<prefix>.page_cache.page_cancelled_faults|The total number of canceled page faults happened in the page cache. (counter)
+|<prefix>.page_cache.hits|The total number of page hits happened in the page cache. (counter)
+|<prefix>.page_cache.hit_ratio|The ratio of hits to the total number of lookups in the page cache. Performance relies on efficiently using the page cache, so this metric should be in the 98-100% range consistently. If it is much lower than that, then the database is going to disk too often. (gauge)
+|<prefix>.page_cache.usage_ratio|The ratio of number of used pages to total number of available pages. This metric shows what percentage of the allocated page cache is actually being used. If it is 100%, then it is likely that the hit ratio will start dropping, and you should consider allocating more RAM to page cache. (gauge)
+|<prefix>.page_cache.bytes_read|The total number of bytes read by the page cache. (counter)
+|<prefix>.page_cache.bytes_written|The total number of bytes written by the page cache. (counter)
+|<prefix>.page_cache.iops|The total number of IO operations performed by page cache.
+|<prefix>.page_cache.throttled.times|The total number of times page cache flush IO limiter was throttled during ongoing IO operations.
+|<prefix>.page_cache.throttled.millis|The total number of millis page cache flush IO limiter was throttled during ongoing IO operations.
+|<prefix>.page_cache.pages_copied|The total number of page copies happened in the page cache. (counter)
+|===
+
+.Query execution metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.db.query.execution.success|Count of successful queries executed. (counter)
+|<prefix>.db.query.execution.failure|Count of failed queries executed. (counter)
+|<prefix>.db.query.execution.latency.millis|Execution time in milliseconds of queries executed successfully. (histogram)
+|===
+
+.Database store size metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.store.size.total|The total size of the database and transaction logs, in bytes. The total size of the database helps determine how much cache page is required. It also helps compare the total disk space used by the data store and how much is available. (gauge)
+|<prefix>.store.size.database|The size of the database, in bytes. The total size of the database helps determine how much cache page is required. It also helps compare the total disk space used by the data store and how much is available. (gauge)
+|===
+
+.Database transaction log metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.log.rotation_events|The total number of transaction log rotations executed so far. (counter)
+|<prefix>.log.rotation_total_time|The total time, in milliseconds, spent in rotating transaction logs so far. (counter)
+|<prefix>.log.rotation_duration|The duration, in milliseconds, of the last log rotation event. (gauge)
+|<prefix>.log.appended_bytes|The total number of bytes appended to the transaction log. (counter)
+|<prefix>.log.flushes|The total number of transaction log flushes. (counter)
+|<prefix>.log.append_batch_size|The size of the last transaction append batch. (gauge)
+|===
+
+.Database transaction metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.transaction.started|The total number of started transactions. (counter)
+|<prefix>.transaction.peak_concurrent|The highest peak of concurrent transactions. This is a useful value to understand. It can help you with the design for the highest load scenarios and whether the Bolt thread settings should be altered. (counter)
+|<prefix>.transaction.active|The number of currently active transactions. Informational, not an indication of any issue. Spikes or large increases could indicate large data loads or just high read load. (gauge)
+|<prefix>.transaction.active_read|The number of currently active read transactions. (gauge)
+|<prefix>.transaction.active_write|The number of currently active write transactions. (gauge)
+|<prefix>.transaction.committed|The total number of committed transactions. Informational, not an indication of any issue. Spikes or large increases indicate large data loads or just high read load. (counter)
+|<prefix>.transaction.committed_read|The total number of committed read transactions. Informational, not an indication of any issue. Spikes or large increases indicate high read load. (counter)
+|<prefix>.transaction.committed_write|The total number of committed write transactions. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (counter)
+|<prefix>.transaction.rollbacks|The total number of rolled back transactions. (counter)
+|<prefix>.transaction.rollbacks_read|The total number of rolled back read transactions. (counter)
+|<prefix>.transaction.rollbacks_write|The total number of rolled back write transactions.  Seeing a lot of writes rolled back may indicate various issues with locking, transaction timeouts, etc. (counter)
+|<prefix>.transaction.terminated|The total number of terminated transactions. (counter)
+|<prefix>.transaction.terminated_read|The total number of terminated read transactions. (counter)
+|<prefix>.transaction.terminated_write|The total number of terminated write transactions. (counter)
+|<prefix>.transaction.last_committed_tx_id|The ID of the last committed transaction. Track this for each instance. (Cluster) Track this for each Core cluster member, and each Read Replica. Might break into separate charts. It should show one line, ever increasing, and if one of the lines levels off or falls behind, it is clear that this member is no longer replicating data, and action is needed to rectify the situation. (counter)
+|<prefix>.transaction.last_closed_tx_id|The ID of the last closed transaction. (counter)
+|<prefix>.transaction.tx_size_heap|The transactions' size on heap in bytes. (histogram)
+|<prefix>.transaction.tx_size_native|The transactions' size in native memory in bytes. (histogram)
+|===
+
+.Server metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.server.threads.jetty.idle|The total number of idle threads in the jetty pool. (gauge)
+|<prefix>.server.threads.jetty.all|The total number of threads (both idle and busy) in the jetty pool. (gauge)
+|===
 
 
 [[causal-clustering-metrics]]
 == Metrics specific to clustering
 
-include::partial$/neo4j-metrics/cc-metrics.adoc[]
+.CatchUp Metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cluster.catchup.tx_pull_requests_received|TX pull requests received from read replicas. (counter)
+|===
+
+.Discovery core metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cluster.discovery.replicated_data|Size of replicated data structures. (gauge)
+|<prefix>.cluster.discovery.cluster.members|Discovery cluster member size. (gauge)
+|<prefix>.cluster.discovery.cluster.unreachable|Discovery cluster unreachable size. (gauge)
+|<prefix>.cluster.discovery.cluster.converged|Discovery cluster convergence. (gauge)
+|===
+
+.Raft core metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cluster.core.append_index|The append index of the Raft log. Each index represents a write transaction (possibly internal) proposed for commitment. The values mostly increase, but sometimes they can decrease as a consequence of leader changes. The append index should always be less than or equal to the commit index. (gauge)
+|<prefix>.cluster.core.commit_index|The commit index of the Raft log. Represents the commitment of previously appended entries. Its value increases monotonically if you do not unbind the cluster state. The commit index should always be bigger than or equal to the appended index. (gauge)
+|<prefix>.cluster.core.applied_index|The applied index of the Raft log. Represents the application of the committed Raft log entries to the database and internal state. The applied index should always be bigger than or equal to the commit index. The difference between this and the commit index can be used to monitor how up-to-date the follower database is. (gauge)
+|<prefix>.cluster.core.term|The Raft Term of this server. It increases monotonically if you do not unbind the cluster state. (gauge)
+|<prefix>.cluster.core.tx_retries|Transaction retries. (counter)
+|<prefix>.cluster.core.is_leader|Is this server the leader? Track this for each Core cluster member. It will report `0` if it is not the leader and `1` if it is the leader. The sum of all of these should always be `1`. However, there will be transient periods in which the sum can be more than `1` because more than one member thinks it is the leader. Action may be needed if the metric shows `0` for more than 30 seconds. (gauge) 
+|<prefix>.cluster.core.in_flight_cache.total_bytes|In-flight cache total bytes. (gauge)
+|<prefix>.cluster.core.in_flight_cache.max_bytes|In-flight cache max bytes. (gauge)
+|<prefix>.cluster.core.in_flight_cache.element_count|In-flight cache element count. (gauge)
+|<prefix>.cluster.core.in_flight_cache.max_elements|In-flight cache maximum elements. (gauge)
+|<prefix>.cluster.core.in_flight_cache.hits|In-flight cache hits. (counter)
+|<prefix>.cluster.core.in_flight_cache.misses|In-flight cache misses. (counter)
+|<prefix>.cluster.core.raft_log_entry_prefetch_buffer.lag|Raft Log Entry Prefetch Lag. (gauge)
+|<prefix>.cluster.core.raft_log_entry_prefetch_buffer.bytes|Raft Log Entry Prefetch total bytes. (gauge)
+|<prefix>.cluster.core.raft_log_entry_prefetch_buffer.size|Raft Log Entry Prefetch buffer size. (gauge)
+|<prefix>.cluster.core.raft_log_entry_prefetch_buffer.async_put|Raft Log Entry Prefetch buffer async puts. (gauge)
+|<prefix>.cluster.core.raft_log_entry_prefetch_buffer.sync_put|Raft Log Entry Prefetch buffer sync puts. (gauge)
+|<prefix>.cluster.core.message_processing_delay|Delay between Raft message receive and process. (gauge)
+|<prefix>.cluster.core.message_processing_timer|Timer for Raft message processing. (counter, histogram)
+|<prefix>.cluster.core.replication_new|The total number of Raft replication requests. It increases with write transactions (possibly internal) activity. (counter)
+|<prefix>.cluster.core.replication_attempt|The total number of Raft replication requests attempts. It is bigger or equal to the replication requests. (counter)
+|<prefix>.cluster.core.replication_fail|The total number of Raft replication attempts that have failed. (counter)
+|<prefix>.cluster.core.replication_maybe|Raft Replication maybe count. (counter)
+|<prefix>.cluster.core.replication_success|The total number of Raft replication requests that have succeeded. (counter)
+|<prefix>.cluster.core.last_leader_message|The time elapsed since the last message from a leader in milliseconds. Should reset periodically. (gauge)
+|===
+
+.Read Replica Metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cluster.read_replica.pull_updates|The total number of pull requests made by this instance. (counter)
+|<prefix>.cluster.read_replica.pull_update_highest_tx_id_requested|The highest transaction id requested in a pull update by this instance. (counter)
+|<prefix>.cluster.read_replica.pull_update_highest_tx_id_received|The highest transaction id that has been pulled in the last pull updates by this instance. (counter)
+|===
+
+
 
 
 [[jvm-metrics]]
@@ -93,4 +340,66 @@ The buffer pools are space outside of the memory managed by the garbage collecto
 Neo4j allocates buffers in those pools as it needs them.
 You can limit this memory using JVM settings, but there is never any good reason for you to set them.
 
-include::partial$/neo4j-metrics/jvm-metrics.adoc[leveloffset=-1]
+.JVM file descriptor metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.file.descriptors.count|The current number of open file descriptors. (gauge)
+|<prefix>.vm.file.descriptors.maximum|(OS setting) The maximum number of open file descriptors. It is recommended to be set to 40K file handles, because of the native and Lucene indexing Neo4j uses. If this metric gets close to the limit, you should consider raising it. (gauge)
+|===
+
+.GC metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.gc.time.<gc>|Accumulated garbage collection time in milliseconds. Long GCs can be an indication of performance issues or potential instability. If this approaches the heartbeat timeout in a cluster, it may cause unwanted leader switches. (counter)
+|<prefix>.vm.gc.count.<gc>|Total number of garbage collections. (counter)
+|===
+
+.JVM Heap metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.heap.committed|Amount of memory (in bytes) guaranteed to be available for use by the JVM. (gauge)
+|<prefix>.vm.heap.used|Amount of memory (in bytes) currently used. This is the amount of heap space currently used at a given point in time. Monitor this to identify if you are maxing out consistently, in which case, you should increase the initial and max heap size, or if you are underutilizing, you should decrease the initial and max heap sizes. (gauge)
+|<prefix>.vm.heap.max|Maximum amount of heap memory (in bytes) that can be used. This is the amount of heap space currently used at a given point in time. Monitor this to identify if you are maxing out consistently, in which case, you should increase the initial and max heap size, or if you are underutilizing, you should decrease the initial and max heap sizes. (gauge)
+|===
+
+.JVM memory buffers metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.memory.buffer.<bufferpool>.count|Estimated number of buffers in the pool. (gauge)
+|<prefix>.vm.memory.buffer.<bufferpool>.used|Estimated amount of memory used by the pool. (gauge)
+|<prefix>.vm.memory.buffer.<bufferpool>.capacity|Estimated total capacity of buffers in the pool. (gauge)
+|===
+
+.JVM memory pools metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.memory.pool.<pool>|Estimated amount of memory in bytes used by the pool. (gauge)
+|===
+
+.JVM pause time metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.pause_time|Accumulated detected VM pause time. (counter)
+|===
+
+.JVM threads metrics.
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.vm.threads|The total number of live threads including daemon and non-daemon threads. (gauge)
+|===
+
+
