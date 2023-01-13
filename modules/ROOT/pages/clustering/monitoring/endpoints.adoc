@@ -5,26 +5,26 @@
 
 [abstract]
 --
-This section describes HTTP endpoints for monitoring the health of a Neo4j Causal Cluster.
+This section describes HTTP endpoints for monitoring the health of a Neo4j Cluster.
 --
 
-A Causal Cluster exposes some HTTP endpoints which can be used to monitor the health of the cluster.
+A cluster exposes some HTTP endpoints which can be used to monitor the health of the cluster.
 In this section we will describe these endpoints and explain their semantics.
 
 
-[[causal-clustering-http-endpoints-adjusting-security-for-cc]]
-== Adjusting security settings for Causal Clustering endpoints
+[[clustering-http-endpoints-adjusting-security-for-cc]]
+== Adjusting security settings for clustering endpoints
 
-If authentication and authorization is enabled in Neo4j, the Causal Clustering status endpoints will also require authentication credentials.
+If authentication and authorization is enabled in Neo4j, the clustering status endpoints will also require authentication credentials.
 The setting <<config_dbms.security.auth_enabled, `dbms.security.auth_enabled`>> controls whether the native auth provider is enabled.
 For some load balancers and proxy servers, providing authentication credentials with the request is not an option.
-For those situations, consider disabling authentication of the Causal Clustering status endpoints by setting <<config_dbms.security.cluster_status_auth_enabled, `dbms.security.cluster_status_auth_enabled=false`>> in <<file-locations, _neo4j.conf_>>.
+For those situations, consider disabling authentication of the clustering status endpoints by setting <<config_dbms.security.cluster_status_auth_enabled, `dbms.security.cluster_status_auth_enabled=false`>> in <<file-locations, _neo4j.conf_>>.
 
 
-[[causal-clustering-http-endpoints-unified]]
+[[clustering-http-endpoints-unified]]
 == Unified endpoints
 
-A unified set of endpoints exist, both on Core Servers and on Read Replicas, with the following behavior:
+A unified set of endpoints exist, both on Primary and Secondary Servers, with the following behavior:
 
 * `/db/<databasename>/cluster/writable` -- Used to direct `write` traffic to specific instances.
 * `/db/<databasename>/cluster/read-only` -- Used to direct `read` traffic to specific instances.
@@ -32,7 +32,7 @@ A unified set of endpoints exist, both on Core Servers and on Read Replicas, wit
 * `/db/<databasename>/cluster/status` -- Gives a detailed description of this instance's view of its status within the cluster, for the given database.
 * `/dbms/cluster/status` -- Gives a detailed description of this instance's view of its status within the cluster, for all databases.
 Useful for monitoring and coordinating rolling upgrades.
-See <<causal-clustering-http-endpoints-status, Status endpoints>> for further details.
+See <<clustering-http-endpoints-status, Status endpoints>> for further details.
 
 Every `/db/<databasename>/*` endpoint targets a specific database.
 The `databaseName` path parameter represents the name of the database.
@@ -59,30 +59,30 @@ http://localhost:7474/db/neo4j/cluster/status
 | Endpoint                                                | Instance state | Returned code   | Body text
 .3+<.^| `/db/<databasename>/cluster/writable`            <| Leader         | `200 OK`        | `true`
                                                          <| Follower       | `404 Not Found` | `false`
-                                                         <| Read Replica   | `404 Not Found` | `false`
+                                                         <| Secondary      | `404 Not Found` | `false`
 .3+<.^| `/db/<databasename>/cluster/read-only`           <| Leader         | `404 Not Found` | `false`
                                                          <| Follower       | `200 OK`        | `true`
-                                                         <| Read Replica   | `200 OK`        | `true`
+                                                         <| Secondary      | `200 OK`        | `true`
 .3+<.^| `/db/<databasename>/cluster/available`           <| Leader         | `200 OK`        | `true`
                                                          <| Follower       | `200 OK`        | `true`
-                                                         <| Read Replica   | `200 OK`        | `true`
-.3+<.^| `/db/<databasename>/cluster/status`              <| Leader         | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
-                                                         <| Follower       | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
-                                                         <| Read Replica   | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
-.3+<.^| `/dbms/cluster/status`                           <| Leader         | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
-                                                         <| Follower       | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
-                                                         <| Read Replica   | `200 OK`        | JSON - See <<causal-clustering-http-endpoints-status, Status endpoint>> for details.
+                                                         <| Secondary      | `200 OK`        | `true`
+.3+<.^| `/db/<databasename>/cluster/status`              <| Leader         | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
+                                                         <| Follower       | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
+                                                         <| Secondary      | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
+.3+<.^| `/dbms/cluster/status`                           <| Leader         | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
+                                                         <| Follower       | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
+                                                         <| Secondary      | `200 OK`        | JSON - See <<clustering-http-endpoints-status, Status endpoint>> for details.
 |===
 
 
-.Use a Causal Clustering monitoring endpoint
+.Use a clustering monitoring endpoint
 ====
 From the command line, a common way to ask those endpoints is to use `curl`.
 With no arguments, `curl` will do an HTTP `GET` on the URI provided and will output the body text, if any.
 If you also want to get the response code, just add the `-v` flag for verbose output.
 Here are some examples:
 
-* Requesting `writable` endpoint on a Core Server that is currently elected leader with verbose output:
+* Requesting `writable` endpoint on a Primary Server that is currently elected leader with verbose output:
 
 [source, curl]
 --------------
@@ -108,24 +108,24 @@ true* Closing connection #0
 ====
 
 
-[[causal-clustering-http-endpoints-status]]
+[[clustering-http-endpoints-status]]
 === Status endpoints
 
 The  status endpoint, available at `/db/<databasename>/cluster/status`, is to be used to assist with rolling upgrades.
-For more information, see link:{upgrade-current-uri}/upgrade/upgrade-4.4/causal-cluster/[Upgrade and Migration Guide -> Upgrade a Causal Cluster].
+For more information, see link:{upgrade-current-uri}/upgrade/upgrade-4.4/cluster/[Upgrade and Migration Guide -> Upgrade a cluster].
 
-Typically, you will want to have some guarantee that a Core is safe to shutdown for each database before removing it from a cluster.
-Counter intuitively, a core being safe to shutdown means that a majority of the *other* cores are healthy, caught up, and have recently heard from that database's leader.
+Typically, you will want to have some guarantee that a Primary is safe to shutdown for each database before removing it from a cluster.
+Counter intuitively, a primary being safe to shutdown means that a majority of the *other* primaries are healthy, caught up, and have recently heard from that database's leader.
 The status endpoints provide the following information in order to help resolve such issues.
 
 [NOTE]
 ====
-Several of the fields in status endpoint responses refer to details of <<causal-clustering-transacting-via-raft-protocol, Raft>>, the algorithm used in Neo4j Causal Clusters to provide highly available transactions.
+Several of the fields in status endpoint responses refer to details of <<clustering-transacting-via-raft-protocol, Raft>>, the algorithm used in Neo4j clusters to provide highly available transactions.
 When using multiple databases, each database implements Raft independently.
 Therefore, details such as `leader` and `raftCommandsPerSecond` are database specific.
 ====
 
-[[causal-clustering-http-endpoints-status-example]]
+[[clustering-http-endpoints-status-example]]
 .Example status response
 ====
 [source, json]
@@ -148,51 +148,51 @@ Therefore, details such as `leader` and `raftCommandsPerSecond` are database spe
 [options="header", cols="2,1,1,2,4"]
 |===
 | Field                          | Type     |Optional| Example                                | Description
-| `core`                         | boolean  | no     | `true`                                 | Used to distinguish between Core Servers and Read Replicas.
+| `core`                         | boolean  | no     | `true`                                 | Used to distinguish between Primary (core) and Secondary servers.
 | `lastAppliedRaftIndex`         | number   | no     | `4321`                                 | Every transaction in a cluster is associated with a raft index.
 
                                                                                               Gives an indication of what the latest applied raft log index is.
 | `participatingInRaftGroup`     | boolean  | no     | `false`                                | A participating member is able to vote.
-                                                                                              A Core is considered participating when it is part of the voter membership and has kept track of the leader.
+                                                                                              A Primary is considered participating when it is part of the voter membership and has kept track of the leader.
 | `votingMembers`                | string[] | no     | `[]`                                   | A member is considered a voting member when the leader has been receiving communication with it.
 
-                                                                                              List of member's `memberId` that are considered part of the voting set by this Core.
+                                                                                              List of member's `memberId` that are considered part of the voting set by this Primary.
 | `isHealthy`                      | boolean  | no     | `true`                                 | Reflects that the local database of this member has not encountered a critical error preventing it from writing locally.
 | `memberId`                     | string   | no     | `30edc1c4-519c-4030-8348-7cb7af44f591` | Every member in a cluster has it's own unique member id to identify it.
-                                                                                              Use `memberId` to distinguish between Core and Read Replica.
+                                                                                              Use `memberId` to distinguish between Primary and Secondary Servers.
 | `leader`                       | string   | yes    | `80a7fb7b-c966-4ee7-88a9-35db8b4d68fe` | Follows the same format as `memberId`, but if it is null or missing, then the leader is unknown.
 | `millisSinceLastLeaderMessage` | number   | yes    | `1234`                                 | The number of milliseconds since the last heartbeat-like leader message.
-                                                                                              Not relevant to Read Replicas, and hence is not included.
-| `raftCommandsPerSecond`        | number   | yes    | `124`                                  | An estimate of the average Raft state machine throughput over a sampling windown configurable via `causal_clustering.status_throughput_window` setting.
+                                                                                              Not relevant to Secondaries, and hence is not included.
+| `raftCommandsPerSecond` [role=deprecated] | number   | yes    | `124`                       | An estimate of the average Raft state machine throughput over a sampling windown configurable via `clustering.status_throughput_window` setting.
 |===
 
 After an instance has been switched on, you can access the status endpoint in order to make sure all the guarantees listed in the table below are met.
 
-To get the most accurate view of a cluster it is strongly recommended to access the _status endpoint_ on all core members and compare the result.
+To get the most accurate view of a cluster it is strongly recommended to access the _status endpoint_ on all primary members and compare the result.
 The following table explains how results can be compared.
 
 .Measured values, accessed via the status endpoint
 [options="header", cols="<1,2,2"]
 |===
 | Name of check                            | Method of calculation                                                                                                                                        | Description
-| `allServersAreHealthy`                     | Every Core's status endpoint indicates `isHealthy`==`true`.                                                                                                   | We want to make sure the data across the entire cluster is healthy.
-                                                                                                                                                                                                            Whenever any Cores are false that indicates a larger problem.
-| `allVotingSetsAreEqual`                    | For any 2 Cores (A and B), status endpoint A's `votingMembers`== status endpoint B's `votingMembers`.                                                          | When the voting begins, all the Cores are equal to each other, and you know all members agree on membership.
-| `allVotingSetsContainAtLeastTargetCluster` | For all Cores (*S*), excluding Core Z (to be switched off), every member in *S* contains *S* in their voting set.
-                                             Membership is determined by using the `memberId` and `votingMembers` from the status endpoint.                                                                   | Sometimes network conditions will not be perfect and it may make sense to switch off a different Core to the one we originally wanted to switch off.
-                                                                                                                                                                                                            If you run this check for all Cores, the ones that match this condition can be switched off (providing other conditions are also met).
-| `hasOneLeader`                             | For any 2 Cores (A and B), `A.leader == B.leader && leader!=null`.                                                                                             | If the leader is different then there may be a partition (alternatively, this could also occur due to bad timing).
+| `allServersAreHealthy`                     | Every Primaries' status endpoint indicates `isHealthy`==`true`.                                                                                                   | We want to make sure the data across the entire cluster is healthy.
+                                                                                                                                                                                                            Whenever any Primaries are false that indicates a larger problem.
+| `allVotingSetsAreEqual`                    | For any 2 Primaries (A and B), status endpoint A's `votingMembers`== status endpoint B's `votingMembers`.                                                          | When the voting begins, all the Primaries are equal to each other, and you know all members agree on membership.
+| `allVotingSetsContainAtLeastTargetCluster` | For all Primaries (*S*), excluding Primary Z (to be switched off), every member in *S* contains *S* in their voting set.
+                                             Membership is determined by using the `memberId` and `votingMembers` from the status endpoint.                                                                   | Sometimes network conditions will not be perfect and it may make sense to switch off a different Primary to the one we originally wanted to switch off.
+                                                                                                                                                                                                            If you run this check for all Primaries, the ones that match this condition can be switched off (providing other conditions are also met).
+| `hasOneLeader`                             | For any 2 Primaries (A and B), `A.leader == B.leader && leader!=null`.                                                                                             | If the leader is different then there may be a partition (alternatively, this could also occur due to bad timing).
                                                                                                                                                                                                             If the leader is unknown, that means the leader messages have actually timed out.
-| `noMembersLagging`                         | For Core A with `lastAppliedRaftIndex` = `min`, and Core B with `lastAppliedRaftIndex` = `max`, `B.lastAppliedRaftIndex-A.lastAppliedRaftIndex<raftIndexLagThreshold`. | If there is a large difference in the applied indexes between Cores, then it could be dangerous to switch off a Core.
+| `noMembersLagging`                         | For Primary A with `lastAppliedRaftIndex` = `min`, and Primary B with `lastAppliedRaftIndex` = `max`, `B.lastAppliedRaftIndex-A.lastAppliedRaftIndex<raftIndexLagThreshold`. | If there is a large difference in the applied indexes between Primaries, then it could be dangerous to switch off a Primary.
 |===
 
 [[combined-status-endpoints]]
 === Combined status endpoints
 
-When using the status endpoints to support a rolling upgrade, you need to assess whether a Core is safe to shutdown for *all* databases.
+When using the status endpoints to support a rolling upgrade, you need to assess whether a Primary is safe to shutdown for *all* databases.
 To avoid having to issue a separate request to each `/db/<databasename>/cluster/status` endpoint, you can use the `/dbms/cluster/status` instead.
 
-This endpoint returns a json array, the elements of which contain the same fields as the <<causal-clustering-http-endpoints-status-example, single database version>>, along with fields for for `databaseName` and `databaseUuid`.
+This endpoint returns a json array, the elements of which contain the same fields as the <<clustering-http-endpoints-status-example, single database version>>, along with fields for for `databaseName` and `databaseUuid`.
 
 .Example combined status response
 ====
