@@ -16,44 +16,39 @@ This section describes the following:
 ** xref:clustering-advanced/multi-data-center-routing.adoc#mdc-dsl-example[Load balancing examples]
 
 * xref:clustering-advanced/multi-data-center-routing.adoc#mdc-strategy-plugins[Strategy plugins]
-** xref:clustering-advanced/multi-data-center-routing.adoc#programmatically-specify-rules[Configuring upstream selection strategy using pre-defined strategies]
-** xref:clustering-advanced/multi-data-center-routing.adoc#configuration-user-defined-strategy[Configuring user-defined strategies]
-** xref:clustering-advanced/multi-data-center-routing.adoc#build-your-own-strategy-plugin[Building upstream strategy plugins using Java]
-** xref:clustering-advanced/multi-data-center-routing.adoc#favoring-data-centers[Favoring data centers]
+** xref:clustering-advanced/multi-data-center-routing.adoc#mdc-programmatically-specify-rules[Configuring upstream selection using pre-defined catchup strategies]
+** xref:clustering-advanced/multi-data-center-routing.adoc#mdc-configuration-user-defined-strategy[Configuring user-defined catchup strategies]
+// ** xref:clustering-advanced/multi-data-center-routing.adoc#mdc-build-your-own-strategy-plugin[Building upstream strategy plugins using Java]
+** xref:clustering-advanced/multi-data-center-routing.adoc#mdc-favoring-data-centers[Favoring data centers]
 
 [[mdc-introduction]]
 == Introduction
 
 When deploying a multi-data center cluster we often wish to take advantage of locality to reduce latency and improve performance.
-For example, we would like our graph-intensive workloads to be executed in the local data center at LAN latencies rather than in a faraway data center at WAN latencies. Neo4j's _load balancing_ and _strategy plugins_ for multi-data center scenarios facilitates precisely this.
+For example, we would like our graph-intensive workloads to be executed in the local data center at LAN latencies rather than in a faraway data center at WAN latencies. Neo4j's _load balancing_ and _catchup strategy plugins_ for multi-data center scenarios facilitates precisely this.
 
-Neo4j's load balancing is a cooperative system where the driver asks the cluster on a recurring basis where it should direct the different classes of its workload (e.g. writes and reads).
+Neo4j's load balancing is a cooperative system where the driver asks the cluster on a recurring basis where it should direct the different classes of its workload (e.g., writes and reads).
 This allows the driver to work independently for long stretches of time, yet check back from time to time to adapt to changes like for example a new server having been added for increased capacity.
 There are also failure situations where the driver will ask again immediately, for example when it cannot use any of its allocated servers.
 
 This is mostly transparent from the perspective of a client.
-On the server side we configure the load balancing behaviors using a simple Design Specific Language, _DSL_, and expose them under a named _load balancing policy_ which the driver can bind to.
-All server-side configuration is performed on the Core Servers.
+On the server side we configure the load balancing behaviors using a simple xref:clustering-advanced/multi-data-center-routing.adoc#mdc-policy-definitions[Design Specific Language], _DSL_, and expose them under a named _load balancing policy_ which the driver can bind to.
+All server-side configuration is performed on the Primary Servers.
 
-Strategy plugins are sets of rules that define how Secondaries contact servers in the cluster in order to synchronize transaction logs.
-Neo4j comes with a set of pre-defined strategies, and also user-defined strategies can be created using the DSL.
+Catchup strategy plugins are sets of rules that define how Secondary Servers contact upstream servers in the cluster in order to synchronize transaction logs.
+Neo4j comes with a set of pre-defined strategies, and also user-defined strategies can be created using the same DSL.
 Finally, Neo4j supports an API which advanced users may use to enhance upstream recommendations.
 
-Once a strategy plugin resolves a satisfactory upstream server, it is used for pulling transactions to update the local Secondary for a single synchronization.
+Once a catchup strategy plugin resolves a satisfactory upstream server, it is used for pulling transactions to update the local Secondary for a single synchronization.
 For subsequent updates, the procedure is repeated so that the most preferred available upstream server is always resolved.
-
-// TODO: mention 
-// This section describes the topology-aware load balancing options available for client applications in a multi-data center Neo4j deployment. It describes how to configure the load balancing for the cluster so that client applications can direct its workload at the most appropriate cluster members, such as those nearby. 
-
-//-------------------- Load balacing starts here ------------------------------------------------------------------------------------------------
-
-// This section describes the topology-aware load balancing options available for client applications in a multi-data center Neo4j deployment. It describes how to configure the load balancing for the cluster so that client applications can direct its workload at the most appropriate cluster members, such as those nearby. 
 
 [[mdc-prerequisite-configuration]]
 == Prerequisite configuration
 
 [[mdc-server-tags]]
 === Server tags
+
+Both load balancing across multiple data centers and user-defined catchup strategies are predicated on the _Server Tag_ concept.
 
 In order to optimize the use of our cluster's servers according to our specific requirements, we sort them using _Server Tags_.
 Server tags can map to data centers, availability zones, or any other significant topological elements from the operator's domain, e.g., `us`, `us-east`. 
@@ -87,17 +82,8 @@ initial.server.tags=eu
 ----
 
 We must be aware that membership of a group implied by a server tag is explicit.
-For example, a server tagged with `gb-london` is not automatically part of the same group as a server that is tagged with `gb` or `eu` unless that server is also explicitly tagged with those tags.
-That is, any (implied) relationship between tags is reified only when those tags are used as the basis for requesting data from upstream systems.
+For example, a server tagged with `gb-london` is not automatically part of the same tag group as a server that is tagged with `gb` or `eu` unless that server is also explicitly tagged with those tags.
 ====
-
-Server tags are not mandatory, but unless they are present, we cannot set up specific upstream transaction dependencies for servers.
-In the absence of any specified server tags, the cluster defaults to its most pessimistic fall-back behavior: each Secondary server will catch up from a random Primary server.
-
-In common with user-defined upstream strategies, load balancing across multiple data centers is predicated on the _Server Tag_ concept.
-Servers can be tagged with one or more server tags, which can be used to logically group servers.
-Decisions about where to route requests from client to servers is then parameterized based on that configuration.
-
 
 [[mdc-primaries-for-reading]]
 === Primaries for reading
@@ -114,6 +100,9 @@ dbms.routing.reads_on_primaries_enabled=true
 
 [[mdc-load-balancing-the-load-balancing-framework]]
 == The load balancing framework
+
+This section describes the topology-aware load balancing options available for client applications in a multi-data center Neo4j deployment. 
+It describes how to configure the load balancing for the cluster so that client applications can direct its workload at the most appropriate cluster members, such as those nearby. 
 
 The load balancing system is based on a plugin architecture for future extensibility and for allowing user customizations.
 The current version ships with exactly one such canned plugin called the _server policies_ plugin.
@@ -148,7 +137,7 @@ Please get in contact with Neo4j Professional Services if you think that you nee
 [NOTE]
 .Use load balancing from Neo4j drivers
 ====
-This chapter describes how to configure a Causal Cluster to use custom load balancing policies
+This chapter describes how to configure a Neo4j Cluster to use custom load balancing policies
 Once enabled and configured, the custom load balancing feature is used by drivers to route traffic as intended.
 See the link:{neo4j-docs-base-uri}[Neo4j Driver manuals] for instructions on how to configure drivers to use custom load balancing.
 ====
@@ -208,7 +197,7 @@ The syntax is similar to a method call with parameters.
 * `tags(name1, name2, ...)`
 ** Only servers which are tagged with any of the specified tags will pass the filter.
 ** The defined names must match those of the _server tags_.
-** Prior to 5.4 `tags` was referred to as `groups`, which will continue to work but is now deprecated.
+** Prior to 5.4 `tags()` were referred to as `groups()`, which will continue to work but is now deprecated.
 * `min(count)`
 ** Only the minimum amount of servers will be allowed to pass (or none).
 ** Allows overload conditions to be managed.
@@ -223,7 +212,7 @@ The tags filter is essentially an OR-filter, e.g. `tags(A,B)` which will pass an
 An AND-filter can also be created by chaining two filters as in `tags(A) \-> tags(B)`, which will only pass servers with both tags (the intersect of the server tags).
 
 
-[[dsl-example]]
+[[mdc-dsl-example]]
 == Load balancing examples
 
 In our discussion on multi-data center clusters we introduced a four region, multi-data center setup.
@@ -283,75 +272,69 @@ In this case we're saying that the cluster should load balance across servers wi
 Failing that, we'll resort to any server in the `north` region, and if the whole of the north is offline we'll resort to any server in the cluster.
 ====
 
+[[mdc-catchup-strategy-plugins]]
+== Catchup strategy plugins
 
-// ---------- upstream strategy -------
+_Catchup strategy plugins_ are sets of rules that define how Secondaries contact upstream servers in the cluster in order to synchronize transaction logs.
+Neo4j comes with a set of pre-defined strategies, and also leverages the xref:clustering-advanced/multi-data-center-routing.adoc#mdc-policy-definitions[DSL] to flexibly create user-defined strategies.
+Finally, Neo4j supports an API which advanced users may use to enhance upstream server recommendations.
 
-
-
-
-[[mdc-strategy-plugins]]
-== Strategy plugins
-
-_Strategy plugins_ are sets of rules that define how Secondaries contact servers in the cluster in order to synchronize transaction logs.
-Neo4j comes with a set of pre-defined strategies, and also provides a Design Specific Language, _DSL_, to flexibly create user-defined strategies.
-Finally, Neo4j supports an API which advanced users may use to enhance upstream recommendations.
-
-
-Once a strategy plugin resolves a satisfactory upstream server, it is used for pulling transactions to update the local Secondary for a single synchronization.
+Once a catchup strategy plugin resolves a satisfactory upstream server, it is used for pulling transactions to update the local Secondary for a single synchronization.
 For subsequent updates, the procedure is repeated so that the most preferred available upstream server is always resolved.
 
+[[mdc-programmatically-specify-rules]]
+=== Configuring upstream selection strategy using pre-defined catchup strategies
 
-[[programmatically-specify-rules]]
-=== Configuring upstream selection strategy using pre-defined strategies
-
-Neo4j ships with the following pre-defined strategy plugins.
-These provide coarse-grained algorithms for choosing an upstream instance:
+Neo4j ships with the following pre-defined catchup strategy plugins.
+These provide coarse-grained algorithms for choosing an upstream server:
 
 [options="header",width="100%",cols="1,1"]
 |===
 | Plugin name                                          | Resulting behavior
 | `connect-to-random-primary-server`                   | Connect to any *Primary Server* selecting at random from those currently available.
 | `typically-connect-to-random-secondary`           | Connect to any available *Secondary Server*, but around 10% of the time connect to any random Primary Server.
-| `connect-randomly-to-server-group`                   | Connect at random to any available *Secondary Server* tagged with any of the server tags specified in the comma-separated list `server.cluster.catchup.connect_randomly_to_server_group`.
+| `connect-randomly-to-server-tags`                   | Connect at random to any available *Secondary Server* tagged with any of the server tags specified in the comma-separated list `server.cluster.catchup.connect_randomly_to_server_tags`.
 | `leader-only`                                        | Connect only to the current Raft leader of the *Primary Servers*.
+| [deprecated]#`connect-randomly-to-server-group`# | [deprecated]#Connect at random to any available *Secondary Server* in the server groups specified in the comma-separated list `server.cluster.catchup.connect_randomly_to_server_group`.
+                                                         Deprecated, please use `connect-randomly-to-server-tags`.#
 | [deprecated]#`connect-randomly-within-server-group`# | [deprecated]#Connect at random to any available *Secondary Server* in any of the server groups to which this server belongs.
-                                                         Deprecated, please use `connect-randomly-to-server-group`.#
+                                                         Deprecated, please use `connect-randomly-to-server-tags`.#
 |===
 
 Pre-defined strategies are used by configuring the xref:reference/configuration-settings.adoc#config_server.cluster.catchup.upstream_strategy[`server.cluster.catchup.upstream_strategy`] option.
 Doing so allows us to specify an ordered preference of strategies to resolve an upstream provider of transaction data.
 We provide a comma-separated list of strategy plugin names with preferred strategies earlier in that list.
-The upstream strategy is chosen by asking each of the strategies in list-order whether they can provide an upstream server from which transactions can be pulled.
+The catchup strategy is chosen by asking each of the strategies in list-order whether they can provide an upstream server from which transactions can be pulled.
 
-.Define an upstream selection strategy
+.Define an upstream server selection strategy
 ====
 Consider the following configuration example:
 
 [source, properties]
 ----
-server.cluster.catchup.upstream_strategy=connect-randomly-to-server-group,typically-connect-to-random-secondary
+server.cluster.catchup.upstream_strategy=connect-randomly-to-server-tags,typically-connect-to-random-secondary
 ----
 
-With this configuration the server will first try to connect to any other server with tag(s) specified in `server.cluster.catchup.connect_randomly_to_server_group`.
+With this configuration the Secondary server will first try to connect to any other server with tag(s) specified in `server.cluster.catchup.connect_randomly_to_server_tags`.
 Should we fail to find any live servers with those tags, then we will connect to a random Secondary server.
 
 [[img-pipeline-of-strategies]]
 image::pipeline-of-strategies.svg[title="The first satisfactory response from a strategy will be used.", role="middle"]
 
-To ensure that downstream servers can still access live data in the event of upstream failures, the last resort of any server is always to contact a random Primary server.
+To ensure that downstream servers can still access live data in the event of upstream failures, the last resort of any server is always to contact a random Primary Server.
 This is equivalent to ending the `server.cluster.catchup.upstream_strategy` configuration with `connect-to-random-primary-server`.
 
 ====
 
 
-[[configuration-user-defined-strategy]]
-=== Configuring user-defined strategies
+[[mdc-configuration-user-defined-strategy]]
+=== Configuring user-defined catchup strategies
 
 Neo4j Clusters support a small DSL for the configuration of client-cluster load balancing.
 This is described in detail in xref:clustering-advanced/multi-data-center-routing.adoc#mdc-policy-definitions[Policy definitions] and xref:clustering-advanced/multi-data-center-routing.adoc#mdc-filters[Filters].
 The same DSL is used to describe preferences for how a server binds to another server to request transaction updates.
 
-The DSL is made available by selecting the `user-defined` strategy as follows:
+The DSL is made available by selecting the `user-defined` catchup strategy as follows:
 
 [source, properties]
 ----
@@ -383,7 +366,7 @@ server.cluster.catchup.user_defined_upstream_strategy=tags(north2); tags(north);
 ----
 
 The configuration is in precedence order from left to right.
-The `tags()` operator yields a server tag from which to catch up.
+The `tags()` operator yields a server tag from which to catchup.
 In this case only if there are no servers tagged with `north2` will we proceed to the `tags(north)` rule which yields any server tagged with `north`.
 Finally, if we cannot resolve any servers with any of the previous tags, then we will stop the rule chain via `halt()`.
 
@@ -396,12 +379,12 @@ However `all()` is indiscriminate and the servers it offers are not guaranteed t
 
 The example above shows a simple hierarchy of preferences expressed through the use of server tags.
 But we can be more sophisticated if we so choose.
-For example we can place conditions on the tagged servers from which we catch up.
+For example we can place conditions on the tagged servers from which we catchup.
 
 .User-defined strategy with conditions
 ====
 
-In this example we wish to roughly qualify cluster health before choosing from where to catch up.
+In this example we wish to roughly qualify cluster health before choosing from where to catchup.
 For this we use the `min()` filter as follows:
 
 [source, properties]
@@ -409,46 +392,45 @@ For this we use the `min()` filter as follows:
 server.cluster.catchup.user_defined_upstream_strategy=tags(north2)->min(3), tags(north)->min(3); all();
 ----
 
-`tags(north2)\->min(3)` states that we want to catch up from servers tagged with `north2` only if there are three available servers, which we here take as an indicator of good health.
-If `north2` can't meet that requirement then we try to catch up from any server tagged with `north` provided there are at least three of them available as per `tags(north)\->min(3)`.
-Finally, if we cannot catch up from a sufficiently healthy `north` region, then we'll (explicitly) fall back to the whole cluster with `all()`.
+`tags(north2)\->min(3)` states that we want to catchup from servers tagged with `north2` only if there are three available servers, which we here take as an indicator of good health.
+If `north2` can't meet that requirement then we try to catchup from any server tagged with `north` provided there are at least three of them available as per `tags(north)\->min(3)`.
+Finally, if we cannot catchup from a sufficiently healthy `north` region, then we'll (explicitly) fall back to the whole cluster with `all()`.
 
 The `min()` filter is a simple but reasonable health indicator of a set of servers with the same tag.
 ====
 
+// [[mdc-build-your-own-strategy-plugin]]
+// === Building upstream strategy plugins using Java
 
-[[build-your-own-strategy-plugin]]
-=== Building upstream strategy plugins using Java
+// Neo4j supports an API which advanced users may use to enhance upstream recommendations in arbitrary ways: load, subnet, machine size, or anything else accessible from the JVM.
+// In such cases we are invited to build our own implementations of `org.neo4j.causalclustering.upstream.UpstreamDatabaseSelectionStrategy` to suit our own needs, and register them with the catchup strategy selection pipeline just like the pre-packaged plugins.
 
-Neo4j supports an API which advanced users may use to enhance upstream recommendations in arbitrary ways: load, subnet, machine size, or anything else accessible from the JVM.
-In such cases we are invited to build our own implementations of `org.neo4j.causalclustering.upstream.UpstreamDatabaseSelectionStrategy` to suit our own needs, and register them with the strategy selection pipeline just like the pre-packaged plugins.
+// We have to override the `org.neo4j.causalclustering.upstream.UpstreamDatabaseSelectionStrategy#upstreamDatabase()` method in our code.
+// Overriding that class gives us access to the following items:
 
-We have to override the `org.neo4j.causalclustering.upstream.UpstreamDatabaseSelectionStrategy#upstreamDatabase()` method in our code.
-Overriding that class gives us access to the following items:
+// [options="header"]
+// |===
+// | Resource                                               | Description
+// | `org.neo4j.causalclustering.discovery.TopologyService` | This is a directory service which provides access to the addresses of all servers and server groups in the cluster.
+// | `org.neo4j.kernel.configuration.Config`                | This provides the configuration from _neo4j.conf_ for the local instance.
+// Configuration for our own plugin can reside here.
+// | `org.neo4j.causalclustering.identity.MemberId`         | This provides the unique cluster `MemberId` of the current instance.
+// |===
 
-[options="header"]
-|===
-| Resource                                               | Description
-| `org.neo4j.causalclustering.discovery.TopologyService` | This is a directory service which provides access to the addresses of all servers and server groups in the cluster.
-| `org.neo4j.kernel.configuration.Config`                | This provides the configuration from _neo4j.conf_ for the local instance.
-Configuration for our own plugin can reside here.
-| `org.neo4j.causalclustering.identity.MemberId`         | This provides the unique cluster `MemberId` of the current instance.
-|===
+// Once our code is written and tested, we have to prepare it for deployment.
+// `UpstreamDatabaseSelectionStrategy` plugins are loaded via the Java Service Loader.
+// This means when we package our code into a jar file, we'll have to create a file _META-INF.services/org.neo4j.upstream.readreplica.UpstreamDatabaseSelectionStrategy_ in which we write the fully qualified class name(s) of the plugins, e.g. `org.example.myplugins.PreferServersWithHighIOPS`.
 
-Once our code is written and tested, we have to prepare it for deployment.
-`UpstreamDatabaseSelectionStrategy` plugins are loaded via the Java Service Loader.
-This means when we package our code into a jar file, we'll have to create a file _META-INF.services/org.neo4j.upstream.readreplica.UpstreamDatabaseSelectionStrategy_ in which we write the fully qualified class name(s) of the plugins, e.g. `org.example.myplugins.PreferServersWithHighIOPS`.
+// To deploy this jar into the Neo4j server we copy it into the xref:configuration/file-locations.adoc[_plugins_] directory and restart the instance.
 
-To deploy this jar into the Neo4j server we copy it into the xref:configuration/file-locations.adoc[_plugins_] directory and restart the instance.
-
-[[favoring-data-centers]]
+[[mdc-favoring-data-centers]]
 === Favoring data centers
 
-In a multi-DC scenario, while it remains a rare occurrence, it is possible to bias where writes for the specified database should be directed.
-We can apply `db.cluster.raft.leader_transfer.priority_group` to specify a set of servers with a given tag which should have priority when selecting the leader for a given database.
-The priority group can be set on one or multiple databases and it means that the cluster will attempt to keep the leadership for the configured database on a server tagged with the configured server tag.
+In a multi-data center scenario, while it remains a rare occurrence, it is possible to bias where writes for the specified database should be directed.
+We can apply `db.cluster.raft.leader_transfer.priority_tag` to specify a set of servers with a given tag which should have priority when selecting the leader for a given database.
+The priority tag can be set on one or multiple databases and it means that the cluster will attempt to keep the leadership for the configured database on a server tagged with the configured server tag.
 
-A database for which `priority_group` has been configured will be excluded from the automatic balancing of leaderships across a cluster.
+A database for which `db.cluster.raft.leader_transfer.priority_tag` has been configured will be excluded from the automatic balancing of leaderships across a cluster.
 It is therefore recommended to not use this configuration unless it is necessary.
 
 
