@@ -100,6 +100,7 @@ neo4j-admin database copy   [--verbose]
                             [--skip-properties=<property>[,<property>...]]
                             [--skip-relationship-properties=<relationship.property>[,<relationship.property>...]]
                             [--from-pagecache=<size>]
+                            [--temp-path=<path>]
                             <fromDatabase>
                             <toDatabase>
 ----
@@ -219,6 +220,11 @@ Cannot be combined with `--skip-properties` or `--copy-only-relationship-propert
 
 | --from-pagecache
 | The size of the page cache to use for reading.
+
+| --temp-path
+| Path to directory to be used as a staging area when target and destination are the same, if needed.
+
+Default: The current directory.
 |===
 
 [TIP]
@@ -293,9 +299,47 @@ The command creates a copy of the database `neo4j` but without the nodes with th
 [NOTE]
 Labels are processed independently, i.e., the filter ignores any node with a label `:Cat`, `:Dog`, or both.
 
+[NOTE]
+For a detailed example of how to use `neo4j-admin database copy` to filter out data for sharding a database, see xref:composite-databases/sharding-with-copy.adoc[Sharding data with the `copy` command].
 ====
 
-[NOTE]
+.Use `neo4j-admin database copy` to compact the database `neo4j`.
 ====
-For a detailed example of how to use `neo4j-admin database copy` to filter out data for sharding a database, see xref:composite-databases/sharding-with-copy.adoc[Sharding data with the `copy` command].
+It is possible to use `neo4j-admin database copy` to compact an existing database.
+If an actual copy of the database is not desired, `<toDatabase>` and `<fromDatabase>` can be the same.
+The end result will be the original database being replaced by the new copy.
+
+[NOTE]
+This resulting database will still be a completely new database which means that indexes will need to be recreated with the generated script and if the database belongs to a cluster, the cluster needs to be reseeded for that database.
+
+[NOTE]
+The space requirements that exist when making an actual copy of the database applies here as well.
+Even if it will just be one database copy in the end it is possible that double the space is needed during the operation.
+
+. Stop the database named `neo4j`:
++
+[source, cypher]
+----
+STOP DATABASE neo4j
+----
+
+. Choose to do an in-place copy. The `neo4j` database will be replaced by the newly created copy:
++
+[source, shell]
+----
+bin/neo4j-admin database copy neo4j neo4j --compact-node-store
+----
++
+[TIP]
+`--temp-path` can be used to specify a different directory to use as temporary staging area.
+
+. Start the database named `neo4j`:
++
+[source, cypher]
+----
+START DATABASE neo4j
+----
+
+. If your original database has a schema defined, recreate the schema using the schema commands saved in the file _<database-name>-schema.cypher_.
+
 ====
