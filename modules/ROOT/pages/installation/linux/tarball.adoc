@@ -1,48 +1,116 @@
 :description: How to install Neo4j on Linux from a tarball, and run it as a console application or service.
 [[installation-linux-tarball]]
-= Linux tarball installation
+= Linux executable (.tar)
 
-Before you install Neo4j on Linux from a tarball and run it as a console application or service, check xref:installation/requirements.adoc[System Requirements] to see if your setup is suitable.
+Before you install Neo4j on Linux from a tarball and run it as a console application or a service, check xref:installation/requirements.adoc[System Requirements] to see if your setup is suitable.
 
 [[unix-console]]
-== Unix console application
+== Install Neo4j from a tarball
 
 . If it is not already installed, get link:http://openjdk.java.net/[OpenJDK 17] or link:http://www.oracle.com/technetwork/java/javase/downloads/index.html[Oracle Java 17].
-. Download the latest release from {neo4j-download-center-uri}[Neo4j Download Center].
+. Download the latest Neo4j tarball from https://neo4j.com/download-center/[Neo4j Download Center] and unpack it:
 +
-Select the appropriate tar.gz distribution for your platform.
-. Check that the SHA hash of the downloaded file is correct:
-.. To find the correct SHA hash, go to Neo4j Download Center and click on `SHA-256` which will be located below your downloaded file.
-.. Using the appropriate commands for your platform, display the `SHA-256` hash for the file that you downloaded.
-.. Ensure that the two are identical.
-. Extract the contents of the archive, using `tar -xf` <filename>.
-For example, `tar -xf neo4j-community-{neo4j-version-exact}-unix.tar.gz`.
-. Place the extracted files in a permanent home on your server.
-The top-level directory is referred to as `NEO4J_HOME`.
-. label:enterprise[Enterprise Edition] Accept the license agreement using one of the following options:
+[source, shell, subs="attributes"]
+----
+tar zxf neo4j-enterprise-{neo4j-version-exact}-unix.tar.gz
+----
+. Move the extracted files to your server's _/opt_ directory and create a symlink to it:
 +
-* Using the environment variable `NEO4J_ACCEPT_LICENSE_AGREEMENT=yes`.
-* By running `<NEO4J_HOME>/bin/neo4j-admin license --accept-commercial`.
+[source, shell, subs="attributes"]
+----
+mv neo4j-enterprise-{neo4j-version-exact} /opt/
+ln -s /opt/neo4j-enterprise-{neo4j-version-exact}/opt/neo4j
+----
+. Create a `neo4j` user and group:
++
+[source, shell]
+----
+groupadd neo4j
+useradd -g neo4j neo4j -s /bin/bash
+----
+. Give the directory the correct ownership using one of the options:
+
+* *Ubuntu*
++
+[source, shell, subs="attributes"]
+----
+chown -R neo4j:adm /opt/neo4j-enterprise-{neo4j-version-exact}
+----
+* *RedHat*
++
+[source, shell, subs="attributes"]
+----
+chown -R neo4j /opt/neo4j-enterprise-{neo4j-version-exact}
+----
+. label:enterprise[Enterprise Edition] Accept the license agreement by either using the environment variable `NEO4J_ACCEPT_LICENSE_AGREEMENT=yes` or by running `<NEO4J_HOME>/bin/neo4j-admin license --accept-commercial`.
 +
 [NOTE]
 ====
-From Neo4j v5.4 onwards, you are required to accept the license before running the Neo4j Enterprise Edition from the tarball.
+From Neo4j v5.4 onwards, you are required to accept the license _before_ running the Neo4j Enterprise Edition from the tarball.
 ====
 . Start Neo4j:
 .. To run Neo4j as a console application, use: `<NEO4J_HOME>/bin/neo4j console`.
 .. To run Neo4j in a background process, use: `<NEO4J_HOME>/bin/neo4j start`.
-. Visit http://localhost:7474 in your web browser.
+. Open  http://localhost:7474 in your web browser.
 . Connect using the username `neo4j` with the default password `neo4j`.
 You will then be prompted to change the password.
 . Stop the server by typing `Ctrl-C` in the console.
 
 
-[[installation-linux-tarball-service]]
-== Linux service
+[[linux-tarball-start-automatically]]
+== Configure Neo4j to start automatically on system boot
 
-If you want to run Neo4j as a system service, you can install either the xref:installation/linux/debian.adoc[Debian] or xref:installation/linux/rpm.adoc[RPM] package.
+You can create a Neo4j service and configure it to start automatically on system boot.
 
-For more information on configuring and operating the Neo4j system service, see xref:installation/linux/systemd.adoc[Neo4j system service].
+. Create the file _/lib/systemd/system/neo4j.service_ with the following contents:
++
+[source, shell]
+----
+[Unit]
+Description=Neo4j Graph Database
+After=network-online.target
+Wants=network-online.target
 
+[Service]
+ExecStart=/opt/neo4j/bin/neo4j console
+Restart=on-abnormal
+User=neo4j
+Group=neo4j
+Environment="NEO4J_CONF=/opt/neo4j/conf" "NEO4J_HOME=/opt/neo4j"
+LimitNOFILE=60000
+TimeoutSec=120
+
+[Install]
+WantedBy=multi-user.target
+Reload systemctl to pick up the new service file
+systemctl daemon-reload
+----
+
+. Configure Neo4j to start at boot time:
++
+[source, shell]
+----
+systemctl enable neo4j
+----
+. Start Neo4j:
++
+[source, shell]
+----
+systemctl start neo4j
+----
+. Check the status of the newly created service:
++
+[source, shell]
+----
+systemctl status neo4j
+----
+. Reboot the system (if desired) to verify that Neo4j restarts on boot:
++
+[source, shell]
+----
+reboot
+----
+
+For more information on operating the Neo4j system service, see xref:installation/linux/systemd.adoc[Neo4j system service].
 
 include::partial$/installation/linux/linux-open-files.adoc[leveloffset=+1]
