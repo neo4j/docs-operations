@@ -229,10 +229,17 @@ In 4.2, signature changed to `db.listLocks() :: (mode :: STRING?, resourceType :
 
 // New in 4.2
 // com.neo4j.causaulclustering.discovery.procedures.ReadReplicaToggleProcedure
+//deprecate in 5.6
 | xref:reference/procedures.adoc#procedure_dbms_cluster_readreplicatoggle[`dbms.cluster.readReplicaToggle()`]
 | label:no[]
 | label:yes[]
 | label:admin-only[]
+
+// New in 5.6
+// | xref:reference/procedures.adoc#procedure_dbms_cluster_secondaryreplicationtoggle[`dbms.cluster.secondaryReplicationToggle()`]
+// | label:no[]
+// | label:yes[]
+// | label:admin-only[]
 
 // Clustering is an Enterprise feature, the naming is weird.
 // dbms.routing.getRoutingTable() does the same thing.
@@ -1082,7 +1089,10 @@ m|READ
 |===
 | Description
 a|
-Visualize the schema of the data.
+Visualizes the schema of the data based on available statistics. A new node is returned for each label.
+The properties represented on the node include `name` (label name), `indexes` (list of indexes), and `constraints` (list of constraints).
+A relationship of a given type is returned for all possible combinations of start and end nodes.
+Note that this may include additional relationships that do not exist in the data due to the information available in the count store.
 | Signature
 m|db.schema.visualization() :: (nodes :: LIST? OF NODE?, relationships :: LIST? OF RELATIONSHIP?)
 | Mode
@@ -1282,6 +1292,7 @@ m|READ
 // m|reader, editor, publisher, architect, admin
 |===
 
+//deprecate in 5.6
 [[procedure_dbms_cluster_readreplicatoggle]]
 .dbms.cluster.readReplicaToggle() label:enterprise-edition[] label:admin-only[]
 [cols="<15s,<85"]
@@ -1289,20 +1300,21 @@ m|READ
 | Description
 a|
 The toggle can pause or resume the pulling of new transactions for a specific database.
-If paused, the Read Replica does not pull new transactions from the other cluster members for the specific database.
-The Read Replica is still available for reads, you can perform a backup, etc.
+If paused, the database secondary does not pull new transactions from the other cluster members for the specific database.
+The database secondary is still available for reads, you can perform a backup, etc.
 
 [TIP]
 ====
 _What is it for?_
 
 You can perform a point in time backup, as the backup will contain only the transactions up to the point where the transaction pulling was paused.
+Follow these steps to do so:
 
-. Connect directly to the Read Replica cluster member. (Neo4j Driver use `bolt://` or use the HTTP API).
+. Connect directly to the server hosting the database in secondary mode. (Neo4j Driver use `bolt://` or use the HTTP API).
 . Pause transaction pulling for the specified database.
-. Create a point in time backup, see xref:backup-restore/online-backup.adoc[Back up an online database].
+. Back up the database, see xref:backup-restore/online-backup.adoc[Back up an online database].
 
-If connected directly to a Read Replica, Data Scientists can execute analysis on a specific database that is paused, the data will not unexpectedly change while performing the analysis.
+If connected directly to a server hosting a database in secondary mode, Data Scientists can execute analysis on a specific database that is paused, the data will not unexpectedly change while performing the analysis.
 ====
 
 [NOTE]
@@ -1329,6 +1341,56 @@ m|READ
 // | Default roles
 // m|admin
 |===
+
+// New in 5.6
+// [[procedure_dbms_cluster_secondaryreplicationtoggle]]
+// .dbms.cluster.secondaryReplicationToggle() label:enterprise-edition[] label:admin-only[]
+// [cols="<15s,<85"]
+// |===
+// | Description
+// a|
+// The toggle can pause or resume the pulling of new transactions for a specific database.
+// If paused, the database secondary does not pull new transactions from the other cluster members for the specific database.
+// The database secondary is still available for reads, you can perform a backup, etc.
+
+// [TIP]
+// ====
+// _What is it for?_
+
+// You can perform a point-in-time backup, as the backup will contain only the transactions up to the point where the transaction pulling was paused.
+// Follow these steps to do so:
+
+// . Connect directly to the server hosting the database in secondary mode. (Neo4j Driver use `bolt://` or use the HTTP API).
+// . Pause transaction pulling for the specified database.
+// . Back up the database, see xref:backup-restore/online-backup.adoc[Back up an online database].
+
+// If connected directly to a server hosting a database in secondary mode, Data Scientists can execute analysis on a specific database that is paused, the data will not unexpectedly change while performing the analysis.
+// ====
+
+// [NOTE]
+// ====
+// This procedure can only be executed on a database which runs in a secondary role on the connected server.
+// ====
+
+// .Pause transaction pulling for database `neo4j`
+// [source, cypher, role="noheader"]
+// ----
+// CALL dbms.cluster.secondaryReplicationToggle("neo4j", true)
+// ----
+
+// .Resume transaction pulling for database `neo4j`
+// [source, cypher, role="noheader"]
+// ----
+// CALL dbms.cluster.secondaryReplicationToggle("neo4j", false)
+// ----
+
+// | Signature
+// m|dbms.cluster.secondaryReplicationToggle(databaseName :: STRING?, pause :: BOOLEAN?) :: (state :: STRING?)
+// | Mode
+// m|READ
+// // | Default roles
+// // m|admin
+// |===
 
 [[procedure_dbms_cluster_uncordonServer]]
 .dbms.cluster.uncordonServer() label:enterprise-edition[] label:admin-only[]
@@ -1451,6 +1513,7 @@ Results include:
 * `defaultValue`: the default value of the setting.
 * `startupValue`: the value when the server was started, after _neo4j.conf_ and command line arguments have been applied.
 * `explicitlySet`: true if the value was set explicitly, or false if it was set by default.
+* `validValues`: contains information on data types and possible values for the settings.
 
 | Signature
 m|dbms.listConfig(searchString =  :: STRING?) :: (name :: STRING?, description :: STRING?, value :: STRING?, dynamic :: BOOLEAN?, defaultValue :: STRING?, startupValue :: STRING?, explicitlySet :: BOOLEAN?, validValues :: STRING?)
@@ -1747,16 +1810,3 @@ m|DBMS
 // | Default roles
 // m|reader, editor, publisher, architect, admin
 |===
-
-
-// sources:
-// neo4j-documentation/procedures/target/docs/procedure-reference-enterprise-edition.adoc
-// neo4j-documentation/procedures/target/docs/procedure-reference-community-edition.adoc
-// neo4j-documentation/procedures/target/docs/procedure-reference-complete.adoc
-
-// sources .jar
-// ~/.m2/repository/org/neo4j/doc/procedure-documentation/4.3.0-SNAPSHOT/procedure-documentation-4.3.0-SNAPSHOT.jar
-
-// uncomment below to include the autogenereated sources
-// include::{import-procedure-documentation-docs}/procedure-reference-enterprise-edition.adoc[]
-// include::{import-procedure-documentation-docs}/procedure-reference-community-edition.adoc[]
