@@ -5,41 +5,41 @@
 
 Neo4j Enterprise Edition can be easily deployed on EC2 instances in Amazon Web Services (AWS) by using the link:https://aws.amazon.com/marketplace/pp/prodview-akmzjikgawgn4?sr=0-1&ref_=beagle&applicationId=AWSMPContessa[official listing for Neo4j Enterprise in the AWS Marketplace].
 
-The AWS Marketplace listing uses the official Neo4j AWS CloudFormation template. An up to date copy of this template can be found in the link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[neo4j-partners public GitHub repository], which can be used independently of the cloud marketplace if needed. It can be downloaded and customized to meet more complex or bespoke use cases.
+The AWS Marketplace listing uses a CloudFormation template which is written and maintained by Neo4j. An up to date copy of this template can be found in the link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[neo4j-partners] public GitHub repository. The template can be used independently of the cloud marketplace and customized to meet more complex or bespoke use cases.
 
 [NOTE]
 ====
-Note that Neo4j does not provide Amazon Machine Images (AMIs) with a pre-installed version of the product. The Neo4j Marketplace listings and custom listings on Github utilise CloudFormation templates and a user-data (post-install) script to deploy and configure Neo4j.
+Neo4j does not provide Amazon Machine Images (AMIs) with a pre-installed version of the product. The Neo4j Marketplace listings and custom listings on Github use CloudFormation templates and user-data (post-install) scripts to deploy and configure Neo4j.
 ====
 
 == Supported Neo4j Versions
 
 === Major Versions
-Both Neo4j Enterprise Edition v5 and v4.4 can be deployed from the Neo4j Enterprise Edition listing on the AWS Marketplace.  CloudFormation templates for Neo4j v4.4 can be found in the Neo4j-4.4 branch of the amazon-cloud-formation-neo4j repository (the main branch hosts the CloudFormation template for Neo4j v5):
+Both Neo4j Enterprise Edition v5 and v4.4 can be deployed from the link:https://aws.amazon.com/marketplace/seller-profile?id=23ec694a-d2af-4641-b4d3-b7201ab2f5f9[offical Neo4j listing] on the AWS Marketplace.  CloudFormation templates for Neo4j v4.4 reside in the ```Neo4j-4.4``` branch of the ```amazon-cloud-formation-neo4j```  repository (the main branch hosts the CloudFormation template for Neo4j v5):
 
 * link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[CloudFormation template for Neo4j v5]. 
 * link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/Neo4j-4.4/marketplace[CloudFormation template for Neo4j v4.4].
 
 === Minor Versions
-The Neo4j CloudFormation template will deploy the latest available minor version of either version 4.4 or 5, which is stored in an s3 hosted,  link:http://versions.neo4j-templates.com[json data file].  This file is updated automatically by Neo4j when new versions of the database are released.
+Before installing Neo4j, the CloudFormation template queries an S3 hosted link:http://versions.neo4j-templates.com[JSON data file] to find the latest minor version of Neo4j v5 or v4.4.  This file is updated automatically by Neo4j when new versions of the database are released.
 
-When a Neo4j cluster is created, the auto-scaling group (ASG) is tagged with the version of Neo4j which was installed when the environment was created.  If additional nodes are added to an existing cluster, they will query the ASG to retrieve the version of Neo4j to be installed.  This ensures that all cluster nodes remain on the same version of Neo4j.
+When a Neo4j cluster is created, the auto-scaling group (ASG) is tagged with the minor version number of Neo4j which was installed when the environment was created.  If additional nodes are then added to an existing cluster, they will query the ASG to retrieve the version of Neo4j to be installed.  This prevents version mismatch by ensuring that all cluster nodes remain on the same version of Neo4j, regardless of when the EC2 instances were installed.
 
 == Licensing
 
-By installing and starting Neo4j from the AWS marketplace customers are accepting the terms of the Neo4j enterprise agreement and confirming they have either have an enterprise license, or accept the terms of the Neo4j evaluation license.
+Installing and starting Neo4j from the AWS marketplace constitutes and acceptance of the Neo4j license agreement.  By deploying Neo4j, users are therefore confirming they have either have an enterprise license, or accept the terms of the Neo4j evaluation license.
 
-If you require the Enterprise version of Graph Data Science or Bloom, you will need to provide a key issued by Neo4j as this will be required during the installation.
+If you require the Enterprise version of either Graph Data Science or Bloom, you will need to provide a key issued by Neo4j as this will be required during the installation.
 
 To obtain a valid license for either Neo4j, Bloom or GDS reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form]
 
 == Neo4j CloudFormation template
 
-AWS CloudFormation is a declarative Infrastructure as Code (IaC) language that instructs AWS to deploy a set of cloud resources.
+AWS CloudFormation is a declarative Infrastructure as Code (IaC) language that is based on yaml and instructs AWS to deploy a set of cloud resources.
 
 The Neo4j CloudFormation template takes a number of parameters as inputs, deploys a set of cloud resources and provides outputs:
 
-=== Input Parameters (for Neo4j v5)
+=== Input Parameters
 
 [cols="<31,69",frame="topbot",options="header"]
 |===
@@ -81,23 +81,30 @@ The Neo4j CloudFormation template takes a number of parameters as inputs, deploy
 
 === Deployed Cloud Resources
 
-Users are reminded that the deployment of cloud resources will incur costs.
+*Users are reminded that the deployment of cloud resources will incur costs.*
 
 [NOTE]
 ====
-The Neo4j CloudFormation Template uses an auto-scaling group (ASG) to deploy EC2 instances.  This means that if stopped or teminated, EC2 instances will be automatically re-created.  In order to stop or terminate EC2 instances, they would first need to be removed from the ASG.
+The Neo4j CloudFormation Template uses an auto-scaling group (ASG) to deploy EC2 instances.  This means that if stopped or teminated, EC2 instances will be automatically replaced.  In order to stop or terminate EC2 instances, they would first need to be removed from the ASG.
 ====
+
+The environment which is created by the CloudFormation template, consists of the following AWS resources:
 
 * 1 VPC, with a CIDR range of 10.0.0.0/16
 ** 3 Subnets, distributed evenly across 3 Availability zones, with the following CIDR Ranges:
 *** 10.0.1.0/24
 *** 10.0.2.0/24
 *** 10.0.3.0/24
+** An internet gateway
+** Routing tables (and associations) for all subnets
 * An auto-scaling group and launch configuration, which creates:
 ** 1, or between 3 and 10 EC2 instances (Depending on whether a single instance, or an autonomous cluster is selected)
 * 1 Network (Layer 4) Load Balancer
+** A target group for the EC2 instances
 
 === Template Outputs
+
+When installation has sucessfully been completed, the CloudFormation template provides the following outputs.  They can be found in the *Outputs* tab of the CloudFormation page on the AWS console.
 
 [cols="<31,69",frame="topbot",options="header"]
 |===
@@ -112,13 +119,13 @@ The Neo4j CloudFormation Template uses an auto-scaling group (ASG) to deploy EC2
 | The Bolt URL of the Neo4j Browser
 
 | Neo4jUsername	
-| The username 'neo4j' 
+| The username *neo4j* and a reminder to use the password which was specified earlier when filling out the CloudFormation template 
 
 |===
 
 == Verify that Neo4j is running
 
-When the CloudFormation stack is created, navigate to the *Outputs* tab and click the *Neo4jLoadBalancerURL*.
+When the CloudFormation stack is created, navigate to the *Outputs* open the *Neo4jLoadBalancerURL* in a new tab.
 
 The URL points to the Neo4j Browser, where the specified credentials can be used to log in to Neo4j.
 
