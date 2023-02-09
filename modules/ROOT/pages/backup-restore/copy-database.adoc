@@ -3,79 +3,26 @@
 [[copy-database]]
 = Copy a database store
 
-A user database or backup can be copied to a Neo4j instance using the `copy` command of `neo4j-admin`.
+You can use the `neo4j-admin database copy` command to copy a database, create a compacted/defragmented copy of a database, or clean up database inconsistencies.
+`neo4j-admin database copy` reclaims the unused space, creates a defragmented copy of the _data store_, and creates the node label and relationship type lookup indexes.
+Any additional _schema_ (indexes and constraints) defined are not included.
+However, the command will output Cypher statements, which you can run to recreate the indexes and constraints.
 
+.Command limitations
 [NOTE]
 ====
-`neo4j-admin database copy` is not supported for use on the `system` database.
-====
-
-[NOTE]
-====
-`neo4j-admin database copy` is not supported for use on xref:composite-databases/introduction.adoc#composite-databases-concepts[composite databases].
+* `neo4j-admin database copy` preserves the node IDs (unless `--compact-node-store` is used), but the relationships get new IDs.
+* `neo4j-admin database copy` is not supported for use on the `system` database.
+* `neo4j-admin database copy` is not supported for use on xref:composite-databases/introduction.adoc#composite-databases-concepts[composite databases].
 It must be run directly on the databases that are part of a composite database.
-====
-
-
-[WARNING]
-====
-It is important to note that `neo4j-admin database copy` is an IOPS-intensive process.
-Using this process for upgrading or migration purposes can have significant performance implications, depending on your disc specification.
-It is therefore not appropriate for all use cases.
-
-
-Estimating the processing time::
-+
---
-Estimations for how long the `neo4j-admin database copy` command takes can be made based on the following:
-
-* Neo4j, like many other databases, does IO in 8K pages.
-* Your disc manufacturer will have a value for the maximum IOPS it can process.
-
-For example, if your disc manufacturer has provided a maximum of 5000 IOPS, you can reasonably expect up to 5000 such page operations a second.
-Therefore, the maximal theoretical throughput you can expect is 40MB/s (or 144 GB/hour) on that disc.
-You may then assume that the best-case scenario for running `neo4j-admin database copy` on that 5000 IOPS disc is that it takes at least 1 hour to process a 144 GB database. footnote:[The calculations are based on `MB/s = (IOPS * B) ÷ 10^6`,
-where `B` is the block size in bytes; in the case of Neo4j, this is `8000`. GB/hour can then be calculated from `(MB/s * 3600) ÷ 1000`.]
-
-However, it is important to remember that the process must read 144 GB from the source database, and must also write to the target store (assuming the target store is of comparable size).
-Additionally, there are internal processes during the copy that reads/modifies/writes the store multiple times.
-Therefore, with an additional 144 GB of both read and write, the best-case scenario for running `neo4j-admin database copy` on a 5000 IOPS disc is that it takes *at least 3 hours to process a 144 GB database*.
-
-Finally, it is also important to consider that in almost all Cloud environments, the published IOPS value may not be the same as the actual value, or be able to continuously maintain the maximum possible IOPS.
-The real processing time for this example _could_ be well above that estimation of 3 hours.
---
-
-For detailed information about supported methods of upgrade and migration, see the https://neo4j.com/docs/upgrade-migration-guide/current/[Neo4j Upgrade and Migration Guide].
+* `neo4j-admin database copy` is an IOPS-intensive process.
+For more information, see <<copy-estimating-iops, Estimating the processing time>>.
 ====
 
 [[copy-database-command]]
 == Command
 
 `neo4j-admin database copy` copies the _data store_ of an existing **offline** database to a new database.
-
-[[copy-database-usage]]
-=== Usage
-
-The `neo4j-admin database copy` command can be used to clean up database inconsistencies, compact stores, and do a direct migration from Neo4j 4.4 to any 5.x version.
-It can process an optional set of filters, which you can use to remove any unwanted data before copying the database.
-The command also reclaims the unused space of a database and creates a defragmented copy of that database or backup in the destination Neo4j instance.
-
-[NOTE]
-====
-`neo4j-admin database copy` copies the _data store_ and creates the node label and relationship type lookup indexes.
-Any additional _schema_ (indexes and constraints) defined are not included.
-However, the command will output Cypher statements, which you can run to recreate the indexes and constraints.
-====
-
-[TIP]
-====
-For a detailed example of how to reclaim unused space, see xref:performance/space-reuse.adoc#space-reuse-reclaim-space[Reclaim unused space].
-====
-
-[WARNING]
-====
-`neo4j-admin database copy` preserves the node IDs; however, the relationships get new IDs.
-====
 
 [[copy-database-syntax]]
 === Syntax
@@ -100,17 +47,24 @@ neo4j-admin database copy   [--verbose]
                             [--skip-properties=<property>[,<property>...]]
                             [--skip-relationship-properties=<relationship.property>[,<relationship.property>...]]
                             [--from-pagecache=<size>]
+                            [--temp-path=<path>]
                             <fromDatabase>
                             <toDatabase>
 ----
 
-`<toDatabase>` -- Name of the target database.
+=== Required parameters
 
-`<fromDatabase>` -- Name of the source database.
+To use this command, you must specify the parameters `<toDatabase>` and `<fromDatabase>`. +
+From Neo4j v5.5, you can use the same values for `<fromDatabase>` and `<toDatabase>` if you do not need an actual copy of the database.
+The command will replace the original database with the newly created copy.
 
+* `<fromDatabase>` -- Name of the source database.
+
+* `<toDatabase>` -- Name of the target database. 
+If the same as `<fromDatabase>`, it is copied to a temporary location before being moved to replace the original.
 
 [[copy-database-command-options]]
-=== Options
+=== Optional parameters
 
 [options="header", cols="2m,3a"]
 |===
@@ -219,6 +173,11 @@ Cannot be combined with `--skip-properties` or `--copy-only-relationship-propert
 
 | --from-pagecache
 | The size of the page cache to use for reading.
+
+| --temp-path
+| Path to a directory to be used as a staging area when the source and target databases are the same.
+
+Default: The current directory.
 |===
 
 [TIP]
@@ -230,8 +189,10 @@ The `--from-pagecache` should be assigned whatever memory you can spare since Ne
 [[copy-database-examples]]
 == Examples
 
-.Use `neo4j-admin database copy` to copy the data store of the database `neo4j`.
-====
+=== Copying the data store of a database
+
+You can use `neo4j-admin database copy` to copy the data store of a database, for example, `neo4j`.
+
 . Stop the database named `neo4j`:
 +
 [source, cypher]
@@ -246,7 +207,7 @@ STOP DATABASE neo4j
 bin/neo4j-admin database copy neo4j copy
 ----
 
-. Run the following command to verify that database has been successfully copied.
+. Run the following command to verify that the database has been successfully copied.
 +
 [source, shell]
 ----
@@ -254,8 +215,10 @@ ls -al ../data/databases
 ----
 +
 [NOTE]
+====
 Copying a database does not automatically create it.
 Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+====
 
 . Create the copied database.
 +
@@ -274,14 +237,13 @@ SHOW DATABASES
 . If your original database has a schema defined, change your active database to `copy` and recreate the schema using the schema commands saved in the file _<database-name>-schema.cypher_.
 +
 [TIP]
+====
 `--to-path-schema` can be used to specify a different directory for the schema file.
-
 ====
 
-.Use `neo4j-admin database copy` to filter the data you want to copy.
-====
-The command can perform some basic forms of processing.
-You can filter the data that you want to copy by removing nodes, labels, properties, and relationships.
+=== Filtering data while copying a database
+
+You can use `neo4j-admin database copy` to filter out any unwanted data while copying a database, for example, by removing nodes, labels, properties, and relationships.
 
 [source, shell]
 ----
@@ -291,11 +253,77 @@ bin/neo4j-admin database copy neo4j copy --ignore-nodes-with-labels="Cat,Dog"
 The command creates a copy of the database `neo4j` but without the nodes with the labels `:Cat` and `:Dog`.
 
 [NOTE]
+====
 Labels are processed independently, i.e., the filter ignores any node with a label `:Cat`, `:Dog`, or both.
-
 ====
 
-[NOTE]
+[TIP]
 ====
 For a detailed example of how to use `neo4j-admin database copy` to filter out data for sharding a database, see xref:composite-databases/sharding-with-copy.adoc[Sharding data with the `copy` command].
 ====
+
+[[compact-database]]
+=== Further compacting an existing database
+
+You can use the command `neo4j-admin database copy` with the argument `-compact-node-store` to further compact the store of an existing database. +
+This example uses the same values for `<toDatabase>` and `<fromDatabase>`, which means that the command will compact the database in place by creating a new version of the database.
+After running the command, you need to recreate the indexes using the generated script.
+If the database belongs to a cluster, you also need to reseed the cluster.
+
+[NOTE]
+====
+Note that even though it is only one database copy in the end, you still need double the space during the operation.
+====
+
+. Stop the database named `neo4j`:
++
+[source, cypher]
+----
+STOP DATABASE neo4j
+----
+
+. Compact the `neo4j` database using the command:
++
+[source, shell]
+----
+bin/neo4j-admin database copy neo4j neo4j --compact-node-store
+----
++
+[TIP]
+====
+`--temp-path` can be used to specify a different directory to use as a temporary staging area.
+====
+
+. Start the `neo4j` database.
+This is the newly created version of the database.
++
+[source, cypher]
+----
+START DATABASE neo4j
+----
+
+. If your original database has a schema defined, recreate the schema using the schema commands saved in the file _<database-name>-schema.cypher_.
+
+[TIP]
+====
+For a detailed example of how to reclaim unused space, see xref:performance/space-reuse.adoc#space-reuse-reclaim-space[Reclaim unused space].
+====
+[[copy-estimating-iops]]
+== Estimating the processing time
+
+Estimations for how long the `neo4j-admin database copy` command takes can be made based on the following:
+
+* Neo4j, like many other databases, do IO in 8K pages.
+* Your disc manufacturer will have a value for the maximum IOPS it can process.
+
+For example, if your disc manufacturer has provided a maximum of 5000 IOPS, you can reasonably expect up to 5000 such page operations a second.
+Therefore, the maximal theoretical throughput you can expect is 40MB/s (or 144 GB/hour) on that disc.
+You may then assume that the best-case scenario for running `neo4j-admin database copy` on that 5000 IOPS disc is that it takes at least 1 hour to process a 144 GB database. footnote:[The calculations are based on `MB/s = (IOPS * B) ÷ 10^6`,
+where `B` is the block size in bytes; in the case of Neo4j, this is `8000`. GB/hour can then be calculated from `(MB/s * 3600) ÷ 1000`.]
+
+However, it is important to remember that the process must read 144 GB from the source database, and must also write to the target store (assuming the target store is of comparable size).
+Additionally, there are internal processes during the copy that reads/modifies/writes the store multiple times.
+Therefore, with an additional 144 GB of both read and write, the best-case scenario for running `neo4j-admin database copy` on a 5000 IOPS disc is that it takes *at least 3 hours to process a 144 GB database*.
+
+Finally, it is also important to consider that in almost all Cloud environments, the published IOPS value may not be the same as the actual value, or be able to continuously maintain the maximum possible IOPS.
+The real processing time for this example _could_ be well above that estimation of 3 hours.
