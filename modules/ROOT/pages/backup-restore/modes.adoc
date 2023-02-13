@@ -42,12 +42,20 @@ For more information about performing a full backup against an *offline* databas
 == Incremental backup
 
 
-After the initial full backup, the subsequent backups attempt to use the incremental mode, where just the delta of the transaction logs since the last backup are transferred and applied onto the target location.
+After the initial full backup, the subsequent backups attempt to use the incremental mode, where just the delta of the transaction logs since the last backup is transferred and applied to the target location.
 If the required transaction logs are not available on the backup server, then the backup client falls back on performing a full backup instead, unless `--fallback-to-full` is disabled.
+The incremental backup can be run only against an *online* database.
 
 [NOTE]
 ====
-The incremental backup can be run only against an *online* database.
+The incremental backup strategy is configured by the xref:reference/configuration-settings.adoc#config_dbms.backup.incremental.strategy[`dbms.backup.incremental.strategy`] setting.
+
+The default strategy is `UNBOUNDED`, meaning that the server will send transactions until all committed transactions have been sent, even those committed after the start of the backup job.
+This strategy is suitable for a low ingest rate environment, where the backup network throughput is high enough to keep up with the transaction rate.
+For the `UNBOUNDED` strategy to be effective, the backup and database files must be on the same filesystem for the backup to catch up with as few transactions as possible.
+
+In an environment with a high ingest rate and a low backup network throughput, it is advisable to use the `START_TIME` strategy, which sends only the transactions committed before the start of the backup job.
+Otherwise, the backup might hang for a long time, trying to catch up as transactions continue to checkpoint and then be committed to the database.
 ====
 
 .Incremental backup against an online database
