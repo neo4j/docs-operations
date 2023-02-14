@@ -3,54 +3,49 @@
 [[aws]]
 = Neo4j on AWS
 
-Neo4j Enterprise Edition can be easily deployed on EC2 instances in Amazon Web Services (AWS) by using the link:https://aws.amazon.com/marketplace/pp/prodview-akmzjikgawgn4?sr=0-1&ref_=beagle&applicationId=AWSMPContessa[official listing for Neo4j Enterprise on the AWS Marketplace].
+Neo4j Enterprise Edition can be easily deployed on EC2 instances in Amazon Web Services (AWS) by using the link:https://aws.amazon.com/marketplace/pp/prodview-akmzjikgawgn4?sr=0-1&ref_=beagle&applicationId=AWSMPContessa[official listing for Neo4j Enterprise on the AWS Marketplace^].
 
 The AWS Marketplace listing uses a CloudFormation template maintained by Neo4j. 
-The template's code is available on link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[GitHub] and can be customized to meet more complex or bespoke use cases. 
-See <<cloudformation_template>>.
+The template's code is available on link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[GitHub^] and can be customized to meet more complex or bespoke use cases. 
 
-// Does this matter? Is the purpose of a note for additional technical information? Or about calling your attention to an important caveat?
-
-// This is not a caveat, it's a design decision.
-//The note below is the result of a support request to clarify that the marketplace listing uses a CloudFormation template and no longer uses custom AMIs. See https://trello.com/c/tMMaMPJs/680-aws-deployment-doc-update-requested.
 
 [NOTE]
 ====
 Neo4j does not provide Amazon Machine Images (AMIs) with a pre-installed version of the product.
-The Neo4j Marketplace listings and custom listings on Github use CloudFormation templates and user-data (post-install) scripts to deploy and configure Neo4j.
+The Neo4j Marketplace listings (and listings on GitHub) use CloudFormation templates that include a user-data (post-install) script to deploy and configure Neo4j.
 ====
 
 == Supported Neo4j versions
 
-The Neo4j link:https://aws.amazon.com/marketplace/seller-profile?id=23ec694a-d2af-4641-b4d3-b7201ab2f5f9[AWS marketplace listing] can be configured to deploy either Neo4j Enterprise Edition v5 or v4.4.
-The  CloudFormation template always installs the latest minor version of Neo4j v5 or v4.4.
+The Neo4j link:https://aws.amazon.com/marketplace/seller-profile?id=23ec694a-d2af-4641-b4d3-b7201ab2f5f9[AWS marketplace listing^] can be configured to deploy either Neo4j Enterprise Edition v5 or v4.4.
+The  CloudFormation template always installs the latest available minor version of each release.
+For example, the latest minor release of Neo4j 5 is {neo4j-version-minor}.
 
-== Clusters
-
-//does this get updated when the cluster is upgraded?
-//try to avoid the word "nodes".
-When you create a Neo4j cluster, the Auto Scaling group (ASG) is tagged with the minor version of the installed Neo4j.
-If you add more EC2 instances to your ASG, they will be tagged with the same minor version, ensuring that all Neo4j cluster servers run on the same version, regardless of when the EC2 instances were created.
-
-== Licensing
-
-Installing and starting Neo4j from the AWS marketplace constitutes an acceptance of the Neo4j license agreement.
-When deploying Neo4j, users are required to confirm that they either have an enterprise license or accept the terms of the Neo4j evaluation license.
-
-If you require the Enterprise version of either Graph Data Science or Bloom, you need to provide a key issued by Neo4j as this will be required during the installation.
-
-To obtain a valid license for either Neo4j, Bloom, or GDS, reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form].
-
-[[cloudformation_template]]
 == Neo4j CloudFormation template
 
 AWS CloudFormation is a declarative Infrastructure as Code (IaC) language that is based on YAML and instructs AWS to deploy a set of cloud resources.
-The Neo4j CloudFormation template repository has v5 on the `main` branch and v4 on the `Neo4j-4.4` branch:
+The Neo4j CloudFormation template repository contains code for Neo4j v5 on the `main` branch and code for Neo4j v4.4 on the `Neo4j-4.4` branch:
 
 * link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/main/marketplace[CloudFormation template for Neo4j v5]. 
 * link:https://github.com/neo4j-partners/amazon-cloud-formation-neo4j/tree/Neo4j-4.4/marketplace[CloudFormation template for Neo4j v4.4].
 
-The Neo4j CloudFormation template takes several parameters as inputs, deploys a set of cloud resources, and provides outputs that can be used to connect to the Neo4j cluster.
+The Neo4j CloudFormation template takes several parameters as inputs, deploys a set of cloud resources, and provides outputs that can be used to connect to a Neo4j DBMS.
+
+=== Important considerations
+
+
+* The deployment of cloud resources will incur costs.
+** Refer to the link:https://calculator.aws/#[AWS pricing calculator^]for more information.
+
+* The Neo4j CloudFormation template deploys a new VPC.
+** AWS accounts are limited to an initial quota of 5 VPCs (you can view your current quota by viewing the *Limits* page of the Amazon EC2 console).
+** Your VPC quota can be increased if needed by contacting AWS support.
+
+* The Neo4j CloudFormation template uses an Auto Scaling group (ASG) to deploy EC2 instances.
+** This means that to stop or terminate EC2 instances, you must first remove them from the ASG, otherwise, the ASG will automatically replace them.
+
+* SSH Keys are not generated as part of the CloudFormation template.
+** Use EC2 Instance Connect (via the EC2 console) to connect to deployed EC2 instances if needed.
 
 === Input parameters
 
@@ -61,53 +56,38 @@ The Neo4j CloudFormation template takes several parameters as inputs, deploys a 
 | Parameter Description
 
 | Stack Name
-| A name for the CloudFormation stack to be deployed, e.g., `my-neo4j-cluster`.
-Stack name can include letters (A-Z and a-z), numbers (0-9), and dashes (-).
+| A name for the CloudFormation stack to be deployed, e.g., `my-neo4j-cluster`.  Stack name can include letters (A-Z and a-z), numbers (0-9), and dashes (-).
 
 | Install Graph Data Science
-| Optionally install Graph Data Science (GDS).
+| An option to install Graph Data Science (GDS). Accepted values are `Yes` or `No`. 
 
 | Graph Data Science License Key
-| License keys will be sent to and stored by Neo4j.
-This information is used only for product activation purposes.
+| A valid GDS license key can be pasted into this field. License keys will be sent to and stored by Neo4j. This information is used only for product activation purposes.
 
 | Install Bloom
-| Optionally install Neo4j Bloom.
+| Optionally install Neo4j Bloom. Accepted values are `Yes` or `No`.
 
 | Bloom License Key
-| License keys will be sent to and stored by Neo4j.
-This information is used only for product activation purposes.
+| A valid Bloom license key can be pasted into this field. License keys will be sent to and stored by Neo4j. This information is used only for product activation purposes.
 
 | Password
-| A password for the `neo4j` user.
-Must be a minimum of 8 characters.
+| A password for the `neo4j` user (minimum of 8 characters)
 
 | Number of Servers
-| Specify the number of desired EC2 instances to be used to form a Neo4j cluster (a minimum of 3 instances is required to form a cluster.) 
+| Specify the number of desired EC2 instances to be used to form a Neo4j cluster (a minimum of 3 instances is required to form a cluster). 
 
 | Instance type
 | The class of EC2 Instance to use.
 
 | Disk Size
-| Size in GB of the EBS volume on each EC2 instance.
-Larger EBS volumes are typically faster than smaller ones, therefore 100GB is the recommended minimum size.
+| Size (in GB) of the EBS volume on each EC2 instance. Larger EBS volumes are typically faster than smaller ones, therefore 100GB is the recommended minimum size.
 
 | SSH CIDR
-| Specify an address range from which EC2 instances are accessible on port `22`.
-You can use `0.0.0.0/0` to allow access from any IP address. 
-This field must also be correctly populated to allow the use of EC2 instance-connect.
+| Specify an address range from which EC2 instances are accessible on port `22`, via SSH. You can use `0.0.0.0/0` to allow access from any IP address.  This field must also be correctly populated to allow the use of EC2 instance-connect.
 
 |===
 
 === Deployed cloud resources
-
-*Users are reminded that the deployment of cloud resources will incur costs.*
-
-[NOTE]
-====
-The Neo4j CloudFormation Template uses an Auto Scaling group (ASG) to deploy EC2 instances.
-This means that to stop or terminate EC2 instances, you must first remove them from the ASG, otherwise, the ASG will automatically replace them.
-====
 
 The environment created by the CloudFormation template consists of the following AWS resources:
 
@@ -116,12 +96,13 @@ The environment created by the CloudFormation template consists of the following
 *** `10.0.1.0/24`
 *** `10.0.2.0/24`
 *** `10.0.3.0/24`
-** An internet gateway
+** An internet gateway.
 ** Routing tables (and associations) for all subnets.
 * An auto-scaling group and launch configuration, which creates:
 ** 1, or between 3 and 10 EC2 instances (Depending on whether a single instance or an autonomous cluster is selected).
 * 1 Network (Layer 4) Load Balancer.
 ** A target group for the EC2 instances.
+
 
 === Template outputs
 
@@ -144,12 +125,26 @@ After the installation finishes successfully, the CloudFormation template provid
 
 |===
 
-== Verify that Neo4j is running
+== Verify that Neo4j is running and accessible
 
 When the CloudFormation stack is created, navigate to *Outputs* and open the *Neo4jBrowserURL* in a new tab.
 Log into Neo4j using your credentials.
 
-== Clean up the resources and remove your stack
+== Cluster version consistency
+
+When the CloudFormation template creates a new Neo4j cluster, an Auto Scaling group (ASG) is created and tagged with the minor version of the installed Neo4j database.
+If you add more EC2 instances to your ASG, they will be tagged with the same minor version, ensuring that all Neo4j cluster servers are installed with the same version, regardless of when the EC2 instances were created.
+
+== Licensing
+
+Installing and starting Neo4j from the AWS marketplace constitutes an acceptance of the Neo4j license agreement.
+When deploying Neo4j, users are required to confirm that they either have an enterprise license or accept the terms of the Neo4j evaluation license.
+
+If you require the Enterprise version of either Graph Data Science or Bloom, you need to provide a key issued by Neo4j as this will be required during the installation.
+
+To obtain a valid license for either Neo4j, Bloom, or GDS, reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form^].
+
+== Delete CloudFormation Stack and destroy resources
 
 Select the CloudFormation stack to be removed and click the *Delete* button.
 The stack deletion cleans up all AWS resources deployed by it.
