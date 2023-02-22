@@ -1,0 +1,337 @@
+:description: How to deploy a Neo4j cluster in a containerized environment without an orchestration tool.
+[role=enterprise-edition]
+[[docker-cc]]
+= Deploy a Neo4j cluster in a Docker container
+
+Neo4j supports clustering in a containerized environment without an orchestration tool.
+This tutorial walks through setting this up locally for testing purposes.
+For production deployment across multiple servers, see xref:docker/clustering.adoc[Deploy a Neo4j cluster on multiple Docker hosts].
+
+[NOTE]
+====
+The examples on this page make use of both command expansion and DNS discovery method.
+For more information, see:
+
+* xref:configuration/neo4j-conf.adoc#neo4j-conf-expand-commands[Command expansion]
+* xref:clustering/setup/discovery.adoc#clustering-discovery-dns[Discovery using DNS with multiple records]
+====
+
+[[docker-cc-setup-dockercompose]]
+== Deploy a Neo4j cluster using Docker Compose
+
+You can deploy a Neo4j cluster using Docker Compose.
+Docker Compose is a management tool for Docker containers.
+You use a YAML file to define the infrastructure of all your cluster servers in one file.
+Then, by running the single command `docker-compose up`, you create and start all the members without the need to invoke each of them individually.
+For more information about Docker Compose, see the https://docs.docker.com/compose/[Docker Compose official documentation].
+
+*Prerequisites*
+
+* Verify that you have installed Docker Compose.
+For more information, see the https://docs.docker.com/compose/install/[Install Docker Compose official documentation].
+
+*Procedure*
+
+. Create a configuration file `neo4j.conf` which will be shared across cluster members and make it readable and writable for the user (eg., `chmod 640 neo4j.conf`)
++
+====
+[source,shell,subs="attributes+, +macros"]
+----
+# Setting that specifies how much memory Neo4j is allowed to use for the page cache.
+server.memory.pagecache.size=100M
+
+# Setting that specifies the initial JVM heap size.
+server.memory.heap.initial_size=100M
+
+# The behavior of the initial discovery is determined by the parameters `dbms.cluster.discovery.type` and `dbms.cluster.discovery.endpoints`.
+# The DNS strategy fetches the IP addresses of the cluster members using the DNS A records. 
+dbms.cluster.discovery.type=DNS
+
+# The value of `dbms.cluster.discovery.endpoints` should be set to a single domain name and the port of the discovery service. 
+# The domain name returns an A record for every server in the cluster when a DNS lookup is performed. 
+# Each A record returned by DNS should contain the IP address of the server in the cluster. 
+# The configured server uses all the IP addresses from the A records to join or form a cluster.
+# The discovery port must be the same on all servers when using this configuration.
+dbms.cluster.discovery.endpoints=neo4j-network:5000
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for discovery protocol messages from other members of the cluster.
+server.discovery.advertised_address=$(hostname -i)
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for Raft messages within the cluster.
+server.cluster.raft.advertised_address=$(hostname)
+
+ # Address (the public hostname/IP address of the machine)
+ # and port setting that specifies where this instance advertises for requests for transactions in the transaction-shipping catchup protocol.
+server.cluster.advertised_address=$(hostname)
+
+# Enable server-side routing
+dbms.routing.enabled=true
+
+# Use server-side routing for neo4j:// protocol connections.
+dbms.routing.default_router=SERVER
+
+# The advertised address for the intra-cluster routing connector.
+server.routing.advertised_address=$(hostname)
+----
+====
+. Prepare your _docker-compose.yml_ file using the following example.
+For more information, see the https://docs.docker.com/compose/compose-file/#service-configuration-reference[Docker Compose official Service configuration reference].
++
+.Example _docker-compose.yml_ file
+====
+[source,shell,subs="attributes+, +macros"]
+----
+version: '3.8'
+
+# Custom top-level network
+networks:
+  neo4j-internal:
+
+services:
+
+  server1:
+    # Docker image to be used
+    image: $\{NEO4J_DOCKER_IMAGE}
+
+    # Hostname
+    hostname: server1
+
+    # Service-level network, which specifies the networks, from the list of the top-level networks (in this case only neo4j-internal), that the server will connect to.
+    # Adds a network alias (used in neo4j.conf when configuring the discovery members)
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+
+    # The ports that will be accessible from outside the container - HTTP (7474) and Bolt (7687).
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+    # Uncomment the volumes to be mounted to make them accessible from outside the container.
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf # This is the main configuration file.
+      - ./data/server1:/var/lib/neo4j/data
+      - ./logs/server1:/var/lib/neo4j/logs
+      - ./conf/server1:/var/lib/neo4j/conf
+      - ./import/server1:/var/lib/neo4j/import
+      #- ./metrics/server1:/var/lib/neo4j/metrics
+      #- ./licenses/server1:/var/lib/neo4j/licenses
+      #- ./ssl/server1:/var/lib/neo4j/ssl
+
+    # Passes the following environment variables to the container
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_initial_server_mode__constraint=PRIMARY
+
+    # Simple check testing whether the port 7474 is opened.
+    # If so, the instance running inside the container is considered as "healthy".
+    # This status can be checked using the "docker ps" command.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+
+    # Set up the user
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  server2:
+    image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: server2
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/server2:/var/lib/neo4j/data
+      - ./logs/server2:/var/lib/neo4j/logs
+      - ./conf/server2:/var/lib/neo4j/conf
+      - ./import/server2:/var/lib/neo4j/import
+      #- ./metrics/server2:/var/lib/neo4j/metrics
+      #- ./licenses/server2:/var/lib/neo4j/licenses
+      #- ./ssl/server2:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_initial_server_mode__constraint=PRIMARY
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  server3:
+    image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: server3
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7476:7474"
+      - "7689:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/server3:/var/lib/neo4j/data
+      - ./logs/server3:/var/lib/neo4j/logs
+      - ./conf/server3:/var/lib/neo4j/conf
+      - ./import/server3:/var/lib/neo4j/import
+      #- ./metrics/server3:/var/lib/neo4j/metrics
+      #- ./licenses/server3:/var/lib/neo4j/licenses
+      #- ./ssl/server3:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_initial_server_mode__constraint=PRIMARY
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+
+  server4:
+    image: $\{NEO4J_DOCKER_IMAGE}
+    hostname: server4
+    networks:
+      neo4j-internal:
+        aliases:
+          - neo4j-network
+    ports:
+      - "7477:7474"
+      - "7690:7687"
+    volumes:
+      - ./neo4j.conf:/conf/neo4j.conf
+      - ./data/server4:/var/lib/neo4j/data
+      - ./logs/server4:/var/lib/neo4j/logs
+      - ./conf/server4:/var/lib/neo4j/conf
+      - ./import/server4:/var/lib/neo4j/import
+      #- ./metrics/server4:/var/lib/neo4j/metrics
+      #- ./licenses/server4:/var/lib/neo4j/licenses
+      #- ./ssl/server4:/var/lib/neo4j/ssl
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT
+      - NEO4J_AUTH
+      - EXTENDED_CONF
+      - NEO4J_EDITION
+      - NEO4J_initial_server_mode__constraint=SECONDARY
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    user: $\{USER_ID}:$\{GROUP_ID}
+----
+====
++
+. Set up the environment variables:
+- `export USER_ID="$(id -u)"`
+- `export GROUP_ID="$(id -g)"`
+- `export NEO4J_DOCKER_IMAGE=neo4j:{neo4j-version}-enterprise`
+- `export NEO4J_EDITION=docker_compose`
+- `export EXTENDED_CONF=yes`
+- `export NEO4J_ACCEPT_LICENSE_AGREEMENT=yes`
+- `export NEO4J_AUTH=neo4j/your_password`
+. Deploy your Neo4j cluster by running `docker-compose up` from your project folder.
+. The instance will be available at the following addresses:
+- Neo4j instance _server1_ will be available at http://localhost:7474[http://localhost:7474^].
+- Neo4j instance _server2_ will be available at http://localhost:7475[http://localhost:7475^].
+- Neo4j instance _server3_ will be available at http://localhost:7476[http://localhost:7476^].
+- Neo4j instance _server4_ will be available at http://localhost:7477[http://localhost:7477^].
+. Authenticate with the default `neo4j/your_password` credentials.
+. Check the status of the cluster by running the following in Neo4j Browser:
++
+[source,cypher]
+----
+SHOW SERVERS
+----
++
+.Example output:
++
+image:show-servers-docker.png[]
+
+[[docker-cc-setup-env-variables]]
+== Deploy a Neo4j Cluster using environment variables
+
+You can set up containers in a cluster to talk to each other using environment variables.
+Each container must have a network route to each of the others, the `+NEO4J_initial_dbms_default__primaries__count+`, `+NEO4J_initial_dbms_default__secondaries__count+`, and `+NEO4J_dbms_cluster_discovery_endpoints+` environment variables must be set for all servers.
+
+[role=enterprise-edition]
+[[docker-enterprise-edition-environment-variables]]
+=== Cluster environment variables
+
+The following environment variables are specific to the Neo4j cluster, and are available in the Neo4j Enterprise Edition:
+
+* `+NEO4J_initial_server_mode__constraint+`: the database mode, defaults to `NONE`, can be set to `PRIMARY` or `SECONDARY`.
+* `+NEO4J_dbms_cluster_discovery_endpoints+`: a comma-separated list of endpoints, which a server should contact to discover other cluster servers.
+* `+NEO4J_server_discovery_advertised_address+`: hostname/IP address and port to advertise for member discovery management communication.
+* `+NEO4J_server.cluster.advertised_address+`: hostname/IP address and port to advertise for transaction handling.
+* `+NEO4J_server.cluster.raft.advertised_address+`: hostname/IP address and port to advertise for cluster communication.
+
+See xref:clustering/settings.adoc[] for more details of Neo4j cluster settings.
+
+[[docker-cc-setup-single]]
+=== Set up a Neo4j Cluster on a single Docker host
+
+Within a single Docker host, you can use the default ports for HTTP, HTTPS, and Bolt.
+For each container, these ports are mapped to a different set of ports on the Docker host.
+
+Example of a `docker run` command for deploying a cluster with 3 servers:
+
+[source,shell,subs="attributes"]
+----
+docker network create --driver=bridge neo4j-cluster
+
+docker run --name=server1 --detach --network=neo4j-cluster \
+    --publish=7474:7474 --publish=7473:7473 --publish=7687:7687 \
+    --hostname=server1 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_endpoints=server1:5000,server2:5000,server3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4j_server_bolt_advertised_address=localhost:7687 \
+    --env NEO4j_server_http_advertised_address=localhost:7474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=server2 --detach --network=neo4j-cluster \
+    --publish=8474:7474 --publish=8473:7473 --publish=8687:7687 \
+    --hostname=server2 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_endpoints=server1:5000,server2:5000,server3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4j_server_bolt_advertised_address=localhost:8687 \
+    --env NEO4j_server_http_advertised_address=localhost:8474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=server3 --detach --network=neo4j-cluster \
+    --publish=9474:7474 --publish=9473:7473 --publish=9687:7687 \
+    --hostname=server3 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_endpoints=server1:5000,server2:5000,server3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4j_server_bolt_advertised_address=localhost:9687 \
+    --env NEO4j_server_http_advertised_address=localhost:9474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+----
+
+Additional servers can be added to the cluster in an ad-hoc fashion.
+
+Example of a `docker run` command for adding a fourth server with a role `SECONDARY` to the cluster:
+
+[source,shell,subs="attributes"]
+----
+docker run --name=read-server4 --detach --network=neo4j-cluster \
+    --publish=10474:7474 --publish=10473:7473 --publish=10687:7687 \
+    --hostname=read-server4 \
+    --env NEO4J_initial_server_mode__constraint=SECONDARY \
+    --env NEO4J_dbms_cluster_discovery_endpoints=server1:5000,server2:5000,server3:5000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4j_server_bolt_advertised_address=localhost:10687 \
+    --env NEO4j_server_http_advertised_address=localhost:10474 \
+    neo4j:{neo4j-version-exact}-enterprise
+----
