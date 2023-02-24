@@ -1,41 +1,105 @@
-:description: Deploy Neo4j on Azure directly from the Azure Marketplace or by using the Neo4j Azure Resource Manager (ARM) template hosted on GitHub.
+:description: Deploy Neo4j on Microsoft Azure directly from the Azure Marketplace or by using the Neo4j Azure Resource Manager (ARM) template hosted on GitHub.
 [role=enterprise-edition]
 [[azure]]
 = Neo4j on Azure
 
-You can deploy a Neo4j standalone server or a cluster on Azure directly from the Azure Marketplace or by using the Neo4j Azure Resource Manager (ARM) template hosted on GitHub.
+Neo4j Enterprise Edition can be easily deployed on Virtual Machine instances in Microsoft Azure by using the link:https://azuremarketplace.microsoft.com/en-us/marketplace/apps/neo4j.neo4j-ee?tab=Overview[official listing for Neo4j Enterprise on the Azure Marketplace^].
 
-The Azure Marketplace represents a straightforward method to deploy Neo4j on a VM instance in Azure.
+The Azure Marketplace listing uses an Azure Resource Manager (ARM) template maintained by Neo4j. 
+The template's code is available on link:https://github.com/neo4j-partners/azure-resource-manager-neo4j/tree/main/marketplace[GitHub^] and can be customized to meet more complex or bespoke use cases. 
 
-Both Neo4j Enterprise Edition v5 and v4.4 can be deployed from the link:https://azuremarketplace.microsoft.com/en-us/marketplace/apps/neo4j.neo4j-ee[Neo4j Enterprise Edition listing on the Azure Marketplace].
 
-In addition to the Azure Marketplace listing, Neo4j provides an ARM template, which can be customized to meet more complex use cases.
-This template is hosted in a public GitHub repository and can be found at link:https://github.com/neo4j-partners/azure-resource-manager-neo4j[Neo4j ARM template on GitHub].
+[NOTE]
+====
+Neo4j does not provide Azure Marketplace Virtual Machine Images with a pre-installed version of the product.
+The Neo4j Azure Marketplace listings (and listings on GitHub) use Azure Resource Manager (ARM) templates that  deploy and configure Neo4j dynamically with a shell script.
+====
 
+== Supported Neo4j versions
+
+The Neo4j link:https://azuremarketplace.microsoft.com/en-us/marketplace/apps/neo4j.neo4j-ee?tab=Overview[Azure marketplace listing^] can be configured to deploy either Neo4j Enterprise Edition v5 or v4.4.
+The  ARM template always installs the latest available minor version of each release.
+For example, the latest minor release of Neo4j 5 is {neo4j-version-minor}.
 
 == Neo4j ARM template
 
-Azure Resource Manager (ARM) is an Infrastructure as Code (IaC) service that tells Azure how to deploy a set of interrelated resources.
+Azure Resource Manager (ARM) is a declarative Infrastructure as Code (IaC) language that is based on JSON and instructs Azure to deploy a set of cloud resources.
 
-The Neo4j ARM template has the following properties:
+The Neo4j ARM template takes several parameters as inputs, deploys a set of cloud resources, and provides outputs that can be used to connect to a Neo4j DBMS.
 
-* **Virtual Machine Size:** Select the VM size for the machine(s) that will host your deployment.
+=== Important considerations
 
-* **Node count:** Specify the number of desired Neo4j servers depending on whether you want to deploy a standalone or a cluster.
+* The deployment of cloud resources will incur costs.
+** Refer to the link:https://azure.microsoft.com/en-gb/pricing/calculator/[Azure pricing calculator^]for more information.
 
-* **Disk Size:** The disk size for a Neo4j server. 
+* A resource group will need to be created.
+** You will need to choose an empty resource group or create a new one.
 
-* Optionally install Graph Data Science (GDS).
-It requires a license key to be provided.
+* An active Azure subscription is required.
 
-* Optionally install Bloom.
-It requires a license key to be provided.
+=== Input parameters (Instance Details)
 
-== Deploy Neo4j from the Azure Marketplace
+[cols="<31s,69",frame="topbot",options="header"]
+|===
 
-Deploy a Neo4j Enterprise cluster from the https://azuremarketplace.microsoft.com/en-us/marketplace/apps/neo4j.neo4j-ee[Azure Marketplace^] following the interactive prompts.
+| Parameter Name
+| Description
 
-It is recommended to create a new resource group to hold the artifacts of your deployment.
+| Region
+| The Azure region in which cloud resources should be deployed.
+
+| Admin password
+| A password for the `neo4j` user. The password must be between 12 and 72 characters long, and contain characters from at least 3 of the following groups: uppercase characters, lowercase characters, numbers, and special characters.
+|===
+
+=== Input parameters (Neo4j Config)
+
+[cols="<31s,69",frame="topbot",options="header"]
+|===
+
+| Parameter Name
+| Description
+
+| Virtual Machine Size
+| The class of Azure VM Instances to use.
+
+| Node Count
+| The number of desired Virtual Machine instances to be used to form a Neo4j cluster (a minimum of 3 instances is required to form a cluster). 
+
+| Disk Size
+| Size (in GB) of the secondary volume on each Azure VM instance. 
+
+| Graph Database Version
+| Select "5" for the latest minor version of Neo4j v5, or select "4.4" for the latest minor version of Neo4j v4.4
+
+| Install Graph Data Science
+| An option to install Graph Data Science (GDS). Accepted values are `Yes` or `No`. 
+
+| Graph Data Science License Key
+| A valid GDS license key can be pasted into this field. License keys will be sent to and stored by Neo4j. This information is used only for product activation purposes.
+
+| Install Bloom
+| Optionally install Neo4j Bloom. Accepted values are `Yes` or `No`.
+
+| Bloom License Key
+| A valid Bloom license key can be pasted into this field. License keys will be sent to and stored by Neo4j. This information is used only for product activation purposes.
+|===
+
+=== Deployed cloud resources
+
+The environment created by the ARM template consists of the following Azure resources:
+
+* 1 Virtual Network, with a CIDR range (address space) of `10.0.0.0/8`.
+** A single subnet with the following CIDR range:
+*** `10.0.0.0/16`
+** A network security group.
+* A Virtual Machine Scale-Set (VMSS), which creates:
+** 1, or between 3 and 10 Virtual Machine instances (Depending on whether a single instance or an autonomous cluster is selected).
+* 1 Load Balancer.
+
+=== Template outputs
+
+After the deployment finishes successfully, the ARM template provides the following outputs, which can be found in the *Outputs* section of the deployments page in the Azure console.
 
 [NOTE]
 ====
@@ -43,17 +107,34 @@ At the end of the deployment process, Azure runs a validation.
 If the validation fails, it might be because you have chosen VMs that are too large and exceed your Azure quota.
 ====
 
+[cols="<31s,69",frame="topbot",options="header"]
+|===
 
-== Verify that Neo4j is running
+| Output Name
+| Output Description
 
-When the Neo4j deployment completes, navigate to the *Outputs* tab and copy the Neo4j Browser URL.
+| neo4jBrowserURL
+| The http URL of the Neo4j Browser.
 
-image:az-neo4j-url.png[]
+| username	
+| The username `neo4j` which will be required to log into the Neo4j Browser
 
-Then, in a web browser, paste the URL to open Neo4j Browser, where you can use the credentials that you specified to log into Neo4j.
+|===
 
-image:az-neo4j-service.png[]
+== Cluster version consistency
 
-== Clean up the resources and remove your deployment
+When the ARM template creates a new Neo4j cluster, a Virtual Machine Scale Set (VMSS) is created and tagged with the minor version of the installed Neo4j database.
+If you add more VM instances to your VMSS, they will be installed using the same minor version, ensuring that all Neo4j cluster servers are installed with the same version, regardless of when the VM instances were created.
 
-You can remove the infrastructure by deleting the resource group you created as part of the deployment.
+== Licensing
+
+Installing and starting Neo4j from the Azure marketplace constitutes an acceptance of the Neo4j license agreement.
+When deploying Neo4j, users are required to confirm that they either have an enterprise license.
+
+If you require the Enterprise version of either Graph Data Science or Bloom, you need to provide a key issued by Neo4j as this will be required during the installation.
+
+To obtain a valid license for either Neo4j, Bloom, or GDS, reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form^].
+
+== Delete Azure deployment Stack and destroy resources
+
+In order to completely delete the deployment, the resource group can be deleted.
