@@ -1,9 +1,8 @@
-// NOTES on creating a cdc enabled build:
+// Creating a cdc enabled build:
 // Add CDC dependency to private/enterprise/neo4j-enterprise/pom.xml
-// Set kernel version to 5.6
 // neo4j conf
-// internal.dbms.change_data_capture=true
-//internal.dbms.latest_kernel_version=6
+//internal.dbms.change_data_capture=true
+//internal.dbms.latest_kernel_version=6 // Set kernel version to 5.6
 //internal.dbms.latest_runtime_version=7
 
 [role=enterprise-edition]
@@ -49,6 +48,7 @@ Enrichment mode is reflected in the output from change data capture procedures. 
 Selectors targeting a field that has not changed will match in `FULL` mode but not in `DIFF` mode.
 // TODO verify ^
 
+[[change-data-capture-selectors]]
 == Selectors
 Change data capture procedures support filtering their output using selectors.
 
@@ -88,21 +88,21 @@ CALL cdc.query("0", [{select:"entity", operation:"DELETE"}])
 Changes can be filtered to only include those where a certain property changed.
 [source, cypher]
 ----
-call cdc.query("0", [{select:"entity", changesTo:["name"]}])
+CALL cdc.query("0", [{select:"entity", changesTo:["name"]}])
 ----
 
 // NODE/RELATIONSHIP needs to be specified
 Changes can be filtered to a specific element ID:
 [source, cypher]
 ----
-call cdc.query("0", [{select:"node", elementId:"4:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
-call cdc.query("0", [{select:"relationship", elementId:"5:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
+CALL cdc.query("0", [{select:"node", elementId:"4:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
+CALL cdc.query("0", [{select:"relationship", elementId:"5:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
 ----
 
 Changes can be filtered to specific keys:
 [source, cypher]
 ----
-call cdc.query("0", [{select:"node", key:{name:"Kevin", surname:"Bacon"}}])
+CALL cdc.query("0", [{select:"node", key:{name:"Kevin", surname:"Bacon"}}])
 ----
 // TODO above doesn't match the movie graph (no surnames in movie graph)
 // TODO relationship key example (do we have one in the movie graph?
@@ -112,7 +112,7 @@ call cdc.query("0", [{select:"node", key:{name:"Kevin", surname:"Bacon"}}])
 Node changes can be filtered to specific labels.
 [source, cypher]
 ----
-call cdc.query("0", [{select:"node", labels:["ACTOR", "DIRECTOR"]}])
+CALL cdc.query("0", [{select:"node", labels:["ACTOR", "DIRECTOR"]}])
 ----
 // TODO NOTE above query will only match nodes which are both actor AND director
 
@@ -121,32 +121,55 @@ call cdc.query("0", [{select:"node", labels:["ACTOR", "DIRECTOR"]}])
 Relationship changes can be filtered to a specific type.
 [source, cypher]
 ----
-call cdc.query("0", [{select:"relationship", type:"ACTED_IN"}])
+CALL cdc.query("0", [{select:"relationship", type:"ACTED_IN"}])
 ----
 
 Relationship changes can be selected based on their start and end node.
 [source, cypher]
 ----
-call cdc.query("0", [{
+CALL cdc.query("0", [{
     select:"relationship",
     start:{labels:["ACTOR"]},
     end:{key:{title:"Apollo 13"}}
 }])
 ----
 
+== CDC procedures
+=== Querying changes
+The procedure `cdc.query(from, selectors)` is used to query the database for changes. Once all changes have been streamed the query will terminate. Each record contains an `id` field, which can be used as `from` in a subsequent query, in order to continue streaming from that point. The `from` field is exclusive and will not include the already seen record a second time. Selectors can be used to filter the output, see <<change-data-capture-selectors, selectors>> for details.
+[source, cypher]
+----
+CALL cdc.query("A-I5vnbH6EPYqgNWfeWS9CYAAAAAAAAABQAAAAAAAAAA")
+CALL cdc.query("A-I5vnbH6EPYqgNWfeWS9CYAAAAAAAAABQAAAAAAAAAA", {select:"node"})
+----
 
+The output from `cdc.query` is described in the section <<change-data-capture-output, change event output>>.
 
-== CDC commands / procedures
-    * `CALL cdc.current`
-    * `CALL cdc.earliest`
-    * `CALL cdc.stream(from, selectors)`
-    * `CALL cdc.query(from, selectors)`
+// TODO omitting stream here since it currently doesn't work
 
+=== Getting the earliest change
+The procedure `cdc.earliest` is used to get a `from` value for the earliest available change.
+[source, cypher]
+----
+CALL cdc.earliest
+----
 
-== Selectors
+The following affect what the earliest value is:
 
+    * Transaction log enrichment has been turned off
+// TODO ^ Do we need to be more explicit about this? Maybe some sentence in the enrichment mode section that turning enrichment OFF voids all previous data?
+    * Transaction log rotation
+// TODO are there others?
 
-== Output json example
+=== Getting the current change
+The procedure `cdc.current` returns the `id` from the newest entry in the transaction log. This value may be used to query changes from "now".
+[source, cypher]
+----
+CALL cdc.current
+----
+
+[[change-data-capture-output]]
+== Change event output
 Data change events for nodes contain the following fields:
 [cols="<31s,69",frame="topbot",options="header"]
 |===
