@@ -1,18 +1,29 @@
 // Creating a cdc enabled build:
 // Add CDC dependency to private/enterprise/neo4j-enterprise/pom.xml
-// neo4j conf
-//internal.dbms.change_data_capture=true
-//internal.dbms.latest_kernel_version=6 // Set kernel version to 5.6
-//internal.dbms.latest_runtime_version=7
 
 [role=enterprise-edition]
 [[change-data-capture]]
 = Change Data Capture
 
-// TODO general introduction, what is CDC / getting started?
+====
+TODO general introduction, what is CDC?
+====
+====
+TODO examples are similar to the movie graph, but not actually following the movie graph. See if northwind is complicated enough or if we should go with our own.
+====
 
 == Setup
 In order to enable the change data capture feature, the setting `internal.dbms.change_data_capture` must be set to `true` in neo4j.conf.
+
+====
+TODO currently these are needed in neo4j.conf, let's try to build the kernel version patch into the .jar:
+[source]
+----
+internal.dbms.change_data_capture=true
+internal.dbms.latest_kernel_version=6
+internal.dbms.latest_runtime_version=7
+----
+====
 
 Log enrichment needs to be enabled for individual databases.
 Use the options clause to enable log enrichment when creating the database:
@@ -32,8 +43,9 @@ Log enrichment can be disabled through:
 ALTER DATABASE name SET OPTION txLogEnrichment "OFF"
 ----
 
-Valid values for the `txLogEnrichment` option are `OFF`, `DIFF`, `FULL`. For more information on the log enrichment modes see <TODO link to enrichment mode heading>
+Valid values for the `txLogEnrichment` option are `OFF`, `DIFF`, `FULL`. For more information on the log enrichment modes see <<change-data-capture-enrichment-mode>>.
 
+[[change-data-capture-enrichment-mode]]
 == Enrichment mode
 Neo4j offers three levels of transaction log enrichment `OFF`, `DIFF` and `FULL`. For change data capture procedures to work, the level of enrichment must be either `DIFF` or `FULL`. The enrichment level is set on each database.
 
@@ -43,10 +55,12 @@ With enrichment mode set to `DIFF`, changes are recorded as the difference betwe
 
 With enrichment mode set to `FULL`, changes are recorded as a complete copy of the previous state and the new state.
 
-Enrichment mode is reflected in the output from change data capture procedures. On databases with `FULL` enrichment mode, The `event.state.before` and `event.state.after` fields contain the complete before and after state. With `DIFF` mode they only contain removals and additions.
+Enrichment mode is reflected in the output from change data capture procedures. On databases with `FULL` enrichment mode, The `event.state.before` and `event.state.after` fields contain the complete before and after state. With `DIFF` mode they only contain removals, updates and additions.
 
 Selectors targeting a field that has not changed will match in `FULL` mode but not in `DIFF` mode.
-// TODO verify ^
+====
+TODO above is probably a lie. The current version limits `DIFF` behaviour to match that of `FULL` (todo verify)? Is that the intended behaviour?
+====
 
 [[change-data-capture-selectors]]
 == Selectors
@@ -99,23 +113,26 @@ CALL cdc.query("0", [{select:"node", elementId:"4:e239be76-c7e8-43d8-aa03-567de5
 CALL cdc.query("0", [{select:"relationship", elementId:"5:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
 ----
 
-Changes can be filtered to specific keys:
+// NODE selectors
+Node changes can be filtered to specific keys:
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"node", key:{name:"Kevin", surname:"Bacon"}}])
 ----
-// TODO above doesn't match the movie graph (no surnames in movie graph)
-// TODO relationship key example (do we have one in the movie graph?
 
-
-// NODE selectors
 Node changes can be filtered to specific labels.
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"node", labels:["ACTOR", "DIRECTOR"]}])
 ----
-// TODO NOTE above query will only match nodes which are both actor AND director
-
+[NOTE]
+====
+The query above will only return changes on nodes that have *both* labels. In order to get changes on nodes with either label, two separate selectors have to be specified.
+[source, cypher]
+----
+CALL cdc.query("0", [{select:"node", labels:["ACTOR"]}, {select:"node", labels:["DIRECTOR"]}])
+----
+====
 
 // RELATIONSHIP selectors
 Relationship changes can be filtered to a specific type.
@@ -135,6 +152,7 @@ CALL cdc.query("0", [{
 ----
 
 == CDC procedures
+[[change-data-capture-querying-changes]]
 === Querying changes
 The procedure `cdc.query(from, selectors)` is used to query the database for changes. Once all changes have been streamed the query will terminate. Each record contains an `id` field, which can be used as `from` in a subsequent query, in order to continue streaming from that point. The `from` field is exclusive and will not include the already seen record a second time. Selectors can be used to filter the output, see <<change-data-capture-selectors, selectors>> for details.
 [source, cypher]
@@ -145,7 +163,10 @@ CALL cdc.query("A-I5vnbH6EPYqgNWfeWS9CYAAAAAAAAABQAAAAAAAAAA", {select:"node"})
 
 The output from `cdc.query` is described in the section <<change-data-capture-output, change event output>>.
 
-// TODO omitting stream here since it currently doesn't work
+====
+TODO omitting `cdc.stream` here since it currently doesn't work
+====
+
 
 === Getting the earliest change
 The procedure `cdc.earliest` is used to get a `from` value for the earliest available change.
@@ -157,9 +178,13 @@ CALL cdc.earliest
 The following affect what the earliest value is:
 
     * Transaction log enrichment has been turned off
-// TODO ^ Do we need to be more explicit about this? Maybe some sentence in the enrichment mode section that turning enrichment OFF voids all previous data?
+====
+TODO Do we need to be more explicit about this? Maybe some sentence in the enrichment mode section that turning enrichment OFF voids all previous data?
+====
     * Transaction log rotation
-// TODO are there others?
+====
+TODO are there other things that affect the earliest value?
+====
 
 === Getting the current change
 The procedure `cdc.current` returns the `id` from the newest entry in the transaction log. This value may be used to query changes from "now".
@@ -170,6 +195,9 @@ CALL cdc.current
 
 [[change-data-capture-output]]
 == Change event output
+====
+TODO we aren't explaining all metadata fields yet.
+====
 Data change events for nodes contain the following fields:
 [cols="<31s,69",frame="topbot",options="header"]
 |===
@@ -177,7 +205,7 @@ Data change events for nodes contain the following fields:
 | Description
 
 | id
-| A unique id. It can be used to continue streaming changes. See <TODO>
+| A unique id. It can be used to continue streaming changes. See <<change-data-capture-querying-changes>>
 
 | txId
 | A unique id identifying which transaction the change happened in.
@@ -189,12 +217,10 @@ Data change events for nodes contain the following fields:
 | Metadata about the transaction.
 
 | metadata.executingUser
-| As which user was the query executed. May be different form authenticatedUser when using impersonation. <TODO link>
+| As which user was the query executed. May be different form authenticatedUser when using impersonation. <TODO link to impersonation docs>
 
 | metadata.authenticatedUser
 | The authenticated user when the query was executed.
-
-// TODO maybe break out metadata and explain API vs Driver?
 
 | event
 | A map describing the change.
@@ -206,7 +232,7 @@ Data change events for nodes contain the following fields:
 | `n` or `r` indicating if the event changes a node or relationship.
 
 | event.keys
-| Map containing the primary key for the changed element. Requires constraints, see <TODO section about keys/constraints/etc>
+| Map containing the primary key for the changed element. Requires constraints, see <<change-data-capture-constraints>>.
 
 | event.operation
 | `c` for creation, `u` for updates, `d` for deletes.
@@ -215,10 +241,10 @@ Data change events for nodes contain the following fields:
 | Labels on the changed node. <TODO regardless of DIFF/FULL mode?>
 
 | event.state.before
-| Labels and properties of the node before this change. <TODO link DIFF mode>
+| Labels and properties of the node before this change. Either the deleted and changed characteristics or the entire state, depending on <<change-data-capture-enrichment-mode>>.
 
 | event.state.after
-| Labels and properties of the node after this change. <TODO link DIFF mode>
+| Labels and properties of the node after this change. Either the added and changed characteristics or the entire state, depending on <<change-data-capture-enrichment-mode>>.
 
 |===
 
@@ -285,7 +311,7 @@ Relationship changes are similar to node changes, except:
 | Element ID of the start node
 
 | event.start.keys
-| Primary keys describing the start node. Requires constraints, see <TODO section on constraints>
+| Primary keys describing the start node. Requires constraints, see <<change-data-capture-constraints>>
 
 | event.start.labels
 | List of labels on the start node.
@@ -340,34 +366,26 @@ Example relationship creation:
 }
 ----
 
+[[change-data-capture-constraints]]
 == Key field
-In order to use properties to identify an entity, constraints need to exist on those properties.
-
-=== Nodes
-When the following constraints exist, property `name` and `lastname` will be present in the field `event.key` for all changes on `PERSON` nodes:
+Constraints are required for populating the `event.key` field on node changes and `event.start/end.keys` fields on relationship changes. With the following constraint, properties `name` and `lastname` will be present in the fields for all changes involving `PERSON` nodes:
+[source, cypher]
+----
+CREATE CONSTRAINT IF NOT EXISTS FOR (n:PERSON) REQUIRE (n.name, n.lastname) IS NODE KEY
+----
+Alternatively, the key constraint can be split up into existence and uniqueness constraints.
 [source, cypher]
 ----
 CREATE CONSTRAINT IF NOT EXISTS FOR (n:PERSON) REQUIRE n.name IS NOT NULL
 CREATE CONSTRAINT IF NOT EXISTS FOR (n:PERSON) REQUIRE n.lastname IS NOT NULL
 CREATE CONSTRAINT IF NOT EXISTS FOR (n:PERSON) REQUIRE (n.name, n.lastname) IS UNIQUE
 ----
-Alternatively, key constraints can be used.
-[source, cypher]
-----
-CREATE CONSTRAINT IF NOT EXISTS FOR (n:PERSON) REQUIRE (n.name, n.lastname) IS NODE KEY
-----
-
-=== Relationships
-Similarly, for relationships:
-[source, cypher]
-----
-CREATE CONSTRAINT IF NOT EXISTS FOR ()-[r:ACTED_IN]-() REQUIRE (r.role) IS NOT NULL
-CREATE CONSTRAINT IF NOT EXISTS FOR ()-[r:ACTED_IN]-() REQUIRE (r.role) IS RELATIONSHIP UNIQUE
-----
 
 For more details on the constraint commands see <TODO link to constraint docs>
 
-== TODO put these topics/stuff somewhere:
+====
+*TODO put these topics/stuff somewhere:*
+
     - might skip txIds (system commands)
     - system commands are not being shown
     - what is seq
@@ -385,13 +403,16 @@ For more details on the constraint commands see <TODO link to constraint docs>
     - For update events neither is null, they might be empty maps for diff mode
 
 
-== Scenarios?
+*Scenarios?*
+
     - Start/Stop database
     - Leader switch
     - Enable/Disable/Change enrichment mode
         * DIFF -> FULL -> DIFF is silent, but causes different output?
 
-== TODO finishing touches:
+*TODO finishing touches:*
+
     - Make sure links work and make sense (don't put a link from one section to the one right below...)
     - double check "earliest" syntax in examples, is "0" always valid as "earliest"
     - Delete this TODO list...
+====
