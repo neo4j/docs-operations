@@ -190,12 +190,36 @@ See more in xref:clustering-advanced/multi-data-center/configuration.adoc[Config
 In case of failure, you can transform a Read Replica instance into a Core instance to avoid availability downtime.
 However, keep in mind that this is not advised as it could cause data loss and complications in the Raft group.
 
-To avoid that, you need to unbind on the Replica instance and update discovery configurations amongst cluster members after performing that change. 
-Here are the steps to be followed:
+To avoid that, the _read_replica_ instance must not be initialized as a *single* instance nor be introduced in a different or new cluster. 
+This action would cause in the override of the raft state, thus preventing the replica from successfully joining the targeted cluster.
 
-. Step 1
-. Step 2
-. Step 3
+After performing that change, you need to unbind the Replica instance and update the discovery configurations amongst cluster members.
+Here are the instructions: 
+
+. Ensure that the converted _read_replica_ currently belongs to the same cluster it should be re-introduced back to as core. 
+This can be done by performing `CALL dbms.cluster-overview()` and verifying the instance's address and cluster mode.
+
+. Stop and unbind the _read_replica_ instance.
+
+. Update the cluster mode configuration in _neo4j.conf_ from `dbms.mode=READ_REPLICA` to `dbms.mode=CORE`.
+
+. Stop Neo4j on the removed core instances that are not intended to serve as core members. 
+
+. Unbind those instances from the cluster by performing `neo4j-admin unbind` while they are stopped. 
+This action will prevent such instances from subsequently attempting to rejoin the running cluster.
+
+At this point, the previous _read_replica_ (now core) instance may be introduced into the running cluster. 
+To keep this setting, the following configuration updates are advised:
+
+- On the previous _read_replica_ (now core) instance, set `causal_clustering.discovery_advertised_address` and `causal_clustering.discovery_listen_address` as appropriate.
+
+- Update the `causal_clustering.initial_discovery_members` configuration with the currently valid list of discovery addresses for each member of the cluster.
+This should replace addresses of any removed core(s) with the discovery addresses of the previous _read_replica_ (now core) instance.
++
+[NOTE]
+====
+In cases where `causal_clustering.discovery_type` is other than `LIST`, make sure to update the corresponding address resolution addresses records -- e.g. DNS A records for discovery types DNS and SRV, and any Kubernetes service address alternation to reflect the inclusion of the _read_replica_ discovery address.
+====
 
 [[causal-clustering-on-disk-state]]
 == On-disk state
