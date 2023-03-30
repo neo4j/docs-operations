@@ -18,22 +18,14 @@ TODO examples are similar to the movie graph, but not actually following the mov
 == Setup
 In order to enable the change data capture feature, the setting `internal.dbms.change_data_capture` must be set to `true` in neo4j.conf.
 
-====
-TODO currently these are needed in neo4j.conf, let's try to build the kernel version patch into the .jar:
-[source]
-----
-internal.dbms.change_data_capture=true
-internal.dbms.latest_kernel_version=6
-internal.dbms.latest_runtime_version=7
-----
-====
-
 Log enrichment needs to be enabled for individual databases.
+
 Use the options clause to enable log enrichment when creating the database:
 [source, cypher]
 ----
 CREATE DATABASE name OPTIONS {txLogEnrichment:"FULL"}
 ----
+
 Log enrichment can also be enabled on an existing database using:
 [source, cypher]
 ----
@@ -50,20 +42,19 @@ Valid values for the `txLogEnrichment` option are `OFF`, `DIFF`, `FULL`. For mor
 
 [[change-data-capture-enrichment-mode]]
 == Enrichment mode
-Neo4j offers three levels of transaction log enrichment `OFF`, `DIFF` and `FULL`. For change data capture procedures to work, the level of enrichment must be either `DIFF` or `FULL`. The enrichment level is set on each database.
+Neo4j offers three levels of transaction log enrichment `OFF`, `DIFF` and `FULL`.
+For change data capture procedures to work, the level of enrichment must be either `DIFF` or `FULL`.
+The enrichment level is set on each database.
 
-With enrichment mode set to `OFF`, no additional data is written to the transaction log.
+With enrichment mode set to `OFF`, no additional data is written to the transaction log and change data capture procedures will fail.
 
 With enrichment mode set to `DIFF`, changes are recorded as the difference between before and after state.
 
 With enrichment mode set to `FULL`, changes are recorded as a complete copy of the previous state and the new state.
 
-Enrichment mode is reflected in the output from change data capture procedures. On databases with `FULL` enrichment mode, The `event.state.before` and `event.state.after` fields contain the complete before and after state. With `DIFF` mode they only contain removals, updates and additions.
-
-Selectors targeting a field that has not changed will match in `FULL` mode but not in `DIFF` mode.
-====
-TODO above is probably a lie. The current version limits `DIFF` behaviour to match that of `FULL` (todo verify)? Is that the intended behaviour?
-====
+Enrichment mode is reflected in the output from change data capture procedures.
+On databases with `FULL` enrichment mode, The `event.state.before` and `event.state.after` fields contain the complete before and after state.
+With `DIFF` mode they only contain removals, updates and additions.
 
 [[change-data-capture-selectors]]
 == Selectors
@@ -76,13 +67,16 @@ CALL cdc.query("0", [{select:"n", changesTo:["name"]}])
 ----
 
 === Combining selectors
-The more specific a selector is, the fewer changes will be returned. Specifying both "name" and "surname" for example, will only return changes where both name *and* surname have been changed.
+The more specific a selector is, the fewer changes will be returned.
+Specifying both "name" and "surname" for example, will only return changes where both `name` *and* `surname` properties are changed.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"n", changesTo:["name", "surname"]}])
 ----
 
-In order to extract changes for either name *or* surname, two separate selectors have to be specified:
+In order to extract changes for either `name` *or* `surname` properties, two separate selectors have to be specified:
+
 [source, cypher]
 ----
 CALL cdc.query("0", [
@@ -94,7 +88,8 @@ CALL cdc.query("0", [
 
 === Examples
 // ENTITY UNSPECIFIC
-Changes can be filtered to only return creates, updates or deletions:
+Changes can be filtered to only return creates, updates or deletes, regardless of whether the effected entity is a node or a relationship:
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"e", operation:"c"}])
@@ -102,14 +97,16 @@ CALL cdc.query("0", [{select:"e", operation:"u"}])
 CALL cdc.query("0", [{select:"e", operation:"d"}])
 ----
 
-Changes can be filtered to only include those where a certain property changed.
+Changes can be filtered to only include those where a certain property is changed.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"e", changesTo:["name"]}])
 ----
 
 // NODE/RELATIONSHIP needs to be specified
-Changes can be filtered to a specific element ID:
+Changes can be filtered to a specific element ID.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"n", elementId:"4:e239be76-c7e8-43d8-aa03-567de592f426:0"}])
@@ -117,20 +114,26 @@ CALL cdc.query("0", [{select:"r", elementId:"5:e239be76-c7e8-43d8-aa03-567de592f
 ----
 
 // NODE selectors
-Node changes can be filtered to specific keys:
+// TODO: fully match?
+Node changes can be filtered to specific keys. The provided key needs to fully match to a corresponding node key or property existence and uniqueness constraints on the node.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"n", key:{name:"Kevin", surname:"Bacon"}}])
 ----
 
 Node changes can be filtered to specific labels.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"n", labels:["ACTOR", "DIRECTOR"]}])
 ----
+
 [NOTE]
 ====
-The query above will only return changes on nodes that have *both* labels. In order to get changes on nodes with either label, two separate selectors have to be specified.
+The query above will only return changes on nodes that have *both* labels.
+In order to get changes on nodes with either label, two separate selectors have to be specified.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"n", labels:["ACTOR"]}, {select:"n", labels:["DIRECTOR"]}])
@@ -139,12 +142,14 @@ CALL cdc.query("0", [{select:"n", labels:["ACTOR"]}, {select:"n", labels:["DIREC
 
 // RELATIONSHIP selectors
 Relationship changes can be filtered to a specific type.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{select:"r", type:"ACTED_IN"}])
 ----
 
-Relationship changes can be selected based on their start and end node.
+Relationship changes can be selected based on their start and end nodes.
+
 [source, cypher]
 ----
 CALL cdc.query("0", [{
@@ -166,9 +171,9 @@ CALL cdc.query("0", [{
 ----
 All fields except for `select` are optional.
 
-<1> Select changes on all entities, other valid values are `"n"` for node changes and `"r"` for relationship changes.
+<1> Select changes on all entities. Other valid values are `"n"` for node changes and `"r"` for relationship changes.
 <2> Select changes which are creating entities. Other valid values are `"u"` for entity updates and `"d"` for entity deletions.
-<3> Select changes which affect all specified properties.
+<3> Select changes which affect all of the specified properties.
 
 ==== Node selector schema
 [source, json]
@@ -187,12 +192,12 @@ All fields except for `select` are optional.
 ----
 All fields except for `select` are optional.
 
-<1> Select changes on relationships, other valid values are `"e"` for all entity types and `"n"` for node changes.
+<1> Select changes on nodes. Other valid values are `"e"` for all entity types and `"r"` for relationship changes.
 <2> Select changes on the node with this elementId.
-<3> Select changes on nodes with all specified keys. Requires constraints on the node, see <<change-data-capture-constraints>> for details.
+<3> Select changes on nodes with matching key properties. Key matching is only possible when there is a defined node key or property existence and uniquness constraints defined on one of the labels set on the affected node, see <<change-data-capture-constraints>> for details.
 <4> Select changes on nodes which have all specified labels.
 <5> Select changes which are creating nodes. Other valid values are `"u"` for node updates and `"d"` for node deletions.
-<6> Select changes which affect all specified properties.
+<6> Select changes which affect all of the specified properties.
 
 ==== Relationship selector schema
 [source, json]
@@ -223,24 +228,28 @@ All fields except for `select` are optional.
 }
 ----
 All fields except for `select` are optional.
-// TODO Relationship keys are supported, but omitted until relationship key constraints are GA.
 
-<1> Select changes on nodes, other valid values are `"e"` for all entity types and `"r"` for relationship changes.
+<1> Select changes on nodes, other valid values are `"e"` for all entity types and `"n"` for node changes.
 <2> Select changes on the relationship with this elementId.
 <3> Select changes on relationships with this type.
 <4> Select changes on relationships with a start node matching this node selector. Note that `operation` and `changesTo` are not valid inside these node selectors.
 <5> Optionally specify that this is a node selector, specifying `"r"` or `"e"` here will cause an error.
 <6> Select relationships where the start node has this elementId.
-<7> Select relationships where the start node has these keys. Requires constraints on the nodes, see <<change-data-capture-constraints>> for details.
+<7> Select relationships where the start node has these key properties. Key matching is only possible when there is a defined relationship key or property existence and uniquness constraints defined on the relationship type, see <<change-data-capture-constraints>> for details.
 <8> Select relationships where the start node has these labels.
 <9> Same schema as `start`.
-<10> Select changes where a relationship was created, other valid values are `"u"` for updates and `"d"` for deletes.
+<10> Select changes which are creating relationships. Other valid values are `"u"` for updates and `"d"` for deletes.
 <11> Select changes where all specified properties are affected.
 
 == CDC procedures
 [[change-data-capture-querying-changes]]
 === Querying changes
-The procedure `cdc.query(from, selectors)` is used to query the database for changes. Once all changes have been streamed the query will terminate. Each record contains an `id` field, which can be used as `from` in a subsequent query, in order to continue streaming from that point. The `from` field is exclusive and will not include the already seen record a second time. Selectors can be used to filter the output, see <<change-data-capture-selectors, selectors>> for details.
+The procedure `cdc.query(from, selectors)` is used to query the database for changes.
+Once all changes have been streamed the query will terminate.
+Each record contains an `id` field, which can be used as `from` in a subsequent query, in order to continue streaming from that point.
+The `from` field is exclusive and will not include the already seen record a second time.
+Selectors can be used to filter the output, see <<change-data-capture-selectors, selectors>> for details.
+
 [source, cypher]
 ----
 CALL cdc.query("A-I5vnbH6EPYqgNWfeWS9CYAAAAAAAAABQAAAAAAAAAA")
@@ -248,11 +257,6 @@ CALL cdc.query("A-I5vnbH6EPYqgNWfeWS9CYAAAAAAAAABQAAAAAAAAAA", {select:"n"})
 ----
 
 The output from `cdc.query` is described in the section <<change-data-capture-output, change event output>>.
-
-====
-TODO omitting `cdc.stream` here since it currently doesn't work
-====
-
 
 === Getting the earliest change
 The procedure `cdc.earliest` is used to get a `from` value for the earliest available change.
@@ -273,7 +277,8 @@ TODO are there other things that affect the earliest value?
 ====
 
 === Getting the current change
-The procedure `cdc.current` returns the `id` from the newest entry in the transaction log. This value may be used to query changes from "now".
+The procedure `cdc.current` returns the `id` from the latest entry in the transaction log.
+This value may be used to query changes from "now".
 [source, cypher]
 ----
 CALL cdc.current
@@ -332,18 +337,18 @@ Change events for nodes follow this schema:
 <5> The authenticated user when the query was executed.
 <6> What transaction log enrichment mode was set to when this change was committed.
 <7> IP address and port of where the client connected from.
-<8> Server Id <TODO ???>
+<8> The server identifier which executed this transaction. <TODO link to SHOW SERVERS docs>
 <9> How the client connected to the server.
-<10> Connection Server <TODO ???>
+<10> IP address and port of the server to which the client was connected.
 <11> When the transaction containing this change started.
 <12> When the transaction containing this change was committed.
 <13> ElementId of the changed entity (node or relationship).
 <14> Keys identifying the changed entity. Requires constraints, see <<change-data-capture-constraints>> for details.
 <15> `n` or `r` indicating if the event changes a node or relationship.
-<16> A map describing the state of the entity before the change. May be limited to the attributes of the entity that have changed when using `DIFF` enrichment mode. See <<change-data-capture-enrichment-mode>> for details.
+<16> A map describing the state of the entity before the change. May be limited to the properties of the entity that have changed when using `DIFF` enrichment mode. See <<change-data-capture-enrichment-mode>> for details.
 <17> Properties of the entity after the change has been applied. May be limited to the properties of the entity that have changed when using `DIFF` enrichment mode. See <<change-data-capture-enrichment-mode>> for details.
 <18> Labels of the entity after the change has been applied. May be limited to the labels of the entity that have changed when using `DIFF` enrichment mode. See <<change-data-capture-enrichment-mode>> for details.
-<19> Indicating the type of change, `c` for creating an entity, `u` for updating an entity, `d` for deleting an entity.
+<19> Type of change, `c` for creating an entity, `u` for updating an entity, `d` for deleting an entity.
 <20> Labels of the changed node. // TODO describe before & after behaviour.
 
 
