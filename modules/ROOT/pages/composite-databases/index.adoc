@@ -6,28 +6,55 @@
 [[composite-databases-introduction]]
 == Introduction
 
-Neo4j v5 introduces a type of database called _composite database_that makes possible the incorporation of the previous Fabric technology into the Neo4j cluster and standalone server without the need to deploy a dedicated Fabric proxy (as in Neo4j 4.x).
+A composite database is a special database introduced in Neo4j v5.
+It supersedes Fabric from Neo4j v4.
 
-A composite database gives access to graphs found on other databases (local, remote, or sharded) and *does not store data* independently.
-The composite databases leverage the Fabric technology and `REMOTE DATABASE ALIAS`, to provide a dynamically configurable, simple, and unified way of accessing partitioned data or data spread across multiple Neo4j DBMSs.
+Similarly to Fabric, composite databases *do not store data* independently, but provide a way to access data from other databases (local or remote).
+In addition, composite databases combine the Fabric capabilities with database aliases to ensure a dynamically configurable, simple, and unified way of accessing partitioned data or graphs spread across multiple Neo4j DBMSs.
 
-A Neo4j DBMS can have multiple composite databases, and they can be created both in standalone and cluster deployments.
+A Neo4j DBMS can have multiple composite databases, and they can be created both in standalone and cluster deployments without the need to deploy a dedicated proxy server (as with Fabric in Neo4j v4.x).
 
-Composite databases enable:
+Composite databases are managed using administrative commands. 
+For example, the `CREATE COMPOSITE DATABASE` command creates a composite database, and the `CREATE ALIAS` command adds a database alias to the composite database.
 
-* *Data Federation*: the ability to access data available in distributed sources in the form of *disjointed graphs*.
-* *Data Sharding*: the ability to access data available in distributed sources in the form of a *common graph partitioned on multiple databases*.
+For a detailed example of how to create a composite database and add database aliases to it, see xref:composite-databases/administration.adoc[Managing composite databases].
 
-// The following diagram shows a Neo4j cluster with two composite databases, `db1` and `db2`, each of them accessing data from two different databases, `db1` and `db2`, respectively.
+== Concepts
 
-// image::../images/composite-databases.png[title="Composite databases", role="middle"]
+The main concepts that one needs to understand when working with composite databases are:
 
-== Composite database vs Fabric
+=== Data Federation
 
-Composite databases are a new type of database that replaces the previous Fabric technology.
-The following table summarizes the similarities and differences between the two.
+Data federation is when your data is in two *disjoint graphs* with different labels and relationship types.
+Because relationships cannot span across them, to query your data, you have to federate the graphs by
+using a _proxy node_ modeling pattern, where nodes with a specific label must be present in both federated domains.
 
-.Composite database vs Fabric
+In one of the graphs, nodes with that specific label contain all the data related to that label, while in the other graph, the same label is associated with a proxy node that only contains the `<node>ID` property.
+The `<node>ID` property allows you to link data across the graphs in this federation.
+
+image::federation2.svg[title="Data Federation", width=350, role=middle]
+
+=== Data Sharding
+
+Data sharding is when you have two graphs that share the *same model* (same labels and relationship types) but contain *different data*.
+
+image::sharding3.svg[title="Data Sharding", width=350, role=middle]
+
+In general, a couple of main use cases require sharding:
+
+* Scalability — different shards can be deployed on separate servers, splitting the load on resources.
+
+* Data regulations -- different shards can be deployed on servers, residing in different locations, and managed independently.
+
+For a detailed example of how to shard data using `neo4j-admin database copy` command, see xref:composite-databases/sharding-with-copy.adoc[Sharding data with the `copy` command].
+
+For a walkthrough of the basics of setting up and using a composite database with federated and sharded data, see xref:tutorial/tutorial-composite-database.adoc[Set up and use a composite database].
+
+== Composite databases vs. Fabric
+
+The following table summarizes the similarities and differences between a composite database and Fabric.
+
+.Composite database vs. Fabric
 [cols="<24s,38,38",frame="topbot",options="header"]
 |===
 | | Composite database | Fabric
@@ -35,9 +62,6 @@ The following table summarizes the similarities and differences between the two.
 | Neo4j version compatibility 
 | Neo4j 5.x 
 | Neo4j 4.1 to 4.4.
-
-| Neo4j edition compatibility
-2+| Enterprise Edition
 
 | Data access 
 2+| Gives access to graphs found on other databases (local, remote, or sharded).
@@ -51,7 +75,7 @@ The following table summarizes the similarities and differences between the two.
 
 | Configuration 
 | Managed using Cypher commands. Composite databases are created with the `CREATE COMPOSITE DATABASE` command and database aliases are added with `CREATE ALIAS ..`. 
-| Managed through configuration settings. The Neo4j DBMSs that host the same Fabric virtual database must have the same configuration settings. The configuration must be kept in sync and applied by the Database Administrator.
+| Managed through configuration settings. The Neo4j DBMSs that host the same Fabric virtual database must have the same configuration settings. The configuration must be always kept in sync.
 
 | Sharding an existing database 
 2+| With the help of the `neo4j-admin copy` command. 
@@ -67,5 +91,5 @@ The following table summarizes the similarities and differences between the two.
 2+| Only transactions with queries that read from multiple graphs, or read from multiple graphs and write to a single graph, are allowed.
 
 | Neo4j embedded 
-2+| Not available when Neo4j is used as an embedded database in Java applications. It can be used only in a typical client/server mode, when users connect to a Neo4j DBMS from their client application or tool, via Bolt or HTTP protocol. 
+2+| Not available when Neo4j is used as an embedded database in Java applications. It can be used only in a typical client/server mode when users connect to a Neo4j DBMS from their client application or tool via Bolt or HTTP protocol. 
 |===
