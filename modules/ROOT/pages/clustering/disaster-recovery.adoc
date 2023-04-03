@@ -31,8 +31,17 @@ Consequently, in a disaster where multiple servers go down, some databases may k
 
 == Guide to disaster recovery
 
-The following guide defines three stages of disaster recovery.
-Always run the guide in the order it is described and only move to the next stage once the current one is validated to work properly.
+There are three main steps to recover a cluster from a disaster.
+Depending on the disaster scenario, some steps may not be required, but it is recommended to complete each step in order to ensure that the cluster is fully operational.
+
+The first step is to ensure that the `system` database is available in the cluster. 
+The `system` database defines the configuration for the other databases and therefore it is vital to ensure that it is available before doing anything else.
+
+Once the `system` database's availability is verified, whether it was recovered or unaffected by the disaster, the next step is to recover lost servers to make sure the cluster's topology requirements are met.
+
+Only after the `system` database is available and the cluster topology is satisfied, can the databases be managed.
+
+The steps are described in detail in the following sections.
 
 [NOTE]
 ====
@@ -61,11 +70,20 @@ If the response doesn't contain a writer, the `system` database is unavailable a
 .. Optionally, you can create a temporary user to validate the `system` database's writability by running `CREATE USER 'temporaryUser' SET PASSWORD 'temporaryPassword'`.
 ... Confirm that the query was executed successfully and the temporary user was created as expected, by running `SHOW USERS`, then continue to xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
 If not, continue to step 3.
++
 . *Restore the `system` database.*
 +
 [NOTE]
 ====
 Only do the steps below if the `system` database's availability could not be validated by the first two steps in this section.
+====
++
+[NOTE]
+====
+Recall that the cluster remains fault tolerant, and thus able to serve both reads and writes, as long as a majority of the primaries are available.
+In case of a disaster affecting one or more server(s), but where the majority of servers are still available, it is possible to add a new server to the cluster and recover the `system` database (and any other affected user databases) on it by copying the `system` database (and affected user databases) from one of the available servers.
+This method prevents downtime for the other databases in the cluster.
+If this is the case, ie. if a majority of servers are still available, follow the instructions in <<recover-servers>>.
 ====
 +
 The following steps creates a new `system` database from a backup of the current `system` database.
@@ -85,6 +103,7 @@ Either:
 .. On each server, run `neo4j-admin database load system --from-path=[path-to-dump] --overwrite-destination=true` to load the current `system` database dump.
 .. Ensure that `dbms.cluster.discovery.endpoints` are set correctly on all servers, see xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information.
 .. Return to step 1.
+
 
 [[recover-servers]]
 === Recover servers
