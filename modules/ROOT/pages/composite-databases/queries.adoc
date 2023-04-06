@@ -17,7 +17,7 @@ Queries submitted to a composite database may contain several <<query-use, `USE`
 
 Each constituent graph is named after the alias that introduces it into the composite database.
 
-The examples will assume the same setup as the one created in xref:composite-databases/administration.adoc[].
+The examples assume the same setup as the one created in xref:composite-databases/administration.adoc[].
 [[composite-databases-queries-single-graph]]
 === Query a single graph
 
@@ -223,13 +223,20 @@ RETURN movie
 Here the outer clauses, i.e. the `UNWIND`, the `CALL` itself, and the final `RETURN`, appear in the root scope of the query, without a specifically chosen graph.
 Clauses or expressions in scopes where no graph has been specified must not be graph-accessing.
 
+The following composite database query is invalid because `[p=(movie)-->() | p] AS paths` is a graph-accessing operation in the root scope of the query:
+
+[source, cypher]
+----
+UNWIND graph.names() AS graphName
+CALL {
+  USE graph.byName(graphName)
+  MATCH (movie:Movie)
+  RETURN movie
+}
+RETURN [p=(movie)-->() | p] AS paths
+----
+
 See examples of graph-accessing operations:
-
-- `MATCH (n)`
-- `CREATE (:X)`
-- `WITH [p=()--() | p] AS paths`
-
-Examples of non-graph-accessing operations:
 
 - `RETURN 1 + 2 AS number`
 - `WITH node.property AS val`
@@ -272,11 +279,17 @@ CALL {
 RETURN m
 ----
 
+== Cypher runtime
+
+When a query is submitted to a composite database, different parts of the query may run using different runtimes.
+Clauses or expressions in scopes where no graph has been specified run using the _slotted_ runtime.
+Parts of the query directed to different constituent graphs are run using the default runtime for that graph, or respect the submitted link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/query-tuning/query-options/#cypher-runtime[Cypher query options] if specified.
+
 [[composite-databases-queries-built-in-functions]]
 == Built-in graph functions
 
 Graph functions are located in the namespace `graph`.
-The following table provides a description these functions:
+The following table describes these functions:
 
 .Built-in graph functions
 [options="header", cols="m,"]
@@ -288,4 +301,8 @@ The following table provides a description these functions:
 | graph.byName(graphName)
 | Used with the `USE` clause to select a constituent graph by name dynamically.
   This function is supported only with `USE` clauses.
+| graph.propertiesByName(graphName)
+| Returns a map containing the properties associated with the given graph.
 |===
+
+For more information, see _Graph functions_ in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/[Cypher Manual].
