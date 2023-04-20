@@ -122,8 +122,8 @@ It can also be specified by the environment variable `NEO4J_DATABASE`.
 
 --param PARAM
 | Optional argument
-| Add a parameter to this session.
-For example, `-P "number => 3"` or `-P "country => 'Spain'"`.
+| Add parameters to this session.
+For example, `-P '{number: 3, country: 'Spain'}'`.
 This argument can be specified multiple times.
 |
 
@@ -269,8 +269,7 @@ Available commands:
   :help         Show this help message
   :history      Statement history
   :impersonate  Impersonate user
-  :param        Set the value of a query parameter
-  :params       Print all query parameter values
+  :param        Set, list or clear query parameters
   :rollback     Rollback the currently open transaction
   :source       Executes Cypher statements from a file
   :use          Set the active database
@@ -350,40 +349,50 @@ type example.cypher | bin/cypher-shell.bat -u neo4j -p <password> --format plain
 [[cypher-shell-parameters]]
 == Query parameters
 
-Cypher Shell CLI supports querying based on parameters.
-This is often used while scripting.
+Cypher Shell supports querying based on parameters.
+Use `:param <Cypher Map>` to set parameters or the older arrow syntax `:param name => <Cypher Expression>`.
+List current parameters with `:param`.
+Clear parameters with `:param clear`.
+
+Parameters can be set to any Cypher expression.
+Some expressions need to be evaluated online and require an open session.
+The parameter expression is evaluated once.
+For example, `:param {now: datetime()}` will set the parameter `now` to the current date and time at the time of setting the parameter.
 
 .Use parameters within Cypher Shell
 ====
 
-. Set the parameter `thisAlias` to `Robin` using the `:param` keyword:
+. Set the parameter `alias` to `Robin` and `born` to `date('1940-03-20')` using the `:param` keyword:
 +
 [source, shell]
 ----
-:param thisAlias => 'Robin'
+:param {alias: 'Robin', born: date('1940-03-20')}
 ----
-. Check the parameter using the `:params` keyword:
+. Check the current parameters using the `:params` keyword:
 +
 [source, shell]
 ----
-:params
+:param
 ----
 +
 [queryresult]
 ----
-:param thisAlias => 'Robin'
+{
+  alias: 'Robin',
+  born: date('1981-08-01')
+}
 ----
 +
-. Now use the parameter `thisAlias` in a Cypher query:
+. Now use the `alias` and `born` parameters in a Cypher query:
 +
 [source, shell]
 ----
-CREATE (:Person {name : 'Dick Grayson', alias : $thisAlias });
+CREATE (:Person {name : 'Dick Grayson', alias : $alias, born: $born });
 ----
 +
 [queryresult]
 ----
-Added 1 nodes, Set 2 properties, Added 1 labels
+Added 1 nodes, Set 3 properties, Added 1 labels
 ----
 +
 . Verify the result:
@@ -395,13 +404,13 @@ MATCH (n) RETURN n;
 +
 [queryresult]
 ----
-+-----------------------------------------------------------------+
-| n                                                               |
-+-----------------------------------------------------------------+
-| (:Person {name: "Bruce Wayne", alias: "Batman"})                |
-| (:Person {name: "Selina Kyle", alias: ["Catwoman", "The Cat"]}) |
-| (:Person {name: "Dick Grayson", alias: "Robin"})                |
-+-----------------------------------------------------------------+
++--------------------------------------------------------------------+
+| n                                                                  |
++--------------------------------------------------------------------+
+| (:Person {name: "Bruce Wayne", alias: "Batman"})                   |
+| (:Person {name: "Selina Kyle", alias: ["Catwoman", "The Cat"]})    |
+| (:Person {name: "Dick Grayson", alias: "Robin", born: 1940-03-20}) |
++--------------------------------------------------------------------+
 3 rows available after 2 ms, consumed after another 2 ms
 ----
 ====
