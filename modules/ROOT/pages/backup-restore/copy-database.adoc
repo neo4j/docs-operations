@@ -29,162 +29,175 @@ For more information, see <<copy-estimating-iops, Estimating the processing time
 
 [source,role=noheader]
 ----
-neo4j-admin database copy   [--verbose]
-                            [--from-path-data=<path> --from-path-txn=<path>]
-                            [--to-path-data=<path> --to-path-txn=<path>]
-                            [--to-path-schema=<path>]
-                            [--force]
-                            [--compact-node-store[=true|false]]
-                            [--to-format=<format>]
-                            [--ignore-nodes-with-labels=<label>[,<label>...]]
-                            [--ignore-relationships-with-types=<type>[,<type>...]]
-                            [--copy-only-node-properties=<label.property>[,<label.property>...]]
-                            [--copy-only-nodes-with-labels=<label>[,<label>...]]
-                            [--copy-only-relationship-properties=<relationship.property>[,<relationship.property>...]]
-                            [--copy-only-relationships-with-types=<type>[,<type>...]]
-                            [--skip-labels=<label>[,<label>...]]
-                            [--skip-node-properties=<label.property>[,<label.property>...]]
-                            [--skip-properties=<property>[,<property>...]]
-                            [--skip-relationship-properties=<relationship.property>[,<relationship.property>...]]
-                            [--from-pagecache=<size>]
-                            [--temp-path=<path>]
-                            <fromDatabase>
-                            <toDatabase>
+neo4j-admin database copy [-h] [--expand-commands] [--force]
+                          [--verbose] [--compact-node-store[=true|false]]
+                          [--additional-config=<file>] [--from-pagecache=<size>] [--temp-path=<path>]
+                          [--to-format=<format>] [--to-path-schema=<path>] [--copy-only-node-properties=<label.property>
+                          [,<label.property>...]]... [--copy-only-nodes-with-labels=<label>[,<label>...]]...
+                          [--copy-only-relationship-properties=<relationship.property>[,<relationship.property>...]]...
+                          [--copy-only-relationships-with-types=<type>[,<type>...]]...
+                          [--ignore-nodes-with-labels=<label>[,<label>...]]... [--ignore-relationships-with-types=<type>
+                          [,<type>...]]... [--skip-labels=<label>[,<label>...]]... [--skip-node-properties=<label.
+                          property>[,<label.property>...]]... [--skip-properties=<property>[,<property>...]]...
+                          [--skip-relationship-properties=<relationship.property>[,<relationship.property>...]]...
+                          [--from-path-data=<path> --from-path-txn=<path>] [--to-path-data=<path> --to-path-txn=<path>]
+                          <fromDatabase> <toDatabase>
 ----
 
-=== Required parameters
+=== Description
 
-To use this command, you must specify the parameters `<toDatabase>` and `<fromDatabase>`. +
+This command will create a copy of a database.
+If your labels, properties, or relationships contain dots or commas, you can use ` to escape them, e.g. `My,label`. property .
+A file named _<database-name>-schema.cypher_, containing the schema commands needed to recreate indexes/constraints on the copy, will be created.
+
+=== Parameters
+
+.`neo4j-admin database copy` parameters
+[options="header", cols="1m,3a"]
+|===
+| Parameter
+| Description
+
+|<fromDatabase>
+|Name of the source database.
+
+|<toDatabase>
+|Name of the target database.
+If the same as `<fromDatabase>`, it is copied to a temporary location, by default the current working directory or the path as defined by `--temp-path`, before being moved to replace the original.
+|===
+
 From Neo4j v5.5, you can use the same values for `<fromDatabase>` and `<toDatabase>` if you do not need an actual copy of the database.
 The command will replace the original database with the newly created copy.
 
-* `<fromDatabase>` -- Name of the source database.
-
-* `<toDatabase>` -- Name of the target database.
-If the same as `<fromDatabase>`, it is copied to a temporary location, by default the current working directory or the path as defined by `--temp-path`, before being moved to replace the original.
-
 [[copy-database-command-options]]
-=== Optional parameters
+=== Options
 
-[options="header", cols="2m,3a"]
+The `neo4j-admin database copy` command has the following options:
+
+.`neo4j-admin database copy` options
+[options="header", cols="5m,6a,4m"]
 |===
 | Option
 | Description
+| Default
 
-| --verbose
-| Enable verbose output.
+|--additional-config=<file>
+|Configuration file with additional configuration.
+|
 
-| --from-path-data
-| Path to the _/databases_ directory, containing the directory of the source database.
+|--compact-node-store[=true\|false]
+|By default node store is not compacted on copy since that changes node ids. Please use this option to enforce node store compaction.
+|false
 
-It can be used to target databases outside of the installation.
-
-Default:  xref:reference/configuration-settings.adoc#config_server.directories.data[`server.directories.data`]/databases
-
-| --from-path-txn
-| Path to the _/transactions_ directory, containing the transaction directory of the source database.
-
-Default: xref:reference/configuration-settings.adoc#config_server.directories.transaction.logs.root[`server.directories.transaction.logs.root`]
-
-| --to-path-data=<path>
-| Path to the _/databases_ directory, containing the directory of the target database.
-
-Default:  xref:reference/configuration-settings.adoc#config_server.directories.data[`server.directories.data`]/databases
-
-| --to-path-txn
-| Path to the _/transactions_ directory, containing the transaction directory of the target database.
-
-Default: xref:reference/configuration-settings.adoc#config_server.directories.transaction.logs.root[`server.directories.transaction.logs.root`]
-
-| --to-path-schema
-| Path to the directory where the schema commands file will be created.
-
-Default is the current directory.
-
-| --force
-| Force the command to proceed even if the integrity of the database can not be verified.
-
-| --compact-node-store
-| Enforce node store compaction.
-
-By default, the node store is not compacted on copy since it changes the node IDs.
-
-| --to-format
-| Set the format for the new database.
-
-Valid values are `same`, `standard`, `high_limit`, and `aligned`. The `high_limit` format is only available in Enterprise Edition.
-If you go from `high_limit` to `standard` or `aligned`, there is no validation that the data will fit.
-
-Default: The format of the source database.
-
-| --ignore-nodes-with-labels
-| A comma-separated list of labels.
-
-Nodes that have _any_ of the specified labels will not be included in the copy.
-Cannot be combined with `--copy-only-nodes-with-labels`.
-
-| --ignore-relationships-with-types
-| A comma-separated list of relationship types.
-
-Relationships with _any_ of the specified relationship types will not be included in the copy.
-Cannot be combined with `--copy-only-relationships-with-types`.
-
-| --copy-only-node-properties
-|  A comma-separated list of property keys to include in the copy for nodes with the specified label.
-
-Nodes whose labels are not explicitly mentioned in the list will have all their properties included in the copy.
+|--copy-only-node-properties=<label.property>[,<label.property>...]
+|A comma separated list of property keys to include in the copy for nodes with the specified label.
+Any labels not explicitly mentioned will have all their properties included in the copy.
 Cannot be combined with `--skip-properties` or `--skip-node-properties`.
+|
 
-| --copy-only-nodes-with-labels
-| A comma-separated list of labels.
-
-All nodes that have _any_ of the specified labels will be included in the copy.
+|--copy-only-nodes-with-labels=<label>[,<label>...]
+|A comma separated list of labels. All nodes that have ANY of the specified labels will be included in the copy.
 Cannot be combined with `--ignore-nodes-with-labels`.
+|
 
-| --copy-only-relationship-properties
-| A comma-separated list of property keys to include in the copy for relationships with the specified type.
+|--copy-only-relationship-properties=<relationship.property>[,<relationship.property>...]
+|A comma separated list of property keys to include in the copy for relationships with the specified type.
+Any relationship types not explicitly mentioned will have all their properties included in the copy. Can not be combined with `--skip-properties` or `--skip-relationship-properties`.
+|
 
-Relationship types that are not explicitly mentioned will have all their properties included in the copy.
-Cannot be combined with `--skip-properties` or `--skip-relationship-properties`.
-
-| --copy-only-relationships-with-types=<type>[,<type>...]
-| A comma-separated list of relationship types.
-
-All relationships with _any_ of the specified types will be included in the copy.
+|--copy-only-relationships-with-types=<type>[,<type>...]
+|A comma separated list of relationship types.
+All relationships with any of the specified types will be included in the copy.
 Cannot be combined with `--ignore-relationships-with-types`.
+|
 
-| --skip-labels
-| A comma-separated list of labels to ignore during the copy.
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
 
-| --skip-node-properties
-| A comma-separated list of property keys to ignore for nodes with the specified label.
+|--force
+|Force the command to run even if the integrity of the database can not be verified.
+|
 
-Cannot be combined with `--skip-properties` or `--copy-only-node-properties`.
-
-| --skip-properties
-| A comma-separated list of property keys to ignore during the copy.
-
-Cannot be combined with `--skip-node-properties`, `--copy-only-node-properties`, `--skip-relationship-properties`, and `--copy-only-relationship-properties`.
-
-| --skip-relationship-properties
-| A comma-separated list of property keys to ignore for relationships with the specified type.
-
-Cannot be combined with `--skip-properties` or `--copy-only-relationship-properties`.
-
-| --from-pagecache
-| The size of the page cache to use for reading.
-
-| --temp-path
-| Path to a directory to be used as a staging area when the source and target databases are the same.
-
-Default: The current directory.
-|===
-
+|--from-pagecache=<size>
+|The size of the page cache to use for reading.
 [TIP]
-====
 You can use the `--from-pagecache` option to speed up the copy operation by specifying how much cache to allocate when reading the source.
 The `--from-pagecache` should be assigned whatever memory you can spare since Neo4j does random reads from the source.
-====
+|8m
+
+|--from-path-data=<path>
+|Path to the databases directory, containing the database directory to source from.
+It can be used to target databases outside of the installation.
+|server.directories.data/databases
+
+|--from-path-txn=<path>
+|Path to the transactions directory, containing the transaction directory for the database to source from.
+|server.directories.transaction.logs.root
+
+|-h, --help
+|Show this help message and exit.
+|
+
+|--ignore-nodes-with-labels=<label>[,<label>...]
+|A comma separated list of labels.
+Nodes that have ANY of the specified labels will not be included in the copy.
+Cannot be combined with `--copy-only-nodes-with-labels`.
+|
+
+|--ignore-relationships-with-types=<type>[,<type>...]
+|A comma separated list of relationship types. Relationships with any of the specified
+relationship types will not be included in the copy.
+Cannot be combined with `--copy-only-relationships-with-types`.
+|
+
+|--skip-labels=<label>[,<label>...]
+|A comma separated list of labels to ignore.
+|
+
+|--skip-node-properties=<label.property>[,<label.property>...]
+|A comma separated list of property keys to ignore for nodes with the specified label. Cannot be combined with `--skip-properties` or `--copy-only-node-properties`.
+|
+
+|--skip-properties=<property>[,<property>...]
+|A comma separated list of property keys to ignore.
+Cannot be combined with `--skip-node-properties`, `--copy-only-node-properties`, `--skip-relationship-properties` or `--copy-only-relationship-properties`.
+|
+
+|--skip-relationship-properties=<relationship.property>[,<relationship.property>...]
+|A comma separated list of property keys to ignore for relationships with the specified
+type.
+Cannot be combined with `--skip-properties` or `--copy-only-relationship-properties`.
+|
+
+|--temp-path=<path>
+|Path to a directory to be used as a staging area when the source and target databases are the same.
+|The current directory.
+
+|--to-format=<format>
+|Set the format for the new database.
+Must be one of `same`, `standard`, `high_limit`, `aligned`.
+`same` will use the same format as the source.
+[WARNING]
+If you go from `high_limit` to `standard` or `aligned`, there is no validation that the data will actually fit.
+|The format of the source database.
+
+|--to-path-data=<path>
+|Path to the databases directory, containing the database directory to target from.
+|server.directories.data/databases
+
+|--to-path-schema=<path>
+|Path to a directory to create the schema commands file in.
+|The current directory.
+
+|--to-path-txn=<path>
+|Path to the transactions directory containing the transaction directory for the database to target from.
+|server.directories.transaction.logs.root
+
+|--verbose
+|Enable verbose output.
+|
+|===
 
 [[copy-database-examples]]
 == Examples
