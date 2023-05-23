@@ -4,31 +4,72 @@
 = Deploy an analytics cluster
 
 In some analytics use cases, the analytics queries can be intensive enough that you want them to run on separate servers, away from the servers handling your transactional workload.
-This example shows how you can set up an example cluster to achieve that
+This example shows how you can set up a cluster to achieve that.
+You may want to use our https://neo4j.com/docs/graph-data-science/current/production-deployment/neo4j-cluster/[Graph Data Science] library.
 
 
+== With fault tolerance
 
+In this example, three servers named `server01.example.com`, `server02.example.com` and `server03.example.com` are configured as the transactional part of the cluster.
+Two more servers names `server04.example.com` and `server05.example.com` are configured for the analytical queries.
+Neo4j Enterprise Edition is installed on all five servers.
+They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
 
+* Cluster of 3 primaries
+* Some number of secondaries
 
-https://neo4j.com/docs/graph-data-science/current/production-deployment/neo4j-cluster/
+._neo4j.conf_ on server01.example.com:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server01.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
+----
 
+._neo4j.conf_ on server02.example.com:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server02.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
+----
+
+._neo4j.conf_ on server03.example.com:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server03.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
+----
+
+._neo4j.conf_ on server04.example.com - an analytics server:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server04.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
+initial.server.mode_constraint=SECONDARY
+server.cluster.system_database_mode=SECONDARY
+----
+
+._neo4j.conf_ on server05.example.com - an analytics server:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server05.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
+initial.server.mode_constraint=SECONDARY
+server.cluster.system_database_mode=SECONDARY
+----
+
+The Neo4j servers are ready to be started.
+The startup order does not matter.
 
 
 == If you don't want fault tolerance
 If fault tolerance is not a priority for your use case, you can have just a single server handling write operations for your DBMS.
 This means you need fewer servers, but the downside is if that one server or process fails, all your databases will be unavailable for write.
 They may be less available for read as well, since that server manages the DBMS.
-
-
-
-
-
-
-
-
-
-
-
 
 
 [[cluster-analytics-example-configure-a-single-primary-cluster]]
@@ -145,3 +186,6 @@ TOPOLOGY 1 PRIMARY 2 SECONDARIES
 
 [[cluster-single-analytics-limitations]]
 === Limitations
+
+
+== Running analytical queries
