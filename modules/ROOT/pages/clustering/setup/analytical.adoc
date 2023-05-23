@@ -1,0 +1,147 @@
+:description: This section describes how to deploy a special case Neo4j cluster for non-fault tolerant analytics queries.
+[role=enterprise-edition]
+[[clustering-single-analytics]]
+= Deploy an analytics cluster
+
+In some analytics use cases, the analytics queries can be intensive enough that you want them to run on separate servers, away from the servers handling your transactional workload.
+This example shows how you can set up an example cluster to achieve that
+
+
+
+
+
+https://neo4j.com/docs/graph-data-science/current/production-deployment/neo4j-cluster/
+
+
+
+== If you don't want fault tolerance
+If fault tolerance is not a priority for your use case, you can have just a single server handling write operations for your DBMS.
+This means you need fewer servers, but the downside is if that one server or process fails, all your databases will be unavailable for write.
+They may be less available for read as well, since that server manages the DBMS.
+
+
+
+
+
+
+
+
+
+
+
+
+
+[[cluster-analytics-example-configure-a-single-primary-cluster]]
+=== Configure a cluster with a single writer
+
+The following example shows how to set up a non-fault tolerant analytics cluster with three members.
+
+.Configure a cluster with three servers, only one in primary mode
+====
+
+In this example, three servers named `server01.example.com`, `server02.example.com` and `server03.example.com` are configured.
+Neo4j Enterprise Edition is installed on all three servers.
+They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
+Note that `server01.example.com` is different from the others, and is the only server where write operations will take place.
+The other servers will be able to execute read queries, and if you are using GDS, to write results back to the writing server.
+
+._neo4j.conf_ on server01.example.com - the writer:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server01.example.com
+# Only has self in this list
+dbms.cluster.discovery.endpoints=server01.example.com:5000
+----
+
+._neo4j.conf_ on server02.example.com - an analytics server:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server02.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+initial.server.mode_constraint=SECONDARY
+server.cluster.system_database_mode=SECONDARY
+----
+
+._neo4j.conf_ on server03.example.com - an analytics server:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server03.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+initial.server.mode_constraint=SECONDARY
+server.cluster.system_database_mode=SECONDARY
+----
+
+The Neo4j servers are ready to be started.
+The startup order does not matter.
+
+After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+This shows information about each member of the cluster:
+
+[source, cypher, role=noplay]
+----
+SHOW SERVERS;
+----
+
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------+
+| name                                   | address          | state     | health      | hosting             |
++-----------------------------------------------------------------------------------------------------------+
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "server002:7687" | "Free"    | "Available" | ["system"]          |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server003:7687" | "Free"    | "Available" | ["system"]          |
++-----------------------------------------------------------------------------------------------------------+
+----
+
+For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
+
+[source, cypher, role=noplay]
+----
+SHOW SERVERS YIELD *;
+----
+
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| serverId                               | name                                   | address          | state     | health      | hosting             | requestedHosting    | tags | allowedDatabases | deniedDatabases | modeConstraint | version     |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.8.0"     |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "e56b49ea-243f-11ed-861d-0242ac120002" | "server002:7687" | "Free"    | "Available" | ["system"]          | ["system"]          | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server003:7687" | "Free"    | "Available" | ["system"]          | ["system"]          | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+====
+
+[TIP]
+.Startup time
+====
+The instance may appear unavailable while it is joining the cluster.
+If you want to follow along with the startup, you can see the messages in xref:configuration/file-locations.adoc[_neo4j.log_].
+====
+
+
+[[cluster-example-create-databases-on-cluster]]
+== Create new databases in a cluster
+
+As mentioned in the xref:clustering/introduction.adoc[Introduction], a server in a cluster can either host a database in primary or secondary mode.
+For transactional workloads, a cluster with predominantly primaries is preferred for fault tolerance and automatic failover.
+
+The cluster can preferably have more secondaries if the workload is more analytical.
+Such configuration is optimized for scalability but it is not fault-tolerant and does not provide automatic failover.
+
+.Create a new database with one primary and two secondaries
+====
+In the `system` database on the writer from the previous example, execute the following Cypher command to create a new database:
+
+[source, cypher, role=noplay]
+----
+CREATE DATABASE bar
+TOPOLOGY 1 PRIMARY 2 SECONDARIES
+----
+====
+
+[[cluster-single-analytics-limitations]]
+=== Limitations
