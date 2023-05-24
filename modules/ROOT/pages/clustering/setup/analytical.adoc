@@ -71,6 +71,46 @@ server.cluster.system_database_mode=SECONDARY
 The Neo4j servers are ready to be started.
 The startup order does not matter.
 
+After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+This shows information about each member of the cluster:
+
+[source, cypher, role=noplay]
+----
+SHOW SERVERS;
+----
+
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------+
+| name                                   | address          | state     | health      | hosting             |
++-----------------------------------------------------------------------------------------------------------+
+| "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "server002:7687" | "Enabled" | "Available" | ["system"]          |
+| "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "server003:7687" | "Enabled" | "Available" | ["system"]          |
+| "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server004:7687" | "Free"    | "Available" | ["system"]          |
+| "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server005:7687" | "Free"    | "Available" | ["system"]          |
++-----------------------------------------------------------------------------------------------------------+
+----
+
+For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
+
+[source, cypher, role=noplay]
+----
+SHOW SERVERS YIELD *;
+----
+
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| serverId                               | name                                   | address          | state     | health      | hosting             | requestedHosting    | tags | allowedDatabases | deniedDatabases | modeConstraint | version     |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.8.0"     |
+| "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "server002:7687" | "Enabled" | "Available" | ["system"]          | ["system"]          | []   | []               | []              | "NONE"         | "5.8.0"     |
+| "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "server003:7687" | "Enabled" | "Available" | ["system"]          | ["system"]          | []   | []               | []              | "NONE"         | "5.8.0"     |
+| "df3758b1-337f-4b8a-a9de-8e745ca96549" | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server004:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
+| "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server005:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
 ====
 
 
@@ -85,9 +125,6 @@ If the single writer server or process fails, all your databases will be unavail
 They may be less available for read as well, since that server manages the DBMS.
 ====
 
-[[cluster-analytics-example-configure-a-single-primary-cluster]]
-=== Configure a cluster with a single writer
-
 The following example shows how to set up a non-fault tolerant analytics cluster with three members.
 
 .Configure a cluster with three servers, only one in primary mode
@@ -101,7 +138,9 @@ The other servers will be able to execute read queries, and if you are using GDS
 
 Key points:
 
-* The writer server only has itself in the list of discovery. This means it will not seek out the other members when it starts, they have to discover it.
+* The writer server only has itself in the list of discovery.
+This means it will not seek out the other members when it starts, they have to discover it.
+This is required to have a cluster with only a single primary for the `system` database.
 * The servers for analytics have special mode constraints configured, to prevent them participating in normal write operations.
 
 ._neo4j.conf_ on server01.example.com - the writer:
