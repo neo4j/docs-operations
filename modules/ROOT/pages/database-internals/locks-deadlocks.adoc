@@ -1,0 +1,339 @@
+= Locks and deadlocks
+:description: This page discusses how locks are used in Neo4j, and strategies to avoid deadlocks.
+
+Neo4j is fully https://neo4j.com/docs/java-reference/current/transaction-management/[ACID compliant].
+This means that all database operations which access graphs, indexes, or schemas must be performed in a transaction.
+When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
+
+== Locks
+
+Locks are taken automatically by the queries that users run.
+They ensure that a node/relationship is locked to one particular transaction until that transaction is completed.
+In other words, a lock on a node or a relationship by one transaction will pause additional transactions which seek to concurrently modify the same node or relationship.
+As such, locks prevent concurrent modifications of shared resources between transactions.
+
+Locks are used in Neo4j to ensure data consistency and isolation levels.
+They not only protect logical entities (such as nodes and relationships) but also the integrity of internal data structures.
+
+The default isolation is read-committed isolation level.
+It is, however, possible to manually acquire write locks on nodes and relationships.
+For more information on how to manually acquire write locks, see https://neo4j.com/docs/java-reference/current/transaction-management/#transactions-isolation[Neo4j Java Reference Manual -> Transaction management].
+
+== Internal lock types
+
+To avoid deadlocks, internal locks should be taken in the following order:
+
+[cols="2,1,3a"]
+|===
+| Lock type | Locked entity | Description
+
+
+| `LABEL` or `RELATIONSHIP_TYPE`
+| Token id
+| Schema locks, which lock indexes and constraints on the particular label or relationship type.
+
+| `SCHEMA_NAME`
+| Schema name
+| Lock a schema name to avoid duplicates.
+[NOTE]
+Collisions are possible because the hash is stringed.
+This only affects concurrency and not correctness.
+
+| `NODE_RELATIONSHIP_GROUP_DELETE`
+| Node id
+| Lock taken on a node during the transaction creation phase to prevent deletion of said node and/or relationship group.
+This is different from the `NODE` lock to allow concurrent label and property changes together with relationship modifications.
+
+| `NODE`
+| Node id
+| Lock on a node, used to prevent concurrent updates to the node records (i.e. add/remove label, set property, add/remove relationship).
+Note that updating relationships will only require a lock on the node if the head of the relationship chain/relationship group chain must be updated since that is the only data part of the node record.
+
+| `DEGREES`
+| Node id
+| Used to lock nodes to avoid concurrent label changes when a relationship is added or deleted.
+Such an update would otherwise lead to an inconsistent count store.
+
+| `RELATIONSHIP_DELETE`
+| Relationship id
+| Lock a relationship for exclusive access during deletion.
+
+| `RELATIONSHIP_GROUP`
+| Node id
+| Lock the full relationship group chain for a given dense node.*
+This will not lock the node, in contrast to the lock `NODE_RELATIONSHIP_GROUP_DELETE`.
+
+| `RELATIONSHIP`
+| Relationship
+| Lock on a relationship, or more specifically a relationship record, to prevent concurrent updates.
+|===
+
+*_A node is considered dense if it at any point has had 50 or more relationships (i.e. it will still be considered dense even if it comes to have less than 50 relationships at any point in the future)._
+
+Note that these lock types may change without any notification between different Neo4j versions.
+
+== Lock contention
+
+Lock contention may arise if an application needs to perform concurrent updates on the same nodes/relationships.
+In such a scenario, transactions must wait for locks held by other transactions to be released in order to be completed.
+If two or more transactions attempt to modify the same data concurrently, it will increase the likelihood of a deadlock (explained in more detail below).
+In larger graphs, it is less likely that two transactions modify the same data concurrently, and so the likelihood of a deadlock is reduced.
+That said, even in large graphs, a deadlock can occur if two or more transactions are attempting to modify the same data concurrently.
+
+== Locks in practice
+
+.Locks taken for specific graph modifications
+[cols="1,3a"]
+|===
+| Modification | Lock taken
+
+| Creating a node | No lock
+| Updating a node label |`NODE` lock
+| Updating a node property | `NODE` lock
+| Deleting a node | `NODE` lock
+| Creating a relationship* | If the node is sparse: `NODE` lock.
+
+If a node is dense: node delete prevention lock.**
+| Updating a relationship property | `RELATIONSHIP` lock
+| Deleting a relationship* | If the node is sparse: `NODE` lock.
+
+If a node is dense: node delete prevention lock.
+
+`RELATIONSHIP` lock for both sparse and dense nodes.
+|===
+*_Applies for both source nodes and target nodes._
+
+**_A node is considered dense if it at any point has had 50 or more relationships (i.e. it will still be considered dense even if it comes to have less than 50 relationships at any point in the future)._
+_A node is considered sparse if it has never had more than 50 relationships._
+
+Additional locks are often taken to maintain indexes and other internal structures depending on how other data in the graph is affected by a transaction.
+For these additional locks, no assumptions or guarantees can be made concerning which lock will or will not be taken.
+
+== Locks and dense nodes
+
+When creating or deleting relationships in Neo4j, dense nodes are not exclusively locked during a transaction (a node is considered dense if, at any point in time, it has had more than 50 relationships).
+Rather, internally shared locks prevent the deletion of nodes, and shared degree locks are acquired for synchronizing with concurrent label changes for those nodes (to ensure correct count updates).
+
+At commit time, relationships are inserted into their relationship chains at places that are currently uncontested (i.e. not currently modified by another transaction), and the surrounding relationships are exclusively locked.
+
+In other words, relationship modifications acquires coarse-grained shared node locks when doing the operation in the transaction, and then acquires precise exclusive relationship locks during commit.
+
+The locking is very similar for sparse and dense nodes.
+The biggest contention for sparse nodes is the update of the degree (i.e. number of relationships) for the node.
+Dense nodes store this data in a concurrent data structure, and so can avoid exclusive node locks in almost all cases for relationship modifications.
+
+== Deadlocks
+
+A deadlock occurs when two transactions are blocked by each other because they are attempting to concurrently modify a node or a relationship that is locked by the other transaction.
+In such a scenario, neither of the transactions will be able to proceed.
+
+When Neo4j detects a deadlock, the transaction is terminated (with the transient error message code `Neo.TransientError.Transaction.DeadlockDetected`).
+
+For example, running the following two queries in https://neo4j.com/docs/operations-manual/current/tools/cypher-shell/[Cypher-shell] at the same time will result in a deadlock because they are attempting to modify the same node properties concurrently:
+
+.Transaction A
+[source, cypher, indent=0]
+----
+:begin
+MATCH (n:Test) SET n.prop = 1
+WITH collect(n) as nodes
+CALL apoc.util.sleep(5000)
+MATCH (m:Test2) SET m.prop = 1;
+----
+
+.Transaction B
+[source, cypher, indent=0]
+----
+:begin
+MATCH (n:Test2) SET n.prop = 1
+WITH collect(n) as nodes
+CALL apoc.util.sleep(5000)
+MATCH (m:Test) SET m.prop = 1;
+----
+
+The following error message is thrown:
+
+[source, output, role="noheader", indent=0]
+----
+The transaction will be rolled back and terminated. Error: ForsetiClient[transactionId=6698, clientId=1] can't acquire ExclusiveLock{owner=ForsetiClient[transactionId=6697, clientId=3]} on NODE(27), because holders of that lock are waiting for ForsetiClient[transactionId=6698, clientId=1].
+ Wait list:ExclusiveLock[
+Client[6697] waits for [ForsetiClient[transactionId=6698, clientId=1]]]
+----
+
+[NOTE]
+====
+The Cypher clause `MERGE` takes locks out of order to ensure uniqueness of the data, and this may prevent Neo4j's internal sorting operations from ordering transactions in a way which avoids deadlocks.
+When possible, users are, therefore, encouraged to use the Cypher clause `CREATE` instead, which does not take locks out of order.
+====
+
+== Avoiding deadlocks
+
+Most likely, a deadlock will be resolved by retrying the transaction.
+This will, however, negatively impact the total transactional throughput of the database, so it is useful to know about strategies to avoid deadlocks.
+
+Neo4j assists transactions by internally sorting operations (see below for more information about internal locks).
+However, this internal sorting only applies for the locks taken when creating or deleting relationships.
+Users are, therefore, encouraged to sort their operations in cases where Neo4j does not internally assist, such as when locks are taken for property updates.
+This is done by ensuring that updates occur in the same order.
+For example, if the three locks `A`, `B`, and `C` are always taken in the same order (e.g. `A->B->C`), then a transaction will never hold lock `B` while waiting for lock `A` to be released, and so a deadlock will not occur.
+
+Another option is to avoid lock contention by not modifying the same entities concurrently.
+
+For more information about deadlocks, see https://neo4j.com/docs/java-reference/5/transaction-management/#transactions-deadlocks[Neo4j Java Reference Manual -> Transaction management].
+
+
+
+
+:description: Neo4j transaction management, including interaction cycle, isolation levels, default locking behavior, deadlocks, delete semantics, creating unique nodes, and transaction events.
+
+
+
+
+[[transactions-isolation-lostupdates]]
+=== Lost updates in Cypher
+
+In Cypher it is possible to acquire write locks to simulate improved isolation in some cases.
+Consider the case where multiple concurrent Cypher queries increment the value of a property.
+Due to the limitations of the _read-committed isolation level_, the increments might not result in a deterministic final value.
+If there is a direct dependency, Cypher automatically acquires a write lock before reading.
+A direct dependency is when the right-hand side of `SET` has a dependent property read in the expression or the value of a key-value pair in a literal map.
+
+For example, if you run the following query by one hundred concurrent clients, it is very likely not to increment the property `n.prop` to 100, unless a write lock is acquired before reading the property value.
+This is because all queries read the value of `n.prop` within their own transaction, and cannot see the incremented value from any other transaction that has not yet been committed.
+In the worst case scenario, the final value would be as low as 1 if all threads perform the read before any has committed their transaction.
+
+.Cypher can acquire a write lock
+====
+The following example requires a write lock, and Cypher automatically acquires one:
+
+[source, cypher, role="noheader"]
+----
+MATCH (n:Example {id: 42})
+SET n.prop = n.prop + 1
+----
+====
+
+.Cypher can acquire a write lock
+====
+This example also requires a write lock, and Cypher automatically acquires one:
+
+[source, cypher, role="noheader"]
+----
+MATCH (n)
+SET n += {prop: n.prop + 1}
+----
+====
+
+Due to the complexity of determining such a dependency in the general case, Cypher does not cover any of the following example cases:
+
+.Complex Cypher
+====
+Variable depending on results from reading the property in an earlier statement:
+
+[source, cypher, role="noheader"]
+----
+MATCH (n)
+WITH n.prop AS p
+// ... operations depending on p, producing k
+SET n.prop = k + 1
+----
+====
+
+.Complex Cypher
+====
+Circular dependency between properties read and written in the same query:
+
+[source, cypher, role="noheader"]
+----
+MATCH (n)
+SET n += {propA: n.propB + 1, propB: n.propA + 1}
+----
+====
+
+To ensure deterministic behavior also in the more complex cases, it is necessary to explicitly acquire a write lock on the node in question.
+In Cypher there is no explicit support for this, but it is possible to work around this limitation by writing to a temporary property.
+
+.Explicitly acquire a write lock
+====
+This example acquires a write lock for the node by writing to a dummy property before reading the requested value:
+
+[source, cypher, role="noheader"]
+----
+MATCH (n:Example {id: 42})
+SET n._LOCK_ = true
+WITH n.prop AS p
+// ... operations depending on p, producing k
+SET n.prop = k + 1
+REMOVE n._LOCK_
+----
+====
+
+The existence of the `+SET n._LOCK_+` statement before the read of the `n.prop` read ensures the lock is acquired before the read action, and no updates are lost due to enforced serialization of all concurrent queries on that specific node.
+
+
+[[transactions-locking]]
+== Default locking behavior
+
+* When adding, changing, or removing a property on a node or relationship, a write lock is taken on the specific node or relationship.
+* When creating or deleting a node a write lock is taken for the specific node.
+* When creating or deleting a relationship a write lock is taken on the specific relationship and both its nodes.
+
+The locks are added to the transaction and released when the transaction finishes.
+
+
+[[transactions-deadlocks]]
+== Deadlocks
+
+Since locks are used, deadlocks can happen.
+Neo4j, however, detects any deadlock (caused by acquiring a lock) before they happen and throws an exception.
+The transaction is marked for rollback before the exception is thrown.
+All locks acquired by the transaction are still held but will be released when the transaction finishes.
+Once the locks are released, other transactions that were waiting for locks held by the transaction causing the deadlock can proceed.
+You can then retry the work performed by the transaction causing the deadlock if needed.
+
+Experiencing frequent deadlocks is an indication of concurrent write requests happening in such a way that it is not possible to execute them while at the same time living up to the intended isolation and consistency.
+The solution is to make sure concurrent updates happen reasonably.
+For example, given two specific nodes (A and B), adding or deleting relationships to both these nodes in random order for each transaction results in deadlocks when two or more transactions do that concurrently.
+One option is to make sure that updates always happen in the same order (first A then B).
+Another option is to make sure that each thread/transaction does not have any conflicting writes to a node or relationship as some other concurrent transaction.
+This can, for example, be achieved by letting a single thread do all updates of a specific type.
+
+[IMPORTANT]
+====
+Deadlocks caused by the use of other synchronization than the locks managed by Neo4j can still happen.
+Since all operations in the Neo4j API are thread-safe unless specified otherwise, there is no need for external synchronization.
+Other code that requires synchronization should be synchronized in such a way that it never performs any Neo4j operation in the synchronized block.
+====
+
+
+[[transactions-deadlocks-code]]
+=== Deadlock handling an example
+
+For an example of how deadlocks can be handled in procedures, server extensions, or when using Neo4j embedded, see https://neo4j.com/docs/java-reference/current/transaction-management/[Transaction management in the Neo4j Java Reference].
+
+When dealing with deadlocks in code, there are several issues you may want to address:
+
+* Only do a limited amount of retries, and fail if a threshold is reached.
+* Pause between each attempt to allow the other transaction to finish before trying again.
+* A retry loop can be useful not only for deadlocks but for other types of transient errors as well.
+
+Below is an example that shows how this can be implemented.
+
+
+[[transactions-delete]]
+== Delete semantics
+
+When deleting a node or a relationship, all properties for that entity will be automatically removed but the relationships of a node will not be removed.
+Neo4j enforces a constraint (upon commit) that all relationships must have a valid start node and end node.
+In effect, this means that trying to delete a node that still has relationships attached to it will throw an exception upon commit.
+It is, however, possible to choose in which order to delete the node and the attached relationships as long as no relationships exist when the transaction is committed.
+
+The delete semantics can be summarized as follows:
+
+* All properties of a node or relationship will be removed when it is deleted.
+* A deleted node cannot have any attached relationships when the transaction commits.
+* It is possible to acquire a reference to a deleted relationship or node that has not yet been committed.
+* Any write operation on a node or relationship after it has been deleted (but not yet committed) will throw an exception.
+* Trying to acquire a new or work with an old reference to a deleted node or relationship after commit, will throw an exception.
+
+

@@ -1,0 +1,46 @@
+[[transaction-management]]
+= Transaction management
+
+[[transactions-interaction]]
+== Interaction cycle
+
+There are database operations that must be performed in a transaction to ensure the ACID properties.
+Specifically, operations that access the graph, indexes, or schema are such operations.
+Transactions are single-threaded, confined, and independent.
+Multiple transactions can be started in a single thread and they are independent of each other.
+
+The interaction cycle of working with transactions follows the steps:
+
+. Begin a transaction.
+. Perform database operations.
+. Commit or roll back the transaction.
+
+[NOTE]
+====
+It is crucial to finish each transaction.
+The locks or memory acquired by a transaction are only released upon completion.
+====
+
+The idiomatic use of transactions in Neo4j is to use a `try-with-resources` statement and declare `transaction` as one of the resources.
+Then start the transaction and try to perform graph operations.
+The last operation in the `try` block should commit or roll back the transaction, depending on the business logic.
+In this scenario, `try-with-resources` is used as a guard against unexpected exceptions and as an additional safety mechanism to ensure that the transaction gets closed no matter what happens inside the statement block.
+All non-committed transactions will be rolled back as part of resource cleanup at the end of the statement.
+No resource cleanup is required for a transaction that is explicitly committed or rolled back, and the transaction closure is an empty operation.
+
+[NOTE]
+====
+All modifications performed in a transaction are kept in memory.
+This means that very large updates must be split into several transactions to avoid running out of memory.
+====
+
+
+[[transactions-isolation]]
+== Isolation levels
+
+Transactions in Neo4j use a _read-committed isolation level_, which means they see data as soon as it has been committed but cannot see data in other transactions that have not yet been committed.
+This type of isolation is weaker than serialization but offers significant performance advantages while being sufficient for the overwhelming majority of cases.
+
+In addition, the Neo4j Java API enables explicit locking of nodes and relationships.
+Using locks allows simulating the effects of higher levels of isolation by obtaining and releasing locks explicitly.
+For example, if a write lock is taken on a common node or relationship, then all transactions are serialized on that lock -- giving the effect of a _serialization isolation level_.
