@@ -1,23 +1,28 @@
-:description: This section describes how to access a Neo4j standalone instance running on Kubernetes.
 [[accessing-neo4j]]
-= Access a Neo4j standalone server
+= Accessing Neo4j
+:description: How to access Neo4j running in Kubernetes.
 
-A Neo4j DBMS is accessible via Kubernetes Services.
+A Neo4j running on Kubernetes is accessible via Kubernetes Services.
 Neo4j has a number of different interfaces for different application and operational purposes.
 For more details, see xref:configuration/ports.adoc[Neo4j ports].
 
-[[k8s-services]]
 == Supported Kubernetes services
 
-The Neo4j Helm chart publishes three K8s services:
+Neo4j supports the following Kubernetes services:
 
 * *Default Service* -- a ClusterIP service for application `neo4j`/`bolt` and `http(s)` connections to the Neo4j database, originating from inside the Kubernetes cluster.
-* *Admin Service* -- a “Headless” (DNS only) service that includes all Neo4j ports.
+* *Admin Service* -- a “Headless” (DNS only) service that includes all Neo4j ports for admin connections to Neo4j inside Kubernetes.
 It is only available inside the Kubernetes cluster and access to it should be guarded.
 The Admin service can be used for Neo4j DBMS administration, performing backups, and collecting metrics.
+* *Internal Service* — a “Headless” (DNS only) internal service that includes all Neo4j ports required for the Neo4j cluster.
 * *Neo4j* -- a LoadBalancer service for application `neo4j`/`bolt` and `http(s)` connections originating from outside the Kubernetes cluster.
 
-.K8s services per Neo4j interface
+The following is a list of the default Kubernetes services per Neo4j interface and deployment type:
+
+[.tabbed-example]
+=====
+[.include-with-standalone]
+======
 [cols="5", options="header"]
 |===
 | Neo4j Interface
@@ -80,14 +85,119 @@ The Admin service can be used for Neo4j DBMS administration, performing backups,
 | label:No[] but configurable
 | label:No[]
 |===
+======
+
+[.include-with-cluster]
+======
+[cols="6", options="header"]
+|===
+| Neo4j Interface
+| Default Port
+| Default Service
+| Admin Service
+| Internal Service
+| Neo4j Service
+
+| Bolt (`neo4j://` and `bolt://` protocols)
+| `7687`
+| label:Yes[]
+| label:Yes[]*
+| label:Yes[]
+| label:Yes[]
+
+| Neo4j Browser HTTP
+| `7474`
+| label:Yes[]
+| label:Yes[]*
+| label:Yes[]
+| label:Yes[]
+
+| Neo4j Browser HTTPS
+| `7473`
+| label:Yes[]
+| label:Yes[]*
+| label:Yes[]
+| label:Yes[]
+
+| Neo4j Cypher HTTP API
+| `7474`
+| label:Yes[]
+| label:Yes[]*
+| label:Yes[]
+| label:Yes[]
+
+| Neo4j Cypher HTTPS API
+| `7473`
+| label:Yes[]
+| label:Yes[]*
+| label:Yes[]
+| label:Yes[]
+
+| Neo4j Backup
+| `6362`
+| label:No[]
+| label:Yes[]
+| label:Yes[]
+| label:No[]
+
+| Graphite Monitoring
+| `2003`
+| label:No[]
+| label:No[] but configurable
+| label:No[] but configurable
+| label:No[]
+
+| Prometheus Metrics
+| `2004`
+| label:No[]
+| label:No[] but configurable
+| label:No[] but configurable
+| label:No[]
+
+| Java Management Extensions (JMX)
+| `3637`
+| label:No[]
+| label:No[] but configurable
+| label:No[] but configurable
+| label:No[]
+
+| Cluster discovery management
+| `5000`
+| label:No[]
+| label:No[]
+| label:Yes[]
+| label:No[]
+
+| Cluster transaction
+| `6000`
+| label:No[]
+| label:No[]
+| label:Yes[]
+| label:No[]
+
+| Cluster RAFT
+| `7000`
+| label:No[]
+| label:No[]
+| label:Yes[]
+| label:No[]
+
+| Cluster routing connector
+| `7688`
+| label:No[]
+| label:No[]
+| label:Yes[]
+| label:No[]
+|===
+======
+=====
+
 *The Admin service bypasses health checks.
 This allows it to be used to make connections for administrative purposes when the database is in an unhealthy state.
 However, you must not use it to connect from applications that require the database to be in a healthy state.
 
-[[access-inside-k8s]]
 == Applications accessing Neo4j from inside Kubernetes
 
-[[access-inside-k8s-dns]]
 === Access Neo4j using DNS
 To access Neo4j from an application in the same Kubernetes cluster use the Neo4j service DNS address `<release-name>.<namespace>.svc.<cluster domain>`.
 
@@ -96,12 +206,24 @@ Generally, the Neo4j service DNS address is _<release-name>.default.svc.cluster.
 
 For example, if using the release name `my-release` in the `default` namespace, the cluster's DNS address would be `my-release.default.svc.cluster.local`, and the `bolt` address for use with Neo4j drivers would be _neo4j://my-release.default.svc.cluster.local:7687_.
 
-[[access-inside-k8s-label]]
+[TIP]
+====
+To allow for an application running inside Kubernetes to access a Neo4j cluster, you can also use the Neo4j headless service that is installed via the _neo4j/neo4j-cluster-headless-service_ Helm chart.
+For more information and a detailed example, see xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc#cc-access-headless[Access the Neo4j cluster using headless service].
+====
+
 === Access Neo4j using K8s label selector
 
-Alternatively, the Neo4j service in Kubernetes can be located using Kubernetes service discovery by searching with the label selector:
-`helm.neo4j.com/service=neo4j,helm.neo4j.com/instance=<release-name>`.
+Alternatively, the Neo4j service (default) in Kubernetes can be located using Kubernetes service discovery by searching with the label selector:
 
+[.tabbed-example]
+=====
+[.include-with-standalone]
+======
+[source, role=noheader]
+----
+helm.neo4j.com/service=default/admin/internals,helm.neo4j.com/instance=<release-name>
+----
 For example:
 
 [source,shell]
@@ -111,11 +233,43 @@ helm install "my-release" …
 # lookup installed service
 kubectl get service -l helm.neo4j.com/service=default,helm.neo4j.com/instance=my-release
 ----
+======
 
-[[access-outside-k8s]]
+[.include-with-cluster]
+======
+[source, role=noheader]
+----
+helm.neo4j.com/service=neo4j,helm.neo4j.com/instance=<release-name>
+----
+
+The following is an example of how to look up the installed services:
+
+[source,shell, role=nocopy]
+----
+# Neo4j service:
+
+kubectl get service -l helm.neo4j.com/service=default,helm.neo4j.com/instance=my-release
+
+# Admin service:
+
+kubectl get service -l helm.neo4j.com/service=admin,helm.neo4j.com/instance=my-release
+
+# internals service:
+
+kubectl get service -l helm.neo4j.com/service=internals,helm.neo4j.com/instance=my-release
+----
+======
+=====
+
 == Applications accessing Neo4j from outside Kubernetes
 
-To access Neo4j from an application outside the Kubernetes cluster, use the IP address of the external service.
+
+To access Neo4j from an application outside the Kubernetes cluster, you can use a LoadBalancer service.
+
+[.tabbed-example]
+=====
+[.include-with-standalone]
+======
 The external IP(s) of the `LoadBalancer` can be found using `kubectl`:
 
 * The service name is based on the value of the `neo4j.name` -- `<my-neo4j-name>-lb-neo4j`:
@@ -182,45 +336,70 @@ Disabling/enabling a port on the `services.neo4j` object removes it from the loa
 ====
 Backup is not secure unless SSL-with-client-auth is enforced in the Neo4j configuration.
 ====
+======
 
-[[custom-k8s-resources]]
+[.include-with-cluster]
+======
+For a detailed example, see xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
+======
+=====
+
 == Customizing Kubernetes Resources
 
 The Neo4j Helm chart creates various Kubernetes resources.
 Some of them can be customized by adding extra configuration to the helm deployment values file.
 
-.Supported K8s resources customizations
+The following is a list of the supported K8s resources customizations:
+
+[.tabbed-example]
+=====
+[.include-with-standalone]
+======
 [cols="3", options="header"]
 |===
 | Customization                                   | _values.yaml_ field               | Type
 | Setting a pod securityContext for the Neo4j Pod | `securityContext`                 | `PodSecurityContext`
-.3+| Adding annotations to Services            .1+| `neo4jService.annotations`     .1+| Annotations object for `ClusterIP` service.
-                                               .1+| `adminService.annotations`     .1+| Annotations object for headless (DNS) service.
-                                               .1+| `externalService.annotations`  .1+| Annotations object for `LoadBalancer` service.
+.3+| Adding annotations to Services            .1+| `services.default.annotations` .1+| Annotations object for `ClusterIP` service.
+                                               .1+| `services.admin.annotations`   .1+| Annotations object for headless (DNS) service.
+                                               .1+| `services.neo4j.annotations`   .1+| Annotations object for `LoadBalancer` service.
 |===
+======
 
-[[access-dbms-admin]]
+[.include-with-cluster]
+======
+[cols="3", options="header"]
+|===
+| Customization                                   | _values.yaml_ field                | Type
+| Setting a pod securityContext for the Neo4j Pod | `securityContext`                  | `PodSecurityContext`
+.3+| Adding annotations to Services            .1+| `services.default.annotations`  .1+| Annotations object for `ClusterIP` service.
+                                               .1+| `services.admin.annotations`    .1+| Annotations object for headless (DNS) service.
+                                               .1+| `services.internal.annotations` .1+| Annotations object for internal service.
+| Adding annotations to Load Balancer Service     | `services.neo4j.annotations`       | Annotations object for `LoadBalancer` service.
+|===
+======
+=====
+
 == Accessing Neo4j for DBMS administration and monitoring
+
 The Neo4j Helm chart creates the admin service for the purposes of Neo4j administration.
 The admin service is a “Headless” service in Kubernetes and does not depend on Neo4j health checks.
 Therefore, it permits connections to Neo4j even if Neo4j is not healthy.
 In general, that is not desirable for applications but can be useful for administration and debugging.
 
-[[access-dbms-admin-dns]]
 === Access Neo4j using DNS
+
 To access the admin service inside Kubernetes use the DNS address _<release-name>-admin.<namespace>.svc.<cluster domain>_.
 
 For example, if using the release name `my-release` in the `default` namespace, the cluster's DNS address would be `my-release-admin.default.svc.cluster.local`.
 
 The admin service can be used to access a range of Neo4j interfaces:
 
-* Neo4j Bolt for Neo4j administration via Cypher commands
-* Neo4j Backup for taking database backups
-* Graphite for metrics collection
-* Prometheus for metrics collection
-* Java Management Extensions (JMX) for metrics collection and JVM administration
+* Neo4j Bolt for Neo4j administration via Cypher commands.
+* Neo4j Backup for taking database backups.
+* Graphite for metrics collection.
+* Prometheus for metrics collection.
+* Java Management Extensions (JMX) for metrics collection and JVM administration.
 
-[[access-dbms-admin-kubectl]]
 === Access Neo4j using `kubectl` for troubleshooting
 
 To get an interactive `cypher-shell` console for troubleshooting, use this command:
