@@ -4,7 +4,7 @@
 Checkpointing is the process of flushing all pending updates from the page cache to the store files.
 This action is crucial to limit the number of transactions that need to be replayed during the recovery process, particularly to minimize the time required for recovery after an improper shutdown of the database or a crash.
 
-Despite the presence of checkpoints, database operations remain secure, as any transactions that have not been confirmed to have their modifications persisted to storage will be replayed upon the next database startup.
+Independent of the presence of checkpoints, database operations remain secure, as any transactions that have not been confirmed to have their modifications persisted to storage will be replayed upon the next database startup.
 However, this assurance is contingent upon the availability of the collection of changes comprising these transactions, which is maintained in the xref:database-internals/transaction-logs.adoc[transaction logs].
 
 Maintaining a long list of unapplied transactions (due to infrequent checkpoints) leads to the accumulation of transaction logs, as they are essential for recovery purposes.
@@ -14,7 +14,7 @@ This entry serves the purpose of identifying transaction logs that are no longer
 The process of eliminating transaction logs that are no longer required for recovery is known as _pruning_.
 Pruning is reliant on checkpointing.
 Checkpointing determines which logs can be pruned and determines the occurrence of pruning, as the absence of a checkpoint implies that the set of transaction log files available for pruning cannot have changed.
-Consequently, pruning is triggered whenever checkpointing occurs, with or without a specific verification of their existence.
+Consequently, pruning is triggered whenever checkpointing occurs.
 
 [[checkpointing-policy]]
 == Configure the checkpointing policy
@@ -30,15 +30,17 @@ Depending on your needs, the checkpoint can run on a periodic basis, which is th
 
 |PERIODIC
 |label:default[Default]
-This policy checks every 15 minutes whether there are changes pending flushing and if so, it performs a checkpoint and subsequently triggers a log prune.
-The periodic policy is specified by the `db.checkpoint.interval.tx` and `db.checkpoint.interval.time` settings and the checkpointing is triggered when either of them is reached.
+This policy checks every 10 minutes whether there are changes pending flushing and if so, it performs a checkpoint and subsequently triggers a log prune.
+The periodic policy is specified by the `<<config_db.checkpoint.interval.tx,db.checkpoint.interval.tx>>` and `<<config_db.checkpoint.interval.time,db.checkpoint.interval.time>>` settings and the checkpointing is triggered when either of them is reached.
 See <<checkpoint-interval, Configure the checkpoint interval>> for more details.
-This is the default behavior and the only one available in Community Edition.
+
+|VOLUME
+|This policy runs a checkpoint when the size of the transaction logs reaches the value specified by the `<<config_db.checkpoint.interval.volume,db.checkpoint.interval.volume>>` setting.
+By default, it is set to `250.00MiB`.
 
 |CONTINUOUS
 |label:enterprise[Enterprise Edition]
-This policy constantly checks for transactions committed after the last successful checkpoint and when there are some, it performs the checkpointing.
-It ignores the `db.checkpoint.interval.time` and `db.checkpoint.interval.tx` settings.
+This policy ignores `<<config_db.checkpoint.interval.tx,db.checkpoint.interval.tx>>` and `<<config_db.checkpoint.interval.time,db.checkpoint.interval.time>>` settings and runs the checkpoint process all the time.
 The log pruning is triggered immediately after the checkpointing completes, just like in the periodic policy.
 
 |VOLUMETRIC
