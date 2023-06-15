@@ -1,0 +1,229 @@
+= Plugins
+
+[[operations-using-apoc-core]]
+== Configure and install APOC core only
+
+APOC core is shipped with Neo4j, but it is not installed in the Neo4j _plugins_ directory.
+If APOC core is the _only_ plugin that you want to add to Neo4j, it is not necessary to perform plugin installation as described in xref:kubernetes/configuration.adoc#operations-installing-plugins[Install Plugins].
+Instead, you can configure the helm deployment to use APOC core by upgrading the deployment with these additional settings in the _values.yaml_ file:
+
+. Configure APOC core by loading and unresticting the functions and procedures you need (for more details see link:{neo4j-docs-base-uri}/apoc/{page-version}/installation/#restricted[APOC installation guide]).
+For example:
++
+[source, yaml]
+----
+config:
+  server.directories.plugins: "/var/lib/neo4j/labs"
+  dbms.security.procedures.unrestricted: "apoc.cypher.doIt"
+  server.config.strict_validation.enabled: "false"
+  dbms.security.procedures.allowlist: "apoc.math.maxInteger,apoc.cypher.doIt"
+----
++
+. Under `apoc_config`, configure the APOC settings you want, for example:
++
+[source, yaml]
+----
+apoc_config:
+  apoc.trigger.enabled: "true"
+  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
+  apoc.import.file.enabled: "true"
+----
++
+. Run `helm upgrade` to apply the changes:
++
+[source, shell]
+----
+helm upgrade <release-name> neo4j/neo4j -f values.yaml
+----
+
+. After the Helm upgrade rollout is complete, verify that APOC core has been configured by running the following Cypher query using `cypher-shell` or Neo4j Browser:
++
+[source, cypher]
+----
+RETURN apoc.version()
+----
+
+[[operations-installing-plugins]]
+== Install Plugins
+
+There are three recommended methods for adding Neo4j plugins to Neo4j Helm chart deployments.
+You can use:
+
+* <<automatic-plugin-download, an automatic plugin download>>
+* <<custom-container, a custom container image>>.
+* <<plugins-volume, a `plugins` volume>>.
+
+[[automatic-plugin-download]]
+=== Add plugins using an automatic plugin download
+
+You can configure the Neo4j deployment to automatically download and install plugins.
+If licenses are required for the plugins, you must provide the licenses in a secret.
+
+==== Install GDS Community Edition (CE)
+
+GDS Community Edition does not require a license.
+To add the GSD CE, configure the Neo4j _values.yaml_ and set the `env` to download the plugins:
+
+[source, yaml]
+----
+neo4j:
+  name: licenses
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+env:
+  NEO4J_PLUGINS: '["graph-data-science"]'
+config:
+  dbms.security.procedures.unrestricted: "gds.*"
+----
+
+==== Install GDS Enterprise Edition (EE) and Bloom plugins
+
+To install GDS EE and Bloom, you must provide a license for each plugin.
+You provide the licenses in a secret.
+
+. Create a secret containing the licenses:
++
+[source, shell]
+----
+kubectl create secret  generic --from-file=gds.license,bloom.license gds-bloom-license
+----
+. Configure the Neo4j _values.yaml_ file using the secret as the _/licenses_ volume mount, and set the `env` to download the plugins:
++
+[source, yaml]
+----
+neo4j:
+  name: licenses
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+volumes:
+  data:
+    mode: defaultStorageClass
+  licenses:
+    disableSubPathExpr: true
+    mode: volume
+    volume:
+      secret:
+        secretName: gds-bloom-license
+        items:
+          - key: gds.license
+            path: gds.license
+          - key: bloom.license
+            path: bloom.license
+env:
+  NEO4J_PLUGINS: '["graph-data-science", "bloom"]'
+config:
+  gds.enterprise.license_file: "/licenses/gds.license"
+  dbms.security.procedures.unrestricted: "gds.*,apoc.*,bloom.*"
+  server.unmanaged_extension_classes: "com.neo4j.bloom.server=/bloom,semantics.extension=/rdf"
+  dbms.security.http_auth_allowlist: "/,/browser.*,/bloom.*"
+  dbms.bloom.license_file: "/licenses/bloom.license"
+----
+
+[[custom-container]]
+=== Add plugins using a custom container image
+
+The best method for adding plugins to Neo4j running in Kubernetes is to create a new Docker container image that contains both Neo4j and the Neo4j plugins.
+This way, you can ensure when building the container that the correct plugin version for the Neo4j version of the container is used and that the resulting image encapsulates all Neo4j runtime dependencies.
+
+[NOTE]
+====
+The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
+To obtain a valid license, reach out to your Neo4j account representative or use the form https://neo4j.com/contact-us[Contact Neo4j].
+====
+
+Building a Docker container image that is based on the official Neo4j Docker image and does not override the official image's `ENTRYPOINT` and `COMMAND` is the recommended method to use with the Neo4j Helm chart, as shown in this example Dockerfile:
+
+[source, Dockerfile, subs=attributes]
+----
+ARG  NEO4J_VERSION
+FROM neo4j:\{NEO4J_VERSION}
+
+# copy my-plugins into the Docker image
+COPY my-plugins/ /var/lib/neo4j/plugins
+
+# install the apoc core plugin that is shipped with Neo4j
+RUN cp /var/lib/neo4j/labs/apoc-* /var/lib/neo4j/plugins
+----
+
+Once the docker image has been built, push it to a container repository that is accessible to your Kubernetes cluster.
+
+[source, shell, subs=attributes]
+----
+CONTAINER_REPOSITORY="my-container-repository.io"
+IMAGE_NAME="my-neo4j"
+
+# export this so that it's accessible as a docker build arg
+export NEO4J_VERSION={neo4j-version-exact}-enterprise
+
+docker build --build-arg NEO4J_VERSION --tag $\{CONTAINER_REPOSITORY}/$\{IMAGE_NAME}:$\{NEO4J_VERSION} .
+docker push $\{CONTAINER_REPOSITORY}/$\{IMAGE_NAME}:$\{NEO4J_VERSION}
+----
+
+To use the image that you have created, in the Neo4j Helm deployment's _values.yaml_ file, set `image.customImage` to use the image.
+For more details, see xref:kubernetes/configuration.adoc#configure-custom-image[Configure a custom container image].
+
+[NOTE]
+====
+Many plugins require additional Neo4j configuration to work correctly.
+Plugin configuration should be set on the `config` object in the Helm deployment's _values.yaml_ file.
+In some cases, plugin configuration can cause Neo4j's strict config validation to fail.
+Strict config validation can be disabled by setting `server.config.strict_validation.enabled: "false"`.
+====
+
+[[plugins-volume]]
+=== Add plugins using a plugins volume
+
+An alternative method for adding Neo4j plugins to a Neo4j Helm deployment uses a `plugins` volume mount.
+With this method, the plugin jar files are stored on a Persistent Volume that is mounted to the `/plugins` directory of the Neo4j container.
+
+[NOTE]
+====
+The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
+To obtain a valid license, reach out to your Neo4j account representative or use the form https://neo4j.com/contact-us[Contact Neo4j].
+====
+
+The simplest way to set up a persistent `plugins` volume is to share the Persistent Volume that is used for storing Neo4j data.
+This example shows how to configure that in the Neo4j Helm deployment _values.yaml_ file:
+
+[source, yaml]
+----
+# neo4j-values.yaml
+volumes:
+  data:
+    # your data volume configuration
+    ...
+
+  plugins:
+    mode: "share"
+    share:
+      name: "data"
+----
+
+Details of different ways to configure volume mounts are covered in xref:kubernetes/persistent-volumes.adoc#volume-mounts[Mapping volume mounts to persistent volumes].
+
+The Neo4j container now has an empty _/plugins_ directory backed by a persistent volume.
+Plugin jar files can be copied onto the volume using `kubectl cp`.
+Because it is backed by a persistent volume, plugin files will persist even if the Neo4j pod is restarted or moved.
+
+[NOTE]
+====
+Neo4j loads plugins only on startup.
+Therefore, you must restart the Neo4j pod to load them once all plugins are in place.
+====
+
+For example:
+
+[source, shell]
+----
+# Copy plugin files into the Neo4j container
+kubectl cp my-plugins/* <namespace>/<neo4j-pod-name>:/plugins/
+
+# Restart Neo4j
+kubectl rollout restart statefulset/<neo4j-statefulset-name>
+
+# Verify plugins are still present after restart
+kubectl exec <neo4j-pod-name> -- ls /plugins
+----
