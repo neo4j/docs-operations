@@ -1,0 +1,92 @@
+[[configure-authentication-and-authorization]]
+= Authentication and authorization
+
+[[configure-ldap-password-through-secret]]
+== Configure LDAP password through secret
+label:enterprise-edition[]
+
+To configure the Neo4j Helm deployment to use the LDAP system password through secret, you need to create a Kubernetes secret with the LDAP password and then add the secret name and the mount path to the _values.yaml_ file.
+
+. Create a secret with the LDAP password by running the following command.
+The secret must have a key called `LDAP_PASS`.
++
+[source, shell]
+----
+kubectl create secret generic <secret-name> --from-literal=LDAP_PASS=<ldap-password>
+----
+. Add the secret name to the _values.yaml_ file.
++
+[source, yaml]
+----
+# ldapPasswordFromSecret defines the secret which holds the password for ldap system account
+# Secret key name must be LDAP_PASS
+# This secret is accessible by Neo4j at the path defined in ldapPasswordMountPath
+ldapPasswordFromSecret: "" #<1>
+
+# The above secret gets mounted to the path mentioned here
+ldapPasswordMountPath: "" #<2>
+----
+<1> -- The secret name as it appears in the Kubernetes cluster.
+<2> -- The path where the secret will be mounted as a volume in the Neo4j container.
+
+[[configure-sso]]
+== Configure SSO
+
+Neo4j supports SSO authentication and authorization through identity providers implementing the OpenID Connect (OIDC) standard.
+
+To configure the Neo4j helm deployment to use SSO authentication, first, you need to configure your identity provider for authentication and authorization using ID tokens.
+And then, you configure the Neo4j helm deployment to use that identity provider for authentication by adding all the SSO configurations to the _values.yaml_ file.
+
+For more information on how to configure your identity provider and what settings you should define, see xref:tutorial/tutorial-sso-configuration.adoc[Neo4j Single Sign-On (SSO) configuration].
+
+.An example of configuring Neo4j to use Azure SSO for authentication
+[source, yaml]
+----
+config:
+  dbms.security.oidc.azure.audience: "00f3a7d3-d855-4849-9e3c-57d7b6e12794"
+  dbms.security.oidc.azure.params: "client_id=00f3a7d3-d855-4849-9e3c-57d7b6e12794;response_type=code;scope=openid profile email"
+  dbms.security.oidc.azure.well_known_discovery_uri: "https://login.microsoftonline.com/da501982-4ca7-420c-8926-1e65b5bf565f/v2.0/.well-known/openid-configuration"
+  dbms.security.authorization_providers: "oidc-azure,native"
+  dbms.security.authentication_providers: "oidc-azure,native"
+  dbms.security.oidc.azure.display_name: "Azure SSO on K8s"
+  dbms.security.oidc.azure.auth_flow: "pkce"
+  server_type_principal=id_token;token_type_authentication=id_token"
+  dbms.security.oidc.azure.config: "principal=unique_name;code_challenge_method=S256;
+  dbms.security.oidc.azure.claims.username: "sub"
+  dbms.security.oidc.azure.claims.groups: "groups"
+  dbms.security.oidc.azure.authorization.group_to_role_mapping: "e197354c-bd75-4524-abbc-d44325904567=editor;fa31ce67-9e4d-4999-bf6d-25c55258d116=publisher"
+----
+
+[IMPORTANT]
+====
+`sub` is the only claim guaranteed to be unique and stable.
+Other claims, such as `email` or `preferred_username`, may change over time and should *not* be used for authentication.
+Neo4j may assign permissions to a user based on this username value in a hybrid authorization configuration.
+Thus, changing the username claim from `sub` is not recommended.
+For details, see https://learn.microsoft.com/en-us/azure/active-directory/develop/id-tokens#using-claims-to-reliably-identify-a-user-subject-and-object-id[Microsoft documentation] as well as the https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability[OpenId spec].
+====
+
+[[k8s-service-accounts]]
+== Configure a service account
+
+In some deployment situations, it may be desirable to assign a Kubernetes Service Account to the Neo4j pod.
+For example, if processes in the pod want to connect to services that require Service Account authorization.
+To configure the Neo4j pod to use a Kubernetes service account, set `podSpec.serviceAccountName` to the name of the service account to use.
+
+For example:
+
+[source, yaml]
+----
+# neo4j-values.yaml
+neo4j:
+  password: "my-password"
+
+podSpec:
+  serviceAccountName: "neo4j-service-account"
+----
+
+[NOTE]
+====
+The service account must already exist.
+The Neo4j Helm chart does not create or configure Service Accounts.
+====
