@@ -1,0 +1,171 @@
+[role=enterprise-edition]
+[[kubernetes-neo4j-backup-restore]]
+= Back up and restore a single database (online)
+
+You can use the `neo4j-admin database backup` command to make a full or differential backup of an **online** database(s) and `neo4j-admin database restore` to restore it in a live Neo4j DBMS or cluster.
+These operations are performed in <<online-maintenance, online maintenance mode>>.
+
+[NOTE]
+====
+For performing backups, Neo4j uses the _Admin Service_, which is only available inside the Kubernetes cluster and access to it should be guarded.
+For more information, see xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc[Access the Neo4j cluster from inside Kubernetes]
+and xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
+====
+
+[[kubernetes-neo4j-backup]]
+== Back up a single database
+
+The `neo4j-admin database backup` command can be run both from the same and a separate pod.
+However, it uses resources (CPU, RAM) in the Neo4j container (competing with Neo4j itself), because it checks the database consistency at the end of every backup operation.
+Therefore, it is recommended to run the operation in a separate pod.
+
+[NOTE]
+====
+In the Neo4j Helm chart, the backup configurations are set by default to `server.backup.enabled=true` and `server.backup.listen_address=0.0.0.0:6362`.
+
+Note that the default for Neo4j on-site installations is to listen only on 127.0.0.1, which will not work from other containers, since they would not be able to access the backup port.
+====
+
+**Back up a database from a separate pod**
+
+. Create a Neo4j instance pod to get access to the `neo4j-admin` command:
++
+[source, shell, subs="attributes+"]
+----
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neo4j-backup
+spec:
+  containers:
+    - name: neo4j-backup
+      image: neo4j:{neo4j-version-exact}-enterprise
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
+          value: "yes"
+        - name: NEO4J_server_config_strict__validation_enabled
+          value: "false"
+      volumeMounts:
+        - mountPath: /backup
+          name: backups
+  volumes:
+    - name: backups
+      emptyDir: {}
+EOF
+----
+
+. Run the following command to back up the database you want.
+In this example, this is the `neo4j` database.
+The command is the same for standalone instances and Neo4j cluster members.
++
+[source, shell]
+----
+kubectl exec -ti neo4j-backup -- neo4j-admin database backup --from=my-neo4j-release-admin:6362 --to-path=/backups --expand-commands neo4j
+----
+
+. Finally, copy the backup from the Pods volume mount to your local machine so that it can be moved to a resilient backup location such as S3:
++
+[source,shell]
+----
+kubectl cp neo4j-backup:/backup /tmp/backup
+----
+
+
+[[kubernetes-neo4j-restore]]
+== Restore a single database
+
+To restore a single offline database or a database backup, you first need to delete the database that you want to replace unless you want to restore the backup as an additional database in your DBMS.
+Then, use the restore command of `neo4j-admin` to restore the database backup.
+Finally, use the Cypher command `CREATE DATABASE name` to create the restored database in the `system` database.
+
+=== Delete the database that you want to replace
+
+Before you restore the database backup, you have to delete the database that you want to replace with that backup using the Cypher command `DROP DATABASE name` against the `system` database.
+If you want to restore the backup as an additional database in your DBMS, then you can proceed to the next section.
+
+[NOTE]
+====
+For Neo4j cluster deployments, you run the Cypher command `DROP DATABASE name` only on one of the cluster servers.
+The command is automatically routed from there to the other cluster members.
+====
+. Connect to the Neo4j DBMS:
++
+[source, shell]
+----
+kubectl exec -it <release-name>-0 -- bash
+----
++
+. Connect to the `system` database using `cypher-shell`:
++
+[source, shell]
+----
+cypher-shell -u neo4j -p <password> -d system
+----
++
+. Drop the database you want to replace with the backup:
++
+[source, cypher]
+----
+DROP DATABASE neo4j;
+----
+. Exit the Cypher Shell command-line console:
++
+[source, shell]
+----
+:exit;
+----
+
+=== Restore the database backup
+
+You use the `neo4j-admin database restore` command to restore the database backup, and then the Cypher command `CREATE DATABASE name` to create the restored database in the `system` database.
+For information about the command syntax, options, and usage, see xref:backup-restore/restore-backup.adoc[Restore a database backup].
+
+[NOTE]
+====
+For Neo4j cluster deployments, restore the database backup on each cluster server.
+====
+. Run the `neo4j-admin database restore` command to restore the database backup:
++
+[source, shell]
+----
+neo4j-admin database restore neo4j --from-path=/backups/neo4j --expand-commands
+----
++
+. Connect to the `system` database using `cypher-shell`:
++
+[source, shell]
+----
+cypher-shell -u neo4j -p <password> -d system
+----
++
+. Create the `neo4j` database.
++
+[NOTE]
+====
+For Neo4j cluster deployments, you run the Cypher command `CREATE DATABASE name` only on one of the cluster servers.
+====
++
+[source, cypher]
+----
+CREATE DATABASE neo4j;
+----
+. Open the browser at _http://<external-ip>:7474/browser/_ and check that all data has been successfully restored.
+. Execute a Cypher command against the `neo4j` database, for example:
++
+[source, cypher]
+----
+MATCH (n) RETURN n
+----
++
+[NOTE]
+====
+If you have backed up your database with the option `--include-metadata`, you can manually restore the users and roles metadata.
+For more information, see xref:backup-restore/restore-backup.adoc#restore-backup-example[Restore a database backup -> Example].
+====
+
+[NOTE]
+====
+To restore the `system` database, follow the steps described in xref:kubernetes/operations/dump-load.adoc[Dump and load databases (offline)].
+====
