@@ -2,76 +2,353 @@
 [[kubernetes-neo4j-backup-restore]]
 = Back up and restore a single database (online)
 
-You can use the `neo4j-admin database backup` command to make a full or differential backup of an **online** database(s) and `neo4j-admin database restore` to restore it in a live Neo4j DBMS or cluster.
-These operations are performed in xref:kubernetes/operations/maintenance-mode.adoc#put-online-mode[online maintenance mode].
-
 [NOTE]
 ====
 For performing backups, Neo4j uses the _Admin Service_, which is only available inside the Kubernetes cluster and access to it should be guarded.
-For more information, see xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc[Access the Neo4j cluster from inside Kubernetes]
-and xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
+For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
-[[kubernetes-neo4j-backup]]
-== Back up a single database
+[[kubernetes-neo4j-backup-cloud]]
+== Back up a database to a cloud provider (AWS, GCP, and Azure) bucket
 
-The `neo4j-admin database backup` command can be run both from the same and a separate pod.
-However, it uses resources (CPU, RAM) in the Neo4j container (competing with Neo4j itself), because it checks the database consistency at the end of every backup operation.
-Therefore, it is recommended to run the operation in a separate pod.
+You can perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azure) bucket using the _neo4j/neo4j-admin_ Helm chart.
 
+=== Prerequisites
+
+Before you can back up a database and upload it to your bucket, verify that you have the following:
+
+* A cloud provider bucket (AWS, GCP, or Azure) with read and write access to be able to upload the backup.
+* Credentials to access the cloud provider bucket, such as a service account JSON key file for GCP, a credentials file for AWS, or storage account credentials for Azure.
+* A Kubernetes cluster running on one of the cloud providers with the Neo4j Helm chart installed.
+For more information, see xref:kubernetes/quickstart-standalone/index.adoc[Quickstart: Deploy a standalone instance] or xref:kubernetes/quickstart-cluster/index.adoc[Quickstart: Deploy a cluster].
+
+=== Steps
+
+To perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azure) bucket, follow these steps:
+
+. Update the repository to get the latest charts:
++
+[source, shell, role='noheader']
+----
+helm repo update
+----
+
+. Create a Kubernetes secret with the credentials to access the cloud provider bucket using one of the following options:
++
+[.tabbed-example]
+=====
+[.include-with-gke]
+======
+Create the secret named `gcpcreds` using your GCP service account JSON key file.
+The JSON key file contains all the details of the service account that has access to the bucket.
+
+[source, shell, role='noheader']
+----
+kubectl create secret generic gcpcreds --from-file=credentials=/path/to/gcpcreds.json
+----
+======
+
+[.include-with-aws]
+======
+. Create a credentials file in the following format:
++
+[source, properties, role='noheader']
+----
+[ default ]
+region = us-east-1
+aws_access_key_id = <your-aws_access_key_id>
+aws_secret_access_key = <your-aws_secret_access_key>
+----
+. Create the secret named `awscreds` via the credentials file:
++
+[source, shell, role='noheader']
+----
+kubectl create secret generic awscreds --from-file=credentials=/path/to/your/credentials
+----
+======
+
+[.include-with-azure]
+======
+. Create a credentials file in the following format:
++
+[source, properties, role='noheader']
+----
+AZURE_STORAGE_ACCOUNT_NAME=<your-azure-storage-account-name>
+AZURE_STORAGE_ACCOUNT_KEY=<your-azure-storage-account-key>
+----
+. Create the secret named `azurecred` via the credentials file:
++
+[source, shell, role='noheader']
+----
+kubectl create secret generic azurecred --from-file=credentials=/path/to/your/credentials
+----
+======
+=====
+
+. Configure the backup parameters in the _backup-values.yaml_ file using one of the following options:
++
 [NOTE]
 ====
-In the Neo4j Helm chart, the backup configurations are set by default to `server.backup.enabled=true` and `server.backup.listen_address=0.0.0.0:6362`.
+The following examples show the minimum configuration required to perform a backup to a cloud provider bucket.
+For more information about the available backup parameters, see <<kubernetes-neo4j-backup-parameters, Backup parameters>>.
+====
++
+[.tabbed-example]
+=====
+[.include-with-gke]
+======
+[source, yaml, role='noheader']
+----
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.8.0"
+  jobSchedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 1
 
-Note that the default for Neo4j on-site installations is to listen only on 127.0.0.1, which will not work from other containers, since they would not be able to access the backup port.
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName:  "standalone-admin" #This is the Neo4j Admin Service name.
+  database: "neo4j"
+  cloudProvider: "gcp"
+  secretName: "gcpcreds"
+  secretKeyName: "credentials"
+
+consistencyCheck:
+  enabled: true
+----
+======
+
+[.include-with-aws]
+======
+[source, yaml, role='noheader']
+----
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.8.0"
+  jobSchedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 1
+
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName:  "standalone-admin"
+  database: "neo4j"
+  cloudProvider: "aws"
+  secretName: "awscreds"
+  secretKeyName: "credentials"
+
+consistencyCheck:
+  enabled: true
+----
+======
+
+[.include-with-azure]
+======
+[source, yaml, role='noheader']
+----
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.8.0"
+  jobSchedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 1
+
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName:  "standalone-admin"
+  database: "neo4j"
+  cloudProvider: "azure"
+  secretName: "azurecreds"
+  secretKeyName: "credentials"
+
+consistencyCheck:
+  enabled: true
+----
+======
+=====
++
+The _/backups_ mount created by default is an _emptyDir_ type volume.
+This means that the data stored in this volume is not persistent and will be lost when the pod is deleted.
+To use a persistent volume for backups add the following section to the _backup-values.yaml_ file:
++
+[source, yaml, role='noheader']
+----
+tempVolume:
+  persistentVolumeClaim:
+    claimName: backup-pvc
+----
++
+[NOTE]
+====
+You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart.
+For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
-**Back up a database from a separate pod**
-
-. Create a Neo4j instance pod to get access to the `neo4j-admin` command:
+. Install _neo4j-admin_ Helm chart using the _backup-values.yaml_ file:
 +
-[source, shell, subs="attributes+"]
+[source, shell, role='noheader']
 ----
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: neo4j-backup
-spec:
-  containers:
-    - name: neo4j-backup
-      image: neo4j:{neo4j-version-exact}-enterprise
-      imagePullPolicy: IfNotPresent
-      env:
-        - name: NEO4J_ACCEPT_LICENSE_AGREEMENT
-          value: "yes"
-        - name: NEO4J_server_config_strict__validation_enabled
-          value: "false"
-      volumeMounts:
-        - mountPath: /backup
-          name: backups
-  volumes:
-    - name: backups
-      emptyDir: {}
-EOF
+helm install backup-name neo4j-admin -f /path/to/your/backup-values.yaml
 ----
-
-. Run the following command to back up the database you want.
-In this example, this is the `neo4j` database.
-The command is the same for standalone instances and Neo4j cluster members.
 +
-[source, shell]
+The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based on the job schedule. This pod performs a backup of the database, a consistency check of the backup file,  and uploads both to the cloud provider bucket.
+
+. Monitor the backup pod logs using `kubectl logs pod/<neo4j-backup-pod-name>` to check the progress of the backup.
+. Check that the backup file and the consistency check report have been uploaded to the cloud provider bucket.
+
+[[kubernetes-neo4j-backup-parameters]]
+=== Backup parameters
+
+To see what options are configurable on the Helm chart use `helm show values` and the Helm chart _neo4j/neo4j-admin_.
+For example:
+
+[source, shell, role='noheader']
 ----
-kubectl exec -ti neo4j-backup -- neo4j-admin database backup --from=my-neo4j-release-admin:6362 --to-path=/backups --expand-commands neo4j
+helm show values neo4j/neo4j-admin
 ----
 
-. Finally, copy the backup from the Pods volume mount to your local machine so that it can be moved to a resilient backup location such as S3:
-+
-[source,shell]
+[source, yaml, role='noheader']
 ----
-kubectl cp neo4j-backup:/backup /tmp/backup
-----
+## @param nameOverride String to partially override common.names.fullname
+nameOverride: ""
+## @param fullnameOverride String to fully override common.names.fullname
+fullnameOverride: ""
+# disableLookups will disable all the lookups done in the helm charts
+# This should be set to true when using ArgoCD since ArgoCD uses helm template and the helm lookups will fail
+# You can enable this when executing helm commands with --dry-run command
+disableLookups: false
 
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.8.0"
+  podLabels: {}
+#    app: "demo"
+#    acac: "dcdddc"
+  podAnnotations: {}
+#    ssdvvs: "svvvsvs"
+#    vfsvswef: "vcfvgb"
+  # define the backup job schedule . default is * * * * *
+  jobSchedule: ""
+  # default is 3
+  successfulJobsHistoryLimit:
+  # default is 1
+  failedJobsHistoryLimit:
+  # default is 1
+  backoffLimit:
+  #add labels if required
+  labels: {}
+
+backup:
+  # Ensure the bucket is already existing in the respective cloud provider
+  # In case of azure the bucket is the container name in the storage account
+  # bucket: azure-storage-container
+  bucketName: ""
+
+  #address details of the neo4j instance from which backup is to be done (serviceName or ip either one is required)
+
+  #ex: standalone-admin.default.svc.cluster.local:6362
+  # admin service name -  standalone-admin
+  # namespace - default
+  # cluster domain - cluster.local
+  # port - 6362
+
+  #ex: 10.3.3.2:6362
+  # admin service ip - 10.3.3.2
+  # port - 6362
+
+  databaseAdminServiceName: ""
+  databaseAdminServiceIP: ""
+  #default name is 'default'
+  databaseNamespace: ""
+  #default port is 6362
+  databaseBackupPort: ""
+  #default value is cluster.local
+  databaseClusterDomain: ""
+
+  #name of the database to backup ex: neo4j (command separated databases names WILL NOT WORK)
+  database: ""
+  # cloudProvider can be either gcp, aws, or azure
+  cloudProvider: ""
+
+  # name of the kubernetes secret containing the respective cloud provider credentials
+  # Ensure you have read,write access to the mentioned bucket
+  # For AWS :
+  # add the below in a file and create a secret via
+  # 'kubectl create secret generic awscred --from-file=credentials=/demo/awscredentials'
+
+  #  [ default ]
+  #  region = us-east-1
+  #  aws_access_key_id = XXXXX
+  #  aws_secret_access_key = XXXX
+
+  # For AZURE :
+  # add the storage account name and key in below format in a file create a secret via
+  # 'kubectl create secret generic azurecred --from-file=credentials=/demo/azurecredentials'
+
+  #  AZURE_STORAGE_ACCOUNT_NAME=XXXX
+  #  AZURE_STORAGE_ACCOUNT_KEY=XXXX
+
+  # For GCP :
+  # create the secret via the gcp service account json key file.
+  # ex: 'kubectl create secret generic gcpcred --from-file=credentials=/demo/gcpcreds.json'
+  secretName: ""
+  # provide the keyname used in the above secret
+  secretKeyName: ""
+
+  #Below are all neo4j-admin database backup flags / options
+  #To know more about the flags read here : https://neo4j.com/docs/operations-manual/current/backup-restore/online-backup/
+  pageCache: ""
+  fallbackToFull: true
+  removeExistingFiles: true
+  removeBackupFiles: true
+  includeMetadata: "all"
+  type: "AUTO"
+  keepFailed: false
+  parallelRecovery: false
+  verbose: true
+  heapSize: ""
+
+#Below are all neo4j-admin database check flags / options
+#To know more about the flags read here : https://neo4j.com/docs/operations-manual/current/tools/neo4j-admin/consistency-checker/
+consistencyCheck:
+  enable: false
+  checkIndexes: true
+  checkGraph: true
+  checkCounts: true
+  checkPropertyOwners: true
+  maxOffHeapMemory: ""
+  threads: ""
+  verbose: true
+
+# Set to name of an existing Service Account to use if desired
+serviceAccountName: ""
+
+# Volume to use as temporary storage for files before they are uploaded to cloud. For large databases local storage may not have sufficient space.
+# In that case set an ephemeral or persistent volume with sufficient space here
+# The chart defaults to an emptyDir, use this to overwrite default behavior
+#tempVolume:
+#  persistentVolumeClaim:
+#    claimName: backup-pvc
+
+# securityContext defines privilege and access control settings for a Pod. Making sure that we don't run Neo4j as root user.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 7474
+  runAsGroup: 7474
+  fsGroup: 7474
+  fsGroupChangePolicy: "Always"
+
+# default ephemeral storage of backup container
+resources:
+  requests:
+    ephemeralStorage: "4Gi"
+  limits:
+    ephemeralStorage: "5Gi"
+----
 
 [[kubernetes-neo4j-restore]]
 == Restore a single database
@@ -92,27 +369,27 @@ The command is automatically routed from there to the other cluster members.
 ====
 . Connect to the Neo4j DBMS:
 +
-[source, shell]
+[source, shell, role='noheader']
 ----
 kubectl exec -it <release-name>-0 -- bash
 ----
 +
 . Connect to the `system` database using `cypher-shell`:
 +
-[source, shell]
+[source, shell, role='noheader']
 ----
 cypher-shell -u neo4j -p <password> -d system
 ----
 +
 . Drop the database you want to replace with the backup:
 +
-[source, cypher]
+[source, cypher, role='noheader']
 ----
 DROP DATABASE neo4j;
 ----
 . Exit the Cypher Shell command-line console:
 +
-[source, shell]
+[source, shell, role='noheader']
 ----
 :exit;
 ----
@@ -128,14 +405,14 @@ For Neo4j cluster deployments, restore the database backup on each cluster serve
 ====
 . Run the `neo4j-admin database restore` command to restore the database backup:
 +
-[source, shell]
+[source, shell, role='noheader']
 ----
 neo4j-admin database restore neo4j --from-path=/backups/neo4j --expand-commands
 ----
 +
 . Connect to the `system` database using `cypher-shell`:
 +
-[source, shell]
+[source, shell, role='noheader']
 ----
 cypher-shell -u neo4j -p <password> -d system
 ----
@@ -147,14 +424,14 @@ cypher-shell -u neo4j -p <password> -d system
 For Neo4j cluster deployments, you run the Cypher command `CREATE DATABASE name` only on one of the cluster servers.
 ====
 +
-[source, cypher]
+[source, cypher, role='noheader']
 ----
 CREATE DATABASE neo4j;
 ----
 . Open the browser at _http://<external-ip>:7474/browser/_ and check that all data has been successfully restored.
 . Execute a Cypher command against the `neo4j` database, for example:
 +
-[source, cypher]
+[source, cypher, role='noheader']
 ----
 MATCH (n) RETURN n
 ----
