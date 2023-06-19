@@ -18,13 +18,13 @@ You can perform a backup of a Neo4j database to any cloud provider (AWS, GCP, an
 Before you can back up a database and upload it to your bucket, verify that you have the following:
 
 * A cloud provider bucket (AWS, GCP, or Azure) with read and write access to be able to upload the backup.
+* Credentials to access the cloud provider bucket, such as a service account JSON key file for GCP, a credentials file for AWS, or storage account credentials for Azure.
 * A Kubernetes cluster running on one of the cloud providers with the Neo4j Helm chart installed.
 For more information, see xref:kubernetes/quickstart-standalone/index.adoc[Quickstart: Deploy a standalone instance] or xref:kubernetes/quickstart-cluster/index.adoc[Quickstart: Deploy a cluster].
 
 === Steps
 
-To perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azure) bucket, follow these steps.
-You can follow the process using `kubectl get all,pvc,pv,secrets,configmaps`.
+To perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azure) bucket, follow these steps:
 
 . Update the repository to get the latest charts:
 +
@@ -54,7 +54,7 @@ kubectl create secret generic gcpcreds --from-file=credentials=/path/to/gcpcreds
 +
 [source, properties, role='noheader']
 ----
-# [ default ]
+[ default ]
 region = us-east-1
 aws_access_key_id = <your-aws_access_key_id>
 aws_secret_access_key = <your-aws_secret_access_key>
@@ -109,13 +109,13 @@ neo4j:
 
 backup:
   bucketName: "my-bucket"
-  databaseAdminServiceName:  "standalone-admin"
+  databaseAdminServiceName:  "standalone-admin" #This is the Neo4j Admin Service name.
   database: "neo4j"
   cloudProvider: "gcp"
   secretName: "gcpcreds"
   secretKeyName: "credentials"
 
-consistecyCheck:
+consistencyCheck:
   enabled: true
 ----
 ======
@@ -140,7 +140,7 @@ backup:
   secretName: "awscreds"
   secretKeyName: "credentials"
 
-consistecyCheck:
+consistencyCheck:
   enabled: true
 ----
 ======
@@ -165,7 +165,7 @@ backup:
   secretName: "azurecreds"
   secretKeyName: "credentials"
 
-consistecyCheck:
+consistencyCheck:
   enabled: true
 ----
 ======
@@ -195,8 +195,7 @@ For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts 
 helm install backup-name neo4j-admin -f /path/to/your/backup-values.yaml
 ----
 +
-The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based on the job schedule. This pod performs a backup of the database and uploads it to the cloud provider bucket.
-It also runs a cronjob that performs a consistency check of the backup file and uploads the report to the cloud provider bucket.
+The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based on the job schedule. This pod performs a backup of the database, a consistency check of the backup file,  and uploads both to the cloud provider bucket.
 
 . Monitor the backup pod logs using `kubectl logs pod/<neo4j-backup-pod-name>` to check the progress of the backup.
 . Check that the backup file and the consistency check report have been uploaded to the cloud provider bucket.
@@ -204,7 +203,7 @@ It also runs a cronjob that performs a consistency check of the backup file and 
 [[kubernetes-neo4j-backup-parameters]]
 === Backup parameters
 
-To see what options are configurable on the `neo4j-admin` helm chart use `helm show values` and the Helm chart _neo4j/neo4j_.
+To see what options are configurable on the Helm chart use `helm show values` and the Helm chart _neo4j/neo4j-admin_.
 For example:
 
 [source, shell, role='noheader']
@@ -219,6 +218,7 @@ nameOverride: ""
 ## @param fullnameOverride String to fully override common.names.fullname
 fullnameOverride: ""
 # disableLookups will disable all the lookups done in the helm charts
+# This should be set to true when using ArgoCD since ArgoCD uses helm template and the helm lookups will fail
 # You can enable this when executing helm commands with --dry-run command
 disableLookups: false
 
