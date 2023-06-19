@@ -1,0 +1,65 @@
+[[transaction-management]]
+= Transaction management
+
+== Transactions
+
+Database operations that access the graph, indexes, or schema are performed in a transaction to ensure the ACID properties.
+Transactions are single-threaded, confined, and independent.
+Multiple transactions can be started in a single thread and they are independent of each other.
+
+The interaction cycle of working with transactions follows the steps:
+
+. Begin a transaction.
+. Perform database operations.
+. Commit or roll back the transaction.
+
+It is crucial to finish each transaction because the xref:/database-internals/locks-deadlocks.adoc#_locks[locks] or memory acquired by a transaction are only released upon completion.
+All non-committed transactions are rolled back as part of resource cleanup at the end of the statement.
+No resource cleanup is required for a transaction that is explicitly committed or rolled back, and the transaction closure is an empty operation.
+
+[NOTE]
+====
+All modifications performed in a transaction are kept in memory.
+This means that very large updates must be split into several transactions to avoid running out of memory.
+====
+
+== Configure transactional behavior
+
+The transaction settings help you manage the transactions in your database, for example, the transaction timeout, the maximum number of concurrently running transactions, how much time to allow Neo4j to wait for running transactions to complete before allowing initiated database shutdown to continue, and so on.
+For all available settings, see xref:/configuration/configuration-settings.adoc#_transaction_settings[Transaction settings].
+
+=== Configure the maximum number of concurrently running transactions
+
+By default, Neo4j can run a maximum of 1000 concurrent transactions.
+To change this value, use the xref:configuration/configuration-settings.adoc#config_db.transaction.concurrent.maximum[`db.transaction.concurrent.maximum`] setting.
+If set to `0`, the limit is disabled.
+
+[[transaction-management-transaction-timeout]]
+=== Configure transaction timeout
+
+It is recommended to configure Neo4j to terminate transactions whose execution time has exceeded the configured timeout.
+
+* Set `xref:configuration/configuration-settings.adoc#config_db.transaction.timeout[db.transaction.timeout]` to some positive time interval value (e.g.,`10s`) denoting the default transaction timeout.
+Setting `db.transaction.timeout` to `0` -- which is the default value -- disables the feature.
+
+* You can also set this dynamically on each primary server using the procedure `dbms.setConfigValue('db.transaction.timeout','10s')`.
+
+.Configure transaction timeout
+====
+Set the timeout to ten seconds.
+[source, parameters]
+----
+db.transaction.timeout=10s
+----
+====
+
+Configuring transaction timeout does not affect transactions executed with custom timeouts (e.g., via the Java API or Neo4j Drivers), as the custom timeout overrides the value set for `db.transaction.timeout`.
+Note that the timeout value can only be overridden to a value that is smaller than that configured by `db.transaction.timeout`.
+
+
+== Manage transactions
+
+Transactions can be managed using the Cypher commands `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS`.
+The `TERMINATE TRANSACTIONS` command can be combined with multiple `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS` commands in the same query.
+
+For more information, see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/transaction-clauses/[Cypher manual -> Transaction commands].
