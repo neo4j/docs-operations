@@ -1,0 +1,76 @@
+[[scaling]]
+= Scale a Neo4j deployment
+
+Neo4j supports both vertical and horizontal scaling.
+
+[[vertical-scaling]]
+== Vertical scaling
+
+To increase or decrease the resources (CPU, memory) available to a Neo4j instance, change the `neo4j.resources` object in the _values.yaml_ file to set the desired resource usage, and then perform a helm upgrade.
+
+[NOTE]
+====
+If you change the memory allocated to the Neo4j container, you should also change the Neo4j's memory configuration (`dbms.memory.heap.max_size` and `dbms.memory.pagecache.size` in particular).
+See xref:configure-resources[Configure Resource Allocation] for more details.
+====
+
+For example, if your running Neo4j instance has the following allocated resources:
+
+[source, role=noheader]
+----
+# values.yaml
+neo4j:
+  resources:
+    cpu: "1"
+    memory: "3Gi"
+# Neo4j Configuration (yaml format)
+config:
+  dbms.memory.heap.initial_size: "2G"
+  dbms.memory.heap.max_size: "2G"
+  dbms.memory.pagecache.size: "500m"
+----
+
+And, you want to increase them to 2 CPUs and 4 GB of memory (allocating additional memory to the pagecache).
+
+. Modify the _values.yaml_ file to set the desired resource usage:
++
+[source, yaml]
+----
+# values.yaml
+neo4j:
+  resources:
+    cpu: "2"
+    memory: "4Gi"
+# Neo4j Configuration (yaml format)
+config:
+  dbms.memory.heap.initial_size: "2G"
+  dbms.memory.heap.max_size: "2G"
+  dbms.memory.pagecache.size: "1G"
+----
++
+. Run `helm upgrade` with the modified deployment _values.yaml_ file and the respective Helm chart (_neo4j/neo4j-standalone_, _neo4j/neo4j-cluster-core_, or _neo4j/neo4j-cluster-read-replica)_ to apply the changes.
+For example:
++
+[source, shell]
+----
+helm upgrade <release-name> neo4j/neo4j-standalone -f values.yaml
+----
+
+[role=enterprise-edition]
+[[horizontal-scaling]]
+== Horizontal scaling
+
+You can add a new core member or a read replica to the Neo4j cluster to scale out write or read workloads.
+
+. In the Kubernetes cluster, verify that you have a node that you can use for the new Neo4j cluster member.
+. Create a persistent disk for the new Neo4j cluster member to be used for its `data` volume mount.
+For more information, see and xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
+. Create a Helm deployment YAML file for the new Neo4j cluster member with all the configuration settings and the disk you have created for it.
+For more information, see xref:kubernetes/quickstart-cluster/create-value-file.adoc[Create Helm deployment values files] and xref:kubernetes/configuration.adoc[Configure a Neo4j Helm deployment].
+. Install the new member using the command `helm install`, the deployment _values.yaml_ file, and the respective Helm chart (_neo4j/neo4j-cluster-core_ or _neo4j/neo4j-cluster-read-replica)_.
+For example:
++
+[source, shell, subs="attributes"]
+----
+helm install rr-2 neo4j/neo4j-cluster-read-replica -f rr-2.values.yaml
+----
