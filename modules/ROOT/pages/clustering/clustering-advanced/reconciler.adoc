@@ -1,0 +1,51 @@
+[role=enterprise-edition]
+[[cluster-reconciler]]
+= Reconciler
+:description: This section describes how changes to the DBMS are processed by each server.
+
+[[cluster-reconciler-introduction]]
+== Introduction
+
+Administrative operations in Neo4j, such as creating a database, do not happen synchronously.
+Instead we have a model where the changes are written to the `system` database, and record the desired state of the DBMS.
+Each server has an internal component called the reconciler, which will then make any changes relevant to that server once it observes that desire, for example starting a local copy of a database because it has been allocated to them.
+Servers can observe the same operation at different times, since the `system` database is just another Raft group, where followers and replicas can lag behind the leader in some situations.
+Executing an operation and getting back a successful response means that the desire is safely committed to the `system` database, and will be processed by each member of the cluster at some point, assuming the server is healthy enough.
+
+[[cluster-reconciler-wait]]
+== Waiting
+
+If you want to be sure that each server has processed an administrative operation before you run the next action, you can use the `WAIT` keyword.
+This makes the statement not return until all servers have seen the transaction, and their reconciler has finished processing it.
+
+[NOTE]
+====
+This does not mean that your operation is necessarily successful everywhere.
+`WAIT` just ensures the operation has been processed.
+A request to start a database has still been processed if the reconciler tried to start it and the database failed and went into the dirty state.
+====
+
+=== Example using `WAIT`
+[source, cypher, role="noplay"]
+----
+CREATE DATABASE foo WAIT
+----
+
+[[cluster-reconciler-errors]]
+== Errors
+
+An operation might only succeed on some servers.
+For instance some servers might be offline when you create a database, or a disk error might cause a server to fail to start a database.
+In this situation the operation has not 'failed' as a whole, since you may even have a running database, just with less fault tolerance than you desired.
+
+Some failures can just be re-attempted, for example `START DATABASE` can be run if not all members started successfully, and you think the reason has been resolved.
+Other failures will need just the underlying problem to be resolved and the reconciler will make the change, because it is still trying to achieve the desired state.
+For example if a new server fails during a `DEALLOCATE DATABASES FORM SERVER`, meaning a database cannot be safely moved, fixing the new server should be enough to resolve the problem, as the new server will start its copy of the database, allowing the deallocating server to shut down its copy.
+
+[[cluster-reconciler-reason]]
+== Why use the reconciler pattern
+
+This approach is robust to more failures.
+Each server is responsible for getting its local state to match its copy of the global desire.
+This means the loss of any one server cannot prevent all progress on that operation.
+If there was for instance one coordinator making changes to all other servers, a failure of that coordinator would result in progress stopping until the failure could be detected, and a replacement started.
