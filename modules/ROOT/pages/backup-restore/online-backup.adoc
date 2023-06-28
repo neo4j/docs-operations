@@ -23,7 +23,7 @@ Neo4j v5.0 introduces a new version of the backup command which produces immutab
 [[backup-artifact]]
 === Backup artifact
 The `neo4j-admin database backup` command produces one backup artifact file per database each time it is run.
-A backup artifact file is an immutable file containing the backup data of a given database along with some metadata like the database name and id, the backup time, the lowest/highest transaction id etc.
+A backup artifact file is an immutable file containing the backup data of a given database along with some metadata like the database name and id, the backup time, the lowest/highest transaction id, etc.
 
 Backup artifacts can be of two types:
 
@@ -32,7 +32,8 @@ Backup artifacts can be of two types:
 
 [[backup-chain]]
 === Backup chain
-The first time the backup command is run, a full backup artifact is produced for a given database. On the other hand, differential backup artifacts are produced by the subsequent runs.
+The first time the backup command is run, a full backup artifact is produced for a given database.
+On the other hand, differential backup artifacts are produced by the subsequent runs.
 
 A _backup chain_ consists of a full backup optionally followed by a sequence of n contiguous differential backups.
 
@@ -276,7 +277,7 @@ In production environments, external access to the backup port should be blocked
 In a cluster topology, it is possible to take a backup from any server hosting the database to backup, and each server has two configurable ports capable of serving a backup.
 These ports are configured by `server.backup.listen_address` and `server.cluster.listen_address` respectively.
 Functionally, they are equivalent for backups, but separating them can allow some operational flexibility, while using just a single port can simplify the configuration.
-It is generally recommended to select secondary servers to act as backup servers, since they are more numerous than primary servers in typical cluster deployments.
+It is generally recommended to select secondary servers to act as backup servers since they are more numerous than primary servers in typical cluster deployments.
 Furthermore, the possibility of performance issues on a secondary server, caused by a large backup, does not affect the performance or redundancy of the primary servers.
 If a secondary server is not available, then a primary can be selected based on factors, such as its physical proximity, bandwidth, performance, and liveness.
 
@@ -293,28 +294,37 @@ To view the latest processed transaction IDs (and other metrics) in Neo4j Browse
 
 ==== Targeting multiple servers
 It is recommended to provide a list of multiple target servers when taking a backup from a cluster, since that may allow a backup to succeed even if some server is down, or not all databases are hosted on the same servers.
-If the command finds one or more servers that do not respond, it continues trying to backup from other servers, and continue backing up other requested databases, but the exit code of the command is non-zero, to alert the user to the fact there is a problem.
+If the command finds one or more servers that do not respond, it continues trying to backup from other servers and continues backing up other requested databases, but the exit code of the command is non-zero, to alert the user to the fact there is a problem.
 If a name pattern is used for the database together with multiple target servers, all servers contribute to the list of matching databases.
 
 [[online-backup-example]]
 == Examples
 
-The following are examples of how to back up a single database, e.g., the default database `neo4j`, and multiple databases, using the `neo4j-admin database backup` command.
+The following are examples of how to perform a full and a differential backup of a single database, and how to back up multiple databases.
 The target directory _/mnt/backups/neo4j_ must exist before calling the command and the database(s) must be online.
 
-.Use `neo4j-admin database backup` to back up a single database.
+.Use `neo4j-admin database backup` to perform a full backup of a single database.
 ====
 [source,shell]
 ----
-bin/neo4j-admin database backup --to-path=/mnt/backups/neo4j neo4j
+bin/neo4j-admin database backup --type=full --to-path=/tmp/backups/neo4j neo4j
 ----
 ====
 
-To backup several databases that match database pattern you can use name globbing.
-For example, to backup all databases that start with *n* from your three-node cluster you should run:
+.Use `neo4j-admin database backup` to perform a differential backup of a single database.
+====
+[source,shell]
+----
+bin/neo4j-admin database backup --type=diff --to-path=/tmp/backups/neo4j neo4j
+----
+The produced backup artifact contains transaction logs that can be replayed and applied to stores contained in full backup artifacts when restoring a backup chain.
+====
 
 .Use `neo4j-admin database backup` to back up multiple databases.
 ====
+To back up several databases that match database pattern you can use name globbing.
+For example, to backup all databases that start with *n* from your three-node cluster you should run:
+
 [source, shell]
 ----
 neo4j-admin database backup --from=192.168.1.34:6362,192.168.1.35:6362,192.168.1.36:6362 --to-path=/mnt/backups/neo4j --pagecache=4G "n*"
