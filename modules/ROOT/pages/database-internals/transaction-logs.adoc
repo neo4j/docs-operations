@@ -1,0 +1,120 @@
+[[transaction-logging]]
+= Transaction logging
+
+:description: Transaction logs, checkpointing, and log pruning. The retention and rotation policies for the Neo4j transaction logs, and how to configure them.
+
+Neo4j keeps track of all write operations to each database to ensure data consistency and enable recovery.
+
+[[transaction-log-files]]
+== Transaction log files
+
+A transaction log file contains a sequence of records with all changes made to a particular database as part of each transaction, including data, indexes, and constraints.
+
+The transaction log serves multiple purposes, including providing differential backups and supporting cluster operations. At a minimum, the most recent non-empty transaction log is retained for any given configuration.
+It is important to note that transaction logs are unrelated to log monitoring.
+
+The transaction logging configuration is set per database and can be configured using the following configuration settings:
+
+[[transaction-logging-log-location]]
+== Configure transaction log location
+
+By default, transaction logs for a database are located at  _<neo4j-home>/data/transactions/<database-name>_.
+
+The root directory where those folders are located is configured by xref:configuration/configuration-settings.adoc#config_server.directories.transaction.logs.root[`server.directories.transaction.logs.root`].
+The value is a path.
+If relative, it is resolved from `server.directories.data`.
+For maximum performance, it is recommended to configure transaction logs to be stored on a dedicated device.
+
+[[transaction-logging-log-preallocation]]
+== Configure transaction log preallocation
+
+You can specify if Neo4j should try to preallocate logical log files in advance using the parameter xref:configuration/configuration-settings.adoc#config_db.tx_log.preallocate[`db.tx_log.preallocate`].
+By default, it is `true`.
+Log preallocation optimizes the filesystem by ensuring there is room to accommodate newly generated files and avoid file-level fragmentation.
+This configuration setting is dynamic and can be changed at runtime.
+
+[[transaction-logging-log-rotation]]
+== Configure transaction log rotation size
+
+You can specify how much space a single transaction log file can roughly occupy using xref:configuration/configuration-settings.adoc#config_db.tx_log.rotation.size[`db.tx_log.rotation.size`].
+By default, it is set to `256 MiB`, which means that after a transaction log file reaches this size, it is rotated and a new one is created.
+The minimum accepted value is `128K` (128 KiB).
+This configuration setting is dynamic and can be changed at runtime.
+
+This setting influences how much space can be reclaimed by all checkpoint strategies under the following:
+
+To reclaim a given file, the newest checkpoint for the transaction log must exist in another file.
+So if you have a huge transaction log, then it is likely that your latest checkpoint is in the same file, making it impossible to reclaim said file.
+For information about checkpointing, see xref:database-internals/checkpointing.adoc#control-log-pruning[Control transaction log pruning].
+
+
+[[transaction-logging-log-retention]]
+== Configure transaction log retention policy
+
+[WARNING]
+====
+Manually deleting transaction log files is not supported.
+====
+
+You can control the number of transaction logs that Neo4j keeps to back up the database using the parameter xref:configuration/configuration-settings.adoc#config_db.tx_log.rotation.retention_policy[`db.tx_log.rotation.retention_policy`].
+This configuration setting is dynamic and can be changed at runtime.
+
+By default, it is set to `2 days`, which means Neo4j keeps logical logs that contain any transaction committed within 2 days and prunes the ones that only contain transactions older than 2 days.
+
+Other possible ways to configure the log retention policy are:
+
+* `db.tx_log.rotation.retention_policy=true|keep_all` -- keep transaction logs indefinitely.
++
+[NOTE]
+====
+This option is not recommended due to the effectively unbounded storage usage.
+Old transaction logs cannot be safely archived or removed by external jobs since safe log pruning requires knowledge about the most recent successful checkpoint.
+====
+
+* `db.tx_log.rotation.retention_policy=false|keep_none` -- keep only the most recent non-empty log.
++
+Log pruning is called only after checkpoint completion to ensure at least one checkpoint and points to a valid place in the transaction log data.
+In reality, this means that all transaction logs created between checkpoints are kept for some time, and only after a checkpoint, the pruning strategy removes them.
+For more details on how to speed up checkpointing, see xref:database-internals/checkpointing.adoc#transaction-logging-log-pruning[Configure log pruning].
+To force a checkpoint, run the procedure xref:reference/procedures.adoc#procedure_db_checkpoint[`CALL db.checkpoint()`].
++
+[NOTE]
+====
+This option is not recommended in production Enterprise Edition environments, as <<differential-backup, differential backups>> rely on the presence of the transaction logs since the last backup.
+====
+
+* `<number><optional unit> <type>` where valid units are `k`, `M`, and `G`, and valid types are `files`, `size`, `txs`, `entries`, `hours`, and `days`.
++
+.Types that can be used to control log retention
+[options="header",cols="1m,3a,2m"]
+|===
+
+| Type
+| Description
+| Example
+
+| files
+| The number of the most recent transaction log files to keep after pruning.
+| db.tx_log.rotation.retention_policy=10 files
+
+| size
+| The max disk size of the transaction log files to keep after pruning.
+For example, `500M size` leaves at least 500M worth of files behind.
+| db.tx_log.rotation.retention_policy=300M size
+
+| txs or entries
+| The number of transactions (in the files) to keep after pruning, regardless of file count or size.
+`txs` and `entries` are synonymous.
+If set, the policy keeps the 500k latest transactions from each database and prunes any older transactions.
+| db.tx_log.rotation.retention_policy=500k txs
+
+
+| hours
+| Keep logs that contain any transaction committed within the specified number of hours from the current time.
+The value of `10 hours` ensures that at least 10 hours' worth of transactions is present in the logs.
+m| db.tx_log.rotation.retention_policy=10 hours
+
+| days
+| Keep logs that contain any transaction committed within the specified number of days from the current time.
+m| db.tx_log.rotation.retention_policy=30 days
+|===

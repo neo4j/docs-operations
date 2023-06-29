@@ -22,6 +22,13 @@ The command can only be executed successfully if the cluster's servers are able 
 If they are not, the command results in an error.
 For example, if the cluster's servers are set up with mode constraints to contain two primaries and three secondaries, or if only four servers exist, the command fails with an error.
 
+[NOTE]
+====
+If `TOPOLOGY` is not specified, the database is created according to `initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` specified in _neo4j.conf_.
+After cluster startup, these values can be overwritten using the `dbms.setDefaultAllocationNumbers` procedure.
+====
+
+
 [[alter-topology]]
 == `ALTER DATABASE`
 
@@ -49,7 +56,7 @@ Once the database is backed up, the next step is to drop the database, see xref:
 The last step is to either seed a cluster from the backup with the new topology, or to restore the backup on a single server.
 See xref:clustering/databases.adoc#cluster-seed[Seed a cluster] further on for information on seeding.
 
- Also, it is possible to automatically transition _from_ a topology with a single primary host to multiple primary hosts. 
+ Also, it is possible to automatically transition _from_ a topology with a single primary host to multiple primary hosts.
 Keep in mind that during such a transition, the database will be unavailable for a short period of time.
 
 // This part can be added back once it has been implemented.
@@ -100,6 +107,7 @@ In this example, the `server01` member is used.
 neo4j@neo4j$ ./bin/neo4j-admin database restore --from-path=/path/to/foo-backup-dir foo
 ----
 . Find the server ID of `server01` by logging in to Cypher Shell and running `SHOW SERVERS`.
+Cross-reference the address to find the server ID.
 Use any database to connect.
 +
 [source, cypher, role=noplay]
@@ -117,6 +125,8 @@ SHOW SERVERS;
 | "8512c9b9-d9e8-48e6-b037-b15b0004ca18" | "localhost:7687" | "Enabled" | "Available" | ["system",  "neo4j"] |
 +------------------------------------------------------------------------------------------------------------+
 ----
+In this case, the address for `server01` is `localhost:7687` and thus, the server ID is `8512c9b9-d9e8-48e6-b037-b15b0004ca18`.
++
 . On one of the servers, use the `system` database and create the database `foo` using the server ID of `server01`.
 +
 [source, cypher, role=noplay]
@@ -149,14 +159,14 @@ SHOW DATABASE foo;
 
 This method seeds all servers with an identical seed from an external source, specified by the URI.
 The seed can be either a backup or a dump from an existing database.
+The sources of seeds are called _seed providers_.
 
-The mechanism is pluggable, allowing new sources of seeds to be supported.
-These are called _seed providers_.
+The mechanism is pluggable, allowing new sources of seeds to be supported (see link:https://www.neo4j.com/docs/java-reference/current/extending-neo4j/project-setup/#extending-neo4j-plugin-seed-provider[Java Reference -> Implement custom seed providers] for more information).
 The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server and Amazon S3.
 
 [NOTE]
 ====
-S3 is supported by default, but the other providers require configuration of xref:reference/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
+S3 is supported by default, but the other providers require configuration of xref:configuration/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
 Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity and thus, `aws cli` is not required.
 ====
 
@@ -281,6 +291,6 @@ You can use the procedure <<procedure_dbms.setDefaultDatabase, `dbms.setDefaultD
 
 [NOTE]
 ====
-Be aware that the automatically created _initial_ default database may have a different topology to the default configuration values. 
+Be aware that the automatically created _initial_ default database may have a different topology to the default configuration values.
 See xref:clustering/clustering-advanced/default-database.adoc[Default database in a cluster] for more information.
 ====

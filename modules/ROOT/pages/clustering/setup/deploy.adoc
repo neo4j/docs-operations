@@ -14,14 +14,15 @@ See also xref:clustering/settings.adoc[Settings reference] for more detailed des
 |===
 | Option name
 | Description
-| xref:reference/configuration-settings.adoc#config_server.default_advertised_address[`server.default_advertised_address`]
+| xref:configuration/configuration-settings.adoc#config_server.default_advertised_address[`server.default_advertised_address`]
 | The address that other machines are told to connect to.
 In the typical case, this should be set to the fully qualified domain name or the IP address of this server.
-| xref:reference/configuration-settings.adoc#config_server.default_listen_address[`server.default_listen_address`]
+| xref:configuration/configuration-settings.adoc#config_server.default_listen_address[`server.default_listen_address`]
 | The address or network interface this machine uses to listen for incoming messages.
 Setting this value to `0.0.0.0` makes Neo4j bind to all available network interfaces.
-| xref:reference/configuration-settings.adoc#config_dbms.cluster.discovery.endpoints[`dbms.cluster.discovery.endpoints`]
-| This setting contains the network for at least one server in the cluster and must be set to the same value on all cluster members.
+| xref:configuration/configuration-settings.adoc#config_dbms.cluster.discovery.endpoints[`dbms.cluster.discovery.endpoints`]
+| The discovery network address for all the members of the cluster, including this server.
+The setting must be set to the same value on all cluster members.
 The behavior of this setting can be modified by configuring the setting `dbms.cluster.discovery.resolver_type`.
 This is described in detail in xref:clustering/setup/discovery.adoc[].
 | <<config_initial.dbms.default_primaries_count, `initial.dbms.default_primaries_count`>>
@@ -97,9 +98,9 @@ SHOW SERVERS;
 +-----------------------------------------------------------------------------------------------------------+
 | name                                   | address          | state     | health      | hosting             |
 +-----------------------------------------------------------------------------------------------------------+
-| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
-| "e56b49ea-243f-11ed-861d-0242ac120002" | "server002:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
-| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server003:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
 +-----------------------------------------------------------------------------------------------------------+
 ----
 
@@ -115,9 +116,9 @@ SHOW SERVERS YIELD *;
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | serverId                               | name                                   | address          | state     | health      | hosting             | requestedHosting    | tags | allowedDatabases | deniedDatabases | modeConstraint | version     |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server001:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
-| "e56b49ea-243f-11ed-861d-0242ac120002" | "e56b49ea-243f-11ed-861d-0242ac120002" | "server002:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
-| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server003:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Enabled" | "Available" | ["system", "neo4j"] | ["system", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0"     |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 ====
@@ -134,9 +135,9 @@ If you want to follow along with the startup, you can see the messages in xref:c
 == Create new databases in a cluster
 
 As mentioned in the xref:clustering/introduction.adoc[Introduction], a server in a cluster can either host a database in primary or secondary mode.
-For transactional workloads, a cluster with predominantly primaries is preferred for fault tolerance and automatic failover.
+For transactional workloads, a database topology with several primaries is preferred for fault tolerance and automatic failover.
 
-The cluster can preferably have more secondaries if the workload is more analytical.
+The database topology might prioritize secondaries over primaries if the workload is more analytical.
 Such configuration is optimized for scalability but it is not fault-tolerant and does not provide automatic failover.
 Both scenarios are covered in the following examples.
 
@@ -170,153 +171,9 @@ Note that this operation is possible even without specifying `initial.dbms.defau
 Anything specified in the `TOPOLOGY` part of the Cypher command overrides the `initial.dbms.default_secondaries_count` setting.
 ====
 
+[NOTE]
+.Analytic use cases
+====
+To learn more about setting up a cluster specifically for analytic use cases, see xref:clustering/setup/analytics-cluster.adoc[].
+====
 
-//
-// [[causal-clustering-add-core]]
-// == Add a Core Server to an existing cluster
-//
-// Core Servers are added to an existing cluster by starting a new Neo4j instance with the appropriate configuration.
-// The new server will join the existing cluster and become available once it has copied the data from its peers.
-// It may take some time for the new instance to perform the copy if the existing cluster contains large amounts of data.
-//
-// The setting `causal_clustering.initial_discovery_members` shall be updated on all the  servers in the cluster to include the new server.
-//
-// .Add a Core Server to an existing cluster
-// ====
-//
-// In this example, a Core Server, `core04.example.com`, is added to the cluster created in <<causal-clustering-new-cluster-example-configure-a-core-only-cluster>>.
-//
-// Configure the following entries in <<file-locations, _neo4j.conf_>>:
-//
-// ._neo4j.conf_ on core04.example.com:
-// [source, properties]
-// ----
-// dbms.default_listen_address=0.0.0.0
-// dbms.default_advertised_address=core04.example.com
-// dbms.mode=CORE
-// causal_clustering.minimum_core_cluster_size_at_formation=3
-// causal_clustering.minimum_core_cluster_size_at_runtime=3
-// causal_clustering.initial_discovery_members=core01.example.com:5000,core02.example.com:5000,core03.example.com:5000,core04.example.com:5000
-// ----
-//
-// Note that the configuration is very similar to that of the previous servers.
-// In this example, the new server is not intended to be a permanent member of the cluster, thus it is not included in `causal_clustering.initial_discovery_members` on the other Core members of the cluster.
-//
-// Now start the new Core Server and let it add itself to the existing cluster.
-// ====
-//
-//
-// [[clustering-add-secondary]]
-// == Add a Secondary server to an existing cluster
-//
-// In the {neo4j-version} version of Neo4j, all Secondary servers are Read Replica instances.
-// The initial configuration for Read Replica instances is provided via _neo4j.conf_, as mentioned above in <<clustering-new-single-and-replicas-cluster>>.
-// Since Read Replicas do not participate in cluster quorum decisions, their configuration is shorter; they only need to know the addresses of at least one primary instance which they can bind to in order to discover the cluster.
-//
-// [NOTE]
-// ====
-// It is recommended to specify the addresses for _all_ existing primary instances in a cluster when adding a Read Replica.
-// They can then select an appropriate Primary server from which to copy data.
-// ====
-//
-//
-// .Add a Secondary server to an existing cluster with a Single instance as Primary server
-// ====
-//
-// In this example, a Read Replica instance, `replica04.example.com`, is added to the cluster created in <<clustering-new-cluster-example-configure-a-single-and-replicas-cluster>>.
-//
-// Configure the following entries in <<file-locations, _neo4j.conf_>>:
-//
-// ._neo4j.conf_ on replica01.example.com:
-// [source, properties]
-// ----
-// dbms.default_advertised_address=read_replica04.example.com
-// dbms.mode=READ_REPLICA
-// causal_clustering.initial_discovery_members=single.example.com:5000
-// ----
-//
-// Now start the new Read Replica and let it add itself to the existing cluster.
-// ====
-//
-// .Add a Secondary server to an existing cluster with Core servers as Primary servers
-// ====
-//
-// In this example, a Read Replica, `replica05.example.com`, is added to the cluster created in <<causal-clustering-new-cluster-example-configure-a-core-only-cluster>>.
-//
-// Configure the following entries in _neo4j.conf_:
-//
-// ._neo4j.conf_ on replica05.example.com:
-// [source, properties]
-// ----
-// dbms.default_advertised_address=read_replica05.example.com
-// dbms.mode=READ_REPLICA
-// causal_clustering.initial_discovery_members=core01.example.com:5000,core02.example.com:5000,core03.example.com:5000
-// ----
-//
-// Now start the new Read Replica and let it add itself to the existing cluster.
-// ====
-//
-// [NOTE]
-// ====
-// When adding a Secondary server to an existing cluster, only _Primary_ servers need to be listed in `causal_clustering.initial_discovery_members`.
-// It is not necessary to include existing Secondary servers, i.e. other Read Replica instances.
-// ====
-//
-// [[clustering-detach-secondary-server]]
-// == Detach a Secondary server from an existing cluster
-//
-// It is possible to turn a Secondary server into a standalone instance that thus contains a snapshot of the data in the cluster.
-// This can, in theory, be done for a Core Server as well, but this is **not** recommended for performance and safety reasons.
-// As mentioned above, in the {neo4j-version} version of Neo4j, all Secondary servers are Read Replica instances.
-//
-// .Detach a Read Replica and turn it into a stand alone instance
-// ====
-//
-// In this example, a Read Replica, `replica01.example.com`, is detached from a cluster.
-// See <<clustering-add-secondary>> above on how to add a Read Replica to a cluster.
-//
-// First, check if the Read Replica is as up-to-date as desired.
-// Use `SHOW DATABASE` to see where the different members of the cluster are in terms of committed transactions compared to the leader.
-//
-// [source, cypher, role=noplay]
-// ----
-// neo4j@system> SHOW DATABASE test00 YIELD name,serverID,address,role,lastCommittedTxn,replicationLag;
-// ----
-//
-// Note that `SHOW DATABASES` uses `serverID` as it lists databases and there may be more than one database per server, while `dbms.cluster.overview()` uses only `id` as it is only concerned with servers.
-//
-//
-// [queryresult]
-// ----
-// +---------------------------------------------------------------------------------------------------------------------------+
-// | name     | serverID                               | address          | role           | lastCommittedTxn | replicationLag |
-// +---------------------------------------------------------------------------------------------------------------------------+
-// | "test00" | "aeb6debe-d3ea-4644-bd68-304236f3813b" | "core3:7687"     | "leader"       | 21423            | 0              |
-// | "test00" | "8e07406b-90b3-4311-a63f-85c45af63583" | "core1:7687"     | "follower"     | 21422            | -1             |
-// | "test00" | "b99ff25e-dc64-4c9c-8a50-ebc1aa0053cf" | "core2:7687"     | "follower"     | 21423            | 0              |
-// | "test00" | "0bf3f6c1-0f48-47c2-a943-18fa8362c918" | "replica4:7687"  | "read_replica" | 21409            | -14            |
-// | "test00" | "0e9c1b28-c8c0-4c65-a1f2-39d326411280" | "replica6:7687"  | "read_replica" | 21421            | -2             |
-// | "test00" | "82524236-3058-48a2-b198-6580003475af" | "replica5:7687"  | "read_replica" | 21413            | -10            |
-// +---------------------------------------------------------------------------------------------------------------------------+
-// ----
-//
-// Based on the results, decide which Read Replica to detach and proceed to shut it down.
-//
-// Once the Read Replica is shut down, configure the following entry in <<file-locations, _neo4j.conf_>>:
-//
-// ._neo4j.conf_ on replica01.example.com:
-// [source, properties]
-// ----
-// dbms.mode=SINGLE
-// ----
-// Start the instance again.
-// It is now a standalone instance containing the data committed to it at the time of shutdown.
-// ====
-//
-// [NOTE]
-// ====
-// There is always a chance that the Read Replica is behind the Core Servers at any time (see above on how to check the state of your cluster members).
-// If a transaction is being processed at the time of the shutdown of the Read Replica, this transaction is eventually reflected in the remaining Cluster, but not on the detached Read Replica.
-// A way to ensure that a Read Replica contains a snapshot of a database in the cluster at a point in time, is to pause the read Replica before shutting it down.
-// See <<procedure_dbms_cluster_readreplicatoggle, `dbms.cluster.readReplicaToggle()`>> for more information.
-// ====

@@ -1,6 +1,6 @@
 :description: This section describes how to configure and install a Neo4j helm deployment in a Kubernetes cluster using a customized Helm chart.
 [[kubernetes-neo4j-configuration]]
-= Configure a Neo4j Helm deployment
+= Customizing a Neo4j Helm chart
 
 Helm is different from “package managers”, such as `apt`, `yum`, and `npm`, because, in addition to installing applications, Helm allows rich configuration of applications.
 The customized configuration should be expressed declaratively in a YAML formatted file, and then passed during installation.
@@ -9,6 +9,210 @@ The customized configuration should be expressed declaratively in a YAML formatt
 ====
 For more information, see link:https://helm.sh/docs/intro/using_helm/#customizing-the-chart-before-installing[Helm official documentation].
 ====
+
+[[si-config-parameters]]
+== Important configuration parameters
+
+The following is a list of the most important configuration parameters for the Neo4j Helm chart.
+For a full list of configuration parameters, run  `helm show values`.
+See xref:kubernetes/configuration.adoc#create-yaml[Create a custom _values.yaml_ file].
+
+=== `neo4j.name`
+
+Starting from Neo4j 5.0.0, standalone servers and cluster servers have no distinction.
+This means a standalone server can be upgraded to a cluster by adding more servers.
+Therefore, the `neo4j.name` parameter, which value links together servers in a cluster, is mandatory, and the installation will fail if it is not specified.
+`neo4j.name` must be unique within a namespace.
+
+=== `neo4j.resources`
+
+The resources (CPU, memory) for the Neo4j container are configured by setting `neo4j.resources` object in the _values.yaml_ file.
+In the resource _requests_, you can specify how much CPU and memory the Neo4j container needs, while in the resource _limits_, you can set a limit on these resources in case the container tries to use more resources than its _requests_ allow.
+//For more information, see link:https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[the Kubernetes container resources documentation].
+
+[source, yaml]
+----
+neo4j:
+  resources:
+    requests:
+     cpu: "1000m"
+     memory: "2Gi"
+    limits:
+     cpu: "2000m"
+     memory: "4Gi"
+----
+
+If no resource _requests_ and resource _limits_ are specified, the values set in the `resources` object are used for both the Neo4j container's resource _requests_ and resource _limits_.
+
+[source, yaml]
+----
+neo4j:
+  resources:
+    cpu: "2"
+    memory: "5Gi"
+----
+
+[NOTE]
+====
+The minimum for a Neo4j instance is `0.5` CPU and `2GB` memory. +
+If invalid or less than the minimum values are provided, Helm will throw an error, for example:
+
+[source, role=noheader]
+----
+Error: template: neo4j-standalone/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum.
+ cpu value cannot be less than 0.5 or 500m
+----
+====
+
+=== JVM heap and page cache
+
+You configure Neo4j to use the memory provided to the container by setting the parameters `server.memory.heap.initial_size` and `server.memory.pagecache.size`.
+Combined, they must not exceed the memory configuration of the Neo4j container. +
+In Kubernetes, running processes in the Neo4j container, which exceed the configured memory limit are killed by the underlying operating system.
+Therefore, it is recommended to allow an additional 1GB of memory headroom so that `heap + pagecache + 1GB < available memory`.
+
+For example, a 5GB container could be configured like this:
+
+[source, yaml]
+----
+neo4j:
+  resources:
+    cpu: "2"
+    memory: "5Gi"
+
+# Neo4j configuration (yaml format)
+config:
+  server.memory.heap.initial_size: "3G"
+  server.memory.heap.max_size: "3G"
+  server.memory.pagecache.size: "1G"
+----
+
+`server.memory.pagecache.size` and `server.memory.heap.initial_size` are not the only settings available in Neo4j to manage memory usage.
+For full details of how to configure memory usage in Neo4j, see xref:performance/memory-configuration.adoc[Performance - Memory Configuration].
+
+=== `neo4j.password`
+The password for the `neo4j` user. +
+You can set an initial password for accessing Neo4j in the _values.yaml_ file.
+
+[NOTE]
+====
+You cannot use `neo4j` as the initial password as this is the default password.
+====
+
+If no initial password is set, the Neo4j helm chart will automatically generate one.
+(Make a note of it.)
+In cluster deployments, the same password must be set for all cluster members.
+
+[source, yaml]
+----
+neo4j:
+ # If not set or empty a random password will be generated
+ password: ""
+----
+
+The password will be printed out in the Helm install output, unless `--set logInitialPassword=false` is used.
+
+The initial Neo4j password is stored in a _Kubernetes Secret_.
+The password can be extracted from the _Secret_ using this command:
+
+[source, shell]
+----
+kubectl get secret <release-name>-auth -oyaml | yq -r '.data.NEO4J_AUTH' | base64 -d
+----
+
+[TIP]
+====
+To change the initial password, follow the steps in xref:kubernetes/operations/reset-password.adoc[Reset the neo4j user password].
+
+Once you change the password in Neo4j, the password stored in _Kubernetes Secrets_ will still exist but will no longer be valid.
+====
+
+=== `neo4j.edition` and `neo4j.acceptLicenseAgreement`
+
+By default, the standalone Helm chart installs Neo4j Community Edition.
+If you want to install Neo4j Enterprise Edition, set the configuration parameters `edition: "enterprise"` and acknowledge license compliance by setting `neo4j.acceptLicenseAgreement` to `"yes"`.
+
+=== `volumes.data`
+
+The `volumes.data` parameter maps the `data` volume mount of your Neo4j to the persistent volume that you have for that instance.
+For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
+
+=== `neo4j.minimumClusterSize`
+
+By default, servers in a cluster can host primary and secondary databases.
+See the xref:clustering/introduction.adoc[clustering documentation] for more details. +
+`neo4j.minimumClusterSize` is set to 1 by default, which means the server starts without waiting for the other servers.
+When installing a cluster, you should set `neo4j.minimumClusterSize` to the number of desired members in the cluster.
+If you later decide to add an extra cluster server in excess of `neo4j.minimumClusterSize`, you need to manually enable it using the Cypher command `ENABLE SERVER`.
+For more information on enabling new servers, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster].
+
+=== `config`
+The Neo4j Helm chart does not use a `neo4j.conf` file.
+Instead, the Neo4j configuration is set in the Helm deployment's _values.yaml_ file under the `config` object.
+
+The `config` object should contain a string map of _neo4j.conf_ setting name to value.
+For example, this `config` object configures the Neo4j metrics:
+
+[source, yaml]
+----
+# Neo4j configuration (yaml format)
+config:
+  server.metrics.enabled: "true"
+  server.metrics.csv.interval: "10s"
+  server.metrics.csv.rotation.keep_number: "2"
+  server.metrics.csv.rotation.compression: "NONE"
+----
+
+[NOTE]
+====
+All Neo4j `config` values must be YAML strings.
+It is important to put quotes around the values, such as `"true"`, `"false"`, and `"2"`, so that they are handled correctly as strings.
+====
+
+All _neo4j.conf_ settings are supported except for `server.jvm.additional`.
+Additional JVM settings can be set on the `jvm` object in the Helm deployment _values.yaml_ file, as shown in the example:
+
+[source, java]
+----
+# Jvm configuration for Neo4j
+jvm:
+  additionalJvmArguments:
+  - "-XX:+HeapDumpOnOutOfMemoryError"
+  - "-XX:HeapDumpPath=/logs/neo4j.hprof"
+----
+
+To find out more about configuring Neo4j and the _neo4j.conf_ file, see xref:configuration/index.adoc[Configuration] and xref:configuration/neo4j-conf.adoc[The neo4j.conf file].
+
+=== `image.customImage`
+
+The helm chart uses the official Neo4j Docker image that matches the version of the Helm chart.
+To configure the helm chart to use a different container image, set the `image.customImage` property in the _values.yaml_ file.
+
+This can be necessary when public container repositories are not accessible for security reasons.
+For example, this _values.yaml_ file configures Neo4j to use `my-container-repository.io` as the container repository:
+
+[source, properties, subs=attributes]
+----
+# neo4j-values.yaml
+neo4j:
+  password: "my-password"
+
+image:
+  customImage: "my-container-repository.io/neo4j:{neo4j-version}-enterprise"
+----
+
+=== Other configuration options
+
+Some examples of possible Neo4j configurations::
+* All Neo4j configuration (_neo4j.conf_) settings can be set directly on the `config` object in the _values.yaml_ file.
+* Neo4j can be configured to use SSL certificates contained in Kubernetes Secrets by modifying the `ssl` object in the values file.
+For more information, see xref:kubernetes/security.adoc[Configure SSL].
+
+
+Some examples of possible K8s configurations::
+* Configure (or disable completely) the Kubernetes LoadBalancer that exposes Neo4j outside the Kubernetes cluster by modifying the `externalService` object in the _values.yml_ file.
+* Set the `securityContext` used by Neo4j Pods by modifying the `securityContext` object in the _values.yml_ file.
+* Configure manual persistent volume provisioning or set the `StorageClass` to be used as the Neo4j persistent storage.
 
 [[create-yaml]]
 == Create a custom _values.yaml_ file
@@ -549,1084 +753,3 @@ helm install <release-name> neo4j/neo4j --set "neo4j.name=my-neo4j-db" -f neo4j-
 To see the values that have been set for a given release, use `helm get values <release-name>`.
 ====
 
-Some examples of possible K8s configurations::
-* Configure (or disable completely) the Kubernetes LoadBalancer that exposes Neo4j outside the Kubernetes cluster by modifying the `externalService` object in the _values.yml_ file.
-* Set the `securityContext` used by Neo4j Pods by modifying the `securityContext` object in the _values.yml_ file.
-* Configure manual persistent volume provisioning or set the `StorageClass` to be used as the Neo4j persistent storage.
-
-Some examples of possible Neo4j configurations::
-* All Neo4j configuration (_neo4j.conf_) settings can be set directly on the `config` object in the _values.yaml_ file.
-* Neo4j can be configured to use SSL certificates contained in Kubernetes Secrets by modifying the `ssl` object in the values file.
-
-[[configure-neo4j-name]]
-== Set neo4j.name parameter
-Starting from Neo4j 5.0.0, standalone servers and cluster servers have no distinction.
-This means a standalone server can be upgraded to a cluster by adding more servers.
-Therefore, the `neo4j.name` parameter, which value links together servers in a cluster, is mandatory, and the installation will fail if it is not specified.
-`neo4j.name` must be unique within a namespace.
-
-[[configure-neo4j-cluster-size]]
-== Set neo4j.minimumClusterSize parameter
-By default, servers in a cluster can host primary and secondary databases.
-See the xref:clustering/introduction.adoc[clustering documentation] for more details. +
-`neo4j.minimumClusterSize` is set to 1 by default, which means the server starts without waiting for the other servers.
-When installing a cluster, you should set `neo4j.minimumClusterSize` to the number of desired members in the cluster.
-If you later decide to add an extra cluster server in excess of `neo4j.minimumClusterSize`, you need to manually enable it using the Cypher command `ENABLE SERVER`.
-For more information on enabling new servers, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster].
-
-[[configure-neo4j-in-kubernetes]]
-== Set Neo4j configuration
-
-The Neo4j Helm chart does not use a `neo4j.conf` file.
-Instead, the Neo4j configuration is set in the Helm deployment's _values.yaml_ file under the `config` object.
-
-The `config` object should contain a string map of _neo4j.conf_ setting name to value.
-For example, this `config` object configures the Neo4j metrics:
-
-[source, yaml]
-----
-# Neo4j configuration (yaml format)
-config:
-  server.metrics.enabled: "true"
-  server.metrics.csv.interval: "10s"
-  server.metrics.csv.rotation.keep_number: "2"
-  server.metrics.csv.rotation.compression: "NONE"
-----
-
-[NOTE]
-====
-All Neo4j `config` values must be YAML strings.
-It is important to put quotes around the values, such as `"true"`, `"false"`, and `"2"`, so that they are handled correctly as strings.
-====
-
-All _neo4j.conf_ settings are supported except for `server.jvm.additional`.
-Additional JVM settings can be set on the `jvm` object in the Helm deployment _values.yaml_ file, as shown in the example:
-
-[source, java]
-----
-# Jvm configuration for Neo4j
-jvm:
-  additionalJvmArguments:
-  - "-XX:+HeapDumpOnOutOfMemoryError"
-  - "-XX:HeapDumpPath=/logs/neo4j.hprof"
-----
-
-To find out more about configuring Neo4j and the _neo4j.conf_ file, see xref:configuration/index.adoc[Configuration] and xref:configuration/neo4j-conf.adoc[The neo4j.conf file].
-
-[[set-initial-password]]
-== Set an initial password
-
-You can set an initial password for accessing Neo4j in the _values.yaml_ file.
-If no initial password is set, the Neo4j helm chart will automatically generate one.
-In cluster deployments, the same password must be set for all cluster members.
-
-[source, yaml]
-----
-neo4j:
- # If not set or empty a random password will be generated
- password: ""
-----
-
-The password will be printed out in the Helm install output, unless `--set logInitialPassword=false` is used.
-
-The initial Neo4j password is stored in a _Kubernetes Secret_.
-The password can be extracted from the _Secret_ using this command:
-
-[source, shell]
-----
-kubectl get secret <release-name>-auth -oyaml | yq -r '.data.NEO4J_AUTH' | base64 -d
-----
-
-[TIP]
-====
-To change the initial password, follow the steps in xref:kubernetes/maintenance.adoc#reset-password[Operations - Reset the Neo4j user password].
-
-Once you change the password in Neo4j, the password stored in _Kubernetes Secrets_ will still exist but will no longer be valid.
-====
-
-[[configure-ssl]]
-== Configure SSL
-
-The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm charts.
-You can specify SSL policy objects for `bolt`, `https`, `cluster`, and `backup`.
-SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes Secrets_.
-
-To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
-This example shows how to configure the `bolt` SSL policy:
-
-[source, yaml]
-----
-ssl:
- bolt:
-   privateKey:
-     secretName: bolt-cert
-     subPath: private.key
-   publicCertificate:
-     secretName: bolt-cert
-     subPath: public.crt
-----
-
-When a private key is specified in the _values.yaml_ file, the Neo4j `ssl` policy is enabled automatically.
-To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `config` object.
-
-[NOTE]
-====
-Unencrypted `http` is not disabled automatically when `https` is enabled.
-If `https` is enabled, add `server.http.enabled: "false"` to the `config` object to disable `http`.
-====
-
-For more information on configuring SSL policies, see xref:security/ssl-framework.adoc#ssl-framework-configuration[SSL Framework configuration].
-
-The following examples show how to deploy a Neo4j cluster with configured SSL policies.
-
-[[configure-ssl-with-self-signed-certificates]]
-
-=== Create a self-signed certificate
-
-If you do not have a self-signed certificate to use, follow the steps to create one:
-
-. Create a new folder for the self-signed certificate.
-This example uses the _/neo4j-ssl_ folder.
-+
-[source, shell]
-----
-mkdir neo4j-ssl
-cd neo4j-ssl
-----
-. Create the `private.key` and `public.crt` for the self-signed certificate by using the `openssl` command and passing all the values in the `subj` argument:
-+
-[source, shell]
-----
-openssl req -newkey rsa:2048 -nodes -keyout private.key -x509 -days 365 -out public.crt -subj "/C=GB/ST=London/L=London/O=Neo4j/OU=IT Department"
-----
-. Verify that the _private.key_ and _public.crt_ files are created:
-+
-[source, shell]
-----
-ls -lst
-----
-+
-.Example output
-----
--rw-r--r--  1 user  staff  1679  28 Dec 15:00 private.key
--rw-r--r--  1 user  staff  1679  28 Dec 15:00 public.crt
-----
-
-=== Create a `neo4j` namespace and configure it to be used in the current context
-
-[source, shell]
-----
-kubectl create namespace neo4j
-kubectl config set-context --current --namespace=neo4j
-----
-
-=== Configure an SSL policy using a `tls` Kubernetes secret
-
-This example shows how to configure an SSL policy for intra-cluster communication using a self-signed certificate stored in a `tls` Kubernetes secret.
-
-. Create a Kubernetes TSL secret using the _public.crt_ and _private.key_ files:
-+
-[NOTE]
-You must have a Kubernetes cluster running and the `kubectl` command installed.
-For more information, see xref:kubernetes/quickstart-cluster/prerequisites.adoc[Prerequisites].
-
-.. To create a TLS secret, use the `tls` option and a secret name, e.g., `neo4j-tls`:
-+
-[source, shell]
-----
-kubectl create secret tls neo4j-tls --cert=/path/to/neo4j-ssl/public.crt --key=/path/to/neo4j-ssl/private.key
-----
-.. Verify that the secret is created:
-+
-[source, shell]
-----
-kubectl get secret
-----
-+
-.Example output
-----
-NAME                  TYPE                                  DATA   AGE
-neo4j-tls             kubernetes.io/tls                     2      4s
-----
-.. Verify that the secret contains the _public.crt_ and _private.key_ files:
-+
-[source, shell]
-----
-kubectl get secret neo4j-tls -o yaml
-----
-+
-.Example output
-[source, yaml]
-----
-apiVersion: v1
-data:
-  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURLakNDQWhJQ0NRRGRYYVg1Y29mczdEQU5CZ2txaGtpRzl3MEJBUXNGQURCWE1Rc3dDUVlEVlFRR0V3SkgKUWpFUE1BMEdBMVVFQ0F3R1RHOXVaRzl1TVE4d0RRWURWUVFIREFaTWIyNWtiMjR4RGpBTUJnTlZCQW9NQlU1bApielJxTVJZd0ZBWURWUVFMREExSlZDQkVaWEJoY25SdFpXNTBNQjRYRFRJeU1USXlPREl4TURjeU5sb1hEVEl6Ck1USXlPREl4TURjeU5sb3dWekVMTUFrR0ExVUVCaE1DUjBJeER6QU5CZ05WQkFnTUJreHZibVJ2YmpFUE1BMEcKQTFVRUJ3d0dURzl1Wkc5dU1RNHdEQVlEVlFRS0RBVk9aVzgwYWpFV01CUUdBMVVFQ3d3TlNWUWdSR1Z3WVhKMApiV1Z1ZERDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTDBRc0c2Ukwrd3hxZSt3CjJGSWljZldVaUFtdmNqeVdlS0lKaThuT2tBSGIvSTYzUUU2L3ZpR3RNeEI3S28xdUJLNlVPZXBaeU91UzE2bUMKaitpMDAwbmFnWkR3RGNyRXd3UUE1cTBGMC90VXB5UHBaL1p3clhEaGFDOXhzVnFnVms0TXl5aUtTNzRIOUc2UgprUUV4dHBaNFArcTlaRHVFVk1KVGVaL2pQNGZoTkg2MUpSTVdORTJ3NjNUWkx2ZGMyUitXL2U5N3h2TGQ5Y0FnCjlqTm9FMHo5UHRmczB2L2lyUGhuUHpzWHQ5bzE0MWlnOVFZNjNtMzBxQ0NaYnpMRlR6WFgvdTUvTSsycFB3WXoKcUNOTUZYYW1ITlAxdlRPWFlRTG1iYW1JdVplYnVPNEVlUHZ6WUVXSmEyUi9oTmhtUDNvM2tRVFAzdmF1UEFjZQpSQlJZS09NQ0F3RUFBVEFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBWVh6SkIzNU55cExDUEdvQXVJdGt5dHBFCk1ZeSs5YnlrV3BEVnhRaXZLUHQ3d1NUaWZjNU1QdW5NUy9xYmxnaWprWm5IaWVLeEdoU3lQL283QndtMzJDSnAKQUFsSjJ3RjhIVXVSSGpYcUU5dkNQeFdtVlVJS2ExOWN5V0tUYWhySWU1eWZkQWNkbUJmRzJNWnY0dEdFeWxsUgo0Vk81STdRNjVWZDlGQnB0U3JjS3R1WUtBUzg2RTBHZmlmMWxCakdUZTFZbkhvK1RZTVpoVEUvN3RlNHZ1M251CjA4Y1BmbS9RYThSNFBXZDZNbXVDaTJYcDduWVlEMmp3WklCSENtMUU3U1RrdS9JRk5kOWFWRW91VG5KR1pCWFcKeWVzWG9OMXhOb3kvMXZFdElhV2xXZW1GcGo4clJ6VGJQekQ1TEpiNDBSRFVOTXN3NytLUXczV3BBMjVKUHc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
-  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQzlFTEJ1a1Mvc01hbnYKc05oU0luSDFsSWdKcjNJOGxuaWlDWXZKenBBQjIveU90MEJPdjc0aHJUTVFleXFOYmdTdWxEbnFXY2pya3RlcApnby9vdE5OSjJvR1E4QTNLeE1NRUFPYXRCZFA3VktjajZXZjJjSzF3NFdndmNiRmFvRlpPRE1zb2lrdStCL1J1CmtaRUJNYmFXZUQvcXZXUTdoRlRDVTNtZjR6K0g0VFIrdFNVVEZqUk5zT3QwMlM3M1hOa2ZsdjN2ZThieTNmWEEKSVBZemFCTk0vVDdYN05MLzRxejRaejg3RjdmYU5lTllvUFVHT3Q1dDlLZ2dtVzh5eFU4MTEvN3VmelB0cVQ4RwpNNmdqVEJWMnBoelQ5YjB6bDJFQzVtMnBpTG1YbTdqdUJIajc4MkJGaVd0a2Y0VFlaajk2TjVFRXo5NzJyandICkhrUVVXQ2pqQWdNQkFBRUNnZ0VBTmF6OVNnYXlJazVmUG90b2Zya0V2WUh6dFR3NEpIZGJ2RFVWbUsrcU5yenIKME9DNXd5R3dxd0x2RW1qRlJlM01Lbnd1alJmOGNOVDVvVWhON3ZVWFgwcEhxb3hjZmdxcWl3SnVld1RDa0FJUwppYUdFUUhUdzZMRTEwUEpvTmFCN29DRUZ0SGErMWk2UCtLd2ZETVcrWHEyNUI3M0pMUlIrczhUYkxNZHBpL3VvCjRmTFNJV0xDV09MZThUTlU0ck5vVDQ0enY0eUhUOXAyV3liSUNrL3F5bVV3bTlhRHFnYzRJRzk4YXVVNG5JYVQKenk2T3NBODdONW9FME0rcHlUdEFJcmxRZFBXUzBBZ28xZUJCcWplL1I3MTI4TmdHVzhOTzVMWDBtNit2YzhyVgpaTHh0N1d0NThucXR2WlI3QTF5SU9lbWtocHl2Q3hrNVRxSmZQRlJxRVFLQmdRRGlOL3NBZncrZ1dvTFpLbTNyCm50WVkyRW9TOTBkQ0wwd293SGFGa0lsL2hIWXduQi9qaWlnMU5ZbEhDNzNPVDdDc2UycS9tS0xhMzZBVHlpTHcKZjN1T0J3NmNFZ2RJZlU5aDBtZjJCNFZXdEVEeDJMSU94MEtZU2VrYldTTVZQZ2w2SkhNb3hLdjNMbEx5R1RiMApZQmtKVmpRdkVLS1dpa1FLMUdPYnZtdzFWUUtCZ1FEVjlJLzc5WFJuN1EzZ3M4Z2JqZWhDejRqNHdtNWdpNFM2CkVsVzVJWkFidDh3QWZPdVIzUm4wQW41NFl0ZW1HUk1seDF0L1ZUM1IzK0J5bmVTZEgzbUJ6eVJEQysvRGhBTlYKNVZPckk5SFhnVTRMSElVMmNwVVZxYVo3N1J1b2JnTmlDenBmOVZPVkNadzdmQzRPYkFqcTMzQ3RtT2taR0hRbAo2dkJtNm1ubFZ3S0JnQ2FnOW95TUplZjA3TGtXcExTQ1ovN1FHRDRLMmJFMGtHVzVEOFFZL1ZHNEZkS1JKbVRkCmQ2WTJZUjJ2cEpheFJ2TDlGQ3BwYncyKzkvL0pHWlJGd0p4dEdoS09oWTNjVUF6ZE9BRnNJVm0vNkFNa1JLdC8KWFNEU0ppc1VXb2hMRXFVM3lpNWcveGh6WVppVHM2MmhKMFZQNGhOVFhPQWw5aDUvVEE4UlFqc05Bb0dBTm84Twp5R2xuTGJrOWVMZGZwK2NmK3ltQS9DNVloellNdW9aQ1pkc3hMR0JLSFRXOXZJeHRPZFFJL0JuNGM5cWhEMWt1CjgrR0F5aXdVeUNXTFRxWGdEa0lNTlN5dUQyVnlsRXpPY1MzSkxQTkVPNEVpVnlnUTdGMCtud3R2cWh1anNUUzcKeGd5Qks5Z3ZodHU3d3VHNXhHc0dDTDZkY2xEU0RYbERwSHJTVmpFQ2dZQWx0STNjMzJxaG5KU2xHSGhjdW1wRwpReGpvYnJBUUxUa3dyOWk2TkNuS0EyNVR1SVFXa1NiN2JUWWtuUi80WDhOT2w2U2EvYm9QK2dncWNJM0haSk05CkxJRnpPUTFWT1luQ2ZYZVd0SmlHQklwUExadFdobnA3NGVhdmJKYW9udlhVVGNZcm5qcytIWGhpaFhjOUhENWsKeEJEaWJKYUlEbXg2T1FpVWI2RndJZz09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
-kind: Secret
-metadata:
-  creationTimestamp: "2023-01-04T13:53:14Z"
-  managedFields:
-  - apiVersion: v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:data:
-        .: {}
-        f:tls.crt: {}
-        f:tls.key: {}
-      f:type: {}
-    manager: kubectl
-    operation: Update
-    time: "2023-01-04T13:53:14Z"
-  name: neo4j-tls
-  namespace: neo4j
-  resourceVersion: "212009"
-  uid: b1be45dd-4cbe-41c9-a6e5-c814c5e39c25
-type: kubernetes.io/tls
-----
-. Configure `ssl` object in the _ssl-values.yaml_ file using the created secret:
-+
-[source, yaml]
-----
-ssl:
-# setting per "connector" matching neo4j config
-  bolt:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: tls.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: tls.crt
-  https:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: tls.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: tls.crt
-    trustedCerts:
-      sources:
-      - secret:
-          name: neo4j-tls
-          items:
-          - key: tls.crt
-            path: public.crt
-  cluster:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: tls.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: tls.crt
-    trustedCerts:
-      sources:
-      - secret:
-          name: neo4j-tls
-          items:
-          - key: tls.crt
-            path: public.crt
-    revokedCerts:
-      sources: [ ]
-----
-
-Now you are ready to <<deploy-neo4j-cluster-ssl, deploy the Neo4j cluster>> using the configured _ssl-values.yaml_ file and the Neo4j Helm charts.
-
-=== Configure an SSL policy using a `generic` Kubernetes secret
-
-This example shows how to configure an SSL policy for intra-cluster communication using a self-signed certificate stored in a `generic` Kubernetes secret.
-
-. Create a Kubernetes `generic` secret using the _public.crt_ and _private.key_ files:
-+
-[NOTE]
-You must have a Kubernetes cluster running and the `kubectl` command installed.
-For more information, see xref:kubernetes/quickstart-cluster/prerequisites.adoc[Prerequisites].
-
-.. Get the Base64-encoded value of your _public.crt_ and _private.key_:
-+
-[source, shell]
-----
-cat public.crt| base64
-----
-+
-[source, shell]
-----
-cat private.key| base64
-----
-.. Using the Base64-encoded values of your _public.crt_ and _private.key_, create a _secret.yaml_ file:
-+
-[source, yaml]
-----
-apiVersion: v1
-data:
-  public.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURLakNDQWhJQ0NRRGRYYVg1Y29mczdEQU5CZ2txaGtpRzl3MEJBUXNGQURCWE1Rc3dDUVlEVlFRR0V3SkgKUWpFUE1BMEdBMVVFQ0F3R1RHOXVaRzl1TVE4d0RRWURWUVFIREFaTWIyNWtiMjR4RGpBTUJnTlZCQW9NQlU1bApielJxTVJZd0ZBWURWUVFMREExSlZDQkVaWEJoY25SdFpXNTBNQjRYRFRJeU1USXlPREl4TURjeU5sb1hEVEl6Ck1USXlPREl4TURjeU5sb3dWekVMTUFrR0ExVUVCaE1DUjBJeER6QU5CZ05WQkFnTUJreHZibVJ2YmpFUE1BMEcKQTFVRUJ3d0dURzl1Wkc5dU1RNHdEQVlEVlFRS0RBVk9aVzgwYWpFV01CUUdBMVVFQ3d3TlNWUWdSR1Z3WVhKMApiV1Z1ZERDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTDBRc0c2Ukwrd3hxZSt3CjJGSWljZldVaUFtdmNqeVdlS0lKaThuT2tBSGIvSTYzUUU2L3ZpR3RNeEI3S28xdUJLNlVPZXBaeU91UzE2bUMKaitpMDAwbmFnWkR3RGNyRXd3UUE1cTBGMC90VXB5UHBaL1p3clhEaGFDOXhzVnFnVms0TXl5aUtTNzRIOUc2UgprUUV4dHBaNFArcTlaRHVFVk1KVGVaL2pQNGZoTkg2MUpSTVdORTJ3NjNUWkx2ZGMyUitXL2U5N3h2TGQ5Y0FnCjlqTm9FMHo5UHRmczB2L2lyUGhuUHpzWHQ5bzE0MWlnOVFZNjNtMzBxQ0NaYnpMRlR6WFgvdTUvTSsycFB3WXoKcUNOTUZYYW1ITlAxdlRPWFlRTG1iYW1JdVplYnVPNEVlUHZ6WUVXSmEyUi9oTmhtUDNvM2tRVFAzdmF1UEFjZQpSQlJZS09NQ0F3RUFBVEFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBWVh6SkIzNU55cExDUEdvQXVJdGt5dHBFCk1ZeSs5YnlrV3BEVnhRaXZLUHQ3d1NUaWZjNU1QdW5NUy9xYmxnaWprWm5IaWVLeEdoU3lQL283QndtMzJDSnAKQUFsSjJ3RjhIVXVSSGpYcUU5dkNQeFdtVlVJS2ExOWN5V0tUYWhySWU1eWZkQWNkbUJmRzJNWnY0dEdFeWxsUgo0Vk81STdRNjVWZDlGQnB0U3JjS3R1WUtBUzg2RTBHZmlmMWxCakdUZTFZbkhvK1RZTVpoVEUvN3RlNHZ1M251CjA4Y1BmbS9RYThSNFBXZDZNbXVDaTJYcDduWVlEMmp3WklCSENtMUU3U1RrdS9JRk5kOWFWRW91VG5KR1pCWFcKeWVzWG9OMXhOb3kvMXZFdElhV2xXZW1GcGo4clJ6VGJQekQ1TEpiNDBSRFVOTXN3NytLUXczV3BBMjVKUHc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
-  private.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQzlFTEJ1a1Mvc01hbnYKc05oU0luSDFsSWdKcjNJOGxuaWlDWXZKenBBQjIveU90MEJPdjc0aHJUTVFleXFOYmdTdWxEbnFXY2pya3RlcApnby9vdE5OSjJvR1E4QTNLeE1NRUFPYXRCZFA3VktjajZXZjJjSzF3NFdndmNiRmFvRlpPRE1zb2lrdStCL1J1CmtaRUJNYmFXZUQvcXZXUTdoRlRDVTNtZjR6K0g0VFIrdFNVVEZqUk5zT3QwMlM3M1hOa2ZsdjN2ZThieTNmWEEKSVBZemFCTk0vVDdYN05MLzRxejRaejg3RjdmYU5lTllvUFVHT3Q1dDlLZ2dtVzh5eFU4MTEvN3VmelB0cVQ4RwpNNmdqVEJWMnBoelQ5YjB6bDJFQzVtMnBpTG1YbTdqdUJIajc4MkJGaVd0a2Y0VFlaajk2TjVFRXo5NzJyandICkhrUVVXQ2pqQWdNQkFBRUNnZ0VBTmF6OVNnYXlJazVmUG90b2Zya0V2WUh6dFR3NEpIZGJ2RFVWbUsrcU5yenIKME9DNXd5R3dxd0x2RW1qRlJlM01Lbnd1alJmOGNOVDVvVWhON3ZVWFgwcEhxb3hjZmdxcWl3SnVld1RDa0FJUwppYUdFUUhUdzZMRTEwUEpvTmFCN29DRUZ0SGErMWk2UCtLd2ZETVcrWHEyNUI3M0pMUlIrczhUYkxNZHBpL3VvCjRmTFNJV0xDV09MZThUTlU0ck5vVDQ0enY0eUhUOXAyV3liSUNrL3F5bVV3bTlhRHFnYzRJRzk4YXVVNG5JYVQKenk2T3NBODdONW9FME0rcHlUdEFJcmxRZFBXUzBBZ28xZUJCcWplL1I3MTI4TmdHVzhOTzVMWDBtNit2YzhyVgpaTHh0N1d0NThucXR2WlI3QTF5SU9lbWtocHl2Q3hrNVRxSmZQRlJxRVFLQmdRRGlOL3NBZncrZ1dvTFpLbTNyCm50WVkyRW9TOTBkQ0wwd293SGFGa0lsL2hIWXduQi9qaWlnMU5ZbEhDNzNPVDdDc2UycS9tS0xhMzZBVHlpTHcKZjN1T0J3NmNFZ2RJZlU5aDBtZjJCNFZXdEVEeDJMSU94MEtZU2VrYldTTVZQZ2w2SkhNb3hLdjNMbEx5R1RiMApZQmtKVmpRdkVLS1dpa1FLMUdPYnZtdzFWUUtCZ1FEVjlJLzc5WFJuN1EzZ3M4Z2JqZWhDejRqNHdtNWdpNFM2CkVsVzVJWkFidDh3QWZPdVIzUm4wQW41NFl0ZW1HUk1seDF0L1ZUM1IzK0J5bmVTZEgzbUJ6eVJEQysvRGhBTlYKNVZPckk5SFhnVTRMSElVMmNwVVZxYVo3N1J1b2JnTmlDenBmOVZPVkNadzdmQzRPYkFqcTMzQ3RtT2taR0hRbAo2dkJtNm1ubFZ3S0JnQ2FnOW95TUplZjA3TGtXcExTQ1ovN1FHRDRLMmJFMGtHVzVEOFFZL1ZHNEZkS1JKbVRkCmQ2WTJZUjJ2cEpheFJ2TDlGQ3BwYncyKzkvL0pHWlJGd0p4dEdoS09oWTNjVUF6ZE9BRnNJVm0vNkFNa1JLdC8KWFNEU0ppc1VXb2hMRXFVM3lpNWcveGh6WVppVHM2MmhKMFZQNGhOVFhPQWw5aDUvVEE4UlFqc05Bb0dBTm84Twp5R2xuTGJrOWVMZGZwK2NmK3ltQS9DNVloellNdW9aQ1pkc3hMR0JLSFRXOXZJeHRPZFFJL0JuNGM5cWhEMWt1CjgrR0F5aXdVeUNXTFRxWGdEa0lNTlN5dUQyVnlsRXpPY1MzSkxQTkVPNEVpVnlnUTdGMCtud3R2cWh1anNUUzcKeGd5Qks5Z3ZodHU3d3VHNXhHc0dDTDZkY2xEU0RYbERwSHJTVmpFQ2dZQWx0STNjMzJxaG5KU2xHSGhjdW1wRwpReGpvYnJBUUxUa3dyOWk2TkNuS0EyNVR1SVFXa1NiN2JUWWtuUi80WDhOT2w2U2EvYm9QK2dncWNJM0haSk05CkxJRnpPUTFWT1luQ2ZYZVd0SmlHQklwUExadFdobnA3NGVhdmJKYW9udlhVVGNZcm5qcytIWGhpaFhjOUhENWsKeEJEaWJKYUlEbXg2T1FpVWI2RndJZz09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
-kind: Secret
-metadata:
-  name: neo4j-tls
-  namespace: neo4j
-type: Opaque
-----
-.. Create the generic secret using the `kubectl create` command and the _secret.yaml_ file:
-+
-[source, shell]
-----
-kubectl create -f /path/to/secret.yaml
-----
-+
-.Example output
-----
-secret/neo4j-tls created
-----
-.. Verify that the secret is created:
-+
-[source, shell]
-----
-kubectl get secret
-----
-+
-.Example output
-----
-NAME        TYPE     DATA   AGE
-neo4j-tls   Opaque   2      85s
-----
-
-. Configure the `ssl` object in the _ssl-values.yaml_ file using the created secret:
-+
-[source, yaml]
-----
-ssl:
-# setting per "connector" matching neo4j config
-  bolt:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: private.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: public.crt
-  https:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: private.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: public.crt
-    trustedCerts:
-      sources:
-      - secret:
-          name: neo4j-tls
-          items:
-          - key: public.crt
-            path: public.crt
-  cluster:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: private.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: public.crt
-    trustedCerts:
-      sources:
-      - secret:
-          name: neo4j-tls
-          items:
-          - key: public.crt
-            path: public.crt
-    revokedCerts:
-      sources: [ ]
-----
-
-Now you are ready to deploy the Neo4j cluster using the _ssl-values.yaml_ file and the Neo4j Helm charts.
-
-[[deploy-neo4j-cluster-ssl]]
-=== Deploy a Neo4j cluster with SSL certificates
-
-Deploy a Neo4j cluster using the Neo4j Helm chart and the _ssl-values.yaml_ file.
-
-. Install server-1:
-+
-[source, shell]
-----
-helm install server-1 neo4j/neo4j --namespace neo4j --set neo4j.acceptLicenseAgreement=yes --set neo4j.password=my-password --set neo4j.name="my-cluster" --set neo4j.minimumClusterSize=3 --set neo4j.edition="enterprise" --set volumes.data.mode=defaultStorageClass -f ~/Documents/neo4j-ssl/ssl-values.yaml
-----
-. Repeat the command from the previous step for `server-2` and `server-3`.
-. Verify that the Neo4j cluster is running:
-+
-[source, shell]
-----
-kubectl get pods
-----
-+
-.Example output
-----
-NAME                       READY   STATUS    RESTARTS   AGE
-server-1-0                   1/1     Running   0          2m
-server-2-0                   1/1     Running   0          2m
-server-3-0                   1/1     Running   0          2m
-----
-. Connect to one of the servers and verify that the _/certificates/cluster_ directory contains the certificates:
-+
-[source, shell]
-----
-kubectl exec -it server-1-0 -- bash
-----
-+
-[source, shell]
-----
-neo4j@server-1-0:~$ cd certificates/
-neo4j@server-1-0:~/certificates$ ls -lst
-----
-+
-.Example output
-----
-total 12
-4 drwxr-xr-x 2 root root 4096 Jan  4 13:55 bolt
-4 drwxr-xr-x 3 root root 4096 Jan  4 13:55 cluster
-4 drwxr-xr-x 3 root root 4096 Jan  4 13:55 https
-----
-+
-[source, shell]
-----
-neo4j@server-1-0:~/certificates$ cd cluster/
-neo4j@server-1-0:~/certificates/cluster$ ls -lst
-----
-+
-.Example output
-----
-total 8
-0 drwxrwsrwt 3 root neo4j  100 Jan  4 13:56 trusted
-4 -rw-r--r-- 1 root neo4j 1704 Jan  4 13:56 private.key
-4 -rw-r--r-- 1 root neo4j 1159 Jan  4 13:56 public.crt
-----
-+
-[source, shell]
-----
-neo4j@server-1-0:~/certificates/cluster$ cd trusted/
-neo4j@server-1-0:~/certificates/cluster/trusted$ ls -lst
-----
-+
-.Example output
-----
-total 0
-0 lrwxrwxrwx 1 root neo4j 17 Jan  4 13:56 public.crt -> ..data/public.crt
-----
-. Exit the pod:
-+
-[source, shell]
-----
-exit
-----
-. Check that the LoadBalancer service is available using the `neo4j.name` used for the installation:
-+
-[source, shell]
-----
-export NEO4J_NAME=my-cluster
-kubectl get service ${NEO4J_NAME}-lb-neo4j
-----
-+
-.Example output
-----
-NAME                  TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)                                        AGE
-my-cluster-lb-neo4j   LoadBalancer   10.0.134.210   20.237.50.207   7474:31168/TCP,7473:31045/TCP,7687:32708/TCP   3m30s
-----
-. Connect to the Neo4j cluster using one of the following options:
-+
-* Neo4j Browser:
-.. Open a web browser and type _https://lb-EXTERNAL_IP:7473_ (in this example, https://20.237.50.207:7473/browser/).
-You should see the Neo4j browser.
-.. Authenticate using the user `neo4j` and the password you set when deploying the cores, in this example, `my-password`.
-.. Verify that the cluster is online by running `:sysinfo` or `SHOW SERVERS`:
-+
-image::cluster-sysinfo.png[Cluster sysinfo]
-.. Run `SHOW SETTINGS YIELD name, value WHERE name CONTAINS 'ssl'` to verify that the configuration is deployed as expected.
-
-* Cypher Shell:
-.. Open a terminal and connect to one of the cluster pods:
-+
-[source, shell]
-----
-kubectl exec -it server-1-0 -- bash
-----
-.. Navigate to the _bin_ directory and connect to server-1 using `cypher-shell`:
-+
-[source, shell]
-----
-neo4j@server-1-0:~$ cd bin
-neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a neo4j+ssc://server-1.neo4j.svc.cluster.local:7687
-----
-+
-.Example output
-----
-Connected to Neo4j using Bolt protocol version 5.3 at neo4j+ssc://server-1.neo4j.svc.cluster.local:7687 as user neo4j.
-Type :help for a list of available commands or :exit to exit the shell.
-Note that Cypher queries must end with a semicolon.
-neo4j@neo4j>
-----
-.. Verify that the cluster is online by running `SHOW SERVERS`:
-+
-[source, shell]
-----
-neo4j@server-1-0:~/bin$ SHOW SERVERS;
-----
-+
-.Example output
-----
-+-----------------------------------------------------------------------------------------------------------------------------------+
-| name                                   | address                                  | state     | health      | hosting             |
-+-----------------------------------------------------------------------------------------------------------------------------------+
-| "1c5946b1-0eb5-43b9-a549-5601087c57f2" | "server-3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]  |
-| "ba63cd32-3e7d-4042-9935-c8eba925a98f" | "server-1.neo4j.svc.cluster.local:7687"  | "Enabled" | "Available" | ["neo4j", "system"] |
-| "cbad7ed6-0c13-4ba7-b6a1-f20c5552dfcd" | "server-2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]  |
-+-----------------------------------------------------------------------------------------------------------------------------------+
-----
-.. Run `SHOW SETTINGS YIELD name, value WHERE name CONTAINS 'ssl'` to verify that the configuration is deployed as expected.
-+
-.Example output
-----
-+----------------------------------------------------------------------------------------------------+
-| name                                           | value                                             |
-+----------------------------------------------------------------------------------------------------+
-| "dbms.netty.ssl.provider"                      | "JDK"                                             |
-| "dbms.ssl.policy.bolt.base_directory"          | "/var/lib/neo4j/certificates/bolt"                |
-| "dbms.ssl.policy.bolt.ciphers"                 | "No Value"                                        |
-| "dbms.ssl.policy.bolt.client_auth"             | "NONE"                                            |
-| "dbms.ssl.policy.bolt.enabled"                 | "true"                                            |
-| "dbms.ssl.policy.bolt.private_key"             | "/var/lib/neo4j/certificates/bolt/private.key"    |
-| "dbms.ssl.policy.bolt.private_key_password"    | "No Value"                                        |
-| "dbms.ssl.policy.bolt.public_certificate"      | "/var/lib/neo4j/certificates/bolt/public.crt"     |
-| "dbms.ssl.policy.bolt.revoked_dir"             | "/var/lib/neo4j/certificates/bolt/revoked"        |
-| "dbms.ssl.policy.bolt.tls_versions"            | "TLSv1.2"                                         |
-| "dbms.ssl.policy.bolt.trust_all"               | "false"                                           |
-| "dbms.ssl.policy.bolt.trusted_dir"             | "/var/lib/neo4j/certificates/bolt/trusted"        |
-| "dbms.ssl.policy.bolt.verify_hostname"         | "false"                                           |
-| "dbms.ssl.policy.cluster.base_directory"       | "/var/lib/neo4j/certificates/cluster"             |
-| "dbms.ssl.policy.cluster.ciphers"              | "No Value"                                        |
-| "dbms.ssl.policy.cluster.client_auth"          | "REQUIRE"                                         |
-| "dbms.ssl.policy.cluster.enabled"              | "true"                                            |
-| "dbms.ssl.policy.cluster.private_key"          | "/var/lib/neo4j/certificates/cluster/private.key" |
-| "dbms.ssl.policy.cluster.private_key_password" | "No Value"                                        |
-| "dbms.ssl.policy.cluster.public_certificate"   | "/var/lib/neo4j/certificates/cluster/public.crt"  |
-| "dbms.ssl.policy.cluster.revoked_dir"          | "/var/lib/neo4j/certificates/cluster/revoked"     |
-| "dbms.ssl.policy.cluster.tls_versions"         | "TLSv1.2"                                         |
-| "dbms.ssl.policy.cluster.trust_all"            | "false"                                           |
-| "dbms.ssl.policy.cluster.trusted_dir"          | "/var/lib/neo4j/certificates/cluster/trusted"     |
-| "dbms.ssl.policy.cluster.verify_hostname"      | "false"                                           |
-| "dbms.ssl.policy.https.base_directory"         | "/var/lib/neo4j/certificates/https"               |
-| "dbms.ssl.policy.https.ciphers"                | "No Value"                                        |
-| "dbms.ssl.policy.https.client_auth"            | "NONE"                                            |
-| "dbms.ssl.policy.https.enabled"                | "true"                                            |
-| "dbms.ssl.policy.https.private_key"            | "/var/lib/neo4j/certificates/https/private.key"   |
-| "dbms.ssl.policy.https.private_key_password"   | "No Value"                                        |
-| "dbms.ssl.policy.https.public_certificate"     | "/var/lib/neo4j/certificates/https/public.crt"    |
-| "dbms.ssl.policy.https.revoked_dir"            | "/var/lib/neo4j/certificates/https/revoked"       |
-| "dbms.ssl.policy.https.tls_versions"           | "TLSv1.2"                                         |
-| "dbms.ssl.policy.https.trust_all"              | "false"                                           |
-| "dbms.ssl.policy.https.trusted_dir"            | "/var/lib/neo4j/certificates/https/trusted"       |
-| "dbms.ssl.policy.https.verify_hostname"        | "false"                                           |
-+----------------------------------------------------------------------------------------------------+
-
-37 rows
-ready to start consuming query after 212 ms, results consumed after another 11 ms
-----
-
-[[configure-sso]]
-== Configure SSO
-
-Neo4j supports SSO authentication and authorization through identity providers implementing the OpenID Connect (OIDC) standard.
-
-To configure the Neo4j helm deployment to use SSO authentication, first, you need to configure your identity provider for authentication and authorization using ID tokens.
-And then, you configure the Neo4j helm deployment to use that identity provider for authentication by adding all the SSO configurations to the _values.yaml_ file.
-
-For more information on how to configure your identity provider and what settings you should define, see xref:tutorial/tutorial-sso-configuration.adoc[Neo4j Single Sign-On (SSO) configuration].
-
-.An example of configuring Neo4j to use Azure SSO for authentication
-[source, yaml]
-----
-config:
-  dbms.security.oidc.azure.audience: "00f3a7d3-d855-4849-9e3c-57d7b6e12794"
-  dbms.security.oidc.azure.params: "client_id=00f3a7d3-d855-4849-9e3c-57d7b6e12794;response_type=code;scope=openid profile email"
-  dbms.security.oidc.azure.well_known_discovery_uri: "https://login.microsoftonline.com/da501982-4ca7-420c-8926-1e65b5bf565f/v2.0/.well-known/openid-configuration"
-  dbms.security.authorization_providers: "oidc-azure,native"
-  dbms.security.authentication_providers: "oidc-azure,native"
-  dbms.security.oidc.azure.display_name: "Azure SSO on K8s"
-  dbms.security.oidc.azure.auth_flow: "pkce"
-  server_type_principal=id_token;token_type_authentication=id_token"
-  dbms.security.oidc.azure.config: "principal=unique_name;code_challenge_method=S256;
-  dbms.security.oidc.azure.claims.username: "sub"
-  dbms.security.oidc.azure.claims.groups: "groups"
-  dbms.security.oidc.azure.authorization.group_to_role_mapping: "e197354c-bd75-4524-abbc-d44325904567=editor;fa31ce67-9e4d-4999-bf6d-25c55258d116=publisher"
-----
-
-[IMPORTANT]
-====
-`sub` is the only claim guaranteed to be unique and stable.
-Other claims, such as `email` or `preferred_username`, may change over time and should *not* be used for authentication.
-Neo4j may assign permissions to a user based on this username value in a hybrid authorization configuration.
-Thus, changing the username claim from `sub` is not recommended.
-For details, see https://learn.microsoft.com/en-us/azure/active-directory/develop/id-tokens#using-claims-to-reliably-identify-a-user-subject-and-object-id[Microsoft documentation] as well as the https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability[OpenId spec].
-====
-
-
-[[configure-ldap-password-through-secret]]
-== Configure LDAP password through secret
-label:enterprise-edition[]
-
-To configure the Neo4j Helm deployment to use the LDAP system password through secret, you need to create a Kubernetes secret with the LDAP password and then add the secret name and the mount path to the _values.yaml_ file.
-
-. Create a secret with the LDAP password by running the following command.
-The secret must have a key called `LDAP_PASS`.
-+
-[source, shell]
-----
-kubectl create secret generic <secret-name> --from-literal=LDAP_PASS=<ldap-password>
-----
-. Add the secret name to the _values.yaml_ file.
-+
-[source, yaml]
-----
-# ldapPasswordFromSecret defines the secret which holds the password for ldap system account
-# Secret key name must be LDAP_PASS
-# This secret is accessible by Neo4j at the path defined in ldapPasswordMountPath
-ldapPasswordFromSecret: "" #<1>
-
-# The above secret gets mounted to the path mentioned here
-ldapPasswordMountPath: "" #<2>
-----
-<1> -- The secret name as it appears in the Kubernetes cluster.
-<2> -- The path where the secret will be mounted as a volume in the Neo4j container.
-
-[[configure-resources]]
-== Configure resource allocation
-
-*CPU and memory*::
-The resources (CPU, memory) for the Neo4j container are configured by setting `neo4j.resources` object in the _values.yaml_ file.
-In the resource _requests_, you can specify how much CPU and memory the Neo4j container needs, while in the resource _limits_, you can set a limit on these resources in case the container tries to use more resources than its _requests_ allow.
-//For more information, see link:https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/[the Kubernetes container resources documentation].
-+
-[source, yaml]
-----
-neo4j:
-  resources:
-    requests:
-     cpu: "1000m"
-     memory: "2Gi"
-    limits:
-     cpu: "2000m"
-     memory: "4Gi"
-----
-+
-If no resource _requests_ and resource _limits_ are specified, the values set in the `resources` object are used for both the Neo4j container's resource _requests_ and resource _limits_.
-+
-[source, yaml]
-----
-neo4j:
-  resources:
-    cpu: "2"
-    memory: "5Gi"
-----
-+
-[NOTE]
-====
-The minimum for a Neo4j instance is `0.5` CPU and `2GB` memory. +
-If invalid or less than the minimum values are provided, Helm will throw an error, for example:
-
-[source, role=noheader]
-----
-Error: template: neo4j-standalone/templates/_helpers.tpl:157:11: executing "neo4j.resources.evaluateCPU" at <fail (printf "Provided cpu value %s is less than minimum. \n %s" (.Values.neo4j.resources.cpu) (include "neo4j.resources.invalidCPUMessage" .))>: error calling fail: Provided cpu value 0.25 is less than minimum.
- cpu value cannot be less than 0.5 or 500m
-----
-====
-
-*JVM heap and page cache*::
-You configure Neo4j to use the memory provided to the container by setting the parameters `server.memory.heap.initial_size` and `server.memory.pagecache.size`.
-Combined, they must not exceed the memory configuration of the Neo4j container. +
-In Kubernetes, running processes in the Neo4j container, which exceed the configured memory limit are killed by the underlying operating system.
-Therefore, it is recommended to allow an additional 1GB of memory headroom so that `heap + pagecache + 1GB < available memory`.
-+
-For example, a 5GB container could be configured like this:
-+
-[source, yaml]
-----
-neo4j:
-  resources:
-    cpu: "2"
-    memory: "5Gi"
-
-# Neo4j configuration (yaml format)
-config:
-  server.memory.heap.initial_size: "3G"
-  server.memory.heap.max_size: "3G"
-  server.memory.pagecache.size: "1G"
-----
-+
-`server.memory.pagecache.size` and `server.memory.heap.initial_size` are not the only settings available in Neo4j to manage memory usage.
-For full details of how to configure memory usage in Neo4j, see xref:performance/memory-configuration.adoc[Performance - Memory Configuration].
-
-[[k8s-service-accounts]]
-== Configure a service account
-
-In some deployment situations, it may be desirable to assign a Kubernetes Service Account to the Neo4j pod.
-For example, if processes in the pod want to connect to services that require Service Account authorization.
-To configure the Neo4j pod to use a Kubernetes service account, set `podSpec.serviceAccountName` to the name of the service account to use.
-
-For example:
-
-[source, yaml]
-----
-# neo4j-values.yaml
-neo4j:
-  password: "my-password"
-
-podSpec:
-  serviceAccountName: "neo4j-service-account"
-----
-
-[NOTE]
-====
-The service account must already exist.
-The Neo4j Helm chart does not create or configure Service Accounts.
-====
-
-[[configure-custom-image]]
-== Configure a custom container image
-
-The helm chart uses the official Neo4j Docker image that matches the version of the Helm chart.
-To configure the helm chart to use a different container image, set the `image.customImage` property in the _values.yaml_ file.
-
-This can be necessary when public container repositories are not accessible for security reasons.
-For example, this _values.yaml_ file configures Neo4j to use `my-container-repository.io` as the container repository:
-
-[source, properties, subs=attributes]
-----
-# neo4j-values.yaml
-neo4j:
-  password: "my-password"
-
-image:
-  customImage: "my-container-repository.io/neo4j:{neo4j-version}-enterprise"
-----
-
-[[operations-using-apoc-core]]
-== Configure and install APOC core only
-
-APOC core is shipped with Neo4j, but it is not installed in the Neo4j _plugins_ directory.
-If APOC core is the _only_ plugin that you want to add to Neo4j, it is not necessary to perform plugin installation as described in xref:kubernetes/configuration.adoc#operations-installing-plugins[Install Plugins].
-Instead, you can configure the helm deployment to use APOC core by upgrading the deployment with this additional setting in the _values.yaml_ file:
-
-. Configure APOC core:
-+
-[source, yaml]
-----
-config:
-  server.directories.plugins: "/var/lib/neo4j/labs"
-  dbms.security.procedures.unrestricted: "apoc.*"
-  server.config.strict_validation.enabled: "false"
-  dbms.security.procedures.allowlist: "gds.*,apoc.*"
-----
-+
-. Under `apoc_config`, configure the APOC settings you want, for example:
-+
-[source, yaml]
-----
-apoc_config:
-  apoc.trigger.enabled: "true"
-  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
-  apoc.import.file.enabled: "true"
-----
-+
-. Run `helm upgrade` to apply the changes:
-+
-[source, shell]
-----
-helm upgrade <release-name> neo4j/neo4j -f values.yaml
-----
-
-. After the Helm upgrade rollout is complete, verify that APOC core has been configured by running the following Cypher query using `cypher-shell` or Neo4j Browser:
-+
-[source, cypher]
-----
-RETURN apoc.version()
-----
-
-[[operations-installing-plugins]]
-== Install Plugins
-
-There are three recommended methods for adding Neo4j plugins to Neo4j Helm chart deployments.
-You can use:
-
-* <<automatic-plugin-download, an automatic plugin download>>
-* <<init-container-plugin-installation, an init container>>
-* <<custom-container, a custom container image>>.
-* <<plugins-volume, a `plugins` volume>>.
-
-[[automatic-plugin-download]]
-=== Add plugins using an automatic plugin download
-
-You can configure the Neo4j deployment to automatically download and install plugins.
-If licenses are required for the plugins, you must provide the licenses in a secret.
-
-==== Install GDS Community Edition (CE)
-
-GDS Community Edition does not require a license.
-To add the GSD CE, configure the Neo4j _values.yaml_ and set the `env` to download the plugins:
-
-[source, yaml]
-----
-neo4j:
-  name: licenses
-  acceptLicenseAgreement: "yes"
-  edition: enterprise
-volumes:
-  data:
-    mode: defaultStorageClass
-env:
-  NEO4J_PLUGINS: '["graph-data-science"]'
-config:
-  dbms.security.procedures.unrestricted: "gds.*,apoc.*"
-----
-
-==== Install GDS Enterprise Edition (EE) and Bloom plugins
-
-To install GDS EE and Bloom, you must provide a license for each plugin.
-You provide the licenses in a secret.
-
-. Create a secret containing the licenses:
-+
-[source, shell]
-----
-kubectl create secret  generic --from-file=gds.license,bloom.license gds-bloom-license
-----
-. Configure the Neo4j _values.yaml_ file using the secret as the _/licenses_ volume mount, and set the `env` to download the plugins:
-+
-[source, yaml]
-----
-neo4j:
-  name: licenses
-  acceptLicenseAgreement: "yes"
-  edition: enterprise
-volumes:
-  data:
-    mode: defaultStorageClass
-  licenses:
-    disableSubPathExpr: true
-    mode: volume
-    volume:
-      secret:
-        secretName: gds-bloom-license
-        items:
-          - key: gds.license
-            path: gds.license
-          - key: bloom.license
-            path: bloom.license
-env:
-  NEO4J_PLUGINS: '["graph-data-science", "bloom"]'
-config:
-  gds.enterprise.license_file: "/licenses/gds.license"
-  dbms.security.procedures.unrestricted: "gds.*,apoc.*,bloom.*"
-  server.unmanaged_extension_classes: "com.neo4j.bloom.server=/bloom,semantics.extension=/rdf"
-  dbms.security.http_auth_allowlist: "/,/browser.*,/bloom.*"
-  dbms.bloom.license_file: "/licenses/bloom.license"
-----
-
-[[init-container-plugin-installation]]
-=== Add plugins using an init container
-
-Init containers are specialized containers that run before the main containers (in this case, the Neo4j container) in a pod.
-You can use an init container to add plugins that have already been downloaded on an internal file server and are available to you via the internal network.
-
-In the following example a YAML file, called _plugin_initContainer.yaml_ file, configures an init container to download the plugins, in this case, `apoc`, from an internal file server to the _/plugins_ directory, which is backed by a persistent volume.
-Then, it deploys a Neo4j standalone server. 
-When the Neo4j container starts, it automatically installs the plugins from the _/plugins_ directory.
-
-. Configure what operations the init container should run using the `initContainers` property in the _plugin_initContainer.yaml_ file.
-+
-[NOTE]
-====
-Some Neo4j plugins, such as Bloom and GDS Enterprise, require a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
-To obtain a valid license, reach out to your Neo4j account representative or write to licensing@neo4j.com.
-====
-+
-[source, yaml]
-----
-neo4j:
-  resources:
-    cpu: "0.5"
-    memory: "2G"
-​
-  password: "password"
-​
-  edition: "enterprise"
-  acceptLicenseAgreement: "yes"
-​
-​
-volumes:
-  data:
-    mode: defaultStorageClass
-  plugins:
-    mode: "share"
-    share:
-      name: "data"
-# licenses:
-  # mode: "share"
-  # share:
-  #   name: "data"
-podSpec:
-  initContainers:
-    - name: get-plugins
-      command: ["wget", "/path/to/the/downloaded/plugin-file/apoc-version-all.jar", "-O", "/plugins/apoc.jar"] 
-  # - name: get-licenses
-  #   command: ["wget", "/path/to/the/downloaded/plugin-file/plugin-file-version-all.jar", "-O", "/licenses/plugin-file.license"] 
-​
-config:
-  dbms.directories.plugins: "/plugins"
-  # dbms.directories.licenses: "/licenses"
-  dbms.security.procedures.unrestricted: "apoc.*"  
-  dbms.config.strict_validation: "false"
-  dbms.security.procedures.allowlist: "apoc.*"
-
-apoc_config:
-  apoc.trigger.enabled: "true"
-  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
-  apoc.import.file.enabled: "true"
-----
-
-. Deploy a Neo4j standalone server using the _plugin_initContainer.yaml_ file and the _neo4j/standalone_ Helm chart:
-+
-[source, shell]
-----
-helm install neo4j neo4j/neo4j-standalone -f ~/path/to/plugin_initContainer.yaml
-----
-. After the pod changes its status from `Init` to `Running`, verify that the mount has the _apoc.jar_:
-+
-[source, role=noheader]
-----
-k exec -it standalone-0 -- bash
-----
-+
-.Example output
-[source, role=noheader]
-----
-neo4j@standalone-0:/$ cd /plugins
-neo4j@standalone-0:/plugins$ ls -lst
-total 21140
-21140 -rw-r--r-- 1 neo4j neo4j 21645102 Nov 28 12:03 apoc.jar
-----
-+
-Wait for the pod to change its state to `READY`.
-. Using the `<EXTERNAL-IP>` of the LoadBalancer service, open the Neo4j Browser at _http://<EXTERNAL-IP>:7474/browser_.
-. Use the password that you have configured in the _plugin_initContainer.yaml_ file.
-. Run a query to verify that the Apoc plugin is installed and configured.
-For example, you can use the following query to get the value of your jdbc URL:
-+
-[source, shell]
-----
-CALL apoc.config.list() YIELD key, value WHERE key = "apoc.jdbc.neo4j.url" RETURN *;
-----
-+
-It should return `"jdbc:foo:bar"` as configured in the `apoc.config`.
-
-[[custom-container]]
-=== Add plugins using a custom container image
-
-The best method for adding plugins to Neo4j running in Kubernetes is to create a new Docker container image that contains both Neo4j and the Neo4j plugins.
-This way, you can ensure when building the container that the correct plugin version for the Neo4j version of the container is used and that the resulting image encapsulates all Neo4j runtime dependencies.
-
-[NOTE]
-====
-The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
-To obtain a valid license, reach out to your Neo4j account representative or use the form https://neo4j.com/contact-us[Contact Neo4j].
-====
-
-Building a Docker container image that is based on the official Neo4j Docker image and does not override the official image's `ENTRYPOINT` and `COMMAND` is the recommended method to use with the Neo4j Helm chart, as shown in this example Dockerfile:
-
-[source, Dockerfile, subs=attributes]
-----
-ARG  NEO4J_VERSION
-FROM neo4j:\{NEO4J_VERSION}
-
-# copy my-plugins into the Docker image
-COPY my-plugins/ /var/lib/neo4j/plugins
-
-# install the apoc core plugin that is shipped with Neo4j
-RUN cp /var/lib/neo4j/labs/apoc-* /var/lib/neo4j/plugins
-----
-
-Once the docker image has been built, push it to a container repository that is accessible to your Kubernetes cluster.
-
-[source, shell, subs=attributes]
-----
-CONTAINER_REPOSITORY="my-container-repository.io"
-IMAGE_NAME="my-neo4j"
-
-# export this so that it's accessible as a docker build arg
-export NEO4J_VERSION={neo4j-version-exact}-enterprise
-
-docker build --build-arg NEO4J_VERSION --tag $\{CONTAINER_REPOSITORY}/$\{IMAGE_NAME}:$\{NEO4J_VERSION} .
-docker push $\{CONTAINER_REPOSITORY}/$\{IMAGE_NAME}:$\{NEO4J_VERSION}
-----
-
-To use the image that you have created, in the Neo4j Helm deployment's _values.yaml_ file, set `image.customImage` to use the image.
-For more details, see xref:kubernetes/configuration.adoc#configure-custom-image[Configure a custom container image].
-
-[NOTE]
-====
-Many plugins require additional Neo4j configuration to work correctly.
-Plugin configuration should be set on the `config` object in the Helm deployment's _values.yaml_ file.
-In some cases, plugin configuration can cause Neo4j's strict config validation to fail.
-Strict config validation can be disabled by setting `server.config.strict_validation.enabled: "false"`.
-====
-
-[[plugins-volume]]
-=== Add plugins using a plugins volume
-
-An alternative method for adding Neo4j plugins to a Neo4j Helm deployment uses a `plugins` volume mount.
-With this method, the plugin jar files are stored on a Persistent Volume that is mounted to the `/plugins` directory of the Neo4j container.
-
-[NOTE]
-====
-The Neo4j Bloom plugin (https://neo4j.com/download-center/#bloom) requires a license activation key, which needs to be placed in a directory accessible by the Neo4j Docker container, for example, mounted to _/licenses_ (default).
-To obtain a valid license, reach out to your Neo4j account representative or use the form https://neo4j.com/contact-us[Contact Neo4j].
-====
-
-The simplest way to set up a persistent _/plugins_ volume is to share the Persistent Volume that is used for storing Neo4j data.
-This example shows how to configure that in the Neo4j Helm deployment _values.yaml_ file:
-
-[source, yaml]
-----
-# neo4j-values.yaml
-volumes:
-  data:
-    # your data volume configuration
-    ...
-
-  plugins:
-    mode: "share"
-    share:
-      name: "data"
-----
-
-Details of different ways to configure volume mounts are covered in xref:kubernetes/persistent-volumes.adoc#volume-mounts[Mapping volume mounts to persistent volumes].
-
-The Neo4j container now has an empty _/plugins_ directory backed by a persistent volume.
-Plugin jar files can be copied onto the volume using `kubectl cp`.
-Because it is backed by a persistent volume, plugin files will persist even if the Neo4j pod is restarted or moved.
-
-[NOTE]
-====
-Neo4j loads plugins only on startup.
-Therefore, you must restart the Neo4j pod to load them once all plugins are in place.
-====
-
-For example:
-
-[source, shell]
-----
-# Copy plugin files into the Neo4j container:
-
-kubectl cp my-plugins/* <namespace>/<neo4j-pod-name>:/plugins/
-
-# Restart Neo4j
-kubectl rollout restart statefulset/<neo4j-statefulset-name>
-
-# Verify plugins are still present after the restart:
-
-kubectl exec <neo4j-pod-name> -- ls /plugins
-----

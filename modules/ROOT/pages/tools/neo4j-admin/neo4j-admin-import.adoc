@@ -1,23 +1,30 @@
-:description: This section describes how to perform batch imports of data into Neo4j using the command line tool `neo4j-admin database import`.
+:description: This section describes how to perform bulk offline imports of data into Neo4j using the command line tool `neo4j-admin database import`.
 [[neo4j-admin-import]]
 = Import
 
 :rfc-4180: https://tools.ietf.org/html/rfc4180
 
+`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. You should use this tool when:
 
-There are two ways to import data into a Neo4j database.
-You can use the Cypher command `LOAD CSV` or the `neo4j-admin database import` command.
+* Import performance is important because you have a large amount of data (millions/billions of entities).
+* The database can be taken offline and you have direct access to one of the servers hosting your Neo4j DBMS.
+* The database is either empty or its content is unchanged since a previous incremental import.
+* The CSV data is clean/fault-free (nodes are not duplicated and relationships' start and end nodes exist).
+This tool can handle data faults but performance is not optimized.
+If your data has a lot of faults, it is recommended to clean it using a dedicated tool before import.
 
-With `LOAD CSV`, you can import small to medium-sized CSV files into an _existing_ database.
-`LOAD CSV` can be run as many times as needed and does not require an empty database.
+Other methods of importing data into Neo4j might be better suited to non-admin users:
 
-With the `neo4j-admin database import` command, you can do batch imports of large amounts of data from CSV files.
-It is generally faster than `LOAD CSV` because it is run against a stopped or a non-existent empty database.
+* Cypher(R) - CSV data can be bulk loaded via the Cypher command `LOAD CSV`.
+See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/load-csv/[Cypher Manual -> `LOAD CSV`].
+* Graphical Tools - link:{neo4j-docs-base-uri}/aura/auradb/importing/importing-data/#_load_csv[Neo4j AuraDB -> Importing data].
 
-The `neo4j-admin database import` command has two modes:
+== Overview
 
-* _full_ -- used to initially import data into a non-existent empty database.
-* _incremental_ -- used to incrementally import data into an existing database.
+The `neo4j-admin database import` command has two modes both used for initial data import:
+
+* _full_ -- used to import data into a non-existent empty database.
+* _incremental_ -- used when import cannot be completed in a single _full_ import, by allowing the import to be a series of smaller imports.
 
 [NOTE]
 ====
@@ -67,7 +74,7 @@ neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-sk
                                  [--legacy-style-quoting[=true|false]] [--multiline-fields[=true|false]]
                                  [--normalize-types[=true|false]] [--overwrite-destination[=true|false]]
                                  [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships[=true|false]]
-                                 [--skip-duplicate-nodes[=true|false]] [--strict[=<true/false>]] [--trim-strings
+                                 [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings
                                  [=true|false]] [--additional-config=<file>] [--array-delimiter=<char>]
                                  [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
                                  [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
@@ -83,7 +90,7 @@ Initial import into a non-existent empty database.
 
 === Parameters
 
-.`neo4j-admin database import incremental` parameters
+.`neo4j-admin database import full` parameters
 [options="header", cols="5m,10a,2m"]
 |===
 | Parameter
@@ -118,7 +125,7 @@ For more information, please contact Neo4j Professional Services.
 |
 
 |--array-delimiter=<char>
-|Delimiter character between array elements within a value in CSV data. Also accepts 'TAB' and 'U+20AC' for specifying a character using Unicode.
+|Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
 * ASCII character -- e.g. `--array-delimiter=";"`.
@@ -144,7 +151,7 @@ Format errors in input data are still treated as errors.
 |1000
 
 |--delimiter=<char>
-|Delimiter character between values in CSV data. Also accepts 'TAB' and e.g. 'U+20AC' for specifying a character using Unicode.
+|Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
 * ASCII character -- e.g. `--delimiter=","`.
@@ -187,11 +194,11 @@ Possible values are:
 * `actual` -- (advanced) actual node IDs.
 |string
 
-|--ignore-empty-strings[=<true\|false>]
+|--ignore-empty-strings[=true\|false]
 |Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
 |false
 
-|--ignore-extra-columns[=<true\|false>]
+|--ignore-extra-columns[=true\|false]
 |If unspecified columns should be ignored during the import.
 |false
 
@@ -199,18 +206,18 @@ Possible values are:
 |Character set that input data is encoded in.
 |UTF-8
 
-|--legacy-style-quoting[=<true\|false>]
+|--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
 |false
 
 |--max-off-heap-memory=<size>
-|Maximum off-heap memory that `neo4j-admin` can use for various data structures and caching to improve performance.
+|Maximum memory that `neo4j-admin` can use for various data structures and caching to improve performance.
 
-Values can be plain numbers such as `10000000`, or `20G` for 20 gigabytes.
+Values can be plain numbers, such as `10000000`, or `20G` for 20 gigabytes.
 It can also be specified as a percentage of the available memory, for example `70%`.
 |90%
 
-|--multiline-fields[=<true\|false>]
+|--multiline-fields[=true\|false]
 |Whether or not fields from an input source can span multiple lines, i.e. contain newline characters.
 
 Setting `--multiline-fields=true` can severely degrade the performance of the importer.
@@ -228,7 +235,7 @@ Therefore, use it with care, especially with large imports.
 For an example, see <<import-tool-multiple-input-files-regex-example>>.
 |
 
-|--normalize-types[=<true\|false>]
+|--normalize-types[=true\|false]
 |Whether or not to normalize property types to Cypher types, e.g. `int` becomes `long` and `float` becomes `double`.
 |true
 
@@ -247,8 +254,8 @@ You cannot escape using `\`.
 |--read-buffer-size=<size>
 |Size of each buffer for reading input data.
 
-It has to at least be large enough to hold the biggest single value in the input data.
-Value can be a plain number or byte units string, e.g. `128k`, `1m`.
+It has to be at least large enough to hold the biggest single value in the input data.
+The value can be a plain number or a byte units string, e.g. `128k`, `1m`.
 |4194304
 
 |--relationships=[<type>=]<files>...
@@ -276,36 +283,36 @@ If you need to debug the import, it might be useful to collect the stack trace.
 This is done by using the `--verbose` option.
 |import.report
 
-|--skip-bad-entries-logging[=<true\|false>]
+|--skip-bad-entries-logging[=true\|false]
 |Whether or not to skip logging bad entries detected during import.
 |false
 
-|--skip-bad-relationships[=<true\|false>]
+|--skip-bad-relationships[=true\|false]
 |Whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to a node that was not specified by the node input data.
 
-Skipped relationships will be logged, containing at most the number of entities specified by `--bad-tolerance` unless otherwise specified by the `--skip-bad-entries-logging` option.
+Skipped relationships will be logged, containing at most the number of entities specified by `--bad-tolerance`, unless otherwise specified by the `--skip-bad-entries-logging` option.
 |false
 
-|--skip-duplicate-nodes[=<true/false>]
+|--skip-duplicate-nodes[=true\|false]
 |Whether or not to skip importing nodes that have the same ID/group.
 
 In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
 
-Skipped nodes will be logged, containing at most the number of entities specified by `--bad-tolerance` unless otherwise specified by the `--skip-bad-entries-logging` option.
+Skipped nodes will be logged, containing at most the number of entities specified by `--bad-tolerance`, unless otherwise specified by the `--skip-bad-entries-logging` option.
 |false
 
-|--strict[=<true\|false>]
+|--strict[=true\|false]
 |Whether or not the lookup of nodes referred to from relationships needs to be checked strict.
 If disabled, most but not all relationships referring to non-existent nodes will be detected.
 If enabled all those relationships will be found but at the cost of lower performance.
-|true
+|false
 
 |--threads=<num>
 | (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal
 performance, this value should not be greater than the number of available processors.
-|10
+|20
 
-|--trim-strings[=<true\|false>]
+|--trim-strings[=true\|false]
 |Whether or not strings should be trimmed for whitespaces.
 |false
 
@@ -389,7 +396,7 @@ For example:
 
 [source, shell, role=noplay]
 ----
-neo4j_home$ bin/neo4j-admin database import full --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv'
+neo4j_home$ bin/neo4j-admin database import full --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv' databasename
 ----
 ====
 
@@ -399,20 +406,13 @@ If importing to a database that has not explicitly been created prior to the imp
 ====
 
 
+[role=enterprise-edition]
 [[import-tool-incremental]]
 == Incremental import
+When the initial data load cannot be completed in a single full import, incremental import allows the operation to be completed as a series of smaller imports.
 
-The `neo4j-admin database import incremental` command imports a large amount of data from CSV files into an existing, non-empty database.
-
-[WARNING]
-====
-Incremental import needs to be used with care.
-These options should not be used for experimentation.
-
-You need to append any incremental import command with `--force`.
-
-For more information, please contact Neo4j Professional Services.
-====
+Incremental import requires the use of `--force` because it must only be run on databases in precisely the expected state and as part of an initial load.
+When an incremental import fails, it can leave the data corrupted.
 
 [[import-tool-incremental-syntax]]
 === Syntax
@@ -424,13 +424,14 @@ neo4j-admin database import incremental [-h] [--expand-commands] --force [--verb
                                         [=true|false]] [--legacy-style-quoting[=true|false]] [--multiline-fields
                                         [=true|false]] [--normalize-types[=true|false]] [--skip-bad-entries-logging
                                         [=true|false]] [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes
-                                        [=true|false]] [--strict[=<true/false>]] [--trim-strings[=true|false]]
+                                        [=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
                                         [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>]
                                         [--delimiter=<char>] [--high-parallel-io=on|off|auto]
                                         [--id-type=string|integer|actual] [--input-encoding=<character-set>]
                                         [--max-off-heap-memory=<size>] [--quote=<char>] [--read-buffer-size=<size>]
                                         [--report-file=<path>] [--stage=all|prepare|build|merge] [--threads=<num>]
-                                        --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>[:<label>]
+                                        --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>[:<label>]...=]
+                                        <files>...]... [--relationships=[<type>=]<files>...]... <database>
 ----
 
 === Description
@@ -457,8 +458,11 @@ The incremental import command cannot be used to:
 * Update or delete labels in nodes.
 * Delete existing nodes and relationships.
 
-The importer works well on single instances.
+[NOTE]
+====
+The importer works well on standalone servers.
 In clustering environments with multiple copies of the database, the updated database must be reseeded.
+====
 
 === Parameters
 
@@ -489,7 +493,7 @@ If the database into which you import does not exist prior to importing, you mus
 |
 
 |--array-delimiter=<char>
-|Delimiter character between array elements within a value in CSV data. Also accepts 'TAB' and 'U+20AC' for specifying a character using Unicode.
+|Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
 * ASCII character -- e.g. `--array-delimiter=";"`.
@@ -515,7 +519,7 @@ Format errors in input data are still treated as errors.
 |1000
 
 |--delimiter=<char>
-|Delimiter character between values in CSV data. Also accepts 'TAB' and e.g. 'U+20AC' for specifying a character using Unicode.
+|Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
 * ASCII character -- e.g. `--delimiter=","`.
@@ -557,11 +561,11 @@ Possible values are:
 * `actual` -- (advanced) actual node IDs.
 |string
 
-|--ignore-empty-strings[=<true\|false>]
+|--ignore-empty-strings[=true\|false]
 |Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
 |false
 
-|--ignore-extra-columns[=<true\|false>]
+|--ignore-extra-columns[=true\|false]
 |If unspecified columns should be ignored during the import.
 |false
 
@@ -569,18 +573,18 @@ Possible values are:
 |Character set that input data is encoded in.
 |UTF-8
 
-|--legacy-style-quoting[=<true\|false>]
+|--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
 |false
 
 |--max-off-heap-memory=<size>
-|Maximum off-heap memory that `neo4j-admin` can use for various data structures and caching to improve performance.
+|Maximum memory that `neo4j-admin` can use for various data structures and caching to improve performance.
 
-Values can be plain numbers such as `10000000`, or `20G` for 20 gigabytes.
+Values can be plain numbers, such as `10000000`, or `20G` for 20 gigabytes.
 It can also be specified as a percentage of the available memory, for example `70%`.
 |90%
 
-|--multiline-fields[=<true\|false>]
+|--multiline-fields[=true\|false]
 |Whether or not fields from an input source can span multiple lines, i.e. contain newline characters.
 
 Setting `--multiline-fields=true` can severely degrade the performance of the importer.
@@ -598,7 +602,7 @@ Therefore, use it with care, especially with large imports.
 For an example, see <<import-tool-multiple-input-files-regex-example>>.
 |
 
-|--normalize-types[=<true\|false>]
+|--normalize-types[=true\|false]
 |Whether or not to normalize property types to Cypher types, e.g. `int` becomes `long` and `float` becomes `double`.
 |true
 
@@ -613,8 +617,8 @@ You cannot escape using `\`.
 |--read-buffer-size=<size>
 |Size of each buffer for reading input data.
 
-It has to at least be large enough to hold the biggest single value in the input data.
-Value can be a plain number or byte units string, e.g. `128k`, `1m`.
+It has to be at least large enough to hold the biggest single value in the input data.
+The value can be a plain number or a byte units string, e.g. `128k`, `1m`.
 |4194304
 
 |--relationships=[<type>=]<files>...
@@ -642,22 +646,22 @@ If you need to debug the import, it might be useful to collect the stack trace.
 This is done by using the `--verbose` option.
 |import.report
 
-|--skip-bad-entries-logging[=<true\|false>]
+|--skip-bad-entries-logging[=true\|false]
 |Whether or not to skip logging bad entries detected during import.
 |false
 
-|--skip-bad-relationships[=<true\|false>]
+|--skip-bad-relationships[=true\|false]
 |Whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to a node that was not specified by the node input data.
 
-Skipped relationships will be logged, containing at most the number of entities specified by `--bad-tolerance` unless otherwise specified by the `--skip-bad-entries-logging` option.
+Skipped relationships will be logged, containing at most the number of entities specified by `--bad-tolerance`, unless otherwise specified by the `--skip-bad-entries-logging` option.
 |false
 
-|--skip-duplicate-nodes[=<true/false>]
+|--skip-duplicate-nodes[=true\|false]
 |Whether or not to skip importing nodes that have the same ID/group.
 
 In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
 
-Skipped nodes will be logged, containing at most the number of entities specified by `--bad-tolerance` unless otherwise specified by the `--skip-bad-entries-logging` option.
+Skipped nodes will be logged, containing at most the number of entities specified by `--bad-tolerance`, unless otherwise specified by the `--skip-bad-entries-logging` option.
 |false
 
 
@@ -669,18 +673,18 @@ For incremental import into an existing database use `all` (which requires the d
 For semi-online incremental import run `prepare` (on a stopped database) followed by `build` (on a potentially running database) and finally `merge` (on a stopped database).
 |all
 
-|--strict[=<true\|false>]
+|--strict[=true\|false]
 |Whether or not the lookup of nodes referred to from relationships needs to be checked strict.
 If disabled, most but not all relationships referring to non-existent nodes will be detected.
 If enabled all those relationships will be found but at the cost of lower performance.
-|true
+|false
 
 |--threads=<num>
 | (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal
 performance, this value should not be greater than the number of available processors.
-|10
+|20
 
-|--trim-strings[=<true\|false>]
+|--trim-strings[=true\|false]
 |Whether or not strings should be trimmed for whitespaces.
 |false
 
@@ -991,7 +995,7 @@ Special considerations for temporal data types::
 The format for all temporal data types must be defined as described in link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/values-and-types/temporal/#cypher-temporal-instants[Cypher Manual -> Temporal instants syntax] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/values-and-types/temporal/#cypher-temporal-durations[Cypher Manual -> Durations syntax].
 Two of the temporal types, _Time_ and _DateTime_, take a time zone parameter that might be common between all or many of the values in the data file.
 It is therefore possible to specify a default time zone for _Time_ and _DateTime_ values in the header, for example: `time{timezone:+02:00}` and: `datetime{timezone:Europe/Stockholm}`.
-If no default time zone is specified, the default timezone is determined by the xref:/reference/configuration-settings.adoc#config_db.temporal.timezone[`db.temporal.timezone`] configuration setting.
+If no default time zone is specified, the default timezone is determined by the xref:/configuration/configuration-settings.adoc#config_db.temporal.timezone[`db.temporal.timezone`] configuration setting.
 The default time zone can be explicitly overridden in the values in the data file.
 +
 .Property format for temporal data types
