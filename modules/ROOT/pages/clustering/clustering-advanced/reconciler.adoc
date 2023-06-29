@@ -6,18 +6,16 @@
 == Introduction
 
 In Neo4j, administrative operations such as database creation do not happen synchronously.
-Instead, the changes are first written to the `system` database, recording the desired state of the DBMS.
-Each server has a _reconciler_, an internal component which observes the desired state and makes changes to the local server to match that state.
+Instead, the changes are first written to the `system` database, recording the requested state of the DBMS.
+Each server has a _reconciler_, an internal component which observes the requested state and makes changes to the local server to match that state.
 For example, the `system` database may record that the database `bar` is expected to be running on `server-1`.
 When the reconciler on `server-1` becomes aware of that, it starts `bar`.
+This means the loss of any one server cannot prevent all progress on an operation.
 
-Executing an operation and getting back a successful response means that the desire is safely committed to the `system` database, and will be processed by each member of the cluster at some point, assuming the server is healthy enough.
+Executing an operation and getting back a successful response means that the request is safely committed to the `system` database, and will be processed by each member of the cluster at some point, assuming the server is healthy enough.
 
-== Asynchronicity
 Servers can become aware the same operation at different times, since the `system` database is just another Raft group, where followers and replicas can lag behind the leader in some situations.
-Each server should eventually see the new state though, and take action on it.
-
-== Waiting
+Eventually, the new state gets propagated to all healthy servers, and they take action on it.
 
 If you want to be sure that each server has processed an administrative operation before running the next action, you can use the link:{neo4j-docs-base-uri}/cypher-manual/current/administration/databases/#administration-wait-nowait[`WAIT`] keyword.
 `WAIT` makes the statement not return until all servers have seen the transaction, and their reconciler has finished processing it.
@@ -43,12 +41,5 @@ In this situation, the operation has not _failed_ as a whole, since the database
 
 Some failed operations can just be re-tried: for example, `START DATABASE` can be re-run if not all members started successfully, and you think the cause of that has been resolved.
 Other failures only require the underlying problem to be resolved. 
-When the issue is fixed, the reconciler will make the intended change, because it is still trying to achieve the desired state.
+When the issue is fixed, the reconciler will make the intended change, because it is still trying to achieve the requested state.
 For example, if a new server fails during a `DEALLOCATE DATABASES FROM SERVER` (meaning a database cannot be safely moved), fixing the new server should be enough to resolve the problem, as the new server will start its copy of the database as soon as the target is ready, allowing the deallocating server to shut down its copy.
-
-== Why use the reconciler pattern
-
-This approach is robust to more failures.
-Each server is responsible for getting its local state to match its copy of the global desire.
-This means the loss of any one server cannot prevent all progress on that operation.
-If there was for instance one coordinator making changes to all other servers, a failure of that coordinator would result in progress stopping until the failure could be detected, and a replacement started.
