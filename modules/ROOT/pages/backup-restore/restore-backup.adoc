@@ -6,7 +6,7 @@
 [[restore-backup-command]]
 == Command
 
-A database backup artifact can be restored within the same or to a later Neo4j version using the `restore` command of `neo4j-admin`.
+A database backup artifact (full or differential) can be restored within the same or to a later Neo4j version using the `restore` command of `neo4j-admin`.
 
 [NOTE]
 ====
@@ -86,18 +86,13 @@ In a cluster, restore to a new database to avoid this problem.
 |--restore-until=<recovery-criteria>
 | Differential backup artifacts contain transaction logs that can be replayed and applied to stores contained in full backup artifacts when restoring a backup chain.
 The database applies logs until the recovery predicate is satisfied.
-Currently supported predicates are: `<transaction>` and `<date>`.
+Currently supported predicates are: `<transactionID>` and `<timestamp>`.
 
-- to restore a database up to a transaction id, the required transaction predicate should look like `--restore-until=123`, where 123 is a provided transaction id.
+- to restore a database up to a transaction ID, the required transaction predicate should look like `--restore-until=123`, where 123 is a provided transaction ID.
 The restore recovers transaction logs up to - but not including - transaction 123.
 
-- to restore a database up to a specific date, the required date predicate should look like `--restore-until=2023-05-01 10:15:30`, where 2023-05-01 10:15:30 is a UTC date.
+- to restore a database up to a specific date, the required date predicate should look like `--restore-until=2023-05-01 10:15:30`, where 2023-05-01 10:15:30 is a UTC date and time.
 The restore recovers transactions that were committed before the provided date.
-
-[NOTE]
-====
-This option is only applicable to differential backups.
-====
 |
 
 | --to-path-data=<path>
@@ -121,85 +116,101 @@ Usage of this option is only allowed if the `--from-path` parameter points to on
 .Restore a database backup
 ====
 
-. Restore a database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database]. The backup artifact is located in the `/tmp/backups` directory.
-The database is restored to a new database named `databasename`.
+. Restore a database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database]. The backup artifact is located in the `/tmp/mybackups` directory.
+The database is restored to a new database, for example, `mydatabase`.
 If you want to replace an existing database, add the option `--overwrite-destination=true` to the restore command.
 +
 [source,shell]
 ----
-bin/neo4j-admin database restore --from-path=/tmp/backups/neo4j-2023-05-05T11-26-38.backup databasename
+bin/neo4j-admin database restore --from-path=/tmp/backups/neo4j-2023-05-05T11-26-38.backup mydatabase
 ----
 
 . Unless you are replacing an existing database, create the new database using `CREATE DATABASE` against the `system` database.
 +
 [source,cypher, role="noplay"]
 ----
-CREATE DATABASE databasename
+CREATE DATABASE mydatabase
 ----
 
 ====
 
-.Restore a database backup up to a specific date
+.Restore data up to a specific date
 ====
-Restore a database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database], but only restore data up to a specific date.
-The backup artifacts are located in the `/tmp/backups` directory.
+Restore a database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database], but restore only the data up to a specific date.
+The backup artifacts are located in the `/tmp/mybackups` directory.
 
 [NOTE]
 Restoring data up to a specific date is only possible after you drop the existing database.
 
-. Drop the existing database using `DROP DATABASE` against the `system` database, for example:
-+
-[source,cypher, role="noplay"]
-----
-DROP DATABASE databasename
-----
-
-. Restore the database backup artifacts up to a specific date:
+. Log in to the Neo4j using `cypher-shell`:
 +
 [source,shell]
 ----
-./neo4j-admin database restore --from-path=/tmp/backups/databasename-2023-06-28T17-20-48.backup,/tmp/backups/databasename-2023-06-28T17-23-23.backup --restore-until="2023-06-28 16:16:11"
+bin/cypher-shell -u neo4j -p password
 ----
-The `--from-path=` argument is defined with the path to the full and the path to the differential backup artifacts.
-The required date predicate should look like `--restore-until=2023-05-01 10:15:30`, where `2023-05-01 10:15:30` is a UTC date.
+. Change the active database to `system`:
++
+[source,cypher, role="noplay"]
+----
+:use system;
+----
+. Stop the database that requires the restore:
++
+[source,cypher, role="noplay"]
+----
+STOP DATABASE databasename;
+----
+. Drop the database that requires the restore:
++
+[source,cypher, role="noplay"]
+----
+DROP DATABASE databasename;
+----
++
+Do not exit the `cypher-shell` session.
+
+. In a different `shell` terminal, inspect the backup artifacts in the _/tmp/mybackups_ directory:
++
+[source,shell, role="noplay"]
+----
+bin/neo4j-admin database backup --inspect-path=/tmp/mybackups
+----
++
+The output of the command should look similar to the following:
++
+[source,shell, role="noplay"]
+----
+|                                                   FILE | DATABASE |                          DATABASE ID |                TIME |  FULL | COMPRESSED | LOWEST TX | HIGHEST TX |
+| file:///tmp/mybackups/neo4j-2023-06-29T14-46-27.backup |    neo4j | c8368b24-55e2-474d-bb41-75657f5bfcde | 2023-06-29T13:46:27 |  true |       true |         1 |         11 |
+| file:///tmp/mybackups/neo4j-2023-06-29T14-50-45.backup |    neo4j | c8368b24-55e2-474d-bb41-75657f5bfcde | 2023-06-29T13:50:45 | false |       true |        12 |         14 |
+| file:///tmp/mybackups/neo4j-2023-06-29T14-51-33.backup |    neo4j | c8368b24-55e2-474d-bb41-75657f5bfcde | 2023-06-29T13:51:33 | false |       true |        15 |         18 |
+----
++
+The output shows that the backup artifacts are part of a backup chain.
+The first artifact is a full backup, and the other two are differential backups.
+The `LOWEST TX` and `HIGHEST TX` columns show the transaction IDs of the first and the last transaction in the backup artifacts.
+
+. Restore data up to a specific date:
++
+[source,shell, role="noplay"]
+----
+bin/neo4j-admin database restore --from-path=/tmp/mybackups/neo4j-2023-06-29T14-50-45.backup --restore-until="2023-06-29 13:50:45"
+----
++
+The `--from-path=` argument must contain the path to either a full or a differential backup artifact.
+If you want to restore several databases at once, you can specify a comma-separated list of paths to backup artifacts.
+The `--restore-until=` argument must contain a UTC date and time.
 The restore recovers transactions that were committed before the provided date.
-. Recreate the database that you dropped using `CREATE DATABASE` against the `system` database, for example:
 +
-[source,cypher, role="noplay"]
-----
-CREATE DATABASE databasename
-----
-
-====
-
-.Restore a database backup up to a specific transaction ID
-====
-Restore a database backup created in the section xref:backup-restore/online-backup.adoc#online-backup-example[Back up an online database], but only restore data up to a specific date.
-The backup artifacts are located in the `/tmp/backups` directory.
-
 [NOTE]
-Restoring data up to a transaction ID is only possible after you drop the existing database.
+If you know the transaction ID of the last transaction that was committed before the date you want to restore to, you can use the `--restore-until=` argument with the transaction ID instead of the date.
+For example, `--restore-until=123`.
 
-. Drop the existing database using `DROP DATABASE` against the `system` database, for example:
+. Using `cypher-shell`, recreate the database that you dropped using `CREATE DATABASE` against the `system` database, for example:
 +
 [source,cypher, role="noplay"]
 ----
-DROP DATABASE databasename
-----
-
-. Restore the database backup artifacts up to a specific transaction ID:
-+
-[source,shell]
-----
-./neo4j-admin database restore --from-path=/tmp/backups/databasename-2023-06-28T17-20-48.backup,/tmp/backups/databasename-2023-06-28T17-23-23.backup --restore-until=10
-----
-The `--from-path=` argument is defined with the path to the full and the path to the differential backup artifacts.
-The restore recovers transactions that were committed before the provided transaction ID.
-. Recreate the database that you dropped using `CREATE DATABASE` against the `system` database, for example:
-+
-[source,cypher, role="noplay"]
-----
-CREATE DATABASE databasename
+CREATE DATABASE databasename;
 ----
 
 ====
