@@ -1,18 +1,70 @@
-:description: This section describes how to move from a single `system` primary deployment to a cluster.
+:description: This section describes how to move from a standalone deployment to a cluster.
 [role=enterprise-edition]
 [[single-to-cluster]]
-= Move from a single `system` primary to a cluster deployment
+= Move from a standalone deployment to a cluster
 
-This is an example of how to move from a deployment with a single `system` primary to a cluster with multiple `system` primaries.
+It is possible to move from a standalone deploymment with a single `system` database to a cluster with multiple `system` primaries.
+In essence, this is done by dumping the `system` database from the standalone server and loading it into the other servers that are to form the cluster.
+The following example shows how to move from a standalone server with a single `system` primary to a cluster with three `system` primaries.
 
-== Guide
-. Ensure that the single `system` primary server is stopped. 
-. Edit the configuration file on the single `system` primary server to include the discovery endpoints of itself and the servers that will form the cluster. This is the `dbms.cluster.discovery.endpoints` configuration setting in `neo4j.conf`. 
-. For each of the other servers that will form the cluster configure them as required. For information on important cluster settings see xref:clustering/setup/deploy.adoc[Deploy a basic cluster].
-. On the single `system` primary server dump the `system` database using the `neo4j-admin database dump` command.
-. For each other server that will form the cluster use the `neo4j-admin database load` command to load the system database from the single `system` primary server.
-. Now start all servers.
-. Using `SHOW SERVERS` verify that all servers except the server from the single `system` primary deployment are in a `Free` state. 
-. Using `SHOW DATABASES` verify that all user databases are still running on the server from the single `system` primary deployment.
-. Enable each `Free` server using `ENABLE SERVER`.
-. You can then scale up user databases using `ALTER DATABASE`.
+.Move from a single `system` database to a cluster with three `system` primaries
+====
+In this example, a standalone server named `server01` is running and two additional servers, `server02` and `server03`, are to be added to form a cluster.
+The two additional servers are configured according to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] and are _not_ running.
+Neo4j Enterprise Edition is installed on all three servers.
+
+Start by stopping the standalone server and once it is stopped, edit the xref:configuration/file-locations.adoc[_neo4j.conf_] file to include the discovery endpoints of itself and the servers that will form the cluster.
+
+._neo4j.conf_ on server01.example.com:
+[source, properties]
+----
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server01.example.com
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+initial.dbms.default_primaries_count=3
+----
+(The xref:configuration/file-locations.adoc[_neo4j.conf_] file looks identical except for the `server.default_advertised_address` on all three servers. Please refer to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] for more information.)
+
+On `server01` (the standalone server) dump the `system` database using the `neo4j-admin database dump` command.
+
+[source, shell, role="nocopy"]
+----
+bin/neo4j-admin database dump system --to-path=/full/path/to/dumps/
+----
+See xref:backup-restore/offline-backup.adoc[] for more information on the dump command.
+
+Use the `neo4j-admin database load` command to load the `system` database dump from `server01` to `server02` and `server03`.
+
+[source,shell, role="nocopy"]
+----
+./neo4j-admin database load --from-path=/full-path/data/dumps system
+----
+See xref:backup-restore/restore-dump.adoc[] for more information on the load command.
+
+Once the `system` database has been loaded on `server02` and `server03`, start all servers.
+The newly added servers should be in the `Free` state (`server02` and `server03`) and this can be verified using `SHOW SERVERS`.
+
+[source, cypher, role=noplay]
+----
+SHOW SERVERS;
+----
+
+[queryresult]
+----
++-----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting              |
++-----------------------------------------------------------------------------------------------------------+
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"]  |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Free"    | "Available" | ["system"]           |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Free"    | "Available" | ["system"]           |
++-----------------------------------------------------------------------------------------------------------+
+----
+
+On `server01` (the previously standalone server) verify that all user databases are still running using `SHOW DATABASES`.
+
+The last step is to enable the `Free` servers using `ENABLE SERVER` (see xref:clustering/servers.adoc[] for more information on server states).
+
+Once all servers are enabled, you can scale up user databases using xref:clustering/databases.adoc#alter-topology[`ALTER DATABASE`], if desired.
+
+====
+
