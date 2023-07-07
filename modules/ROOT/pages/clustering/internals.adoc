@@ -56,14 +56,14 @@ In such clusters, the Single instance is the leader of all databases and there i
 [[causal-clustering-routing]]
 == Server-side routing
 
-Server-side routing is a complement to the client-side routing, performed by a Neo4j Driver.
+Server-side routing is a complement to the client-side routing.
 
 In a Causal Cluster deployment of Neo4j, Cypher queries may be directed to a cluster member that is unable to run the given query.
 With server-side routing enabled, such queries will be rerouted internally to a cluster member that is expected to be able to run it.
 This situation can occur for write-transaction queries when they address a database for which the receiving cluster member is not the leader.
 
 The cluster role for core cluster members is per database.
-Thus, if a write-transaction query is sent to a cluster member that is not the leader for the specified database (specified either via the Bolt Protocol or by the Cypher syntax: link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE` clause]), server-side routing will be performed if properly configured.
+Thus, if a write-transaction query is sent to a cluster member that is not the leader for the specified database (specified either via the link:{neo4j-docs-base-uri}/bolt/current/bolt[Bolt Protocol] or with the Cypher link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/use[`USE` clause]), server-side routing will be performed if properly configured.
 
 Server-side routing is enabled by the DBMS, by setting xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled=true`] for each cluster member.
 The listen address (xref:reference/configuration-settings.adoc#config_dbms.routing.listen_address[`dbms.routing.listen_address`]) and advertised address (xref:reference/configuration-settings.adoc#config_dbms.routing.advertised_address[`dbms.routing.advertised_address`]) also need to be configured for server-side routing communication.
@@ -127,7 +127,7 @@ h|Routes the query
 
 
 Server-side routing connector configuration::
-Rerouted queries are communicated over the link:https://7687.org[Bolt Protocol] using a designated communication channel.
+Rerouted queries are communicated over the link:{neo4j-docs-base-uri}/bolt/current/bolt[Bolt Protocol] using a designated communication channel.
 The receiving end of the communication is configured using the following settings:
 +
 * xref:reference/configuration-settings.adoc#config_dbms.routing.enabled[`dbms.routing.enabled`]
@@ -139,11 +139,6 @@ Server-side routing uses the Neo4j Java driver to connect to other cluster membe
 This driver is configured with settings of the format:
 +
 * xref:reference/configuration-settings.adoc#config_dbms.routing.driver.api[`dbms.routing.driver.*`]
-+
-[NOTE]
-====
-The configuration options described in _Configuration_ in the link:{neo4j-docs-base-uri}[Neo4j Driver manuals] have an equivalent in the server-side routing configuration.
-====
 
 Server-side routing encryption::
 Encryption of server-side routing communication is configured by the cluster SSL policy.
@@ -185,11 +180,40 @@ If you are running a multi-datacenter cluster, then upstream strategies for both
 Remember that for Read Replica instances, this also affects from where transactions are pulled.
 See more in xref:clustering-advanced/multi-data-center/configuration.adoc[Configure for multi-data center operations].
 
+=== Using the Replica instance in case of failure
 
-[WARNING]
+In case of failure (e.g. a partial failure of a cluster due to the loss of an instance, but not of the majority), you may transform a Read Replica instance into a Core instance as a way to restore the cluster's core availability.
+However, keep in mind that this is not advised as it could cause data loss and complications in the Raft group.
+
+To avoid that, the _read_replica_ instance must not be initialized as a *single* instance, nor be introduced in a different or new cluster. 
+This action would cause an override of the raft state, thus preventing the replica from successfully joining the targeted cluster.
+
+After performing that change, follow these instructions to unbind the Replica instance and update the discovery configurations amongst cluster members: 
+
+. Ensure that the converted _read_replica_ currently belongs to the same cluster that it will be re-introduced back to, as a _core_. 
+This can be done by performing `CALL dbms.cluster.overview()` and verifying the instance's address and cluster mode.
+
+. Stop and unbind the _read_replica_ instance.
+
+. Update the cluster mode configuration in _neo4j.conf_, from `dbms.mode=READ_REPLICA` to `dbms.mode=CORE`.
+
+. Stop Neo4j on the removed core instances that are not intended to serve as core members. 
+
+. Unbind those instances from the cluster by performing `neo4j-admin unbind` while they are stopped. 
+This action will prevent such instances from subsequently attempting to rejoin the running cluster.
+
+At this point, the previous _read_replica_ (now _core_) instance may be introduced into the running cluster. 
+To persist this change in the cluster's architecture, the following configuration updates are advised:
+
+- On the previous _read_replica_ (now _core_) instance, set `causal_clustering.discovery_advertised_address` and `causal_clustering.discovery_listen_address` as appropriate.
+
+- Update the `causal_clustering.initial_discovery_members` configuration with the currently valid list of discovery addresses for each member of the cluster.
+This should replace the addresses of any removed _core(s)_ with the discovery addresses of the previous _read_replica_ (now _core_) instance.
++
+[NOTE]
 ====
-* Do not transform a Read Replica instance into a Core instance.
-* Do not transform a Core instance into a Read Replica instance.
+In cases where `causal_clustering.discovery_type` is other than `LIST`, make sure to update the corresponding address resolution addresses records. 
+For example, DNS A records for discovery types DNS and SRV, and any Kubernetes service address alternate to reflect the inclusion of the _read_replica_ discovery address.
 ====
 
 [[causal-clustering-on-disk-state]]
@@ -200,7 +224,6 @@ The biggest difference is the existence of an additional cluster state.
 Most of the files there are relatively small, but the Raft logs can become quite large depending on the configuration and workload.
 
 It is important to understand that once a database has been extracted from a cluster and used in a standalone deployment, it must not be put back into an operational cluster.
-This is because the cluster and the standalone deployment now have separate databases, with different and irreconcilable writes applied to them.
 
 [WARNING]
 ====
