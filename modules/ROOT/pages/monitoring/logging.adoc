@@ -73,7 +73,7 @@ and xref:configuration/configuration-settings.adoc#config_db.logs.query.threshol
 |
 |===
 
-== Logging configuration files
+== Default logging configuration
 
 As of Neo4j 5.0, Neo4j uses https://logging.apache.org/log4j/2.x/[Log4j 2] for logging.
 The logging configuration is located in the _conf_ directory and consists of two files:
@@ -298,7 +298,7 @@ For example, the `QueryLogger` logger (configured in _server-logs.xml_) is used 
 The `additivity="false"` is set to fully consume the log event and not send it to the root logger. +
 If `additivity="true"` is set, which is the default, the log event is also sent to the root logger.
 
-== Customizing the logging configuration
+== Possible logging customizations
 
 The default logging configuration is a good starting point, but you might want to customize it to your needs.
 The following sections describe the Log4j configuration elements and how to use them to customize the logging configuration.
@@ -617,10 +617,8 @@ a| `ERROR`
 
 For more details on loggers, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Loggers[Log4j official documentation -> Configuring Loggers].
 
-== Special log files
-
 [[garbage-collection-log-file-configuration]]
-=== Garbage collection log
+== Configure the garbage collection log
 The garbage collection log, or GC log for short, is special and cannot be configured with Log4j 2.
 The GC log is handled by the Java Virtual Machine(JVM) and must be passed directly to the command line.
 To simplify this process, Neo4j exposes the following settings in _neo4j.conf_:
@@ -653,7 +651,7 @@ For available options, consult the documentation of the JVM distribution used.
 
 [role=enterprise-edition]
 [[security-events-logging]]
-=== Security log
+== Configure the security log
 
 Neo4j provides security event logging that records all security events.
 The security log is enabled automatically when the configuration xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] is set to `true` (which is the default).
@@ -673,6 +671,37 @@ If many programmatic interactions are expected, it is advised to disable the log
 [source, properties, role="noheader"]
 ----
 dbms.security.log_successful_authentication=false
+----
+
+=== JSON format
+
+The security log can use a JSON layout.
+To change the format, the layout for the `SecurityLogger` must be changed from using the `PatternLayout`:
+
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                 filePattern="$${config:server.directories.logs}/security.log.%02i">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+</RollingRandomAccessFile>
+----
+
+to using the `JsonTemplateLayout`:
+
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                 filePattern="$${config:server.directories.logs}/security.log.%02i">
+            <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredJsonLayout.json"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+ </RollingRandomAccessFile>
 ----
 
 The following information is available in the JSON format:
@@ -733,7 +762,7 @@ An example of the security log in a plain format:
 
 [role=enterprise-edition]
 [[query-logging]]
-=== Query log
+== Configure the query log
 
 Query logging is enabled by default and is controlled by the setting xref:configuration/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`].
 It helps you analyze long-running queries and does not impact system performance.
@@ -980,7 +1009,7 @@ The last two parenthesis `{}` `{}` are for the query parameters and `txMetaData`
 ====
 
 [[attach-metadata-tx]]
-==== Attach metadata to a transaction
+=== Attach metadata to a transaction
 
 You can attach metadata to a transaction and have it printed in the query log using the built-in procedure xref:reference/procedures.adoc#procedure_tx_setmetadata[`tx.setMetaData`].
 
@@ -1096,7 +1125,7 @@ MATCH (n:Person) RETURN n LIMIT 5
 In Neo4j Browser and Bloom, the user-provided metadata is always replaced by the system metadata.
 ====
 
-==== JSON format
+=== JSON format
 
 The query log can use a JSON layout.
 To change the format, the layout for the `QueryLogger` must be changed from using the `PatternLayout`:
