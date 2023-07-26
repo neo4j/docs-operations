@@ -1,27 +1,30 @@
 :description: An introduction to how Neo4j runs in a Docker container.
 [[docker-overview]]
-= Introduction
+= Getting Started with Neo4j in Docker
 
 Docker can be downloaded for macOS, Windows, and Linux operating systems from https://www.docker.com/get-started.
 DockerHub hosts an link:https://hub.docker.com/_/neo4j[official Neo4j image] that provides a standard, ready-to-run package of Neo4j Community Edition and Enterprise Edition for a variety of versions.
 
-[[docker-edition]]
-== Neo4j editions
+[[getting-docker-image]]
+== Getting the Neo4j Image
+Variants of the Neo4j image are tagged according to
+Community/Enterprise Edition and the operating system used as the base image.
 
-Tags are available for both Community Edition and Enterprise Edition.
-Version-specific Enterprise Edition tags have an `-enterprise` suffix, for example: `neo4j:{neo4j-version-exact}-enterprise`.
-Community Edition tags have no suffix, for example `neo4j:{neo4j-version-exact}`.
-The latest Neo4j Enterprise Edition release is available as `neo4j:enterprise`.
 
 All supported tags can be found at https://hub.docker.com/_/neo4j/tags.
 
+=== Neo4j Editions
+Tags are available for both Community Edition and Enterprise Edition.
+Version-specific Enterprise Edition tags have an `-enterprise` suffix after the version number, for example: `neo4j:{neo4j-version-exact}-enterprise`.
+Community Edition tags have no suffix, for example `neo4j:{neo4j-version-exact}`.
+The latest Neo4j Enterprise Edition release is available as `neo4j:enterprise`.
 
 Neo4j Enterprise Edition license::
 To use Neo4j Enterprise Edition, you must accept the license agreement by setting the environment variable `NEO4J_ACCEPT_LICENSE_AGREEMENT=yes`.
 +
 +
 ____
-(C) Network Engine for Objects in Lund AB.  2022.  All Rights Reserved.
+(C) Network Engine for Objects in Lund AB.  2023.  All Rights Reserved.
 Use of this Software without a proper commercial license with Neo4j,
 Inc. or its affiliates is prohibited.
 
@@ -29,6 +32,52 @@ Email inquiries can be sent using the form https://neo4j.com/contact-us[Contact 
 
 More information is also available at: https://neo4j.com/licensing/
 ____
+
+=== Base Operating System
+[TIP]
+====
+If you are unsure which base image to use, or have no preference, just use the default of `neo4j:{neo4j-version-exact}`.
+====
+Neo4j images are available with either `debian:bullseye-slim` or `redhat/ubi8-minimal:latest` as the base image.
+
+To specify which base image to use, the image tags optionally have a `-bullseye` or `-ubi8` suffix.
+If no base image is specified, the debian variant will be used by default.
+
+For example:
+
+[source, subs="attributes"]
+----
+neo4j:{neo4j-version-exact}-bullseye            # debian 11 community
+neo4j:{neo4j-version-exact}-enterprise-bullseye # debian 11 enterprise
+neo4j:{neo4j-version-exact}-ubi8              # redhat UBI8 community
+neo4j:{neo4j-version-exact}-enterprise-ubi8   # redhat UBI8 enterprise
+neo4j:{neo4j-version-exact}                   # debian 11 community
+neo4j:{neo4j-version-exact}-enterprise        # debian 11 enterprise
+----
+
+
+.Base images and the corresponding tag suffix.
+[options="header", cols="2"]
+|===
+| tag suffix
+| Base Image
+
+| `-bullseye`
+| `debian:bullseye-slim`
+
+| `-ubi8`
+| `redhat/ubi8-minimal:latest`
+
+| _unspecified_
+| `debian:bullseye-slim`
+|===
+
+
+[NOTE]
+====
+The redhat variant images are only available from 5.10.0 and onwards.
+For earlier Neo4j versions, do not specify a base image.
+====
 
 [[docker-image]]
 == Using the Neo4j Docker image
@@ -56,10 +105,33 @@ Use the `dbms.security.auth_minimum_password_length` configuration to change it.
 
 The following sections provide more information about how to set an initial password, configure Neo4j to persist data between restarts, and use the Neo4j Docker image.
 
+[[docker-simple-volumes]]
+== Persisting data using Volumes
+
+The `--volume` option maps a local folder to the container, where you can persist data between restarts.
+To persist the contents of the database between containers, mount a volume to the `/data` directory on starting the container:
+
+[source, shell, subs="attributes"]
+----
+docker run \
+    --restart always \
+    --publish=7474:7474 --publish=7687:7687 \
+    --env NEO4J_AUTH=neo4j/your_password \
+    --volume=/path/to/your/data:/data \
+    neo4j:{neo4j-version-exact}
+----
+
+[CAUTION]
+====
+The folders that you want to mount must exist before starting Docker, otherwise Neo4j will fail to start due to permissions errors.
+====
+
+For more information about mounting volumes, see xref:docker/mounting-volumes.adoc[].
+
 [[docker-auth]]
 == Using `NEO4J_AUTH` to set an initial password
 
-When using Neo4j in a Docker container, you can set the initial password for the container directly by specifying the `NEO4J_AUTH` in your run directive:
+When using Neo4j in a Docker container, you can set the initial password for the database directly by specifying the `NEO4J_AUTH` in your run directive:
 
 [source, shell, subs="attributes"]
 ----
@@ -69,14 +141,6 @@ docker run \
     --env NEO4J_AUTH=neo4j/your_password \
     neo4j:{neo4j-version-exact}
 ----
-
-[NOTE]
-====
-With no persistent storage for the databases, `NEO4J_AUTH` takes effect each time the container is recreated, even if you have changed the password.
-
-However, with persistent storage for the databases, `NEO4J_AUTH` only takes effect on the initial startup.
-It is ignored when the container is recreated and cannot override a changed password.
-====
 
 Alternatively, you can disable authentication by specifying `NEO4J_AUTH` to `none`:
 
@@ -87,44 +151,15 @@ Alternatively, you can disable authentication by specifying `NEO4J_AUTH` to `non
 
 Please note that there is currently no way to change the initial username from `neo4j`.
 
-[[docker-volumes]]
-== Persisting data using Volumes
-
-The `--volume` option maps a local folder to the container, where you can persist data between restarts. 
-
-[source, shell, subs="attributes"]
-----
-docker run \
-    --restart always \
-    --publish=7474:7474 --publish=7687:7687 \
-    --env NEO4J_AUTH=neo4j/your_password \
-    --volume=/path/to/your/data:/data \
-    --volume=/path/to/your/logs:/logs \
-    neo4j:{neo4j-version-exact}
-----
-
-The folders that you want to mount must exist before starting Docker, otherwise, Neo4j will fail to start due to permissions errors.
-
-[NOTE]
+[CAUTION]
 ====
-If you have mounted a _/data_ volume containing an existing database, setting `NEO4J_AUTH` will have no effect.
+*Setting `NEO4J_AUTH` will not override existing authentication.*
+
+If you have mounted a _/data_ volume containing an existing database, setting `NEO4J_AUTH` will have no effect because that database already has authentication configured.
 The Neo4j Docker service will start, but you will need a username and password already associated with the database to log in.
 ====
 
-[[docker-user]]
-== Running Neo4j as a non-root user
 
-For security reasons, Neo4j runs as the `neo4j` user inside the container.
-You can specify which user to run as by invoking docker with the `--user` argument.
-For example, the following runs Neo4j as your current user:
-
-[source, shell, subs="attributes"]
-----
-docker run \
-    --publish=7474:7474 --publish=7687:7687 \
-    --user="$(id -u):$(id -g)" \
-    neo4j:{neo4j-version-exact}
-----
 
 == More useful Docker Run options
 
@@ -153,7 +188,11 @@ This table lists some of the options available:
 
 |--env
 |Set config as environment variables for the Neo4j database
-|docker run --env NEO4J_AUTH=neo4j/your_password
+|docker run --env NEO4J_AUTH=neo4j/your_password neo4j
+
+|--user
+|Run neo4j as the given user, instead of `neo4j`
+|docker run --user="$(id -u):$(id -g)" neo4j
 
 |--restart
 |Control whether Neo4j containers start automatically when they exit, or when Docker restarts.
