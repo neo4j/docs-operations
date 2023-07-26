@@ -93,6 +93,56 @@ NEO4J_server_jvm_additional='-XX:+ExitOnOutOfMemoryError'
 ----
 ====
 
+[[docker-neo4j-admin-report]]
+== Use Neo4j Admin Report
+
+The `neo4j-admin server report` command is a useful reporting tool for analyzing the status of a running Neo4j database.
+Documentation for this tool can be found at xref:tools/neo4j-admin/neo4j-admin-report.adoc[], including additional options.
+
+
+In a containerized environment, neo4j report must be invoked using the script `neo4j-admin-report`. This ensures that the reporter is running with all the necessary file permissions required to analyze the running Neo4j processes.
+This script takes all the same arguments as the xref:tools/neo4j-admin/neo4j-admin-report.adoc[]
+
+
+[NOTE]
+====
+It is possible to use `docker exec` to run `neo4j-admin server report` directly inside the container, but the file permissions required to access running processes _and_ to write files to a mounted folder can be conflicting.
+
+The `neo4j-admin-report` script is just a wrapper around `neo4j-admin server report` which automatically handles most permission problems.
+====
+
+
+
+.Example of getting a Neo4j report from a containerised Neo4j database
+====
+Start a Neo4j container and mount a folder for the report output to be written to.
+[source, shell, subs="attributes"]
+----
+docker run --interactive --tty --rm \
+    --name=neo4j \
+    --publish=7474:7474 --publish=7687:7687 \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/reports:/reports \ #<1>
+    neo4j:{neo4j-version-exact}
+----
+<1> The folder the reports will be written to.
+
+
+Then in a `docker exec`, run the `neo4j-admin-report` wrapper script, specifying the output directory for the reports.
+
+[source, shell]
+----
+docker exec --interactive --tty <containerID/name> \
+    neo4j-admin-report \
+        --to-path=/reports \ #<1>
+----
+<1> If no `--to-path` option is specified, the reports will be written to `/tmp/reports`.
+
+The `$HOME/neo4j/reports` folder should now contain a zip file of reports.
+====
+
+
+
 [[docker-cypher-shell]]
 == Use Cypher Shell
 
@@ -247,78 +297,3 @@ Actors, Movies, MovieYear
 These commands take the contents of the script file and pass it into the Docker container using Cypher Shell.
 Then, they run a Cypher example, `LOAD CSV` dataset, which might be hosted somewhere on a server (with `curl`), create indexes, constraints, or do other administrative operations.
 
-[[docker-procedures]]
-== Install user-defined procedures
-
-To install link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[user-defined procedures], mount the _/plugins_ volume containing the jars.
-
-[source, shell, subs="attributes"]
-----
-docker run \
-   --publish=7474:7474 --publish=7687:7687 \
-   --volume=$HOME/neo4j/plugins:/plugins \
-   neo4j:{neo4j-version-exact}
-----
-
-[[docker-neo4j-plugins]]
-== Configure Neo4j plugins
-
-The Neo4j Docker image includes a startup script that can automatically download and configure certain Neo4j plugins at runtime.
-
-[NOTE]
-====
-This feature is intended to facilitate using Neo4j plugins in development environments, but it is not recommended for use in production environments.
-
-To use plugins in production with Neo4j Docker containers, see xref:docker/operations.adoc#docker-procedures[Install user-defined procedures].
-====
-
-The `NEO4J_PLUGINS` environment variable can be used to specify the plugins to install using this method.
-This should be set to a JSON-formatted list of the xref:configuration/plugins.adoc[supported plugins].
-
-[NOTE]
-====
-Running Bloom in a Docker container requires Neo4j Docker image 4.2.3-enterprise or later.
-====
-
-From Neo4j 5.6 onwards, if invalid `NEO4J_PLUGINS` values are passed, Neo4j returns a notification that the plugin is not known.
-For example, `--env NEO4J_PLUGINS='["gds"]'` returns the following notification:
-
-.Example output
-[source, shell, role="noheader"]
-----
-"gds" is not a known Neo4j plugin. Options are:
-apoc
-apoc-core
-bloom
-graph-data-science
-graphql
-n10s
-----
-
-.Install the APOC Core plugin (`apoc`)
-====
-You can use the Docker argument `--env NEO4J_PLUGINS='["apoc"]'` and run the following command:
-
-[source, shell, subs="attributes"]
-----
-docker run -it --rm \
-  --publish=7474:7474 --publish=7687:7687 \
-  --env NEO4J_AUTH=none \
-  --env NEO4J_PLUGINS='["apoc"]' \
-  neo4j:{neo4j-version-exact}
-----
-====
-
-.Install the APOC Core plugin (`apoc`) and the Neo Semantics plugin (`n10s`)
-====
-You can use the Docker argument `--env NEO4J_PLUGINS='["apoc", "n10s"]'` and run the following command:
-
-[source, shell, subs="attributes"]
-----
-docker run -it --rm \
-  --publish=7474:7474 --publish=7687:7687 \
-  --env NEO4J_AUTH=none \
-  --env NEO4J_PLUGINS='["apoc", "n10s"]' \
-  neo4j:{neo4j-version-exact}
-----
-====
