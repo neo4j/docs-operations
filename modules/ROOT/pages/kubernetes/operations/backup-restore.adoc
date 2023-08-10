@@ -1,6 +1,6 @@
 [role=enterprise-edition]
 [[kubernetes-neo4j-backup-restore]]
-= Back up and restore a single database (online)
+= Back up and restore (online)
 
 [NOTE]
 ====
@@ -9,9 +9,10 @@ For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
 [[kubernetes-neo4j-backup-cloud]]
-== Back up a database to a cloud provider (AWS, GCP, and Azure) bucket
+== Back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
 
-You can perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azure) bucket using the _neo4j/neo4j-admin_ Helm chart.
+You can perform a backup of a Neo4j database(s) to any cloud provider (AWS, GCP, and Azure) bucket using the _neo4j/neo4j-admin_ Helm chart.
+From version 4.4.22, the _neo4j/neo4j-admin_ Helm chart also supports performing a backup of multiple databases.
 
 === Prerequisites
 
@@ -101,16 +102,16 @@ For more information about the available backup parameters, see <<kubernetes-neo
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "4.4.20"
+  imageTag: "4.4.22"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
-  backoffLimit: 1
+  backoffLimit: 3
 
 backup:
   bucketName: "my-bucket"
   databaseAdminServiceName:  "standalone-admin" #This is the Neo4j Admin Service name.
-  database: "neo4j"
+  database: "neo4j,system"
   cloudProvider: "gcp"
   secretName: "gcpcreds"
   secretKeyName: "credentials"
@@ -124,16 +125,16 @@ backup:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "4.4.20"
+  imageTag: "4.4.22"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
-  backoffLimit: 1
+  backoffLimit: 3
 
 backup:
   bucketName: "my-bucket"
   databaseAdminServiceName:  "standalone-admin"
-  database: "neo4j"
+  database: "neo4j,system"
   cloudProvider: "aws"
   secretName: "awscreds"
   secretKeyName: "credentials"
@@ -147,16 +148,16 @@ backup:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "4.4.20"
+  imageTag: "4.4.22"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
-  backoffLimit: 1
+  backoffLimit: 3
 
 backup:
   bucketName: "my-bucket"
   databaseAdminServiceName:  "standalone-admin"
-  database: "neo4j"
+  database: "neo4j,system"
   cloudProvider: "azure"
   secretName: "azurecreds"
   secretKeyName: "credentials"
@@ -189,15 +190,18 @@ For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts 
 helm install backup-name neo4j-admin -f /path/to/your/backup-values.yaml
 ----
 +
-The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based on the job schedule. This pod performs a backup of the database, a consistency check of the backup file,  and uploads both to the cloud provider bucket.
+The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based on the job schedule. This pod performs a backup of one or multiple databases, a consistency check of the backup file(s),  and uploads them to the cloud provider bucket.
 
 . Monitor the backup pod logs using `kubectl logs pod/<neo4j-backup-pod-name>` to check the progress of the backup.
-. Check that the backup file and the consistency check report have been uploaded to the cloud provider bucket.
+. Check that the backup files and the consistency check reports have been uploaded to the cloud provider bucket.
 
 [[kubernetes-neo4j-backup-parameters]]
 === Backup parameters
 
-To see what options are configurable on the Helm chart use `helm show values` and the Helm chart _neo4j/neo4j-admin_.
+To see what options are configurable on the Helm chart use `helm show values` and the Helm chart _neo4j/neo4j-admin_. +
+From version 4.4.22, the _neo4j/neo4j-admin_ Helm chart also supports assigning your Neo4j pods to specific nodes using `nodeSelector` labels.
+For more information, see xref:kubernetes/operations/assign-neo4j-pods.adoc[Assigning backup pods to specific nodes].
+
 For example:
 
 [source, shell, role='noheader']
@@ -212,13 +216,12 @@ nameOverride: ""
 ## @param fullnameOverride String to fully override common.names.fullname
 fullnameOverride: ""
 # disableLookups will disable all the lookups done in the helm charts
-# This should be set to true when using ArgoCD since ArgoCD uses helm template and the helm lookups will fail
 # You can enable this when executing helm commands with --dry-run command
 disableLookups: false
 
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "4.4.20"
+  imageTag: "4.4.22"
   podLabels: {}
 #    app: "demo"
 #    acac: "dcdddc"
@@ -231,7 +234,7 @@ neo4j:
   successfulJobsHistoryLimit:
   # default is 1
   failedJobsHistoryLimit:
-  # default is 1
+  # default is 3
   backoffLimit:
   #add labels if required
   labels: {}
@@ -263,7 +266,8 @@ backup:
   #default value is cluster.local
   databaseClusterDomain: ""
 
-  #name of the database to backup ex: neo4j (command separated databases names WILL NOT WORK)
+  #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
+  # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
   # cloudProvider can be either gcp, aws, or azure
   cloudProvider: ""
@@ -333,6 +337,12 @@ resources:
     ephemeralStorage: "4Gi"
   limits:
     ephemeralStorage: "5Gi"
+
+# nodeSelector labels
+# please ensure the respective labels are present on one of nodes or else helm charts will throw an error
+nodeSelector: {}
+#  label1: "true"
+#  label2: "value1"
 ----
 
 [[kubernetes-neo4j-restore]]
