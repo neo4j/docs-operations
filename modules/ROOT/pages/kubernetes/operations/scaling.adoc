@@ -1,0 +1,163 @@
+[[scaling]]
+= Scale a Neo4j deployment
+
+Neo4j supports both vertical and horizontal scaling.
+
+[[vertical-scaling]]
+== Vertical scaling
+
+To increase or decrease the resources (CPU, memory) available to a Neo4j instance, change the `neo4j.resources` object in the _values.yaml_ file to set the desired resource usage, and then perform a helm upgrade.
+
+[NOTE]
+====
+If you change the memory allocated to the Neo4j container, you should also change the Neo4j's memory configuration (`server.memory.heap.initial_size` and `server.memory.pagecache.size` in particular).
+See xref:kubernetes/configuration.adoc#configure-resources[Configure Resource Allocation] for more details.
+====
+
+For example, if your running Neo4j instance has the following allocated resources:
+
+[source, properties]
+----
+# values.yaml
+neo4j:
+  resources:
+    cpu: "1"
+    memory: "3Gi"
+
+# Neo4j Configuration (yaml format)
+config:
+  server.memory.heap.initial_size: "2G"
+  server.memory.heap.initial_size: "2G"
+  server.memory.pagecache.size: "500m"
+----
+
+And, you want to increase them to 2 CPUs and 4 GB of memory (allocating additional memory to the pagecache).
+
+. Modify the _values.yaml_ file to set the desired resource usage:
++
+[source, yaml]
+----
+# values.yaml
+neo4j:
+  resources:
+    cpu: "2"
+    memory: "4Gi"
+
+# Neo4j Configuration (yaml format)
+config:
+  server.memory.heap.initial_size: "2G"
+  server.memory.heap.initial_size: "2G"
+  server.memory.pagecache.size: "1G"
+----
++
+. Run `helm upgrade` with the modified deployment _values.yaml_ file and the Neo4j Helm chart to apply the changes.
+For example:
++
+[source, shell]
+----
+helm upgrade <release-name> neo4j/neo4j -f values.yaml
+----
+
+[role=enterprise-edition]
+[[horizontal-scaling]]
+== Horizontal scaling
+
+You can add a new server to the Neo4j cluster to scale out write or read workloads.
+
+Example -- add a new server to an existing cluster::
+The following example assumes that you have a cluster with 3 servers.
+. In the Kubernetes cluster, verify that you have a node that you can use for the new server, `server4`.
+. Install `server4` using the same value for `neo4j.name` as your existing cluster:
++
+[source, shell, subs="attributes"]
+----
+helm install server4 neo4j --set neo4j.edition=enterprise --set neo4j.acceptLicenseAgreement=yes --set volumes.data.mode=defaultStorageClass --set neo4j.password="password" --set neo4j.minimumClusterSize=3 --set neo4j.name=my-cluster
+----
++
+Alternatively, you can use a _values.yaml_ file to set the values for the new server and the _neo4j/neo4j_ Helm chart to install the new server.
+For more information, see  xref:kubernetes/quickstart-cluster/create-value-file.adoc[Create Helm deployment values files] and xref:kubernetes/quickstart-cluster/install-servers.adoc[Install Neo4j cluster servers].
++
+When the new server joins the cluster, it will initially be in the `Free` state.
+. Enable `server4` to be able to host databases by using `cypher-shell` (or Neo4j Browser) to connect to one of the existing servers:
++
+.. Access the cypher-shell on `server1`:
++
+[source, shell, subs="attributes"]
+----
+kubectl exec -ti server1-0 -- cypher-shell -u neo4j -p password -d neo4j
+----
+.. When the `cypher-shell` prompt is ready, verify that `server4` is in the `Free` state, and take a note of its name:
++
+[source, shell, subs="attributes"]
+----
+SHOW SERVERS;
+----
++
+[source,role="noheader"]
+----
++---------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                | state     | health      | hosting             |
++---------------------------------------------------------------------------------------------------------------------------------+
+| "0908819d-238a-473d-9877-5cc406050ea2" | "server4.neo4j.svc.cluster.local:7687" | "Free"    | "Available" | ["system"]          |
+| "19817354-5cd1-4579-8c45-8b897808fdb4" | "server2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b3c91592-1806-41d0-9355-8fc6ba236043" | "server3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "eefd7216-6096-46f5-9c41-a74f79684172" | "server1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
++---------------------------------------------------------------------------------------------------------------------------------+
+----
+. Using its name, enable `server4` to use it in the cluster:
++
+[source, shell, subs="attributes"]
+----
+ENABLE SERVER "0908819d-238a-473d-9877-5cc406050ea2";
+----
+. Run `SHOW SERVERS;` again to verify that `server4` is enabled:
++
+[source, shell, subs="attributes"]
+----
+SHOW SERVERS;
+----
++
+[source,role="noheader"]
+----
++---------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                | state     | health      | hosting             |
++---------------------------------------------------------------------------------------------------------------------------------+
+| "0908819d-238a-473d-9877-5cc406050ea2" | "server4.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system"]          |
+| "19817354-5cd1-4579-8c45-8b897808fdb4" | "server2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b3c91592-1806-41d0-9355-8fc6ba236043" | "server3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "eefd7216-6096-46f5-9c41-a74f79684172" | "server1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
++---------------------------------------------------------------------------------------------------------------------------------+
+----
++
+Notice in the output that although `server4` is now enabled, it is not hosting the `neo4j` database.
+You need to change the database topology to also use the new server.
+. Alter the `neo4j` database topology to be hosted on three primary and one secondary servers:
++
+[source, shell, subs="attributes"]
+----
+ALTER DATABASE neo4j SET TOPOLOGY 3 PRIMARIES 1 SECONDARY;
+----
+. Now run the `SHOW DATABASES;` command to verify the new topology:
++
+[source, shell, subs="attributes"]
+----
+SHOW DATABASES;
+----
++
+[source,role="noheader"]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name     | type       | aliases | access       | address                                | role        | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "standard" | []      | "read-write" | "server2.neo4j.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server4.neo4j.svc.cluster.local:7687" | "secondary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server3.neo4j.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "neo4j"  | "standard" | []      | "read-write" | "server1.neo4j.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
+| "system" | "system"   | []      | "read-write" | "server2.neo4j.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server4.neo4j.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server3.neo4j.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "system" | "system"   | []      | "read-write" | "server1.neo4j.svc.cluster.local:7687" | "primary"   | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
++
+Note that `server4` now hosts the `neo4j` database with the `secondary` role.

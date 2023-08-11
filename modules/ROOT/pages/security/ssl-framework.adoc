@@ -7,7 +7,7 @@ The SSL framework provides support for securing the following Neo4j communicatio
 
 * `bolt` (port - `7687`)
 * `https` (port - `7473`)
-* `cluster` (ports - `5000`, `6000`, and `7000`)
+* `cluster` (ports - `5000`, `6000`, `7000`, and `7688`)
 * `backups` (port - `6362`)
 
 This page describes how to set up SSL within your environment, how to view, validate, and test the certificates.
@@ -44,9 +44,15 @@ See the table below for detailed information:
 | tcnative version
 | Direct link
 
+| 5.9
+| 4.1.94.Final
+| 2.0.61.Final. Both netty-tcnative-boringssl-static and netty-tcnative-classes are required.
+| https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.61.Final/jar
+https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.61.Final/jar
+
 | 5.0
 | 4.1.77.Final
-| 2.0.52.Final. Both netty-tcnative-boringssl-static and netty-tcnative-classes are required
+| 2.0.52.Final. Both netty-tcnative-boringssl-static and netty-tcnative-classes are required.
 | https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
 https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
 
@@ -55,17 +61,6 @@ https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/j
 | 2.0.52.Final
 | https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
 https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
-
-| 4.3.15
-| 4.1.77.Final
-| 2.0.52.Final
-| https://search.maven.org/artifact/io.netty/netty-tcnative-boringssl-static/2.0.52.Final/jar
-https://search.maven.org/artifact/io.netty/netty-tcnative-classes/2.0.52.Final/jar
-
-| 3.5.34
-| 3.9.9.Final + 4.1.68.Final
-| 2.0.42.Final
-| https://search.maven.org/artifact/io.netty/netty-tcnative/2.0.42.Final/jar
 |===
 
 
@@ -169,25 +164,15 @@ openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA512 -in pkcs1or8.key -out
 ----
 
 .Supported encryption arguments to openssl are:
-* `-v1 PBE-MD5-DES`
-* `-v1 PBE-SHA1-3DES`
-* `-v1 PBE-SHA1-RC2-40`
-* `-v1 PBE-SHA1-RC2-128`
-* `-v1 PBE-SHA1-RC4-40`
-* `-v1 PBE-SHA1-RC4-128`
-* `-v1 PBE-SHA1-2DES`
 * `-v2 aes-128-cbc -v2prf hmacWithSHA1`
 * `-v2 aes-128-cbc -v2prf hmacWithSHA224`
 * `-v2 aes-128-cbc -v2prf hmacWithSHA256`
 * `-v2 aes-128-cbc -v2prf hmacWithSHA384`
 * `-v2 aes-128-cbc -v2prf hmacWithSHA512`
-* `-v2 aes-256-cbc -v2prf hmacWithSHA1`
 * `-v2 aes-256-cbc -v2prf hmacWithSHA224`
 * `-v2 aes-256-cbc -v2prf hmacWithSHA256`
 * `-v2 aes-256-cbc -v2prf hmacWithSHA384`
 * `-v2 aes-256-cbc -v2prf hmacWithSHA512`
-
-It is highly recommended to use one of the `-v2` variants, because they offer more robust encryption.
 
 [NOTE]
 ====
@@ -282,6 +267,9 @@ Each policy needs to be explicitly enabled by setting:
 
 Bolt protocol is based on the link:https://neo4j.com/docs/bolt/current/packstream/[PackStream serialization] and supports the Cypher type system, protocol versioning, authentication, and TLS via certificates.
 For Neo4j clusters, Bolt provides smart client routing with load balancing and failover.
+When server side routing is enabled, an additional Bolt port is open on `7688`.
+It can be used only within the cluster and with all the same settings as the external Bolt port.
+
 Bolt connector is used by Cypher Shell, Neo4j Browser, and by the officially supported language drivers.
 Bolt connector is enabled by default but its encryption is disabled.
 To enable the encryption over Bolt, create the folder structure and place the key file and the certificates under those.
@@ -659,11 +647,12 @@ openssl s_client -connect my_domain.com:7473
 === Configure SSL for intra-cluster communications
 
 Intra-cluster encryption is the security solution for the cluster communication.
-The Neo4j cluster communicates on 3 ports:
+The Neo4j cluster communicates on 4 ports:
 
 * 5000 - Discovery management
 * 6000 - Transactions
 * 7000 - Raft communications
+* 7688 - Server side routing
 
 To set up intra-cluster encryption, on each server create the folder structure and place the key file and the certificates under those.
 Then, you need to configure the SSL cluster policies in the _neo4j.conf_ file and test that the intra-cluster communication is encrypted.

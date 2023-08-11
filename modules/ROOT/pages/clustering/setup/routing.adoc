@@ -34,6 +34,30 @@ As a result, unevenly distributed leaderships may cause write queries to be disp
 By default, Neo4j avoids this by automatically transferring database leaderships so that they are evenly distributed throughout the cluster.
 Additionally, Neo4j automatically transfers database leaderships away from instances where those databases are configured to be read-only using xref:configuration/configuration-settings.adoc#config_server.databases.read_only[server.databases.read_only] or similar.
 
+[[clustering-client-side-routing]]
+== Client-side routing
+
+Client-side routing is when the database client takes control over which cluster member to send specific requests to.
+Typically this would be to make sure that write operations are sent to the server that can write for the target database, and that read operations are sent to other servers.
+
+Client-side routing is based on getting a routing table from a cluster member, and then using that information to make the routing decisions.
+A routing table contains information about the writers, readers, and routers for a specific database.
+There is usually one _writer_, though there may be none if the database is read only or unhealthy.
+With the default configuration, all other servers that host the database are considered _readers_, i.e. the writer is not in the list of readers.
+This is to let it focus on the write load and not have to manage two kinds of interactions.
+Typically, all servers that host the database are listed as _routers_, which are servers that can be contacted to get a new routing table for that database.
+
+link:{neo4j-docs-base-uri}/create-applications/[Neo4j Drivers] retrieve a routing table the first time they attempt to connect to a database, and fetch a fresh one after the configured time-to-live, or if it seems the routing table has got out of date.
+For example, if the routing table lists `server-3` as the writer for the database, but write requests get rejected with a _not able to write_ error, the driver may decide to get a new routing table, because the writer could be a different server.
+
+For lower level details about getting routing tables, refer to the link:{neo4j-docs-base-uri}/bolt/current/driver-api/#_driver_routing_table[Bolt protocol documentation].
+
+[[clustering-client-side-routing-policies]]
+=== Routing policies
+
+You can control the routing table that servers provide by using xref:clustering/clustering-advanced/multi-data-center-routing.adoc[routing policies].
+Policies filter the full set of possible servers for each category according to the rules you define.
+For example, this can be used to preferentially route to a local data centre, or to specific large machines, depending on your policies.
 
 [[clustering-routing]]
 == Server-side routing

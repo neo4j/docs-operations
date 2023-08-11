@@ -1,215 +1,337 @@
-:description: This section describes the logging mechanisms in Neo4j, including general log files, error messages, and severity levels.
+:description: This section describes the Neo4j logging, including log files and configuration.
 [[logging]]
 = Logging
 
-[[general-logging]]
-== Logging framework
-
 Neo4j provides logs for monitoring purposes.
-As of Neo4j 5.0, Neo4j uses https://logging.apache.org/log4j/2.x/[Log4j 2] for logging.
-Log4j 2 can be configured using the two XML files _conf/server-logs.xml_ and _conf/user-log.xml_.
-The XML files are passed to Log4j.
-
-Neo4j supports all default Log4j components.
-You can also add plugins to Log4j by dropping them in the _plugin_ directory.
-For more advanced usages, see the https://logging.apache.org/log4j/2.x/manual/configuration.html[Log4j official documentation].
-
-The following is a description of how a default Neo4j installation behaves and some typical examples of configuring it to use Log4j.
+The logs are stored in the _logs_ directory.
+If you want to use a custom directory, set the path to that directory in the _neo4j.conf_ file by using the parameter xref:configuration/configuration-settings.adoc#config_server.directories.logs[`server.directories.logs`].
 
 == Log files
-By default, the directory where the general log files are located is configured by xref:configuration/configuration-settings.adoc#config_server.directories.logs[`server.directories.logs`].
 
-The following table describes the Neo4j general log files and the information they contain.
+The following table describes the log files that are available in Neo4j and their default configuration.
+Which logs are enabled or disabled is configured in the _neo4j.conf_ file.
 
-.Neo4j logs for monitoring
-[options="header", cols="1a,1a,3a"]
+.Neo4j log files
+[options="header", cols="1a,3a,3a,1a"]
 |===
 | Filename
-| Name
 | Description
+| Configuration
+| Default
 
 | _neo4j.log_
-|The _user log_
 |Logs general information about Neo4j.
 For Debian and RPM packages run `journalctl --unit=neo4j`.
+|
+| `true`
 
 | _debug.log_
-| The _debug log_
-| Logs information that is useful when debugging problems with Neo4j.
-
-| _http.log_
-| The _HTTP log_
-| Logs information about the HTTP API.
-
-| _gc.log_
-| The _garbage collection log_
-| Logs information provided by the JVM.
-
-| _query.log_
-| The _query log_
-| label:Enterprise[]Logs information about queries that run longer than a specified threshold.
-
-| _security.log_
-| The _security log_
-| label:Enterprise[]Logs information about security events.
-
-| _service-out.log_
-| The _windows service log_
-| label:Windows[]Log of the console output when installing or running the Windows service.
-
-| _service-error.log_
-| The _windows service log_
-| label:Windows[]Logs information about errors encountered when installing or running the Windows service.
-|===
-
-== Logging configuration file anatomy
-
-The logging configuration is done using a Log4j 2 XML configuration file.
-
-Neo4j has two different configuration files, one for the _neo4j.log_, which contains general information about Neo4j, and one configuration file for all other types of logging (except _gc.log_, see xref:monitoring/logging.adoc#garbage-collection-log-file-configuration[GC Logging]).
-
-Where the files are located and which logs are enabled or disabled is managed via the _neo4j.conf_ file.
-
-.Log configuration settings in _neo4j.conf_
-[cols="2m,1m,3a", options="header"]
-|===
-| Configuration setting
-| Default value
-| Description
-
-| xref:configuration/configuration-settings.adoc#config_server.logs.config[`server.logs.config`]
-| `conf/server-logs.xml`
-| Path to the XML configuration file for _debug.log_, _http.log_, _query.log_, and _security.log_.
-
-| xref:configuration/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config`]
-| `conf/user-logs.xml`
-| Path to the XML configuration file for _neo4j.log_ file.
-
+| Logs information that is useful when investigating problems with Neo4j. It is highly recommended to keep it enabled.
 | xref:configuration/configuration-settings.adoc#config_server.logs.debug.enabled[`server.logs.debug.enabled`]
 | `true`
-| Enable/disable the _debug.log_.
-It is highly recommended to keep it enabled.
 
+| _http.log_
+| Logs information about the HTTP API.
 | xref:configuration/configuration-settings.adoc#config_dbms.logs.http.enabled[`dbms.logs.http.enabled`]
 | `false`
-| Enable/disable the _http.log_.
 
+| _gc.log_
+| Logs information provided by the JVM.
+
+For details, see <<garbage-collection-log-file-configuration>>.
+| xref:configuration/configuration-settings.adoc#config_server.logs.gc.enabled[`server.logs.gc.enabled`]
+| `false`
+
+
+| _query.log_
+| label:Enterprise[]Logs information about executed queries that run longer than a specified threshold.
+Must be one of `INFO`, `VERBOSE`, or `OFF`.
+
+* `INFO` logs queries longer than a given threshold.
+* `VERBOSE` logs the start and end of all queries.
+* `OFF` disables the _query.log_.
+
+For details, see <<query-logging>>.
 | xref:configuration/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`]
+and xref:configuration/configuration-settings.adoc#config_db.logs.query.threshold[`db.logs.query.threshold`]
 | `VERBOSE`
-| Must be one of `OFF`, `INFO`, or `VERBOSE`.
-`INFO` produces less output than `VERBOSE`, while `OFF` completely disables the _query.log_.
+
+| _security.log_
+| Logs information about security events.
+| xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`]
+| `true`
+
+
+| _service-out.log_
+| label:Windows[]Log of the console output when installing or running the Windows service.
+|
+|
+
+| _service-error.log_
+| label:Windows[]Logs information about errors encountered when installing or running the Windows service.
+|
+|
 |===
 
+== Default logging configuration
 
-The Log4j 2 XML configuration file consists of 3 major components:
+As of Neo4j 5.0, Neo4j uses https://logging.apache.org/log4j/2.x/[Log4j 2] for logging.
+The logging configuration is located in the _conf_ directory and consists of two files:
 
-* _Appenders_ -- define output locations, for example, a file, the console, network socket, etc.
-* _Layouts_ -- define how the output is formatted, for example, plain text, JSON, CSV, etc.
-* _Loggers_ -- route log events to one or several appenders.
+* _user-log.xml_ -- provides configuration for _neo4j.log_.
+* _server-logs.xml_ -- provides configuration for _debug.log_, _http.log_, _query.log_, and _security.log_.
 
-You can also configure filters to determine if and what log events to be published and how.
-For more information, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Filters[Log4j official documentation].
+The _gc.log_ is handled by the Java Virtual Machine(JVM) and is configured using the JVM parameters.
+For details, see <<garbage-collection-log-file-configuration>>.
 
-.An illustrative Log4j 2 configuration file
-[source%linenums,xml,options="nowrap"]
+[TIP]
+====
+If you want to use a custom directory for your Log4j configuration files, set the new paths to your XML files in the _neo4j.conf_ file by using the parameters xref:configuration/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config`] and xref:configuration/configuration-settings.adoc#config_server.logs.config[`server.logs.config`].
+====
+
+Each configuration file comprises two main elements: _Appenders_ and _Loggers_:
+
+Within the _Appenders_ element, you can define::
+* The output locations, for example, a file, the console, the network socket, etc.
+* How the output is formatted, for example, plain text, JSON, CSV, etc.
+* When the files are rolled and how many files to keep as history before deleting them.
+* If and what log events are to be published and how.
+
+Within the _Loggers_ element, you can define::
+* Which log events are to be captured and sent to which _Appenders_.
+* The log level of the log events to be captured.
+* If the log events are to be forwarded to other _Loggers_.
+
+For more details, see https://logging.apache.org/log4j/2.x/manual/configuration.html[Log4j 2 official documentation on configuration].
+
+[.tabbed-example]
+=====
+[.include-with-user-log.xml]
+======
+
+The following example shows the default configuration of the _user-logs.xml_ file.
+
+.Default _user-log.xml_ configuration
+[source%linenums,xml,options="nowrap", role="nocopy"]
 ----
-<Configuration monitorInterval="30" packages="org.neo4j.logging.log4j">
-    <Appenders>
-        <RollingFile name="DebugLog" fileName="${config:server.directories.logs}/debug.log"
-                     filePattern="${config:server.directories.logs}/debug.log.%02i">
-            <Neo4jDebugLogLayout
-                pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+2} %-5p [%c{1.}] %m%n"/>
-            <Policies>
-                <SizeBasedTriggeringPolicy size="20 MB"/>
-            </Policies>
-            <DefaultRolloverStrategy fileIndex="min" max="7"/>
-        </RollingFile>
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
 
-        <RollingFile name="HttpLog" fileName="${config:server.directories.logs}/http.log"
-                     filePattern="${config:server.directories.logs}/http.log.%02i">
+    Copyright (c) "Neo4j"
+    Neo4j Sweden AB [http://neo4j.com]
+    This file is a commercial add-on to Neo4j Enterprise Edition.
+
+-->
+<!--
+    This is a log4j 2 configuration file that provides maximum flexibility.
+
+    All configuration values can be queried with the lookup prefix "config:". You can, for example, resolve
+    the path to your neo4j home directory with ${config:dbms.directories.neo4j_home}.
+
+    Please consult https://logging.apache.org/log4j/2.x/manual/configuration.html for instructions and
+    available configuration options.
+-->
+<Configuration status="ERROR" monitorInterval="30" packages="org.neo4j.logging.log4j"> \ #<1>
+
+    <Appenders> \ #<2>
+        <RollingRandomAccessFile name="Neo4jLog" fileName="${config:server.directories.logs}/neo4j.log" #<3>
+                                 filePattern="$${config:server.directories.logs}/neo4j.log.%02i"> #<4>
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/> #<5>
+            <Policies> \ #<6>
+                <SizeBasedTriggeringPolicy size="20 MB"/> \ #<7>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/> \ #<8>
+        </RollingRandomAccessFile>
+
+        <!-- Only used by "neo4j console", will be ignored otherwise -->
+        <Console name="ConsoleAppender" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+        </Console>
+    </Appenders>
+
+    <Loggers> \ #<9>
+        <!-- Log level for the neo4j log. One of DEBUG, INFO, WARN, ERROR or OFF -->
+        <Root level="INFO"> \ #<10>
+            <AppenderRef ref="Neo4jLog"/>
+            <AppenderRef ref="ConsoleAppender"/>
+        </Root>
+    </Loggers>
+
+</Configuration>
+
+----
+======
+[.include-with-server-log.xml]
+======
+The following example shows the default configuration of the _server-logs.xml_ file.
+
+.Default _server-logs.xml_ configuration
+[source%linenums,xml,options="nowrap", role="nocopy"]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) "Neo4j"
+    Neo4j Sweden AB [http://neo4j.com]
+    This file is a commercial add-on to Neo4j Enterprise Edition.
+
+-->
+<!--
+    This is a log4j 2 configuration file.
+
+    It is highly recommended to keep the original "debug.log" as is, to make sure enough data is captured in case
+    of errors in a format that neo4j developers can work with.
+
+    All configuration values can be queried with the lookup prefix "config:". You can, for example, resolve
+    the path to your neo4j home directory with ${config:dbms.directories.neo4j_home}.
+
+    Please consult https://logging.apache.org/log4j/2.x/manual/configuration.html for instructions and
+    available configuration options.
+-->
+<Configuration status="ERROR" monitorInterval="30" packages="org.neo4j.logging.log4j"> \ #<1>
+    <Appenders> \ #<2>
+        <!-- Default debug.log, please keep -->
+        <RollingRandomAccessFile name="DebugLog" fileName="${config:server.directories.logs}/debug.log" \ #<3>
+                                 filePattern="$${config:server.directories.logs}/debug.log.%02i"> \ #<4>
+            <Neo4jDebugLogLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p [%c{1.}] %m%n"/> \ #<5>
+            <Policies> \ #<6>
+                <SizeBasedTriggeringPolicy size="20 MB"/> \ #<7>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/> \ #<8>
+        </RollingRandomAccessFile>
+
+        <RollingRandomAccessFile name="HttpLog" fileName="${config:server.directories.logs}/http.log"
+                                 filePattern="$${config:server.directories.logs}/http.log.%02i">
             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
             <Policies>
                 <SizeBasedTriggeringPolicy size="20 MB"/>
             </Policies>
             <DefaultRolloverStrategy fileIndex="min" max="5"/>
-        </RollingFile>
+        </RollingRandomAccessFile>
+
+        <RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+                                 filePattern="$${config:server.directories.logs}/query.log.%02i">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+        </RollingRandomAccessFile>
+
+        <RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                 filePattern="$${config:server.directories.logs}/security.log.%02i">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+        </RollingRandomAccessFile>
     </Appenders>
 
-    <Loggers>
-        <Root level="INFO">
-            <AppenderRef ref="DebugLog"/>
+    <Loggers> \ #<9>
+        <!-- Log levels. One of DEBUG, INFO, WARN, ERROR or OFF -->
+
+        <!-- The debug log is used as the root logger to catch everything -->
+        <Root level="INFO"> \ #<10>
+            <AppenderRef ref="DebugLog"/> <!-- Keep this -->
         </Root>
 
+        <!-- The query log, must be named "QueryLogger" -->
+        <Logger name="QueryLogger" level="INFO" additivity="false"> \ #<11>
+            <AppenderRef ref="QueryLog"/>
+        </Logger>
+
+        <!-- The http request log, must be named "HttpLogger" -->
         <Logger name="HttpLogger" level="INFO" additivity="false">
             <AppenderRef ref="HttpLog"/>
+        </Logger>
+
+        <!-- The security log, must be named "SecurityLogger" -->
+        <Logger name="SecurityLogger" level="INFO" additivity="false">
+            <AppenderRef ref="SecurityLog"/>
         </Logger>
     </Loggers>
 </Configuration>
 ----
+======
+=====
 
-
-.Breakdown of the illustrative Log4j 2 configuration file line per line
-[cols="8h,~", options="header"]
-|===
-| Line(s)
-| Description
-
-| 1
-| Configuration tag with a `monitorInterval` of 30 seconds and a package namespace of `org.neo4j.logging.log4j`. +
+<1> Configuration tag with a `monitorInterval` of 30 seconds and a package namespace of `org.neo4j.logging.log4j`. +
 The monitor interval tells Log4j to periodically check the XML file for changes and reload the file if a change is detected. +
 The package namespace gives access to the Neo4j configuration lookup with `${config:<setting>}`.
 
-| 3, 13
-| Defines two `<RollingFile>` appenders.
-  One writes to _debug.log_ and one to _http.log_.
-  The `name` must be unique and is used later when referencing the appender.
+<2> Appenders are used to define where the log messages are written.
+The `name` of the appender must be unique as it is used by the logger when referencing the appender.
+The Neo4j default appenders write to _debug.log_, _http.log_, _query.log_, and _security.log_.
 
-| 4, 14
-| Specifies a `filePattern` to be used when the file is rolled.
-  The pattern renames the files to _debug.log.01_ and _http.log.01_ when they reach the defined trigger.
+<3> By default, Neo4j uses the `<RollingRandomAccessFile>` appender as it is very performant because it always writes to a buffer.
+However, if the server crashes, the last log messages might be lost.
+If that is not acceptable for you, use the `<RollingFile>` appender instead.
+See <<general-logging-appenders>> for more information.
 
-| 5
-| Defines the layout to use for the `DebugLog` appender, in this case with the `GMT+2` timezone.
+<4> `filePattern` specifies a file pattern to be used when the file is rolled.
+The pattern renames the files to _debug.log.01_ and _http.log.01_ when they reach the defined trigger.
 
-| 8, 17
-| Defines a size-based trigger.
-When the size of the files reaches 20 MB, the files are renamed according to the `filePattern`, and the log files start over.
+<5> `PatternLayout` defines the layout for the appender, in this case with the `GMT+2` timezone.
+See <<general-logging-log-layout>> for more information.
 
-| 10
-| Defines a rollover strategy, keeping 7 files as history.
-`fileIndex=min` implies that the minimum/the lowest number is the most recent one.
+<6> The `Policies` element defines when the files are rolled and how many files to keep as history before they are deleted.
 
-| 24, 25
-| Defines a root logger with log level `INFO`.
-The root logger is a "catch-all" logger that captures everything that is not captured by the other loggers.
-Everything caught is sent to the appender with the name `DebugLog`.
+<7> The `SizeBasedTriggeringPolicy` defines when the files are rolled.
+In this case, when the size of the files reaches 20 MB, the files are renamed according to the `filePattern`, and the log files start over.
+In version 4.0, this was configured with the parameter `dbms.logs.user.rotation.size`.
 
-| 28, 29
-| Defines a logger that matches log events with the `HttpLogger` target with a log level of `INFO` or above.
-The `additivity="false"` is set to fully consume the log event.
+<8> The `DefaultRolloverStrategy` defines how many files to keep as history. +
+The `fileIndex=min` implies that the minimum/the lowest number is the most recent one. +
+The `max` attribute defines the number of files to keep as history before they are deleted, in this case, 7 files.
+In version 4.0, this was configured with the parameter `dbms.logs.user.rotation.keep_number`.
+
+<9> Loggers are used to define the log level and which appender to use for the log messages.
+The loggers are referenced by the `name` attribute.
+See <<general-logging-loggers>> for more information.
+
+<10> The root logger is a "catch-all" logger that catches everything that is not caught by the other loggers and sends it to the appender(s) specified in the `AppenderRef` element(s).
+The root logger is referenced by the `Root` element.
+It can be set to `DEBUG`, `INFO`, `WARN`, `ERROR`, or `OFF`.
+The default log level is `INFO`.
+
+<11> You can also define custom loggers to catch specific log events and send them to the appender(s) specified in the `AppenderRef` element(s).
+For example, the `QueryLogger` logger (configured in _server-logs.xml_) is used to catch log events with a log level of `INFO` or above and send them to the `QueryLog` appender. +
+The `additivity="false"` is set to fully consume the log event and not send it to the root logger. +
 If `additivity="true"` is set, which is the default, the log event is also sent to the root logger.
-|===
+
+== Advanced logging configuration
+
+The default logging configuration is a good starting point, but you might want to customize it to your needs.
+The following sections describe some Log4j configuration elements and how to use them to customize the logging configuration.
+For additional information and more advanced customizations, such as filtering and extensions, see the https://logging.apache.org/log4j/2.x/manual/configuration.html[Log4j official documentation on configuration].
 
 [[general-logging-appenders]]
 === Appenders
-An appender represents a destination for log events.
 All Log4j standard appenders are available in Neo4j.
-For more details, see the https://logging.apache.org/log4j/2.x/manual/appenders.html[Log4j official documentation].
-A few of the most common appenders are `<Console>`, `<RollingFile>`, and `<RollingRandomAccessFile>`.
+For more details, see the https://logging.apache.org/log4j/2.x/manual/appenders.html[Log4j official documentation on appenders].
 
-==== `<Console>` appender
-The console appender outputs log events to _stdout_ or _stderr_.
+A few of the most common appenders are `<RollingRandomAccessFile>`, `<RollingFile>`, and `<Console>`.
 
-.An example of a console appender
-[source,xml]
-----
-<Console name="console" target="SYSTEM_OUT"> <!-- or SYSTEM_ERR -->
-  <PatternLayout pattern="%m%n"/>
-</Console>
-----
+==== `<RollingRandomAccessFile>` appender
+The `<RollingRandomAccessFile>` is the default appender in Neo4j.
+It is very performant and has a low impact on the system because it always writes to a buffer.
+However,  the log events might *not* be visible immediately, and if the server crashes, the last log messages might be lost.
+This appender is configured with the `filePattern` attribute, which specifies a file pattern to be used when the file is rolled.
+The pattern renames the files to _debug.log.01_ and _http.log.01_ when they reach the defined trigger.
+
+The possible triggers are `SizeBasedTriggeringPolicy` and `TimeBasedTriggeringPolicy`.
+The `SizeBasedTriggeringPolicy` defines when the files are rolled, in this case, when the size of the files reaches 20 MB.
+The `TimeBasedTriggeringPolicy` defines when the files are rolled based on time, in this case, daily.
+
+The `DefaultRolloverStrategy` defines how many files to keep as history and which file to use as the most recent one.
+The `fileIndex=min` implies that the minimum/the lowest number is the most recent one.
+The `max` attribute defines the number of files to keep as history before they are deleted, in this case, 7 files.
+
+For more information, see https://logging.apache.org/log4j/2.x/manual/appenders.html#rollingrandomaccessfileappender[Log4j official documentation on RollingRandomAccessFile Appender].
 
 ==== `<RollingFile>` appender
-A rolling file appender writes log events to a file.
+A `<RollingFile>` appender is very similar to `<RollingRandomAccessFile>` but it writes log events to a file.
 It rolls when certain criteria are met.
 A standard scheme is to keep one log file daily or roll a log file once a specific size is reached.
 
@@ -225,7 +347,7 @@ A standard scheme is to keep one log file daily or roll a log file once a specif
 </RollingFile>
 ----
 
-The rolling also supports compression of rolled-out files.
+The rolling also supports the compression of rolled-out files.
 Adding one of `.gz`, `.zip`, `.bz2`, `.deflate`, or `.pack200` as a suffix to the `filePattern` attribute causes the file to be compressed with the appropriate compression scheme.
 
 .An example of a rolling file appender with zip compression
@@ -240,11 +362,17 @@ Adding one of `.gz`, `.zip`, `.bz2`, `.deflate`, or `.pack200` as a suffix to th
 </RollingFile>
 ----
 
-==== `<RollingRandomAccessFile>` appender
-The `<RollingRandomAccessFile>` is almost identical to the `<RollingFile`, with one major exception - all writes are buffered.
+==== `<Console>` appender
+The console appender outputs log events to _stdout_ or _stderr_.
+It is only used by the "neo4j console".
 
-The drawback of using this appender is that log events might *not* be visible immediately and can be lost in case of a system crash.
-If these drawbacks are acceptable, switching to `<RollingRandomAccessFile>` can increase the performance of the logging.
+.An example of a console appender
+[source,xml]
+----
+<Console name="console" target="SYSTEM_OUT"> <!-- or SYSTEM_ERR -->
+  <PatternLayout pattern="%m%n"/>
+</Console>
+----
 
 [[general-logging-log-layout]]
 === Log layouts
@@ -254,16 +382,17 @@ For more details on the default Log4j 2 layouts, see the https://logging.apache.
 
 [[general-logging-pattern-layout]]
 ==== `<PatternLayout>`
-The most common layout.
-The pattern layout is a flexible layout configurable with a pattern string.
-The pattern consists of different converters that are prefixed with `%`.
-An example pattern could be
+`<PatternLayout>` is the most common layout.
+It is a flexible layout configurable with a pattern string, which is specified in the `pattern` attribute.
+For example:
 
 [source,xml]
 ----
 <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p [%c{1.}] %m%n"/>
 ----
-It contains the following converters:
+
+The `pattern` consists of different converters that are prefixed with `%`.
+The converters are replaced with the corresponding value from the log event.
 
 .Example pattern layout converters
 [cols="2", options="header"]
@@ -292,12 +421,12 @@ a| `%n`
 | System-specific new line.
 |===
 
-These are just a few examples.
 For all available converters, consult the https://logging.apache.org/log4j/2.x/manual/layouts.html#PatternLayout[Log4j 2 Pattern Layout documentation].
 
 [[general-logging-debug-log-pattern]]
 ==== `<Neo4jDebugLogLayout>`
-The Neo4j debug log layout is essentially the same as the xref:monitoring/logging.adoc#general-logging-pattern-layout[`PatternLayout`].
+
+The `<Neo4jDebugLogLayout>` layout is essentially the same as the xref:monitoring/logging.adoc#general-logging-pattern-layout[`PatternLayout`].
 The main difference is that a header is injected at the start of the log file with diagnostic information useful for Neo4j developers.
 This layout should typically only be used for the _debug.log_ file.
 
@@ -312,15 +441,18 @@ This layout should typically only be used for the _debug.log_ file.
 The `<JsonTemplateLayout>` is equivalent to the pattern layout.
 For more information, see the https://logging.apache.org/log4j/2.x/manual/json-template-layout.html[Log4j official documentation].
 
-The JSON template layout takes an event template, which can be a file residing on the file system, for example:
+There are two ways of configuring the JSON template layout.
 
+* You can specify a JSON event template file and the layout will use that.
+The JSON template file can be on the file system.
++
 [source,xml]
 ----
 <JsonTemplateLayout eventTemplateUri="file://path/to/template.json"/>
 ----
 
-Alternatively, you can embed it right into the XML:
-
+* The JSON event template file can be embedded in the XML configuration:
++
 [source%linenums,xml,highlight=4..12]
 ----
 <JsonTemplateLayout>
@@ -339,7 +471,9 @@ Alternatively, you can embed it right into the XML:
   </eventTemplate>
 </JsonTemplateLayout>
 ----
+
 There are also a couple of built-in templates available from the classpath, for example:
+
 [source,xml]
 ----
 <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredJsonLayout.json"/>
@@ -360,7 +494,7 @@ There are also a couple of built-in templates available from the classpath, for 
   Can be used for any log file.
 
 | classpath:org/neo4j/logging/QueryLogJsonLayout.json
-| Backward compatible JSON layout that will match the Neo4j 4.x query log.
+| Backward-compatible JSON layout that will match the Neo4j 4.x query log.
 
 | classpath:LogstashJsonEventLayoutV1.json
 | https://github.com/logstash/log4j-jsonevent-layout[Logstash `json_event` pattern for Log4j]
@@ -375,6 +509,56 @@ There are also a couple of built-in templates available from the classpath, for 
 | Same layout as the less flexible `<JsonLayout>`.
 |===
 
+=== Filters
+
+You can also configure filters to determine if and what log events are published and how.
+For details, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Filters[Log4j official documentation].
+// For example, you can filter out logs for queries executed by the `neo4j` user or for the `neo4j` database.
+
+// [source,xml]
+// ----
+// <RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+//                                  filePattern="$${config:server.directories.logs}/query.log.%02i">
+//             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+//             <Policies>
+//                 <SizeBasedTriggeringPolicy size="20 MB"/>
+//             </Policies>
+//             <!-- Filter out logs for queries executed by "neo4j" user -->
+//             <Filters>
+//                 <MapFilter onMatch="DENY" onMismatch="ACCEPT">
+//                     <KeyValuePair key="authenticatedUser" value="neo4j"/>
+//                 </MapFilter>
+//             </Filters>
+//             <DefaultRolloverStrategy fileIndex="min" max="7"/>
+//         </RollingRandomAccessFile>
+// ----
+
+// Or, you can filter out logs for queries executed on the `neo4j` database:
+
+// [source,xml]
+// ----
+// <RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+//                                  filePattern="$${config:server.directories.logs}/query.log.%02i">
+//             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+//             <Policies>
+//                 <SizeBasedTriggeringPolicy size="20 MB"/>
+//             </Policies>
+//              <!-- Filter out logs for the "neo4j" database -->
+//             <Filters>
+//                 <MapFilter onMatch="DENY" onMismatch="ACCEPT">
+//                     <KeyValuePair key="database" value="neo4j"/>
+//                 </MapFilter>
+//             </Filters>
+//             <DefaultRolloverStrategy fileIndex="min" max="7"/>
+//         </RollingRandomAccessFile>
+// ----
+
+=== Plugins
+
+You can also add plugins to Log4j by dropping them in the _plugin_ directory.
+For details, see the https://logging.apache.org/log4j/2.x/manual/plugins.html[Log4j official documentation on plugins].
+
+[[general-logging-loggers]]
 === Loggers
 
 Loggers forward log events to appenders.
@@ -437,7 +621,7 @@ a| `ERROR`
 For more details on loggers, see the https://logging.apache.org/log4j/2.x/manual/configuration.html#Loggers[Log4j official documentation -> Configuring Loggers].
 
 [[garbage-collection-log-file-configuration]]
-=== Garbage collection log
+== Configure the garbage collection log
 The garbage collection log, or GC log for short, is special and cannot be configured with Log4j 2.
 The GC log is handled by the Java Virtual Machine(JVM) and must be passed directly to the command line.
 To simplify this process, Neo4j exposes the following settings in _neo4j.conf_:
@@ -470,10 +654,12 @@ For available options, consult the documentation of the JVM distribution used.
 
 [role=enterprise-edition]
 [[security-events-logging]]
-=== Security log
+== Configure the security log
 
 Neo4j provides security event logging that records all security events.
-The security log is enabled automatically when the configuration xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] is set to `true`.
+The security log is enabled automatically when the configuration xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] is set to `true` (which is the default).
+It ensures that all requests to Neo4j are authenticated.
+For additional configuration of the security log, see _$NEO4J_HOME/conf/server-logs.xml_.
 
 For native user management, the following actions are recorded:
 
@@ -488,6 +674,35 @@ If many programmatic interactions are expected, it is advised to disable the log
 [source, properties, role="noheader"]
 ----
 dbms.security.log_successful_authentication=false
+----
+
+The security log can use a JSON layout.
+To change the format, the layout for the `SecurityLogger` must be changed from using the `PatternLayout`:
+
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                 filePattern="$${config:server.directories.logs}/security.log.%02i">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+</RollingRandomAccessFile>
+----
+
+to using the `JsonTemplateLayout`:
+
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+<RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                 filePattern="$${config:server.directories.logs}/security.log.%02i">
+            <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredJsonLayout.json"/>
+            <Policies>
+                <SizeBasedTriggeringPolicy size="20 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy fileIndex="min" max="7"/>
+ </RollingRandomAccessFile>
 ----
 
 The following information is available in the JSON format:
@@ -548,15 +763,17 @@ An example of the security log in a plain format:
 
 [role=enterprise-edition]
 [[query-logging]]
-=== Query log
+== Configure the query log
 
 Query logging is enabled by default and is controlled by the setting xref:configuration/configuration-settings.adoc#config_db.logs.query.enabled[`db.logs.query.enabled`].
 It helps you analyze long-running queries and does not impact system performance.
 The default is to log all queries, but it is recommended to log for queries exceeding a certain threshold.
 
-The following configuration settings are available for the _query log_:
+=== Configuration settings
 
-._Query log_ enabled setting
+The following values are available for the parameter `db.logs.query.enabled`:
+
+.`db.logs.query.enabled` values
 [cols="1,3a", options="header"]
 |===
 | Option
@@ -576,7 +793,8 @@ Setting the threshold to `0s` results in all queries being logged.
 a| label:default[]Log all queries at both start and finish, regardless of xref:configuration/configuration-settings.adoc#config_db.logs.query.threshold[`db.logs.query.threshold`].
 |===
 
-The following configuration settings are available for the query log file:
+
+The following configuration settings are available for the query logging:
 
 ._Query log_ configurations
 [cols="3,2a,3", options="header"]
@@ -584,6 +802,10 @@ The following configuration settings are available for the query log file:
 | The _query log_ configuration
 | Default value
 | Description
+
+| xref:configuration/configuration-settings.adoc#config_db.logs.query.time_logging_enabled[`db.logs.query.time_logging_enabled`]
+| `true`
+| Include the time taken for the executed queries to be logged (this is enabled by default).
 
 | xref:configuration/configuration-settings.adoc#config_db.logs.query.early_raw_logging_enabled[`db.logs.query.early_raw_logging_enabled`]
 | `false`
@@ -666,8 +888,7 @@ Defaults to `0` seconds, which means all transactions are logged.
 This can be useful when identifying where there is a significant time lapse after query execution and transaction commits, especially in performance analysis around locking.
 |===
 
-.Configure for simple query logging
-====
+=== Configure for simple query logging
 
 In this example, the query logging is set to `INFO`, and all other query log parameters are at their defaults.
 
@@ -688,10 +909,8 @@ The following is an example of the query log with this basic configuration:
 2017-11-22 14:32 ... INFO  0 ms: bolt-session	bolt	johndoe	neo4j-javascript/1.4.1		client/127.0.0.1:59167	...
 2017-11-22 14:32 ... INFO  2 ms: bolt-session	bolt	johndoe	neo4j-javascript/1.4.1		client/127.0.0.1:59261	...
 ----
-====
 
-.Configure for query logging with more details
-====
+=== Configure for query logging with more details
 
 In this example, the query log is enabled, as well as some additional logging:
 
@@ -716,7 +935,7 @@ The corresponding query log in _<.file>query.log_ is:
 2017-11-23 12:44:56.973+0000 INFO  1550 ms: (planning: 20, cpu: 920, waiting: 10) - 13792 B - 15 page hits, 0 page faults - bolt-session	bolt	neo4j	neo4j-javascript/1.4.1		client/127.0.0.1:58189	server/127.0.0.1:7687>	neo4j - match (n:Person {name:'Tom Hanks'})-[:ACTED_IN]->(n1:Movie)<-[:DIRECTED]-(n2:Person {name:"Tom Hanks"}) return n1.title; - {} - {}
 ----
 
-An obvious but essential point of note when examining parameters of a particular query is to ensure you analyze only the entries relevant to that specific query plan, as opposed to, e.g., CPU, time, bytes, and so on for each log entry in sequence.
+An obvious but essential point of note when examining the parameters of a particular query is to ensure you analyze only the entries relevant to that specific query plan, as opposed to, e.g., CPU, time, bytes, and so on for each log entry in sequence.
 
 Following is a breakdown of resource usage parameters with descriptions corresponding to the above query:
 
@@ -755,7 +974,7 @@ This is the amount of HEAP memory used during the life of the query.
 The logged number is cumulative over the duration of the query, i.e., for memory-intense or long-running queries, the value may be larger than the current memory allocation.
 
 `15 page hits`::
-Page hit means the result was returned from page cache as opposed to disk.
+Page hit means the result was returned from the page cache as opposed to the disk.
 In this case, the page cache was hit 15 times.
 
 `0 page faults`::
@@ -788,10 +1007,8 @@ The executed query.
 +
 The last two parenthesis `{}` `{}` are for the query parameters and `txMetaData`.
 
-====
-
 [[attach-metadata-tx]]
-==== Attach metadata to a transaction
+=== Attach metadata to a transaction
 
 You can attach metadata to a transaction and have it printed in the query log using the built-in procedure xref:reference/procedures.adoc#procedure_tx_setmetadata[`tx.setMetaData`].
 
@@ -826,10 +1043,8 @@ These examples use the MovieGraph dataset from the link:https://neo4j.com/docs/b
 ====
 
 [NOTE]
-====
 Cypher Shell always adds metadata that follows the convention by default.
 In this example, the defaults are overridden.
-====
 
 [source, shell, role=noplay,nocopy]
 ----
@@ -907,9 +1122,10 @@ MATCH (n:Person) RETURN n LIMIT 5
 In Neo4j Browser and Bloom, the user-provided metadata is always replaced by the system metadata.
 ====
 
-=== JSON format
+=== Use JSON format for the query log
+
 The query log can use a JSON layout.
-In order to change the format, the layout for the `QueryLogger` must be changed from using the `PatternLayout`:
+To change the format, the layout for the `QueryLogger` must be changed from using the `PatternLayout`:
 
 [source%linenums,xml,options="nowrap",highlight=4]
 ----
