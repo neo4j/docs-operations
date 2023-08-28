@@ -1,13 +1,17 @@
 :description: How to use Cypher to manage database aliases in Neo4j.
 [role=enterprise-edition aura-db-enterprise]
 [[manage-aliases-standard-databases]]
-= Managing aliases for standard databases
+= Managing database aliases for standard databases
 
 There are two kinds of database aliases: local and remote.
 A local database alias can only target a database within the same DBMS.
 A remote database alias may target a database from another Neo4j DBMS.
 When a query is run against a database alias, it will be redirected to the target database.
 The home database for users can be set to an alias, which will be resolved to the target database on use.
+
+This page describes managing database aliases for standard databases.
+Local and remote database aliases can also be created as part of a xref:database-administration/composite-databases/concepts.adoc[composite database].
+For more information, see xref:database-administration/aliases/manage-aliases-composite-databases.adoc[].
 
 A local database alias can be used in all other Cypher commands in place of the target database.
 Please note that the local database alias will be resolved while executing the command.
@@ -20,6 +24,12 @@ It is not possible to impersonate a user on the remote database or to execute an
 Database aliases can be created and managed using a set of Cypher administration commands executed against the `system` database.
 The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
 When connected to the DBMS over Bolt, administration commands are automatically routed to the `system` database.
+
+[NOTE]
+====
+If a transaction modifies a database alias, other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+This prevents issues such as a transaction executing against multiple target databases for the same alias.
+====
 
 [[manage-aliases-list]]
 == List database aliases
@@ -97,8 +107,8 @@ and this column will be `null`.
 
 | driver
 |
-The driver options for connection to the remote database or `null` if the target database is local or if no driver settings are added.
-List of xref::database-administration/aliases/manage-aliases-standard-databases.adoc#remote-alias-driver-settings[driver settings] allowed for remote database aliases.
+The driver options for connection to the remote database or `null` if the target database is local.
+List of xref::database-administration/aliases/manage-aliases-standard-databases.adoc#alias-management-create-remote-database-alias-driver-settings[driver settings] allowed for remote database aliases.
 | MAP
 
 | properties
@@ -230,8 +240,8 @@ In this example:
 
 * The number of columns returned has been reduced with the `YIELD` clause.
 * The order of the returned columns has been changed.
-* The results have been filtered to only show database alias names containing `'e'`.
 * The results are ordered by the `database` column using `ORDER BY`.
+* The results have been filtered to only show database alias names containing `'e'`.
 
 It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
@@ -252,7 +262,7 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
 Database aliases can be created using `CREATE ALIAS`.
 The command supports the creation of both local and remote database aliases.
-For more information on  local and remote database aliases as part of a composite database, see xref::database-administration/composite-databases/manage-composite-databases.adoc#create-composite-database-alias[Create database aliases in composite databases].
+For more information on local and remote database aliases as part of a composite database, see xref::database-administration/composite-databases/manage-composite-databases.adoc#create-composite-database-alias[Create database aliases in composite databases].
 
 The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
 
@@ -268,10 +278,10 @@ The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used togeth
 
 [NOTE]
 ====
-Database alias names are subject to the rules specified in the xref:administration/alias-management-escaping[Alias names and escaping] section.
+Database alias names are subject to the rules specified in the xref:database-administration/aliases/naming-aliases.adoc[Alias names] section.
 ====
 
-[[database-management-create-local-database-alias]]
+[[alias-management-create-local-database-alias]]
 === Create local database aliases
 
 A local database alias targets a database within the same DBMS.
@@ -323,7 +333,7 @@ SHOW ALIAS `northwind` FOR DATABASE
 ==== Set properties for local database aliases
 
 Local database aliases can also be given properties.
-These properties can then be used in queries with the xref::database-administration/composite-databases/querying-composite-databases.adoc#composite-databases-queries-built-in-functions[`graph.propertiesByName()` function].
+These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
 
 .Query
 [source, cypher]
@@ -386,15 +396,14 @@ DROP ALIAS `northwind` IF EXISTS FOR DATABASE
 CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`
 ----
 
-[[database-management-create-remote-database-alias]]
+[[alias-management-create-remote-database-alias]]
 === Create remote database aliases
 
 A database alias can target a remote database by providing an URL and the credentials of a user on the remote Neo4j DBMS.
-See link:{neo4j-docs-base-uri}/operations-manual/{page-version}/manage-databases/remote-alias[Connecting remote databases] for the necessary configurations.
+See xref:database-administration/aliases/remote-database-alias-configuration.adoc[] for the necessary configurations.
 
- remote database aliases also allows `IF NOT EXISTS` and `OR REPLACE` clauses.
+As with local database aliases, creating remote database aliases allows `IF NOT EXISTS` and `OR REPLACE` clauses.
 Both check for any remote or local database aliases.
-
 
 ==== Create remote database aliases
 
@@ -409,7 +418,7 @@ USER alice
 PASSWORD 'example_secret'
 ----
 
-When you create a database alias pointing to a remote database, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+When you create a database alias targeting a remote database, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
 
 .Query
 [source, cypher]
@@ -428,7 +437,7 @@ FOR DATABASE
 +----------------------------------------------------------------------------------------------------------+
 ----
 
-
+[[alias-management-create-remote-database-alias-driver-settings]]
 ==== Create remote database aliases with driver settings
 
 It is possible to override the default driver settings per database alias, which are used for connecting to the remote database.
@@ -465,7 +474,7 @@ A timeout of zero is treated as an infinite timeout and will be bound by the tim
 | Duration
 
 | Default value
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.routing.driver.connection.connect_timeout[dbms.routing.driver.connection.connect_timeout]
+| xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.connect_timeout[dbms.routing.driver.connection.connect_timeout]
 
 |===
 
@@ -485,7 +494,7 @@ It is recommended to set maximum lifetime to a slightly smaller value than the o
 Zero and negative values result in lifetime not being checked.
 
 | Default value
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.routing.driver.connection.max_lifetime[dbms.routing.driver.connection.max_lifetime]
+| xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.max_lifetime[dbms.routing.driver.connection.max_lifetime]
 
 |===
 
@@ -505,7 +514,7 @@ Negative values are allowed and result in unlimited acquisition timeout.
 Value of `0` is allowed and results in no timeout and immediate failure when connection is unavailable.
 
 | Default value
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.routing.driver.connection.pool.acquisition_timeout[dbms.routing.driver.connection.pool.acquisition_timeout]
+| xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.acquisition_timeout[dbms.routing.driver.connection.pool.acquisition_timeout]
 
 |===
 
@@ -525,7 +534,7 @@ Negative values are allowed and result in unlimited pool.
 Value of `0` is not allowed.
 
 | Default value
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.routing.driver.connection.pool.max_size[dbms.routing.driver.connection.pool.max_size]
+| xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.max_size[dbms.routing.driver.connection.pool.max_size]
 
 |===
 
@@ -542,15 +551,11 @@ Value of `0` is not allowed.
 One of `DEBUG`, `INFO`, `WARN`, `ERROR`, or `NONE`.
 
 | Default value
-| link:{neo4j-docs-base-uri}/operations-manual/{page-version}/configuration/configuration-settings#config_dbms.routing.driver.logging.level[dbms.routing.driver.logging.level]
+| xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.logging.level[dbms.routing.driver.logging.level]
 
 |===
 
-[NOTE]
-====
-If a transaction modifies a database alias, other transactions concurrently executing against that alias may be aborted and rolled back for safety.
-This prevents issues such as a transaction executing against multiple target databases for the same alias.
-====
+The below query creates a remote database alias using driver settings:
 
 .Query
 [source, cypher]
@@ -565,7 +570,7 @@ DRIVER {
 }
 ----
 
-When a database alias pointing to a remote database has been created, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+When a database alias targeting a remote database has been created, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
 
 .Query
 [source, cypher]
@@ -587,7 +592,7 @@ SHOW ALIAS `remote-with-driver-settings` FOR DATABASE YIELD *
 ==== Set properties for remote database aliases
 
 Just as the local database aliases, the remote database aliases can be given properties.
-These properties can then be used in queries with the xref::database-administration/composite-databases/querying-composite-databases.adoc#composite-databases-queries-built-in-functions[`graph.propertiesByName()` function].
+These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
 
 .Query
 [source, cypher]
@@ -615,10 +620,6 @@ SHOW ALIAS `remote-northwind-2021` FOR DATABASE YIELD name, properties
 +--------------------------------------------------------------+
 ----
 
-[NOTE]
-====
-For more information on  local and remote database aliases in a composite database, see xref::database-administration/composite-databases/manage-composite-databases.adoc#create-composite-database-alias[Create database aliases in composite databases].
-====
 
 [[alias-management-alter-database-alias]]
 == Alter database aliases
@@ -735,7 +736,7 @@ ALTER ALIAS `motion pictures` SET DATABASE PROPERTIES { nameContainsSpace: true,
 ALTER ALIAS `movie scripts` SET DATABASE PROPERTIES { nameContainsSpace: true }
 ----
 
-The updated properties can then be used in queries with the xref::database-administration/composite-databases/querying-composite-databases.adoc#composite-databases-queries-built-in-functions[`graph.propertiesByName()` function].
+The updated properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
 
 === Use `IF EXISTS` when altering database aliases
 
