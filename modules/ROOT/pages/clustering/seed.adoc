@@ -2,7 +2,7 @@
 [role=enterprise-edition]
 [[clustering-seed]]
 = Seed a cluster
-:description: How to seed a new Neo4j cluster with existing data. 
+:description: How to seed a new Neo4j cluster with existing data.
 
 
 [[clustering-seed-introduction]]
@@ -11,6 +11,9 @@
 Regardless of whether you are just playing around with Neo4j or setting up a production environment, you likely have some existing data that you want to transfer into your xref:clustering/deploy.adoc[newly created cluster].
 Neo4j supports seeding a cluster from a database dump, a database backup, or from another data source (with the Import tool).
 For more information about the different backup options and how to use the Neo4j Import tool, see xref:backup-restore/planning.adoc#backup-restore-options[Backup and restore options] and xref:tools/neo4j-admin/index.adoc[Neo4j Admin].
+
+It is possible to seed a cluster with a single database or multiple, including a full DBMS.
+Any seeding that includes restoring the `system` database needs to be done offline, but any other databases can be seeded online.
 
 [NOTE]
 ====
@@ -24,8 +27,10 @@ The seeding is usually performed on primary instances only but it is possible to
 [[clustering-seed-from-dump]]
 == Seed a cluster from a database dump (offline)
 
-If you have an existing Neo4j database that you want to use for your new cluster, use xref:backup-restore/offline-backup.adoc[`neo4j-admin dump`] to create an offline backup.
-This could be an offline backup from a standalone Neo4j instance or a cluster member (e.g., an existing Read Replica instance).
+This could be an offline backup (i.e. a dump) from a standalone Neo4j instance or a cluster member (e.g., an existing Read Replica instance).
+The following example seeds a newly created cluster with an example DBMS consisting of the `system` database and the default database, `neo4j` from a dump.
+If you want to seed a single user database, follow the steps in <<causal-clustering-seed-from-backups>> further on.
+
 
 [TIP]
 ====
@@ -37,23 +42,8 @@ This scenario is useful in disaster recovery where some servers have retained th
 Moving files and directories manually in or out of a Neo4j installation is not recommended and considered unsupported.
 ====
 
-. Create a new Neo4j Core-only cluster following the instructions in xref:clustering/deploy.adoc#clustering-new-core-instance-cluster[Configure a cluster with Core instances].
-. Delete any databases with names conflicting with the ones in your seeds by using the Cypher command `DROP DATABASE <database-name` against the `system` database. +
-The command is automatically routed to the appropriate Core instance and from there to the other cluster members.
-+
-[NOTE]
-====
-Dropping a database also deletes the users and roles associated with it.
-
-If you cannot delete the database because Neo4j is not running or because your seeds include the `system` database (which cannot be dropped), you must run `neo4j-admin unbind` as described xref:tools/neo4j-admin/unbind.adoc[here].
-
-. Run `neo4j-admin unbind` to turn the cluster members into standalone instances by removing their cluster state.
-Otherwise, the store files you have (post restore) will be out of sync with the cluster state you have for that database, leading to logical corruption.
-. Remove the store and transaction log files for the database in question.
-The locations of these files may be xref:reference/configuration-settings.adoc#config_dbms.directories.logs[configured].
-====
-+
-. Stop each cluster member.
+. Create a new Neo4j Core-only cluster following the instructions in xref:clustering/deploy.adoc#clustering-new-core-instance-cluster[Configure a cluster with Core instances] but *do not start* any of the members.
+(If you have started any of the cluster members, stop and unbind each started member.)
 . Use xref:backup-restore/restore-dump.adoc[`neo4j-admin load`] to seed each of the Core members in the cluster.
 +
 The examples assume that you are restoring one user database with the default name of `neo4j` and the `system` database, containing the replicated configuration state.
@@ -264,3 +254,27 @@ To create a cluster based on imported data, it is recommended to first import th
 . Seed a new cluster using the instructions in xref:clustering/seed.adoc#clustering-seed-from-dump[Seed a cluster from a database dump (offline)].
 +
 Skip the `system` database in this scenario since it is not needed.
+
+
+
+
+
+
+
+
+
+
+// . Delete any databases with names conflicting with the ones in your seeds by using the Cypher command `DROP DATABASE <database-name` against the `system` database. +
+// The command is automatically routed to the appropriate Core instance and from there to the other cluster members.
+// +
+// [NOTE]
+// ====
+// Dropping a database also deletes the users and roles associated with it.
+
+// If you cannot delete the database because Neo4j is not running or because your seeds include the `system` database (which cannot be dropped), you must run `neo4j-admin unbind` as described xref:tools/neo4j-admin/unbind.adoc[here].
+
+// . Run `neo4j-admin unbind` to turn the cluster members into standalone instances by removing their cluster state.
+// Otherwise, the store files you have (post restore) will be out of sync with the cluster state you have for that database, leading to logical corruption.
+// . Remove the store and transaction log files for the database in question.
+// The locations of these files may be xref:reference/configuration-settings.adoc#config_dbms.directories.logs[configured].
+// ====
