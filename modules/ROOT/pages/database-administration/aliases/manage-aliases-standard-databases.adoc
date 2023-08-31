@@ -44,11 +44,8 @@ CREATE DATABASE `northwind-graph-2020`;
 CREATE DATABASE `northwind-graph-2021`;
 CREATE DATABASE `northwind-graph-2022`;
 CREATE DATABASE `sci-fi-books`;
-CREATE COMPOSITE DATABASE `library`;
 CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi-books`;
-CREATE COMPOSITE DATABASE garden;
 CREATE DATABASE `perennial-flowers`;
-CREATE ALIAS `library`.`romance` FOR DATABASE `romance-books` AT 'neo4j+s://location:7687' USER alice PASSWORD 'password';
 CREATE ALIAS `movie scripts` FOR DATABASE `scripts` AT "neo4j+s://location:7687" USER alice PASSWORD "password"
 DRIVER {
   ssl_enforced: true,
@@ -123,6 +120,7 @@ When a `YIELD *` clause is provided, the full set of columns is returned.
 === Show all aliases for a database
 
 A summary of all available database aliases can be displayed using the command `SHOW ALIASES FOR DATABASE`.
+This command will show database aliases for both standard and composite databases.
 
 .Query
 [source, cypher]
@@ -133,15 +131,14 @@ SHOW ALIASES FOR DATABASE
 .Result
 [role="queryresult]
 ----
-+--------------------------------------------------------------------------------------------------+
-| name              | composite | database        | location | url                       | user    |
-+--------------------------------------------------------------------------------------------------+
-| "films"           | NULL      | "movies"        | "local"  | NULL                      | NULL    |
-| "library.romance" | "library" | "romance-books" | "remote" | "neo4j+s://location:7687" | "alice" |
-| "library.sci-fi"  | "library" | "sci-fi-books"  | "local"  | NULL                      | NULL    |
-| "motion pictures" | NULL      | "movies"        | "local"  | NULL                      | NULL    |
-| "movie scripts"   | NULL      | "scripts"       | "remote" | "neo4j+s://location:7687" | "alice" |
-+--------------------------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------+
+| name              | composite | database       | location | url                       | user    |
++-------------------------------------------------------------------------------------------------+
+| "films"           | NULL      | "movies"       | "local"  | NULL                      | NULL    |
+| "library.sci-fi"  | NULL      | "sci-fi-books" | "local"  | NULL                      | NULL    |
+| "motion pictures" | NULL      | "movies"       | "local"  | NULL                      | NULL    |
+| "movie scripts"   | NULL      | "scripts"      | "remote" | "neo4j+s://location:7687" | "alice" |
++-------------------------------------------------------------------------------------------------+
 ----
 
 === Show specific aliases for databases
@@ -164,23 +161,6 @@ SHOW ALIAS films FOR DATABASES
 +---------------------------------------------------------+
 ----
 
-
-.Query
-[source, cypher]
-----
-SHOW ALIAS library.romance FOR DATABASES
-----
-
-.Result
-[role="queryresult"]
-----
-+--------------------------------------------------------------------------------------------------+
-| name              | composite | database        | location | url                       | user    |
-+--------------------------------------------------------------------------------------------------+
-| "library.romance" | "library" | "romance-books" | "remote" | "neo4j+s://location:7687" | "alice" |
-+--------------------------------------------------------------------------------------------------+
-----
-
 === Show detailed aliases information for a database
 
 .Query
@@ -192,15 +172,14 @@ SHOW ALIASES FOR DATABASE YIELD *
 .Result
 [role="queryresult"]
 ----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name              | composite | database        | location | url                       | user    | driver                                                                                                                                                                                                         | properties                |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "films"           | NULL      | "movies"        | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
-| "library.romance" | "library" | "romance-books" | "remote" | "neo4j+s://location:7687" | "alice" | {}                                                                                                                                                                                                             | {}                        |
-| "library.sci-fi"  | "library" | "sci-fi-books"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
-| "motion pictures" | NULL      | "movies"        | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {namecontainsspace: TRUE} |
-| "movie scripts"   | NULL      | "scripts"       | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | {}                        |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name              | composite | database       | location | url                       | user    | driver                                                                                                                                                                                                         | properties                |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "films"           | NULL      | "movies"       | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
+| "library.sci-fi"  | NULL      | "sci-fi-books" | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
+| "motion pictures" | NULL      | "movies"       | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {namecontainsspace: TRUE} |
+| "movie scripts"   | NULL      | "scripts"      | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | {}                        |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 === Show `count` of aliases for a database
@@ -220,7 +199,7 @@ RETURN count(*) as count
 +-------+
 | count |
 +-------+
-| 5     |
+| 4     |
 +-------+
 ----
 
@@ -248,13 +227,12 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 .Result
 [role="queryresult"]
 ----
-+-----------------------------------------------------------------+
-| name              | url                       | database        |
-+-----------------------------------------------------------------+
-| "motion pictures" | NULL                      | "movies"        |
-| "library.romance" | "neo4j+s://location:7687" | "romance-books" |
-| "movie scripts"   | "neo4j+s://location:7687" | "scripts"       |
-+-----------------------------------------------------------------+
++-----------------------------------------------------------+
+| name              | url                       | database  |
++-----------------------------------------------------------+
+| "motion pictures" | NULL                      | "movies"  |
+| "movie scripts"   | "neo4j+s://location:7687" | "scripts" |
++-----------------------------------------------------------+
 ----
 
 [[alias-management-create-database-alias]]
@@ -266,27 +244,15 @@ For more information on local and remote database aliases as part of a composite
 
 The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
 
-This command is optionally idempotent, with the default behavior to fail with an error if the database alias already exists.
-Inserting `IF NOT EXISTS` after the alias name ensures that no error is returned and nothing happens should a database alias with that name already exist.
-Adding `OR REPLACE` to the command will result in any existing database alias being deleted and a new one created.
-`CREATE OR REPLACE ALIAS` will fail if there is an existing database with the same name.
-
-[NOTE]
-====
-The `IF NOT EXISTS` and `OR REPLACE` parts of this command cannot be used together.
-====
-
 [NOTE]
 ====
 Database alias names are subject to the rules specified in the xref:database-administration/aliases/naming-aliases.adoc[Alias names] section.
 ====
 
 [[alias-management-create-local-database-alias]]
-=== Create local database aliases
+=== Create database aliases for local databases
 
 A local database alias targets a database within the same DBMS.
-
-==== Create aliases for local databases
 
 .Query
 [source, cypher]
@@ -294,9 +260,7 @@ A local database alias targets a database within the same DBMS.
 CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`
 ----
 
-
 When you create a local database alias, it shows up in the `aliases` column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
-
 
 .Query
 [source, cypher]
@@ -329,8 +293,36 @@ SHOW ALIAS `northwind` FOR DATABASE
 | "northwind" | NULL      | "northwind-graph-2021" | "local"  | NULL | NULL |
 +---------------------------------------------------------------------------+
 ----
+ 
+=== Use `IF EXISTS` or `OR REPLACE` when creating database aliases
 
-==== Set properties for local database aliases
+The `CREATE ALIAS` command is optionally idempotent, with the default behavior to fail with an error if the database alias already exists.
+There are two ways to circumvent this behavior.
+
+First, appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database alias already exist.
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `northwind` IF NOT EXISTS  FOR DATABASE `northwind-graph-2021`
+----
+
+Second, adding `OR REPLACE` to the command results in any existing database being deleted and a new one being created.
+
+.Query
+[source, cypher]
+----
+CREATE OR REPLACE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`
+----
+
+This is equivalent to running `DROP ALIAS `northwind++` IF EXISTS FOR DATABASE `northwind-graph-2021`++` followed by `CREATE ALIAS `northwind++` FOR DATABASE `northwind-graph-2021`++`.
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
+====
+
+=== Set properties for local database aliases
 
 Local database aliases can also be given properties.
 These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
@@ -361,53 +353,15 @@ SHOW ALIAS `northwind-2022` FOR DATABASE YIELD name, properties
 +------------------------------------------------------+
 ----
 
-==== Create database aliases with the same name as an existing alias
-
-Adding a local database alias with the same name as an existing local or remote alias does nothing with the `IF NOT EXISTS` clause but fails without it.
-
-.Query
-[source, cypher]
-----
-CREATE ALIAS `northwind` IF NOT EXISTS FOR DATABASE `northwind-graph-2020`
-----
-
-==== Create or replace database aliases
-
-It is also possible to replace a database alias.
-The old alias may be either local or remote.
-
-.Query
-[source, cypher]
-----
-CREATE OR REPLACE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`
-----
-
-This is equivalent to running the following two queries consecutively:
-
-.Query
-[source, cypher]
-----
-DROP ALIAS `northwind` IF EXISTS FOR DATABASE
-----
-
-.Query
-[source, cypher]
-----
-CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`
-----
 
 [[alias-management-create-remote-database-alias]]
-=== Create remote database aliases
+=== Create database aliases for remote databases
 
 A database alias can target a remote database by providing an URL and the credentials of a user on the remote Neo4j DBMS.
 See xref:database-administration/aliases/remote-database-alias-configuration.adoc[] for the necessary configurations.
 
 As with local database aliases, creating remote database aliases allows `IF NOT EXISTS` and `OR REPLACE` clauses.
 Both check for any remote or local database aliases.
-
-==== Create remote database aliases
-
-//Skip testing all remote examples because it requires a lot of configuration, both server and client side.
 
 .Query
 [source, cypher]
@@ -624,17 +578,6 @@ SHOW ALIAS `remote-northwind-2021` FOR DATABASE YIELD name, properties
 [[alias-management-alter-database-alias]]
 == Alter database aliases
 
-////
-CREATE ALIAS garden.flowers FOR DATABASE `perennial-flowers`;
-CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2020`; // created in the replace alias example
-CREATE ALIAS `remote-northwind` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password';
-CREATE ALIAS `remote-with-driver-settings` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER alice PASSWORD 'password'
-DRIVER {
-    connection_timeout: duration({ minutes: 1 }),
-    connection_pool_max_size: 10
-    };
-CREATE ALIAS garden.trees FOR DATABASE trees AT 'neo4j+s://location:7687' USER alice PASSWORD 'password'
-////
 
 Database aliases can be altered using `ALTER ALIAS` to change its database target, properties, URL, user credentials, or driver settings.
 The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
@@ -740,7 +683,6 @@ The updated properties can then be used in queries with the link:{neo4j-docs-bas
 
 === Use `IF EXISTS` when altering database aliases
 
-
 The `ALTER ALIAS` command is optionally idempotent, with the default behavior to fail with an error if the database alias does not exist.
 Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the alias not exist.
 
@@ -755,29 +697,8 @@ ALTER ALIAS `no-alias` IF EXISTS SET DATABASE TARGET `northwind-graph-2021`
 (no changes, no records)
 ----
 
-
-
 [[alias-management-drop-database-alias]]
 == Delete database aliases
-
-////
-CREATE ALIAS garden.flowers FOR DATABASE `perennial-flowers` PROPERTIES { perennial: true };
-CREATE ALIAS `northwind-2022` FOR DATABASE `northwind-graph-2022` PROPERTIES { newestNorthwind: true, index: 3 };
-CREATE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`;
-CREATE ALIAS `remote-northwind-2021`
-FOR DATABASE `northwind-graph-2021` AT 'neo4j+s://location:7687' USER alice PASSWORD 'password'
-PROPERTIES { newestNorthwind: false, index: 6 };
-CREATE ALIAS `remote-northwind` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://other-location:7687" USER alice PASSWORD 'password';
-CREATE ALIAS `remote-with-driver-settings` FOR DATABASE `northwind-graph-2020` AT "neo4j+s://location:7687" USER bob PASSWORD 'newPassword'
-DRIVER {
-  connection_timeout: duration({ minutes: 1 }),
-   logging_level: "debug"
-   };
-CREATE ALIAS garden.trees FOR DATABASE updatedTrees AT 'neo4j+s://location:7687'
-USER alice PASSWORD 'password'
-PROPERTIES { treeVersion: 2 }
-////
-
 
 Both local and remote database aliases can be deleted using the `DROP ALIAS` command.
 The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
@@ -812,9 +733,6 @@ SHOW DATABASE `northwind-graph-2021`
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-
-
-
 === Delete remote database aliases
 
 Delete a remote database alias.
@@ -823,6 +741,23 @@ Delete a remote database alias.
 [source, cypher]
 ----
 DROP ALIAS `remote-northwind` FOR DATABASE
+----
+
+When a database alias has been deleted, it will no longer show up in the `SHOW ALIASES FOR DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES `remote-northwind` FOR DATABASE
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------------+
+| name | composite | database | location | url | user |
++-----------------------------------------------------+
++-----------------------------------------------------+
 ----
 
 === Use `IF EXISTS` when deleting database aliases
