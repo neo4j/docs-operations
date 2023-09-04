@@ -5,18 +5,209 @@
 
 Both local and remote database aliases can be created as part of a composite database.
 
-[[alias-management-escaping]]
-== Alias names and escaping
 ////
 [source, cypher, role=test-setup]
 ----
-CREATE DATABASE `northwind-graph`;
-CREATE COMPOSITE DATABASE `my-composite-database-with-dashes`;
-CREATE COMPOSITE DATABASE `my.composite.database.with.dots`;
-CREATE COMPOSITE DATABASE mySimpleCompositeDatabase;
-CREATE COMPOSITE DATABASE `myCompositeDatabase.withDot`;
+CREATE DATABASE `sci-fi-books`;
+CREATE COMPOSITE DATABASE `library`;
+CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi-books`;
+CREATE COMPOSITE DATABASE garden;
+CREATE DATABASE `perennial-flowers`;
+CREATE ALIAS `library`.`romance` FOR DATABASE `romance-books` AT 'neo4j+s://location:7687' USER alice PASSWORD 'password';
 ----
 ////
+
+
+[[manage-aliases-composite-databases-list]]
+== List database aliases for composite databases
+
+Available database aliases for composite databases can be seen using `SHOW ALIASES FOR DATABASE`.
+The name of the composite database a particular database alias is targeting appears in the returned `composite` column.
+
+The required privileges are described in the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/dbms-administration/#access-control-dbms-administration-alias-management[Cypher Manual -> Access control -> DBMS administration].
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------------------------------------------------------+
+| name              | composite | database        | location | url                       | user    |
++--------------------------------------------------------------------------------------------------+
+| "library.romance" | "library" | "romance-books" | "remote" | "neo4j+s://location:7687" | "alice" |
+| "library.sci-fi"  | "library" | "sci-fi-books"  | "local"  | NULL                      | NULL    |
++--------------------------------------------------------------------------------------------------+
+----
+
+For a description of all the returned columns of this command, and for ways in which the `SHOW ALIASES FOR DATABASE` command can be filtered for aliases targeting both standard and composite databases, see xref:database-administration/aliases/manage-aliases-standard-databases.adoc#manage-aliases-list[list aliases for standard databases].
+
+
+[[create-composite-database-alias]]
+== Create database aliases for composite databases
+
+Both local and remote database aliases can be part of a xref::database-administration/composite-databases/manage-composite-databases.adoc[composite database].
+
+The database alias is made of two parts, separated by a dot: the namespace and the alias name.
+
+The namespace must be the name of the composite database.
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS garden.flowers
+FOR DATABASE `perennial-flowers`
+----
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS garden.trees
+FOR DATABASE trees AT 'neo4j+s://location:7687'
+USER alice PASSWORD 'password'
+----
+
+When a database alias has been created in a composite database, it will show up in the `constituents` column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE garden YIELD name, type, constituents
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------+
+| name     | type        | constituents                       |
++-------------------------------------------------------------+
+| "garden" | "composite" | ["garden.flowers", "garden.trees"] |
++-------------------------------------------------------------+
+----
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE WHERE name STARTS WITH 'garden'
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------------------------------------------------------------+
+| name             | composite | database            | location | url                       | user    |
++-----------------------------------------------------------------------------------------------------+
+| "garden.flowers" | "garden"  | "perennial-flowers" | "local"  | NULL                      | NULL    |
+| "garden.trees"   | "garden"  | "trees"             | "remote" | "neo4j+s://location:7687" | "alice" |
++-----------------------------------------------------------------------------------------------------+
+----
+
+Database aliases cannot target a composite database.
+
+.Query
+[source, cypher, role=test-fail]
+----
+CREATE ALIAS yard FOR DATABASE garden
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+Failed to create the specified database alias 'yard': Database 'garden' is composite.
+----
+
+== Alter local and remote database aliases for composite databases
+
+Examples of altering local and remote database alias in composite databases.
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS garden.flowers SET DATABASE PROPERTIES { perennial: true }
+----
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS garden.trees SET DATABASE TARGET updatedTrees AT 'neo4j+s://location:7687' PROPERTIES { treeVersion: 2 }
+----
+
+The updated properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
+
+The changes for all database aliases will show up in the `SHOW ALIASES FOR DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE YIELD *
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------------------------------------------------------------------------------------------+
+| name              | composite | database            | location | url                       | user    | driver | properties        |
++-----------------------------------------------------------------------------------------------------------------------------------+
+| "garden.flowers"  | "garden"  | "perennial-flowers" | "local"  | NULL                      | NULL    | NULL   | {perennial: TRUE} |
+| "garden.trees"    | "garden"  | "updatedtrees"      | "remote" | "neo4j+s://location:7687" | "alice" | {}     | {treeversion: 2}  |
+| "library.romance" | "library" | "romance-books"     | "remote" | "neo4j+s://location:7687" | "alice" | {}     | {}                |
+| "library.sci-fi"  | "library" | "sci-fi-books"      | "local"  | NULL                      | NULL    | NULL   | {}                |
++-----------------------------------------------------------------------------------------------------------------------------------+
+----
+
+== Delete database aliases for composite databases
+
+Delete an alias in a composite database.
+
+.Query
+[source, cypher]
+----
+DROP ALIAS garden.flowers FOR DATABASE
+----
+
+When a database alias has been deleted, it will no longer show up in the `SHOW ALIASES FOR DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW ALIASES FOR DATABASE
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------------------------------------------------------+
+| name              | composite | database        | location | url                       | user    |
++--------------------------------------------------------------------------------------------------+
+| "garden.trees"    | "garden"  | "updatedtrees"  | "remote" | "neo4j+s://location:7687" | "alice" |
+| "library.romance" | "library" | "romance-books" | "remote" | "neo4j+s://location:7687" | "alice" |
+| "library.sci-fi"  | "library" | "sci-fi-books"  | "local"  | NULL                      | NULL    |
++--------------------------------------------------------------------------------------------------+
+----
+
+Additionally, deleted aliases will no longer appear in the `constituents` column for the `SHOW DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE garden YIELD name, type, constituents
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------+
+| name     | type        | constituents     |
++-------------------------------------------+
+| "garden" | "composite" | ["garden.trees"] |
++-------------------------------------------+
+----
+
+[[alias-management-escaping]]
+== Database alias names and escaping
 
 Naming database aliases in composite databases follows the same rule as xref:database-administration/aliases/naming-aliases.adoc[naming aliases for standard databases].
 However, when it comes to escaping names using backticks, there are some additional things to consider:
@@ -27,6 +218,13 @@ The composite database name and the database alias name need to be escaped indiv
 Backticks may be added regardless of whether the name contains special characters or not, so it is good practice to always backtick both names, e.g.  `++`composite`++.++`alias`++`.
 
 The following example creates a database alias named `my alias with spaces` as a constituent in the composite database named `my-composite-database-with-dashes`:
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE DATABASE `northwind-graph`;
+----
+////
 
 .Query
 [source, cypher]
@@ -155,156 +353,3 @@ Failed to delete the specified database alias 'foo.bar': Database alias does not
 Had the composite database `foo` not existed, the database alias `foo.bar` would have been dropped.
 
 In these cases, it is recommended to avoid parameters and explicitly escape the composite database name and alias name separately to avoid ambiguity.
-
-[[create-composite-database-alias]]
-== Create database aliases in composite databases
-
-Both local and remote database aliases can be part of a xref::database-administration/composite-databases/manage-composite-databases.adoc[composite database].
-
-The database alias is made of two parts, separated by a dot: the namespace and the alias name.
-
-The namespace must be the name of the composite database.
-
-.Query
-[source, cypher]
-----
-CREATE ALIAS garden.flowers
-FOR DATABASE `perennial-flowers`
-----
-
-.Query
-[source, cypher]
-----
-CREATE ALIAS garden.trees
-FOR DATABASE trees AT 'neo4j+s://location:7687'
-USER alice PASSWORD 'password'
-----
-
-When a database alias has been created in a composite database, it will show up in the `constituents` column provided by the command `SHOW DATABASES` and in the `SHOW ALIASES FOR DATABASE` command.
-
-.Query
-[source, cypher]
-----
-SHOW DATABASE garden YIELD name, type, constituents
-----
-
-.Result
-[role="queryresult"]
-----
-+-------------------------------------------------------------+
-| name     | type        | constituents                       |
-+-------------------------------------------------------------+
-| "garden" | "composite" | ["garden.flowers", "garden.trees"] |
-+-------------------------------------------------------------+
-----
-
-.Query
-[source, cypher]
-----
-SHOW ALIASES FOR DATABASE WHERE name STARTS WITH 'garden'
-----
-
-.Result
-[role="queryresult"]
-----
-+-----------------------------------------------------------------------------------------------------+
-| name             | composite | database            | location | url                       | user    |
-+-----------------------------------------------------------------------------------------------------+
-| "garden.flowers" | "garden"  | "perennial-flowers" | "local"  | NULL                      | NULL    |
-| "garden.trees"   | "garden"  | "trees"             | "remote" | "neo4j+s://location:7687" | "alice" |
-+-----------------------------------------------------------------------------------------------------+
-----
-
-Database aliases cannot target a composite database.
-
-.Query
-[source, cypher, role=test-fail]
-----
-CREATE ALIAS yard FOR DATABASE garden
-----
-
-.Error message
-[source, output, role="noheader"]
-----
-Failed to create the specified database alias 'yard': Database 'garden' is composite.
-----
-
-== Alter local and remote aliases in composite databases
-
-Examples of altering local and remote database alias in composite databases.
-
-.Query
-[source, cypher]
-----
-ALTER ALIAS garden.flowers SET DATABASE PROPERTIES { perennial: true }
-----
-
-.Query
-[source, cypher]
-----
-ALTER ALIAS garden.trees SET DATABASE TARGET updatedTrees AT 'neo4j+s://location:7687' PROPERTIES { treeVersion: 2 }
-----
-
-The updated properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
-
-The changes for all database aliases will show up in the `SHOW ALIASES FOR DATABASE` command.
-
-.Query
-[source, cypher]
-----
-SHOW ALIASES FOR DATABASE YIELD *
-WHERE name IN ['northwind', 'remote-northwind', 'remote-with-driver-settings', 'movie scripts',
-'motion pictures', 'garden.flowers', 'garden.trees']
-----
-
-.Result
-[role="queryresult"]
-----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name                          | composite | database               | location | url                             | user    | driver                                             | properties                                            |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "garden.flowers"              | "garden"  | "perennial-flowers"    | "local"  | NULL                            | NULL    | NULL                                               | {perennial: TRUE}                                     |
-| "garden.trees"                | "garden"  | "updatedtrees"         | "remote" | "neo4j+s://location:7687"       | "alice" | {}                                                 | {treeversion: 2}                                      |
-| "motion pictures"             | NULL      | "movies"               | "local"  | NULL                            | NULL    | NULL                                               | {namecontainsspace: TRUE, moreinfo: "no, not really"} |
-| "movie scripts"               | NULL      | "scripts"              | "remote" | "neo4j+s://location:7687"       | "alice" | {}                                                 | {namecontainsspace: TRUE}                             |
-| "northwind"                   | NULL      | "northwind-graph-2021" | "local"  | NULL                            | NULL    | NULL                                               | {}                                                    |
-| "remote-northwind"            | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://other-location:7687" | "alice" | {}                                                 | {}                                                    |
-| "remote-with-driver-settings" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687"       | "bob"   | {logging_level: "DEBUG", connection_timeout: PT1M} | {}                                                    |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-----
-
-== Delete aliases in composite databases
-
-Delete an alias in a composite database.
-
-.Query
-[source, cypher]
-----
-DROP ALIAS garden.flowers FOR DATABASE
-----
-
-When a database alias has been deleted, it will no longer show up in the `SHOW ALIASES FOR DATABASE` command.
-
-.Query
-[source, cypher]
-----
-SHOW ALIASES FOR DATABASE
-----
-
-.Result
-[role="queryresult"]
-----
-+---------------------------------------------------------------------------------------------------------------------+
-| name                          | composite | database               | location | url                       | user    |
-+---------------------------------------------------------------------------------------------------------------------+
-| "films"                       | NULL      | "movies"               | "local"  | NULL                      | NULL    |
-| "garden.trees"                | "garden"  | "updatedtrees"         | "remote" | "neo4j+s://location:7687" | "alice" |
-| "library.romance"             | "library" | "romance-books"        | "remote" | "neo4j+s://location:7687" | "alice" |
-| "library.sci-fi"              | "library" | "sci-fi-books"         | "local"  | NULL                      | NULL    |
-| "motion pictures"             | NULL      | "movies"               | "local"  | NULL                      | NULL    |
-| "movie scripts"               | NULL      | "scripts"              | "remote" | "neo4j+s://location:7687" | "alice" |
-| "northwind-2022"              | NULL      | "northwind-graph-2022" | "local"  | NULL                      | NULL    |
-| "remote-northwind-2021"       | NULL      | "northwind-graph-2021" | "remote" | "neo4j+s://location:7687" | "alice" |
-| "remote-with-driver-settings" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687" | "bob"   |
-+---------------------------------------------------------------------------------------------------------------------+
-----

@@ -5,7 +5,62 @@
 
 Composite databases are managed using Cypher(R) administrative commands.
 Note that it is not possible to modify access options or database topologies for composite databases as these are inherited from the constituent databases.
-For information about modifying access options and database topologies for standard databases, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-modify-database[Managing databases].
+For information about modifying access options, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/access-control/dbms-administration[Cypher Manual -> Access control -> DBMS administration]. 
+For information about about topologies for databases, see xref:clustering/setup/deploy.adoc#cluster-example-create-databases-on-cluster[databases in a cluster].
+// The above two links will have to be changed when server management and access control sections are migrated from Cypher Manual. 
+
+[[composite-databases-list]]
+== Listing composite databases
+
+////
+[source, cypher, role=test-setup]
+---- 
+CREATE COMPOSITE DATABASE `library`;
+CREATE DATABASE `sci-fi`;
+CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi`;
+----
+////
+
+The `type` column returned by the `SHOW DATABASES` command will display which databases are composite databases.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name      | type        | aliases            | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents       |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "library" | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | ["library.sci-fi"] |
+| "neo4j"   | "standard"  | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []                 |
+| "sci-fi"  | "standard"  | ["library.sci-fi"] | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "system"  | "system"    | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+For a description of all the returned column of this command, ways in which the `SHOW DATABASE` command can be filtered, and details about the privileges required for the command, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-list[listing standard databases].
+
+For composite databases, the `constituents` column is particularly interesting as it lists the aliases that make up the composite database.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE library YIELD name, constituents
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------+
+| name      | constituents       |
++--------------------------------+
+| "library" | ["library.sci-fi"] |
++--------------------------------+
+----
 
 [[composite-databases-create]]
 == Create a composite database
@@ -39,13 +94,15 @@ SHOW DATABASES
 .Result
 [role="queryresult"]
 ----
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name        | type        | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "inventory" | "composite" | []      | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-| "neo4j"     | "standard"  | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []           |
-| "system"    | "system"    | []      | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name        | type        | aliases            | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents       |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "inventory" | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "library"   | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | ["library.sci-fi"] |
+| "neo4j"     | "standard"  | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []                 |
+| "sci-fi"    | "standard"  | ["library.sci-fi"] | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "system"    | "system"    | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 For a full description of the columns returned by this command, and how to sort the results by specific columns, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-listing-databases[Managing databases].
@@ -85,7 +142,6 @@ The behavior of `IF EXISTS` and `OR REPLACE` apply to both standard and composit
 ====
 The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
 ====
-
 
 [[composite-databases-stop]]
 == Stop composite databases
