@@ -1,65 +1,18 @@
-:description: Basic maintenance operations when running Neo4j in a Docker container.
-[[docker-maintenance]]
-= Docker maintenance operations
-
-This page describes how to perform basic maintenance operations when running Neo4j in a Docker container.
-
-[[docker-neo4j-dump]]
-== Dump and load a Neo4j database (offline)
-
-The xref:backup-restore/offline-backup.adoc[`neo4j-admin database dump`] and xref:backup-restore/restore-dump.adoc[`neo4j-admin database load`] commands can be run locally to dump and load an offline database.
-
-The following are examples of how to dump and load the default `neo4j` database.
-Because these commands are run on a stopped database, you have to launch a container for each operation (dump and load), with the `--rm` flag.
-
-.Invoke `neo4j-admin database dump` to dump your database.
-====
-[source, shell, subs="attributes+,+macros"]
-----
-docker run --interactive --tty --rm \
-   --volume=$HOME/neo4j/data:/data \  #<1>
-   --volume=$HOME/neo4j/backups:/backups \  #<2>
-   neo4j/neo4j-admin:{neo4j-version-exact} \
-neo4j-admin database dump neo4j --to-path=/backups
-----
-<1> The volume that contains the database that you want to dump.
-<2> The volume that will be used for the dumped database.
-====
-
-.Invoke `neo4j-admin database load` to load your data into the new database.
-====
-[source, shell, subs="attributes+,+macros"]
-----
-docker run --interactive --tty --rm \
-    --volume=$HOME/neo4j/data:/data \ #<1>
-    --volume=$HOME/neo4j/backups:/backups \ #<2>
-    neo4j/neo4j-admin:{neo4j-version-exact} \
-neo4j-admin database load neo4j --from-path=/backups
-----
-<1> The volume that will contain the database, into which you want to load the dumped data.
-<2> The volume that stores the database dump.
-====
-
-Finally, you xref:docker/introduction.adoc#docker-user[launch a container] with the volume that contains the newly loaded database, and start using it.
-
-[NOTE]
-For more information on the `neo4j-admin database dump and load` syntax and options, see xref:backup-restore/offline-backup.adoc#offline-backup-command-options[`neo4j-admin database dump`] and xref:backup-restore/restore-dump.adoc#restore-dump-command-options[`neo4j-admin database load`]. +
-For more information on managing volumes, see https://docs.docker.com/storage/volumes/[the official Docker documentation^].
-
+:description: Backup and restore operations when running Neo4j in a Docker container.
 [role=enterprise-edition]
 [[docker-neo4j-backup-restore]]
-== Back up and restore a Neo4j database (online)
+= Back up and restore a Neo4j database (online)
+
 The Neo4j backup and restore commands can be run locally to backup and restore a live database.
 
 
 You can also get a `neo4j-admin` image that can be run on a dedicated machine, under the terms of an existing Enterprise licensing agreement.
 
-If Neo4j (a single instance or any member of a Neo4j cluster) is running inside a docker container, you can use `docker exec` to invoke `neo4-admin` from inside the container and take a backup of a database.
+If Neo4j (a single instance or any member of a Neo4j cluster) is running inside a Docker container, you can use `docker exec` to invoke `neo4-admin` from inside the container and take a backup of a database.
 
 
-[role=enterprise-edition]
 [[docker-neo4j-backup-exec]]
-=== Back up a database using `docker exec`
+== Back up a database using `docker exec`
 
 To back up a database, you must first mount the host backup folder onto the container.
 Because Docker does not allow new mounts to be added to a running container, you have to do this when starting the container.
@@ -72,11 +25,11 @@ Because Docker does not allow new mounts to be added to a running container, you
 docker run --name <container name> \
     --detach \
     --publish=7474:7474 --publish=7687:7687 \
-    --volume=$HOME/neo4j-enterprise/data:/data \ #<1>
-    --volume=$HOME/neo4j-enterprise/backups:/backups \ #<2>
+    --volume=$HOME/neo4j-enterprise/data:/data \ # <1>
+    --volume=$HOME/neo4j-enterprise/backups:/backups \ # <2>
     --user="$(id -u):$(id -g)" \
-    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<3>
-    --env NEO4J_server_backup_enabled=true \ #<4>
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <3>
+    --env NEO4J_server_backup_enabled=true \ # <4>
     neo4j:{neo4j-version-exact}-enterprise
 ----
 
@@ -99,12 +52,11 @@ docker exec --interactive --tty <container name> neo4j-admin database backup --t
 For more information on the `neo4j-admin database backup` syntax and options, see xref:backup-restore/online-backup.adoc[Back up an online database].
 ====
 
-[role=enterprise-edition]
 [[docker-neo4j-backup-admin]]
-=== Back up a database using `neo4j-admin` image
+== Back up a database using `neo4j-admin` image
 
 To perform a backup, the cluster needs at least one server with backup enabled and the backup listen address port set and exposed.
-Ports cannot be exposed on a docker container once it has started, so this must be done when starting the container.
+Ports cannot be exposed on a Docker container once it has started, so this must be done when starting the container.
 
 .A `docker run` command that starts a database configured for backing up.
 ====
@@ -114,11 +66,11 @@ docker run \
     --detach \
     --publish=7474:7474 \
     --publish=7687:7687 \
-    --publish=6362:6362 \ #<1>
-    --volume=$HOME/neo4j-enterprise/data:/data \ #<2>
-    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<3>
-    --env NEO4J_server_backup_enabled=true \ #<4>
-    --env NEO4J_server_backup_listen__address=0.0.0.0:6362 \ #<5>
+    --publish=6362:6362 \ # <1>
+    --volume=$HOME/neo4j-enterprise/data:/data \ # <2>
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <3>
+    --env NEO4J_server_backup_enabled=true \ # <4>
+    --env NEO4J_server_backup_listen__address=0.0.0.0:6362 \ # <5>
     neo4j:{neo4j-version-exact}-enterprise
 ----
 <1> The xref:configuration/configuration-settings.adoc#config_server.backup.listen_address[server.backup.listen_address] port defined in 5.
@@ -135,12 +87,12 @@ Once you have a backup enabled cluster node, the `neo4j/neo4j-admin:{neo4j-versi
 [source, shell, subs="attributes+,+macros"]
 ----
 docker run --interactive --tty --rm \
-   --volume=$HOME/neo4j-enterprise/backups:/backups \  #<1>
-   --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<2>
+   --volume=$HOME/neo4j-enterprise/backups:/backups \  # <1>
+   --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <2>
    neo4j/neo4j-admin:{neo4j-version-exact}-enterprise \
       neo4j-admin database backup <database name> \
          --to-path=/backups \
-         --from=<backup node IP address>:6362 #<3>
+         --from=<backup node IP address>:6362 # <3>
 ----
 <1> The volume that will be used for the backup database files.
 <2> The environment variable that accepts the Neo4j Enterprise Edition license agreement.
@@ -148,9 +100,8 @@ docker run --interactive --tty --rm \
 ====
 
 
-[role=enterprise-edition]
 [[docker-neo4j-restore-exec]]
-=== Restore a database using `docker exec`
+== Restore a database using `docker exec`
 
 The following are examples of how to restore a database backup on a stopped database in a running Neo4j instance.
 
@@ -161,10 +112,10 @@ The following are examples of how to restore a database backup on a stopped data
 docker run --name <container name> \
     --detach \
     --publish=7474:7474 --publish=7687:7687 \
-    --volume=$HOME/neo4j-enterprise/data:/data \ #<1>
-    --volume=$HOME/neo4j-enterprise/backups:/backups \ #<2>
+    --volume=$HOME/neo4j-enterprise/data:/data \ # <1>
+    --volume=$HOME/neo4j-enterprise/backups:/backups \ # <2>
     --user="$(id -u):$(id -g)" \
-    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<3>
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <3>
     neo4j:{neo4j-version-exact}-enterprise
 ----
 
@@ -190,9 +141,8 @@ docker exec --interactive --tty <containerID/name> neo4j-admin database restore 
 ====
 
 
-[role=enterprise-edition]
 [[docker-neo4j-restore-admin]]
-=== Restore a database using `neo4j-admin` image
+== Restore a database using `neo4j-admin` image
 
 The `neo4j-admin database restore` action cannot be performed remotely, as it requires access to the neo4j _/data_ folder.
 Consequently, backup files must be copied over to the new machine prior to a restore,
@@ -204,8 +154,8 @@ and the `neo4j-admin` docker image must be run on the same machine as the databa
 ----
 docker run --name <container name> \
     --detach \
-    --volume=$HOME/neo4j-enterprise/data:/data \ #<1>
-    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<2>
+    --volume=$HOME/neo4j-enterprise/data:/data \ # <1>
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <2>
     neo4j:{neo4j-version-exact}-enterprise
 ----
 
@@ -223,9 +173,9 @@ docker exec -it <containerID/name> cypher-shell -u neo4j -p <my-password> -d sys
 [source, shell]
 ----
 docker run --interactive --tty --rm \
-   --volume=$HOME/neo4j-enterprise/data:/data \ #<1>
-   --volume=$HOME/neo4j-enterprise/backups:/backups \  #<2>
-   --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ #<3>
+   --volume=$HOME/neo4j-enterprise/data:/data \ # <1>
+   --volume=$HOME/neo4j-enterprise/backups:/backups \  # <2>
+   --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \ # <3>
    neo4j/neo4j-admin:{neo4j-version-exact}-enterprise \
       neo4j-admin database restore \
          --from=/backups/<databasename>-<timestamp>.backup \
@@ -245,17 +195,4 @@ docker exec -it <containerID/name> cypher-shell -u neo4j -p <my-password> -d sys
 ====
 For more information on the `neo4j-admin database restore` syntax and options, see xref:backup-restore/restore-backup.adoc[Restore a database backup].
 ====
-
 Finally, you can use xref:docker/operations.adoc#docker-cypher-shell-example[the Cypher Shell tool] to verify that your data has been restored.
-
-[[docker-monitoring]]
-== Monitor Neo4j
-
-Neo4j logging output is written to files in the _/logs_ directory.
-This directory is mounted as a _/logs_ volume.
-
-[TIP]
-====
-For more information about configuring Neo4j, see xref:docker/configuration.adoc[Configuration]. +
-For more information about the Neo4j log files, see xref:monitoring/logging.adoc[Logging].
-====
