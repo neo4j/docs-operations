@@ -1,0 +1,170 @@
+:description: How to load plugins when using Neo4j in Docker.
+[[docker-plugins]]
+= Plugins
+
+
+This page describes how to install plugins into a Neo4j instance running inside a Docker container.
+For instructions about plugins in general see xref:configuration/plugins.adoc[Configuration -> Plugins].
+
+
+
+[[docker-plugins-procedures]]
+== Installing plugins
+
+To install plugins, including  link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/procedures#extending-neo4j-procedures[user-defined procedures], mount the folder or volume containing the plugin JARs to `/plugins`, for example:
+
+[source, shell, subs="attributes"]
+----
+docker run \
+   --publish=7474:7474 --publish=7687:7687 \
+   --volume=$HOME/neo4j/plugins:/plugins \
+   neo4j:{neo4j-version-exact}
+----
+
+Neo4j automatically loads any plugins found in the `/plugins` folder on startup.
+
+
+[[docker-plugins-neo4jplugins]]
+== `NEO4J_PLUGINS` utility
+
+The Neo4j Docker image includes a startup script that can automatically download and configure certain Neo4j plugins at runtime.
+
+[NOTE]
+====
+This feature is intended to facilitate the use of the Neo4j plugins in development environments, but it is not recommended for production environments.
+
+To use plugins in production with Neo4j Docker containers, see xref:docker/plugins.adoc#docker-plugins-procedures[Install user-defined procedures].
+====
+
+The `NEO4J_PLUGINS` environment variable can be used to specify the plugins to install using this method.
+This should be set to a JSON-formatted list of the xref:configuration/plugins.adoc[supported plugins].
+
+[NOTE]
+====
+Running Bloom in a Docker container requires Neo4j Docker image 4.2.3-enterprise or later.
+====
+
+If invalid `NEO4J_PLUGINS` values are passed, Neo4j returns a notification that the plugin is not known.
+For example, `--env NEO4J_PLUGINS='["gds"]'` returns the following notification:
+
+.Example output
+[source, shell, role="noheader"]
+----
+"gds" is not a known Neo4j plugin. Options are:
+apoc
+apoc-extended
+bloom
+graph-data-science
+graphql
+n10s
+----
+
+.Install the APOC Core plugin (`apoc`)
+====
+You can use the Docker argument `--env NEO4J_PLUGINS='["apoc"]'` and run the following command:
+
+[source, shell, subs="attributes"]
+----
+docker run -it --rm \
+  --publish=7474:7474 --publish=7687:7687 \
+  --env NEO4J_AUTH=none \
+  --env NEO4J_PLUGINS='["apoc"]' \
+  neo4j:{neo4j-version-exact}
+----
+====
+
+.Install the APOC Core plugin (`apoc`) and the Graph Data Science plugin (`graph-data-science`)
+====
+You can use the Docker argument `--env NEO4J_PLUGINS='["apoc", "graph-data-science"]'` and run the following command:
+
+[source, shell, subs="attributes"]
+----
+docker run -it --rm \
+  --publish=7474:7474 --publish=7687:7687 \
+  --env NEO4J_AUTH=none \
+  --env NEO4J_PLUGINS='["apoc", "graph-data-science"]' \
+  neo4j:{neo4j-version-exact}
+----
+====
+
+[[docker-plugins-caching]]
+== Storing downloaded plugins
+
+In situations where bandwidth is limited, or Neo4j is stopped and started frequently, it may be desirable to download plugins once and re-use them rather than downloading them each time.
+
+By using the `NEO4J_PLUGINS` utility in combination with mounting storage to `/plugins`, the plugin jars are downloaded into the `/plugins` folder.
+This can then be used again later to supply the same plugins to Neo4j without needing to set `NEO4J_PLUGINS`.
+
+.Example of automatically downloading and re-using plugins with docker.
+====
+.Get the APOC plugin and save it into `$HOME/neo4j/plugins`
+[source, shell, subs="attributes+,+macros"]
+----
+docker run -it --rm \
+  --publish=7474:7474 --publish=7687:7687 \
+  --env NEO4J_AUTH=none \
+  --env NEO4J_PLUGINS='["apoc"]' \
+   --volume=$HOME/neo4j/plugins:/plugins \ # <1>
+  neo4j:{neo4j-version-exact}
+----
+<1> Mounts host folder `$HOME/neo4j/plugins` to `/plugins`.
+
+.Verify the `apoc` plugin is downloaded.
+[source, shell]
+----
+docker kill <containerID/name>
+ls $HOME/neo4j/plugins
+  apoc.jar
+----
+
+.Start a new container and verify `apoc` is installed.
+[source, shell, subs="attributes"]
+----
+docker run -it --rm \
+  --publish=7474:7474 --publish=7687:7687 \
+  --env NEO4J_AUTH=none \
+   --volume=$HOME/neo4j/plugins:/plugins \
+  neo4j:{neo4j-version-exact}
+
+cypher-shell "RETURN apoc.version();"
+----
+====
+
+[[docker-plugins-licenses]]
+== Installing plugin licenses
+
+If a plugin requires a license, the license file can be supplied to the container by mounting the folder or volume containing license file(s) to `/licenses`.
+
+[NOTE]
+====
+To check if the plugin requires a license, refer to the xref:configuration/plugins.adoc[general plugin documentation].
+====
+
+.Installing plugins and licenses by mounting folders to the container
+====
+[source, shell, subs="attributes+,+macros"]
+----
+docker run \
+   --publish=7474:7474 --publish=7687:7687 \
+   --volume=$HOME/neo4j/plugins:/plugins \   # <1>
+   --volume=$HOME/neo4j/licenses:/licenses \ # <2>
+   neo4j:{neo4j-version-exact}
+----
+<1> folder containing plugin jars.
+<2> folder containing license files.
+====
+
+The licenses must also be provided if using the `NEO4J_PLUGINS` utility to install the plugins.
+
+.Installing plugins and licenses by mounting folders to the container using `NEO4J_PLUGINS` utility
+====
+[source, shell, subs="attributes+,+macros"]
+----
+docker run \
+   --publish=7474:7474 --publish=7687:7687 \
+   --env NEO4J_PLUGINS='["bloom"]' \
+   --volume=$HOME/neo4j/licenses:/licenses \ # <1>
+   neo4j:{neo4j-version-exact}
+----
+<1> A folder containing license files.
+====
