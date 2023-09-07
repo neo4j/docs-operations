@@ -1,0 +1,145 @@
+:description: How to use persistent storage when using Neo4j in Docker.
+[[docker-volumes]]
+= Persisting data with Docker volumes
+
+Docker containers are ephemeral.
+When a container is stopped, any data written to it is lost.
+Therefore, if you want to persist data when using Neo4j in Docker, you must mount storage to the container.
+Storages also allow you to get data in and out of the container.
+
+Storage can be mounted to a container in two ways:
+
+* A folder on the host file system.
+* A Docker volume -- a named storage location that is managed by Docker.
+
+For instructions on _how_ to mount storage to a Docker container, refer to the official Docker documentation link:https://docs.docker.com/storage/bind-mounts/[Bind mounts^] and link:https://docs.docker.com/storage/volumes/[Volumes^].
+
+Neo4j provides several mount points for storage to simplify using Neo4j in Docker.
+The following sections describe the mount points and how to use them.
+
+[[docker-volumes-mount-points]]
+== Neo4j mount points and permissions
+
+The following table is a complete reference of the mount points recognized by the Neo4j Docker image, and file permissions.
+
+All the listed mount points are *optional*.
+Neo4j can run in Docker without any volumes mounted at all.
+However, mounting storage to `/data` is considered essential for all but the most basic use cases.
+
+[WARNING]
+====
+Running containerized Neo4j without a `/data` mount results in *unrecoverable data loss* if anything happens to the container.
+====
+
+.Mount points for the Neo4j container
+[options="header", cols="1m,1,4"]
+|===
+| Mount point
+| Permissions required
+| Description
+
+| /data
+| read, write
+| The data store for the Neo4j database. See xref:#docker-volumes-data[].
+
+| /logs
+| read, write
+| Output directory for Neo4j logs. See xref:#docker-volumes-logs[].
+
+| /conf
+| readfootnote:[Write permissions are required when using the xref:docker/configuration.adoc#docker-conf-volume[`dump-config`] feature.]
+| Pass configuration files to Neo4j on startup. +
+See xref:docker/configuration.adoc[].
+
+| /plugins
+| readfootnote:[Write permissions are required when using the xref:docker/plugins.adoc#docker-plugins-caching[`NEO4J_PLUGINS` feature] to download and store plugins.]
+| Allows you to install plugins in containerized Neo4j. +
+See xref:docker/plugins.adoc[].
+
+| /licenses
+| read
+| Provide licenses for Neo4j and any plugins by mounting the license folder. +
+See xref:docker/plugins.adoc#docker-plugins-licenses[Installing Plugin Licenses].
+
+| /import
+| read
+| Make _csv_ and other importable files available to xref:docker/operations.adoc#docker-neo4j-import[neo4j-admin import].
+
+| /ssl
+| read
+| Provide SSL certificates to Neo4j for message encryption. +
+See xref:docker/security.adoc[]
+
+| /metrics
+| write
+| label:enterprise[Enterprise Edition] Output directory for metrics files.
+See xref:monitoring/metrics/index.adoc[Metrics].
+|===
+
+[[docker-volumes-data]]
+=== Mounting storage to `/data`
+
+Neo4j inside Docker stores database files in the `/data` folder.
+By mounting storage to `/data`, any data written to Neo4j will persist after the container is stopped.
+
+Stopping the container and then restarting with the same folder mounted to `/data` starts a new containerized Neo4j instance with the same data.
+
+[CAUTION]
+====
+If Neo4j could not properly close down, it may have left data in a bad state and is likely to fail on startup.
+This is the same as if Neo4j is run outside a container and not closed properly.
+====
+
+.Two ways to mount storage to the `/data` mount point
+====
+.Mounting a folder to `/data`
+[source, shell, subs="attributes"]
+----
+docker run -it --rm \
+   --volume $HOME/neo4j/data:/data \
+   neo4j:{neo4j-version-exact}
+----
+
+.Creating a named volume and mounting it to `/data`
+[source, shell, subs="attributes+,+macros"]
+----
+docker volume create neo4jdata # <1>
+docker run -it --rm \
+   --volume neo4jdata:/data \  # <2>
+   neo4j:{neo4j-version-exact}
+----
+<1> Create a Docker volume named `neo4jdata`.
+<2> Mount the volume name `neo4jdata` to `/data`.
+====
+
+[[docker-volumes-logs]]
+=== Mounting storage to `/logs`
+
+Neo4j logging output is written to files in the _/logs_ directory.
+This directory is mounted as a _/logs_ volume.
+By mounting storage to `/logs`, the log files become available outside the container. +
+
+[TIP]
+====
+For more information about configuring Neo4j, see xref:docker/configuration.adoc[Configuration]. +
+For more information about the Neo4j log files, see xref:monitoring/logging.adoc[Logging].
+====
+
+
+[[docker-volumes-file-permissions]]
+== File permissions
+
+For security reasons, by default, Neo4j runs as the `neo4j` user inside the container.
+This user has user ID `7474`.
+If `neo4j` needs read or write access to a mounted folder, but does not have it, the folder will be automatically re-owned to `7474`.
+
+[NOTE]
+====
+This is a convenient feature, so you do not have to worry about the finer details of file permissions in Docker and can get started more easily.
+It does however mean that mounted folders change ownership, and you may find you can no longer read your files without root access.
+====
+
+=== Docker `run` with `--user` flag
+
+The `--user` flag to `docker run` forces Docker to run as the provided user.
+In this situation, if that user does not have the required read or write access to any mounted folders, Neo4j will fail to start.
