@@ -349,16 +349,21 @@ For a detailed example, see xref:kubernetes/quickstart-cluster/access-outside-k8
 ======
 =====
 
-=== Access Neo4j using a Kubernetes Ingress
+=== Access Neo4j on port `:80` or `:443`
 
-The Neo4j Helm charts provide a helm chart that allows you to use a Kubernetes Ingress to access Neo4j running on port _:80_ or _:443_.
-The helm chart is called _neo4j/neo4j-reverse-proxy_ and is available on the _neo4j_ helm repository from version 5.12.0.
+The Neo4j Helm charts provide a Helm chart that allows you to use a Kubernetes Ingress to access Neo4j on port `:80` or `:443`.
+The Helm chart is called _neo4j/neo4j-reverse-proxy_ and is available on the Neo4j Helm repository from version 5.12.0.
 For more information about Kubernetes Ingress, see the link:https://kubernetes.io/docs/concepts/services-networking/ingress/[Kubernetes official documentation -> Ingress].
 
-The helm chart creates a reverse proxy that is configured to route traffic to the Neo4j service URL using the `serviceName`, `namespace`, and `domain` values.
-For example, if the `serviceName` is _standalone-admin_, the `namespace` is _default_, and the `domain` is _cluster.local_, then the Neo4j service URL is _standalone-admin.default.svc.cluster.local_.
+The Helm chart creates a reverse proxy that is configured to route traffic to the Neo4j service URL using the `serviceName`, `namespace`, and `domain` values.
+For example, if the `serviceName` is _standalone-admin_, the `namespace` is _default_, and the `domain` is _cluster.local_, then the Neo4j service URL is _standalone-admin.default.svc.cluster.local_. +
+For Neo4j clusters, the Neo4j headless service is used to route the traffic to the cluster instances.
+For more information and a detailed example of how to install the _neo4j/neo4j-cluster-headless-service_ Helm chart, see xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc#cc-access-headless[Access the Neo4j cluster using headless service].
 
 image::reverse-proxy.svg[title="Reverse proxy flow diagram"]
+
+The reverse proxy creates an HTTP server, which routes requests to either the Bolt reverse proxy or HTTP reverse proxy based on the request headers.
+Upon receiving a response, the Bolt reverse proxy updates the response to replace the Bolt port with either `:80` or `:443`.
 
 ==== Configuration options
 
@@ -411,35 +416,63 @@ reverseProxy:
 
 ==== Install the Helm chart
 
-The following steps assume that you have a Kubernetes cluster running and a standalone Neo4j helm chart installed.
-The standalone Neo4j has a Neo4j service with the name _standalone-admin_, and it has _:7474_ an _:7687_ opened.
-To verify that, run `get all, pvc, pv, configmaps, secrets`.
+The following steps assume that you have a Kubernetes cluster running and a standalone Neo4j Helm chart installed.
+The standalone Neo4j has a Neo4j service with the name _standalone-admin_, and it has `:7474` an `:7687` opened.
+To verify that, run:
+[source, shell]
+----
+kubectl get all, pvc, pv, configmaps, secrets
+----
 
-. You need to have an Ingress controller for the Kubernetes Ingress to work.
-You can use the following command to install the Nginx Ingress controller:
-+
+You also need to have an Ingress controller for the Kubernetes Ingress to work.
+The following steps use the Nginx Ingress controller.
+If you do not have one, you can use the following command to install it:
+
+[.tabbed-example]
+=====
+[.include-with-gke]
+======
 [source,shell]
 ----
 helm upgrade --install ingress-nginx ingress-nginx \
       --repo https://kubernetes.github.io/ingress-nginx \
       --namespace ingress-nginx --create-namespace
 ----
+======
+[.include-with-azure]
+======
+[source,shell]
+----
+helm upgrade --install ingress-nginx ingress-nginx \
+      --repo https://kubernetes.github.io/ingress-nginx \
+      --namespace ingress-nginx --create-namespace --set controller.service.externalTrafficPolicy=Local
+----
+======
+=====
 
-. If your Neo4j is running on _:443_, then set the `tls.enabled` to `true` and create a secret with the following command:
-.. Create Ingress certificates:
+. Configure the _ingress.yaml_ file that you will use to install the reverse proxy Helm chart:
+.. If you want to access Neo4j on port `:443`, create a Kubernetes secret containing the Ingress self-signed certificates and then create the _ingress.yaml_ file.
+... Create a directory for the Ingress self-signed certificates:
++
+[source,shell]
+----
+mkdir certs
+cd certs
+----
+... Create Ingress self-signed certificates:
 +
 [source,shell]
 ----
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ingress.key -out ingress.cert -subj "/CN=localhost/O=neo4j" -addext "subjectAltName = DNS:localhost"
 ----
-.. Create Kubernetes secret using the Ingress certificates:
+... Create Kubernetes secret using the Ingress self-signed certificates:
 +
 [source,shell]
 ----
 kubectl create secret tls ingress-cert --key /path/to/your/certs/ingress.key --cert /path/to/your/certs/ingress.cert
 ----
 
-. Configure the _ingress.yaml_ file with the correct values for the `serviceName` and `secretName`.
+... Configure the _ingress.yaml_ file with the correct values for the `serviceName` and `secretName`.
 Ensure that the `secretName` is the same as the one created in the previous step.
 Enable TLS by setting `tls.enabled` to `true`.
 +
@@ -458,7 +491,7 @@ reverseProxy:
                     - localhost
 ----
 
-. If your Neo4j is running on _:80_, then set the `tls.enabled` to `false` and create the _ingress.yaml_ file with the following content:
+.. Alternatively, if you want to access Neo4j on port `:80`, leave `tls.enabled` with its default value `false`, and create the _ingress.yaml_ file with the following content:
 +
 [source, yaml]
 ----
@@ -469,24 +502,29 @@ reverseProxy:
         enabled: true
         tls:
             enabled: false
-            config:
-                - secretName: ingress-cert
-                  hosts:
-                    - localhost
 ----
-. Install the reverse proxy Helm chart using the following command:
+
+. Install the reverse proxy Helm chart using the _ingress.yaml_ file that you have created:
 +
 [source,shell]
 ----
 helm install rp neo4j/neo4j-reverse-proxy -f /path/to/your/ingress.yaml
 ----
-. Open the Neo4j browser on _https://localhost:443_ or _http://localhost:80_ and log in with your credentials.
 
-==== Access Neo4j using Cypher Shell
+. Access your data via Neo4j Browser.
 
-Alternatively, if you want to use Cypher Shell to access your data, you need to create a `configmap`, because Cypher Shell expects a TCP connection and Ingress is an HTTP connection.
+.. Get the Ingress LoadBalancer IP:
++
+[source,shell]
+----
+kubectl get ingress/rp-reverseproxy-ingress -n default -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+----
+.. Open Neo4j Browser on _https://INGRESS_IP:443_ or _http://INGRESS_IP:80_ and log in with your credentials.
 
-. Create a `configmap` with the following content:
+. Alternatively, if you want to use Cypher Shell to access your data via Nginx Ingress Controller only, you need to create a `configmap`, because Cypher Shell expects a TCP connection and Ingress is an HTTP connection.
+For more information about exposing TCP/UDP services, see link:https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services/[Ingress-Nginx Controller official documentation -> Exposing TCP and UDP services].
+
+.. Create a `configmap` with the following content:
 +
 [source, yaml]
 ----
@@ -498,25 +536,25 @@ metadata:
 data:
   9000: "default/standalone-admin:7687"
 ----
-. Apply the `configmap`:
+.. Apply the `configmap`:
 +
 [source,shell]
 ----
 kubectl apply -f /path/to/your/nginx-tcp.yaml
 ----
-. Get the IP address of the Ingress controller:
+.. Get the IP address of the Ingress controller:
 +
 [source,shell]
 ----
 kubectl get scv -n ingress-nginx
 ----
-. Update the Ingress controller LoadBalancer service to use the port _:9000_:
+.. Update the Ingress controller LoadBalancer service to use the port _:9000_:
 +
 [source, shell]
 ----
 kubectl edit svc ingress-nginx-controller -n ingress-nginx -o yaml
 ----
-. Add the following lines to the `spec.ports` section:
+.. Add the following lines to the `spec.ports` section:
 +
 [source, yaml]
 ----
@@ -525,23 +563,23 @@ kubectl edit svc ingress-nginx-controller -n ingress-nginx -o yaml
   protocol: TCP
   targetPort: 9000
 ----
-. Save the changes and exit the editor.
+.. Save the changes and exit the editor.
 . Update the Ingress controller deployment to use the `configmap`:
 +
 [source, shell]
 ----
 kubectl edit deployment ingress-nginx-controller -n ingress-nginx
 ----
-. Add the following lines to the `spec.template.spec.containers.args` section:
+.. Add the following lines to the `spec.template.spec.containers.args` section:
 +
 [source, yaml]
 ----
 - --tcp-services-configmap=inress-nginx/tcp-services
 ----
-. Save the changes and exit the editor.
-. Verify that the changes are applied by running `kubectl get all -n ingress-nginx`.
+.. Save the changes and exit the editor.
+.. Verify that the changes are applied by running `kubectl get all -n ingress-nginx`.
 You should see the new port _:9000_ in the Ingress controller deployment.
-. Get the IP address of the Ingress controller:
+.. Get the IP address of the Ingress controller:
 +
 [source,shell]
 ----
@@ -554,7 +592,7 @@ NAME                     CLASS    HOSTS   ADDRESS        PORTS   AGE
 rp-reverseproxy-igress   nginx    *       34.89.91.112   80      2m
 ----
 
-. Connect to the Neo4j database using Cypher Shell:
+.. Connect to the Neo4j database using Cypher Shell:
 +
 [source,shell]
 ----
