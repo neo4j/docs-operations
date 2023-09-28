@@ -1,70 +1,77 @@
-[role=enterprise-edition]
+[role=enterprise-edition aura-db-enterprise]
 [[auth-built-in-roles]]
-= Built-in roles
-:description: This page describes the roles that come pre-defined with Neo4j. 
+= Built-in roles and privileges
+:description: The default privileges of the built-in roles in Neo4j and how to recreate them if needed.
 
 //Check Mark
 :check-mark: icon:check[]
 
-Neo4j provides built-in roles with default privileges. The built-in roles and the default privileges are:
+== Introduction
+
+Neo4j provides a set of built-in roles that can be used to control access to the database.
+The `PUBLIC` role is the default role for all users.
+It does not give any rights or capabilities regarding the data, not even read privileges.
+The rest of the built-in roles are hierarchical, with the `reader` role at the bottom and the `admin` role at the top with all privileges.
+
+A user may have more than one assigned role, and the union of these determines what action(s) on the data may be undertaken by the user.
+For instance, a user assigned to the `reader` role can execute procedures, because all users are also assigned to the `PUBLIC` role, which enables that capability.
+
+The built-in roles have the following default privileges:
 
 [.compact]
-`PUBLIC`::
+<<access-control-built-in-roles-public, `PUBLIC`>>::
 * Access to the home database.
-* Allows executing procedures with the users own privileges.
-* Allows executing user-defined functions with the users own privileges.
+* Allows executing procedures with the users' own privileges.
+* Allows executing user-defined functions with the users' own privileges.
 * Allows loading data.
-`reader`::
+<<access-control-built-in-roles-reader, `reader`>>::
 * Access to all databases.
 * Traverse and read on the data graph (all nodes, relationships, properties).
 * Show indexes and constraints along with any other future schema constructs.
-`editor`::
+<<access-control-built-in-roles-editor, `editor`>>::
 * Access to all databases.
 * Traverse, read, and write on the data graph.
-* Write access limited to creating and changing *existing* property keys, node labels, and relationship types of the graph.
+* Write access, limited to creating and changing *existing* property keys, node labels, and relationship types of the graph.
 In other words, the `editor` role cannot add to the schema but can only make changes to already existing objects.
 * Show indexes and constraints along with any other future schema constructs.
-`publisher`::
+<<access-control-built-in-roles-publisher, `publisher`>>::
 * Access to all databases.
 * Traverse, read, and write on the data graph.
 * Show indexes and constraints along with any other future schema constructs.
-`architect`::
+<<access-control-built-in-roles-architect, `architect`>>::
 * Access to all databases.
 * Traverse, read, and write on the data graph.
 * Create/drop/show indexes and constraints along with any other future schema constructs.
-`admin`::
+<<access-control-built-in-roles-admin, `admin`>>::
 * Access to all databases.
 * Traverse, read, and write on the data graph.
 * Allows loading data.
 * Create/drop/show indexes and constraints along with any other future schema constructs.
-* Allows executing procedures with the users own privileges or boosted privileges.
+* Allows executing procedures using boosted privileges.
 * Allows executing admin procedures.
-* Allows executing user-defined functions with the users own privileges or boosted privileges.
+* Allows executing user-defined functions using boosted privileges.
 * View/terminate queries.
 * Manage databases, users, roles, and privileges.
 
 
-All users will be assigned the `PUBLIC` role, which by default does not give any rights or capabilities regarding the data, not even read privileges.
-A user may have more than one assigned role, and the union of these determine what action(s) on the data may be undertaken by the user.
-For instance, a user assigned to the `reader` role will be able to execute procedures because all users are also
-assigned to the `PUBLIC` role, which enables that capability.
-
 When an administrator suspends or deletes another user, the following rules apply:
 
 * Administrators can suspend or delete any other user (including other administrators), but not themselves.
-* The user will no longer be able to log back in (until re-activated by an administrator if suspended).
-* There is no need to remove assigned roles from a user prior to deleting the user.
+* When suspended, the user is no longer able to log back in until re-activated by an administrator.
+* There is no need to remove assigned roles from a user before deleting the user.
 
 [NOTE]
 --
-Deleting a user will not automatically terminate associated connections, sessions, transactions, or queries.
+Deleting a user does not automatically terminate associated connections, sessions, transactions, or queries.
 --
 
-The set of actions on the data and database prescribed by each role are described below.
-The subset of the functionality which is available with Community Edition is also included:
+
+Neo4j provides the following built-in roles with default privileges and capabilities.
+The subset of the functionality that is available with Community Edition is also included.
+All of the commands require that the user executing the commands has the rights to do so.
 
 [[auth-built-in-roles-overview]]
-.Native roles overview
+.Built-in roles capabilities
 [options="header" cols="16d,^12a,^12a,^12a,^12a,^12a,^12a,^12a"]
 |===
 | Action
@@ -391,6 +398,16 @@ The subset of the functionality which is available with Community Edition is als
 | {check-mark}
 | {check-mark}
 
+| Load data
+|
+|
+|
+|
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+
 | Execute procedures
 |
 |
@@ -427,5 +444,484 @@ The subset of the functionality which is available with Community Edition is als
 |
 |===
 
-More information about the built-in roles and their privileges can be found in
-link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/access-control/built-in-roles[Neo4j Cypher Manual].
+
+[[access-control-built-in-roles-public]]
+== The `PUBLIC` role
+
+All users are granted the `PUBLIC` role, and it can not be revoked or dropped.
+By default, it gives access to the default database and allows executing all procedures and user-defined functions.
+
+[IMPORTANT]
+====
+The `PUBLIC` role cannot be dropped or revoked from any user, but the specific privileges for the role can be modified.
+In contrast to the `PUBLIC` role, the other built-in roles can be granted, revoked, dropped, and re-created.
+====
+
+[[access-control-built-in-roles-public-list]]
+=== Listing `PUBLIC` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE PUBLIC PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON HOME DATABASE TO `PUBLIC`"
+|"GRANT EXECUTE FUNCTION * ON DBMS TO `PUBLIC`"
+|"GRANT EXECUTE PROCEDURE * ON DBMS TO `PUBLIC`"
+a|Rows: 3
+|===
+
+
+[[access-control-built-in-roles-public-recreate]]
+=== Recreating the `PUBLIC` role
+
+The `PUBLIC` role can not be dropped and thus there is no need to recreate the role itself.
+To restore the role to its original capabilities, two steps are needed.
+
+First, all `GRANT` or `DENY` privileges on this role should be revoked (see output of `SHOW ROLE PUBLIC PRIVILEGES AS REVOKE COMMANDS` on what to revoke).
+Secondly, run these queries:
+
+[source, cypher, role=noplay]
+----
+GRANT ACCESS ON HOME DATABASE TO PUBLIC
+----
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURES * ON DBMS TO PUBLIC
+----
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE USER DEFINED FUNCTIONS * ON DBMS TO PUBLIC
+----
+
+The resulting `PUBLIC` role now has the same privileges as the original built-in `PUBLIC` role.
+
+
+[[access-control-built-in-roles-reader]]
+== The `reader` role
+
+The `reader` role can perform read-only queries on all graphs except for the `system` database.
+
+
+[[access-control-built-in-roles-reader-list]]
+=== Listing `reader` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE reader PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON DATABASE * TO `reader`"
+|"GRANT MATCH {*} ON GRAPH * NODE * TO `reader`"
+|"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `reader`"
+|"GRANT SHOW CONSTRAINT ON DATABASE * TO `reader`"
+|"GRANT SHOW INDEX ON DATABASE * TO `reader`"
+a|Rows: 5
+|===
+
+
+[[access-control-built-in-roles-reader-recreate]]
+=== Recreating the `reader` role
+
+////
+[source, cypher, role=test-setup]
+----
+DROP ROLE reader;
+----
+////
+
+To restore the role to its original capabilities two steps are needed.
+First, execute `DROP ROLE reader`.
+Secondly, run these queries:
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE reader
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ACCESS ON DATABASE * TO reader
+----
+
+[source, cypher, role=noplay]
+----
+GRANT MATCH {*} ON GRAPH * TO reader
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW CONSTRAINT ON DATABASE * TO reader
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW INDEX ON DATABASE * TO reader
+----
+
+The resulting `reader` role now has the same privileges as the original built-in `reader` role.
+
+
+[[access-control-built-in-roles-editor]]
+== The `editor` role
+
+The `editor` role can perform read and write operations on all graphs except for the `system` database, but it cannot create new labels, property keys or relationship types.
+
+[[access-control-built-in-roles-editor-list]]
+=== Listing `editor` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE editor PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON DATABASE * TO `editor`"
+|"GRANT MATCH {*} ON GRAPH * NODE * TO `editor`"
+|"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `editor`"
+|"GRANT SHOW CONSTRAINT ON DATABASE * TO `editor`"
+|"GRANT SHOW INDEX ON DATABASE * TO `editor`"
+|"GRANT WRITE ON GRAPH * TO `editor`"
+a|Rows: 6
+|===
+
+
+[[access-control-built-in-roles-editor-recreate]]
+=== Recreating the `editor` role
+
+////
+[source, cypher, role=test-setup]
+----
+DROP ROLE editor;
+----
+////
+
+To restore the role to its original capabilities two steps are needed.
+First, execute `DROP ROLE editor`.
+Secondly, run these queries:
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE editor
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ACCESS ON DATABASE * TO editor
+----
+
+[source, cypher, role=noplay]
+----
+GRANT MATCH {*} ON GRAPH * TO editor
+----
+
+[source, cypher, role=noplay]
+----
+GRANT WRITE ON GRAPH * TO editor
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW CONSTRAINT ON DATABASE * TO editor
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW INDEX ON DATABASE * TO editor
+----
+
+The resulting `editor` role now has the same privileges as the original built-in `editor` role.
+
+
+[[access-control-built-in-roles-publisher]]
+== The `publisher` role
+
+The `publisher` role can do the same as xref:authentication-authorization/built-in-roles.adoc#access-control-built-in-roles-editor[`editor`], as well as create new labels, property keys and relationship types.
+
+
+[[access-control-built-in-roles-publisher-list]]
+=== Listing `publisher` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE publisher PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON DATABASE * TO `publisher`"
+|"GRANT MATCH {*} ON GRAPH * NODE * TO `publisher`"
+|"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `publisher`"
+|"GRANT NAME MANAGEMENT ON DATABASE * TO `publisher`"
+|"GRANT SHOW CONSTRAINT ON DATABASE * TO `publisher`"
+|"GRANT SHOW INDEX ON DATABASE * TO `publisher`"
+|"GRANT WRITE ON GRAPH * TO `publisher`"
+a|Rows: 7
+|===
+
+
+[[access-control-built-in-roles-publisher-recreate]]
+=== Recreating the `publisher` role
+
+////
+[source, cypher, role=test-setup]
+----
+DROP ROLE publisher;
+----
+////
+
+To restore the role to its original capabilities two steps are needed.
+First, execute `DROP ROLE publisher`.
+Secondly, run these queries:
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ACCESS ON DATABASE * TO publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT MATCH {*} ON GRAPH * TO publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT WRITE ON GRAPH * TO publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT NAME MANAGEMENT ON DATABASE * TO publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW CONSTRAINT ON DATABASE * TO publisher
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW INDEX ON DATABASE * TO publisher
+----
+
+The resulting `publisher` role now has the same privileges as the original built-in `publisher` role.
+
+
+[[access-control-built-in-roles-architect]]
+== The `architect` role
+
+The `architect` role can do the same as the xref:authentication-authorization/built-in-roles.adoc#access-control-built-in-roles-publisher[`publisher`], as well as create and manage indexes and constraints.
+
+
+[[access-control-built-in-roles-architect-list]]
+=== Listing `architect` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE architect PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON DATABASE * TO `architect`"
+|"GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `architect`"
+|"GRANT INDEX MANAGEMENT ON DATABASE * TO `architect`"
+|"GRANT MATCH {*} ON GRAPH * NODE * TO `architect`"
+|"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `architect`"
+|"GRANT NAME MANAGEMENT ON DATABASE * TO `architect`"
+|"GRANT SHOW CONSTRAINT ON DATABASE * TO `architect`"
+|"GRANT SHOW INDEX ON DATABASE * TO `architect`"
+|"GRANT WRITE ON GRAPH * TO `architect`"
+a|Rows: 9
+|===
+
+
+[[access-control-built-in-roles-architect-recreate]]
+=== Recreating the `architect` role
+
+////
+[source, cypher, role=test-setup]
+----
+DROP ROLE architect;
+----
+////
+
+To restore the role to its original capabilities two steps are needed.
+First, execute `DROP ROLE architect`.
+Secondly, run these queries:
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ACCESS ON DATABASE * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT MATCH {*} ON GRAPH * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT WRITE ON GRAPH * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT NAME MANAGEMENT ON DATABASE * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW CONSTRAINT ON DATABASE * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT SHOW INDEX ON DATABASE * TO architect
+----
+
+[source, cypher, role=noplay]
+----
+GRANT INDEX MANAGEMENT ON DATABASE * TO architect
+----
+
+The resulting `architect` role now has the same privileges as the original built-in `architect` role.
+
+
+[[access-control-built-in-roles-admin]]
+== The `admin` role
+
+The `admin` role can do the same as the xref:authentication-authorization/built-in-roles.adoc#access-control-built-in-roles-architect[`architect`], as well as manage databases, aliases, users, roles and privileges.
+
+The `admin` role can perform administrative tasks.
+These include the rights to perform the following classes of tasks:
+
+* Manage xref:authentication-authorization/database-administration.adoc[database privileges] to control the rights to perform actions on specific databases:
+** Manage access to a database and the right to start and stop a database.
+** Manage link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/indexes-for-search-performance/[indexes] and link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/constraints/[constraints].
+** Allow the creation of labels, relationship types, or property names.
+** Manage transactions.
+* Manage xref:authentication-authorization/dbms-administration.adoc[DBMS privileges] to control the rights to perform actions on the entire system:
+** Manage xref:database-administration/standard-databases/manage-databases.adoc[multiple databases].
+** Manage xref:authentication-authorization/manage-users.adoc[users] and xref:authentication-authorization/manage-roles.adoc[roles].
+** Change configuration parameters.
+** Manage sub-graph privileges.
+** Manage procedure security.
+
+These rights are conferred using privileges that can be managed through the xref:authentication-authorization/manage-privileges.adoc#access-control-graph-privileges[`GRANT`, `DENY` and `REVOKE` commands].
+
+
+[[access-control-built-in-roles-admin-list]]
+=== Listing `admin` role privileges
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE admin PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ACCESS ON DATABASE * TO `admin`"
+|"GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`"
+|"GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin`"
+|"GRANT INDEX MANAGEMENT ON DATABASE * TO `admin`"
+|"GRANT MATCH {*} ON GRAPH * NODE * TO `admin`"
+|"GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin`"
+|"GRANT NAME MANAGEMENT ON DATABASE * TO `admin`"
+|"GRANT SHOW CONSTRAINT ON DATABASE * TO `admin`"
+|"GRANT SHOW INDEX ON DATABASE * TO `admin`"
+|"GRANT START ON DATABASE * TO `admin`"
+|"GRANT STOP ON DATABASE * TO `admin`"
+|"GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin`"
+|"GRANT WRITE ON GRAPH * TO `admin`"
+a|Rows: 13
+|===
+
+If the built-in `admin` role has been altered or dropped and needs to be restored to its original state, see xref:configuration/password-and-user-recovery[Password and user recovery].
+
+[[access-control-built-in-roles-admin-recreate]]
+=== Recreating the `admin` role
+
+To restore the role to its original capabilities two steps are needed.
+First, execute `DROP ROLE admin`.
+Secondly, run these queries:
+
+// cannot test as it would require deleting the role the test user is logged with
+[source, cypher, role=noplay test-skip]
+----
+CREATE ROLE admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ALL DBMS PRIVILEGES ON DBMS TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT TRANSACTION MANAGEMENT ON DATABASE * TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT START ON DATABASE * TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT STOP ON DATABASE * TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT MATCH {*} ON GRAPH * TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT WRITE ON GRAPH * TO admin
+----
+
+[source, cypher, role=noplay]
+----
+GRANT ALL ON DATABASE * TO admin
+----
+
+The resulting `admin` role now has the same effective privileges as the original built-in `admin` role.
+
+Additional information about restoring the `admin` role can be found in the xref:configuration/password-and-user-recovery#recover-admin-role[ Recover the admin role].
+

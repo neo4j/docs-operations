@@ -1,24 +1,109 @@
 [role=enterprise-edition]
 [[auth]]
 = Authentication and authorization
-:description: This chapter describes authentication and authorization in Neo4j. 
+:description: An overview of authentication and authorization in Neo4j.
+:keywords: authentication, authorization, security, access control, roles, privileges, users, LDAP, Active Directory, Kerberos, SSO, single sign-on, authentication plugins, authentication providers, native auth provider, LDAP auth provider, Kerberos auth provider, SSO auth provider, custom auth provider, custom auth plugin, custom auth plugins, custom auth providers, custom authentication plugin, custom authentication plugins, custom authentication providers, custom authorization plugin, custom authorization plugins, custom authorization providers, custom authorisation plugin, custom authorisation plugin
 
-This section helps you ensure that your Neo4j deployment adheres to your company's information security guidelines by setting up the appropriate authentication and authorization rules.
+This page provides an overview of authentication and authorization in Neo4j.
 
-The following topics are covered:
+[[authentication-overview]]
+== Authentication
+Authentication is the process of verifying the identity of a user.
+Neo4j has the following authentication (auth) providers that can perform user and role authentication:
 
-* xref:authentication-authorization/introduction.adoc[Introduction]
-* xref:authentication-authorization/built-in-roles.adoc[Built-in roles]
-* xref:authentication-authorization/access-control.adoc[Fine-grained access control]
-* xref:authentication-authorization/ldap-integration.adoc[Integration with LDAP directory services]
-* xref:authentication-authorization/sso-integration.adoc[Integration with Single Sign-On (SSO) services]
-* xref:authentication-authorization/manage-execute-permissions.adoc[Manage procedure and user-defined function permissions]
-* xref:authentication-authorization/terminology.adoc[Terminology]
+*Native auth provider*::
+Neo4j provides a native auth provider that stores user and role information in the `system` database.
+The following parameters control this provider:
++
+====
+* xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] (Default: `true`) -- Enable auth requirement to access Neo4j. +
++
+[NOTE]
+If you need to disable authentication, make sure you block all network connections during the recovery phase so users can connect to Neo4j only via _localhost_.
+This is necessary if, for example, you need to recover an `admin` user password or assign a user to the `admin` role.
+For more information, see xref:configuration/password-and-user-recovery.adoc[Password and user recovery].
 
+* xref:configuration/configuration-settings.adoc#config_dbms.security.auth_lock_time[`dbms.security.auth_lock_time`] (Default: `5s`) -- The amount of time a user account is locked after a configured number of unsuccessful authentication attempts.
+* xref:configuration/configuration-settings.adoc#config_dbms.security.auth_max_failed_attempts[`dbms.security.auth_max_failed_attempts`] (Default: `3`) -- The maximum number of unsuccessful authentication attempts before imposing a user lock for a configured amount of time. +
+When triggered, Neo4j logs an error containing a timestamp and the message `failed to log in: too many failed attempts` in the _security.log_.
+====
++
+For the relevant Cypher commands, see xref:authentication-authorization/manage-users.adoc#access-control-user-syntax[Manage users syntax], xref:authentication-authorization/manage-roles.adoc#access-control-role-syntax[Manage roles syntax], and xref:authentication-authorization/manage-privileges.adoc#access-control-privileges-syntax[Manage privileges syntax].
+Various scenarios that illustrate the use of the native auth provider are available in xref:tutorial/access-control.adoc[].
+
+*LDAP auth provider*::
+Controls authentication and authorization through external security software such as Active Directory or OpenLDAP, which is accessed via the built-in LDAP connector.
+A description of the LDAP plugin using Active Directory is available in xref:authentication-authorization/ldap-integration.adoc[Integration with LDAP directory services].
+
+*Single sign-on provider*::
+Integration with a single sign-on service, such as Okta, Auth0, or Azure Active Directory to provide centralized authentication and authorization for all your systems.
+Neo4j supports the popular OpenID Connect mechanism for integrating with identity providers.
+The configuration steps are described in xref:authentication-authorization/sso-integration.adoc[].
+
+*Custom-built plugin auth providers*::
+A plugin option for building custom integrations.
+It is recommended that this option is used as part of a custom delivery as negotiated with link:https://neo4j.com/professional-services/[Neo4j Professional Services].
+For more information, see link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/security-plugins#extending-neo4j-security-plugins[Java Reference -> Authentication and authorization plugins].
+
+
+*Kerberos authentication and single sign-on*::
+In addition to LDAP, native, and custom providers, Neo4j supports Kerberos for authentication and single sign-on.
+Kerberos support is provided via the link:{neo4j-docs-base-uri}/kerberos-add-on/current/[Neo4j Kerberos Add-On].
+
+[[authorization-overview]]
+== Authorization
+
+Authorization is the process of determining whether a user is allowed to perform a specific action.
+Authorization is managed using role-based access control (_RBAC_).
+RBAC is a method of restricting access to authorized users.
+It is a way of assigning privileges to roles that are then assigned to users.
+This simplifies user management, as permissions are assigned to roles rather than to individual users.
+The roles are defined in terms of their underlying _privileges_, and they can be modified by adding or removing these access rights using the Cypher commands described in this chapter.
+
+Neo4j provides a set of xref:authentication-authorization/built-in-roles.adoc[built-in roles] and also allows you to create custom roles with specific privileges.
+You can also use the _sub-graph_ access control, through which read access to the graph can be limited to specific combinations of labels, relationship types, and properties.
 
 [NOTE]
 --
-The functionality described in this section is applicable to Enterprise Edition.
+The functionality described in these pages applies to Enterprise Edition.
 A limited set of user management functions are also available in Community Edition.
-xref:authentication-authorization/built-in-roles.adoc#auth-built-in-roles-overview[Native roles overview] gives a quick overview of these.
+xref:authentication-authorization/built-in-roles.adoc#auth-built-in-roles-overview[Built-in roles capabilities] gives a quick overview of these.
 --
+
+The Neo4j security model is stored in the system graph, which is maintained in the xref:database-administration/index.adoc#manage-databases-system[`system` database].
+All administrative commands need to be executed against it.
+When connected to the DBMS over xref:configuration/connectors.adoc[], administrative commands are automatically routed to the `system` database.
+
+[[auth-terminology]]
+== Terminology
+
+The following terms are relevant to role-based access control within Neo4j:
+
+[.compact]
+[[term-active-user]]active user::
+A user who is active within the system and can perform actions prescribed by any assigned roles on the data.
+This is in contrast to a suspended user.
+
+[[term-administrator]]administrator::
+This is a user who has been assigned the admin role.
+
+[[term-current-user]]current user::
+This is the currently logged-in user invoking the commands.
+
+[[term-password-policy]]password policy::
+The password policy is a set of rules about what makes up a valid password.
+For Neo4j, the following rules apply:
+* The password cannot be an empty string.
+* When changing passwords, the new password cannot be the same as the previous password.
+* The password must be at least 8 characters long.
+
+[[term-role]]role::
+A collection of privileges that enables users to perform specific actions on the data.
+A user can have multiple roles.
+
+[[term-suspended-user]]suspended user::
+A user who has been suspended is not able to access the database in any capacity, regardless of any assigned roles.
+
+[[term-user]]user::
+* A user is composed of a username and credentials, where the latter is a unit of information, such as a password, verifying the identity of a user.
+* A user may represent a human, an application, etc.
