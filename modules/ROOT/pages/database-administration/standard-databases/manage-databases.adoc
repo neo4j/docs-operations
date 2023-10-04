@@ -176,6 +176,10 @@ The lag is expressed in negative integers. In standalone environments, the value
 |The names of any constituents the database may have. label:default-output[]
 | LIST<STRING>
 
+|options
+|The map of options applied to the database.
+| MAP
+
 |===
 
 The results of the `SHOW DATABASES` command are filtered according to the `ACCESS` privileges of the user.
@@ -460,7 +464,7 @@ The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used toge
 ====
 
 [[manage-databases-create-database-options]]
-=== `CREATE DATABASE` options
+=== Create database options
 
 The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
 
@@ -496,6 +500,12 @@ Defines additional configuration specified by comma separated `name=value` pairs
 |
 Defines credentials that need to be passed into certain seed providers.
 
+| `txLogEnrichment`
+| `FULL` \| `DIFF` \| `NONE`
+|
+Defines level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
+
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/{page-version}/getting-started/enrichment-mode[Change Data Capture Manual -> Getting Started -> Enrichment mode].
 |===
 
 [NOTE]
@@ -505,10 +515,13 @@ More details about seeding options can be found in xref::clustering/databases.ad
 ====
 
 [role=enterprise-edition not-on-aura]
-[[manage-databases-alter]]
-== Alter database access mode
+[[administration-databases-alter-database]]
+== Alter databases
+Standard databases can be modified using the command `ALTER DATABASE`.
 
-The access mode of a standard database can be modified using the command `ALTER DATABASE`.
+[role=enterprise-edition not-on-aura]
+[[manage-databases-alter]]
+=== Alter database access mode
 
 By default, a database has read-write access mode on creation.
 The database can be limited to read-only mode on creation using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
@@ -526,7 +539,7 @@ Modifying access mode is only available to standard databases and not composite 
 ====
 
 
-=== Alter database access mode to read-only
+==== Alter database access mode to read-only
 
 .Query
 [source, cypher]
@@ -555,7 +568,7 @@ SHOW DATABASES yield name, access
 +----------------------------+
 ----
 
-=== Alter database access using `IF EXISTS`
+==== Alter database access using `IF EXISTS`
 
 `ALTER DATABASE` commands are optionally idempotent, with the default behavior to fail with an error if the database does not exist.
 Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
@@ -566,6 +579,99 @@ Appending `IF EXISTS` to the command ensures that no error is returned and nothi
 ALTER DATABASE nonExisting IF EXISTS
 SET ACCESS READ WRITE
 ----
+
+=== Alter database topology
+
+In a cluster environment, you can use the `ALTER DATABASE` command to change the number of servers hosting a database.
+For more information, see xref::clustering/databases.adoc#alter-topology[Managing databases in a cluster].
+
+[role=enterprise-edition]
+[[alter-database-options]]
+=== Alter database options
+
+The `ALTER DATABASE` command can be used to set or remove specific options for a database.
+
+[options="header", cols="1m,1m,3a"]
+|===
+| Key
+| Value
+| Description
+
+| txLogEnrichment
+| FULL\|DIFF\|NONE
+| Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/{page-version}/getting-started/enrichment-mode[Change Data Capture Manual -> Getting Started -> Enrichment mode].
+|===
+
+[NOTE]
+====
+There are no available `OPTIONS` values for composite databases.
+====
+
+==== Alter the options set for a database
+
+// skip test until we make the change_data_capture feature flag on by default.
+
+.Query
+[source, cypher, role="test-skip"]
+----
+ALTER DATABASE `movies`
+SET OPTION txLogEnrichment 'FULL'
+----
+
+The database set options can be seen in the `options` output column of the command `SHOW DATABASES`.
+
+// skip test until we make the change_data_capture feature flag on by default.
+
+.Query
+[source, cypher, role="test-skip"]
+----
+SHOW DATABASES yield name, options
+----
+// Limited result set.
+// The output has been capped.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +options+
+| +"customers"+ | +{}+
+| +"movies"+ | +{txLogEnrichment: "FULL"}+
+| +"neo4j"+ | +{}+
+| +"system"+ | +{}+
+2+d|Rows: 4
+|===
+
+==== Remove the options set for a database
+
+// skip test until we make the change_data_capture feature flag on by default.
+
+.Query
+[source, cypher, role="test-skip"]
+----
+ALTER DATABASE `movies`
+REMOVE OPTION txLogEnrichment
+----
+
+The `REMOVE OPTION` clause removes the specified option from the database using the `ALTER DATABASE` command.
+
+// skip test until we make the change_data_capture feature flag on by default.
+.Query
+[source, cypher, role="test-skip"]
+----
+SHOW DATABASES YIELD name, options
+----
+// Limited result set.
+// The output has been capped.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +options+
+| +"customers"+ | +{}+
+| +"movies"+ | +{}+
+| +"neo4j"+ | +{}+
+| +"system"+ | +{}+
+2+d|Rows: 4
+|===
 
 [role=enterprise-edition not-on-aura]
 [[manage-databases-stop]]
@@ -663,7 +769,8 @@ DROP DATABASE customers
 Both standard databases and composite databases can be deleted using this command.
 ====
 
-When a database has been deleted, it no longer shows up in the listing provided by the command `SHOW DATABASES`.
+The `DROP DATABASE` command removes a database entirely.
+Therefore, it no longer shows up in the listing provided by the command `SHOW DATABASES`.
 
 .Query
 [source, cypher]
@@ -674,14 +781,17 @@ SHOW DATABASES YIELD name
 .Result
 [role="queryresult]
 ----
-+----------+
-| name     |
-+----------+
-| "movies" |
-| "neo4j"  |
-| "system" |
-+----------+
++---------------------+
+| name                |
++---------------------+
+| "movies"            |
+| "neo4j"             |
+| "system"            |
++---------------------+
 ----
+
+[[delete-databases-existing]]
+=== Use `IF EXISTS` when deleting databases
 
 The `DROP DATABASE` command is optionally idempotent, with the default behavior to fail with an error if the database does not exist.
 Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
@@ -694,10 +804,9 @@ In that case, the alias needs to be dropped before dropping the database.
 DROP DATABASE customers IF EXISTS
 ----
 
-The `DROP DATABASE` command will remove a database entirely.
-
 [role=enterprise-edition not-on-aura]
-=== Dump and delete databases
+[[manage-databases-dump]]
+=== Use `DUMP DATA` or `DESTROY DATA` when deleting databases
 
 You can request that a dump of the store files is produced first, and stored in the path configured using the `dbms.directories.dumps.root` setting (by default `<neo4j-home>/data/dumps`).
 This can be achieved by appending `DUMP DATA` to the command (or `DESTROY DATA` to explicitly request the default behavior).
