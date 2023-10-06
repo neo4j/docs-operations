@@ -1,0 +1,74 @@
+:description: How to use Cypher to manage property-based access control on graphs.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE ROLE regularUsers;
+----
+////
+
+[role=enterprise-edition aura-db-enterprise]
+[[property-based-access-control]]
+= Property-based access control
+
+It is possible to create read privileges that are based on properties of nodes.
+Each property-based privilege can only be restricted by a single property.
+To specify the property/value conditions of the read privilege the `pattern` syntax described below is used,
+for more information about read privilege syntax see xref:authentication-authorization/privileges-reads.adoc[read privilege] page.
+
+Adding property-based access control may lead to a significant performance overhead in certain scenarios.
+See xref:authentication-authorization/limitations.adoc#property-based-access-control-limitations[Limitations] for more detailed information.
+To reduce the performance impact, it is recommended to use the Block Storage format as it is better optimized for the kind of read required for the resolution of property-based privileges.
+
+Some of the factors that can worsen the impact on performance when having property rules are:
+
+* The number of properties on the nodes concerned (more properties = greater performance impact)
+* The number of property-based privileges (more property-based privileges = greater performance impact).
+* The type of the privilege: `TRAVERSE` property-based privileges have a greater performance impact than `READ` property-based privileges.
+* The type of storage medium in operation. The performance impact of property-based privileges will be considerably amplified by accessing disc storage.
+
+For performance-critical scenarios, it is recommended to design privileges based on labels.
+For more information, see xref:authentication-authorization/privileges-reads.adoc[Read privileges].
+
+Pattern syntax:
+[source, syntax, role="noheader"]
+----
+([var][:label["|" ...]] "{" property: value "}")
+| (var[:label["|" ...]]) WHERE [NOT] var.property { = value | <> value | IS NULL | IS NOT NULL }
+| (var[:label["|" ...]] WHERE [NOT] var.property { = value | <> value | IS NULL | IS NOT NULL } )
+----
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc[Cypher syntax for administration commands].
+====
+You can use this pattern syntax for defining read privileges as follows:
+
+[source, syntax, role="noheader"]
+----
+GRANT ... ON GRAPH ... FOR pattern TO ...
+----
+
+
+.Granting permission to `READ` the `address` property on `Email` or `Website` nodes with domain `exampledomain.com` to role `regularUsers`:
+[source, syntax, role="noheader"]
+----
+GRANT READ { address } ON GRAPH * FOR (n:Email|Website) WHERE n.domain = 'exampledomain.com' TO regularUsers
+----
+Alternatively, you can use the following syntax:
+[source, syntax, role="noheader"]
+----
+GRANT READ { address } ON GRAPH * FOR (:Email|Website {domain: 'exampledomain.com'}) TO regularUsers
+----
+
+
+.Granting permission to `TRAVERSE` nodes with label `Email` where property `classification` is `NULL` to role `regularUsers`:
+[source, syntax, role="noheader"]
+----
+GRANT TRAVERSE ON GRAPH * FOR (n:Email) WHERE n.classification IS NULL TO regularUsers
+----
+
+.Denying permission to `READ` and `TRAVERSE` nodes where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`:
+[source, syntax, role="noheader"]
+----
+DENY MATCH {*} ON GRAPH * FOR (n) WHERE n.classification <> 'UNCLASSIFIED' TO regularUsers
+----

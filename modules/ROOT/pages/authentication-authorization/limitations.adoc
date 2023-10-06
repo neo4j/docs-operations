@@ -6,7 +6,7 @@
 CREATE ROLE users;
 CREATE ROLE custom;
 CREATE ROLE restricted;
-CREATE ROLE free;
+CREATE ROLE unrestricted;
 ----
 ////
 
@@ -334,19 +334,19 @@ In this example, when creating the custom role, connect to `testing` and run `CA
 
 
 [[access-control-limitations-db-operations]]
-== Security and count store operations
+== Security and performance
 
-The rules of a security model may impact some of the database operations.
-This means extra security checks are necessary to incur additional data accesses, especially in the case of count store operations.
-These are, however, usually very fast lookups and the difference might be noticeable.
+The rules of a security model may impact the performance of some database operations.
+This is because extra security checks are necessary, and they require additional data access.
+For example, count store operations, which are usually fast lookups, may experience notable differences in performance.
 
-See the following security rules that use a `restricted` and a `free` role as an example:
+The following example shows how the database behaves when adding security rules to roles `restricted` and `unrestricted`:
 
 [source, cypher]
 ----
 GRANT TRAVERSE ON GRAPH * NODES Person TO restricted;
 DENY TRAVERSE ON GRAPH * NODES Customer TO restricted;
-GRANT TRAVERSE ON GRAPH * ELEMENTS * TO free;
+GRANT TRAVERSE ON GRAPH * ELEMENTS * TO unrestricted;
 ----
 
 Now, let's look at what the database needs to do in order to execute the following query:
@@ -357,7 +357,7 @@ MATCH (n:Person)
 RETURN count(n)
 ----
 
-For both roles the execution plan will look like this:
+For both roles, the execution plan looks like this:
 
 ----
 +--------------------------+
@@ -374,7 +374,7 @@ The following table illustrates the difference:
 
 [%header,cols=2*]
 |===
-|User with `free` role
+|User with `unrestricted` role
 |User with `restricted` role
 
 |The database can access the count store and retrieve the total number of nodes with the label `:Person`.
@@ -384,6 +384,46 @@ This is a very quick operation.
 |The database cannot access the count store because it must make sure that only traversable nodes with the desired label `:Person` are counted.
 Due to this, each node with the `:Person` label needs to be accessed and examined to make sure that they do not have a deny-listed label, such as `:Customer`.
 
-Due to the additional data accesses that the security checks need to do, this operation will be slower compared to executing the query as an unrestricted user.
+So due to the additional data access required by the security checks, this operation will be slower compared to executing the query as an unrestricted user.
 
+|===
+
+[[property-based-access-control-limitations]]
+=== Property-based access control limitations
+Extra node-level security checks are necessary when adding security rules based on property rules, and these can have a significant performance impact.
+The following example shows how the database behaves when adding security rules to roles `restricted` and `unrestricted`:
+
+[source, cypher]
+----
+GRANT TRAVERSE ON GRAPH * FOR (n:Customer) WHERE n.secret <> true TO restricted;
+GRANT TRAVERSE ON GRAPH * ELEMENTS * TO unrestricted;
+----
+
+When executing query:
+
+[source, cypher]
+----
+MATCH (n:Customer)
+RETURN n
+----
+For both roles, the execution plan looks like this:
+----
++--------------------------+
+| Operator                 |
++--------------------------+
+| +ProduceResults          |
+| |                        +
+| +AllNodesScan             |
++--------------------------+
+----
+Internally, however, very different operations need to be executed.
+The following table illustrates the difference:
+[%header,cols=2*]
+|===
+|User with `unrestricted` role
+|User with `restricted` role
+|The database will scan all nodes and quickly identify accessible nodes based solely on the presence of the `:Customer` label.
+This is a relatively quick operation.
+|The database will scan all nodes, identify potentially accessible nodes based on the presence of the specified label, and then also access the properties of each of those nodes and inspect their values to ensure the property rule criteria are met (i.e., that `secret` is not set to `true` in this case).
+So due to the additional data access required by the security checks, this operation will be slower compared to executing the query as an unrestricted user.
 |===
