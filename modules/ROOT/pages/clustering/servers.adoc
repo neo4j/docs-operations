@@ -31,11 +31,50 @@ These free servers are not yet part of the cluster and cannot be allocated to ho
 When first discovered, a server's name defaults to the value of its generated server ID.
 ====
 
+[[server-enabled-state]]
 === Enabled state
 
 A server in the free state needs to be explicitly enabled in order to be considered an active member of the cluster.
 The command `ENABLE SERVER server name` is used to transition a server into this _Enabled_ state.
-Subsequently, the server may be allocated databases to host.
+The server's initial name is its ID.
+If the server is already enabled and the command is executed with the same options, nothing is changed.
+
+The possible options when enabling a server are:
+
+[options="header", width="100%", cols="2a,2,^.^"]
+|===
+| Option
+| Allowed values
+| Description
+
+| modeConstraint
+| `PRIMARY`, `SECONDARY`, `NONE`
+| Databases may only be hosted on the server in the mode specified by the constraint.
+`None` means there is no constraint and any mode is allowed.
+
+| allowedDatabases
+| list of database names, e.g. `["db1", "db2"]`
+| Only databases matching the specified names may be hosted on the server.
+This may not be specified in combination with `deniedDatabases`.
+
+| deniedDatabases
+| list of database names, e.g. `["db1", "db2"]`
+| Only databases **not** matching the specified names may be hosted on the server.
+This may not be specified in combination with `allowedDatabases`.
+
+| tags
+| list of server tags, e.g. `["tag1", "tag2"]`
+| List of server tags used during database allocation and for load balancing and routing policies.
+label:new[Introduced in 5.6]
+|===
+
+[NOTE]
+====
+When a server is enabled, if `tags` are not provided in `OPTIONS`, the default server tags are taken from the setting `initial.server.tags`.
+====
+
+Once enabled, the server may be allocated databases to host.
+
 
 
 [[deallocating-state]]
@@ -101,6 +140,104 @@ neo4j@neo4j> SHOW SERVERS YIELD *;
 | "8512c9b9-d9e8-48e6-b037-b15b0004ca18" | "8512c9b9-d9e8-48e6-b037-b15b0004ca18" | "localhost:7687" | "localhost:7474" | NULL         | "Enabled"      | "Available" | ["system", "foo", "neo4j"] | ["system", "foo", "neo4j"] | []   | []               | []              | "NONE"         | "5.0.0-drop09.0" |
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
+
+
+The table of results shows information about the servers:
+
+[options="header", width="100%", cols="2a,4,2m,1,1"]
+|===
+| Column
+| Description
+| Type
+| Default output
+| Full output
+
+| name
+| Name of the server.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| serverId
+| Id of the server.
+| STRING
+|
+| {check-mark}
+
+| address
+| Bolt address of the server (if enabled).
+| STRING
+| {check-mark}
+| {check-mark}
+
+| httpAddress
+| Http address of the server (if enabled).
+| STRING
+|
+| {check-mark}
+
+| httpsAddress
+| Https address of the server (if enabled).
+| STRING
+|
+| {check-mark}
+
+| state
+| Information of the state of the server: `free`, `enabled`, `deallocating`, or `dropped`.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| health
+| The availability of the server: `available` or `unavailable`.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| hosting
+| A list of databases currently hosted on the server.
+| LIST<STRING>
+| {check-mark}
+| {check-mark}
+
+| requestedHosting
+| A list of databases that should be hosted on the server.
+Composite databases do not currently appear in this list, though they do appear in `hosting` for all servers.
+| LIST<STRING>
+|
+| {check-mark}
+
+| tags
+| Tags are user provided strings that can be used while allocating databases.
+| LIST<STRING>
+|
+| {check-mark}
+
+| allowedDatabases
+| A list of databases allowed to be hosted on the server.
+| LIST<STRING>
+|
+| {check-mark}
+
+| deniedDatabases
+| A list of databases not allowed to be hosted on the server.
+| LIST<STRING>
+|
+| {check-mark}
+
+| modeConstraint
+| Constraint for the allocator to allocate only databases in this mode on the server.
+| STRING
+|
+| {check-mark}
+
+| version
+| Neo4j version the server is running.
+| STRING
+|
+| {check-mark}
+|===
+
 
 [[cluster-add-server]]
 == Add a server to the cluster
@@ -197,12 +334,16 @@ Removing a server from the cluster requires two steps: deallocating, then droppi
 
 === Deallocating databases from a server
 
-Remember that before removing a server from an existing cluster, any databases allocated to it must be moved (see xref:clustering/servers.adoc#deallocating-state[Deallocating state]), using the `DEALLOCATE DATABASES` command:
+To set a server to not host any databases, use `DEALLOCATE DATABASES FROM SERVER 'name'`, in preparation for removing the server from the cluster (see xref:clustering/servers.adoc#deallocating-state[Deallocating state] for more information).
+
+Either the server ID or its name can be used with the `DEALLOCATE DATABASES` command:
 
 [source,cypher]
 ----
 neo4j@neo4j> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
 ----
+
+Multiple servers can be deallocated at the same time, `DEALLOCATE DATABASES FROM SERVER 'server-1', 'server-2'`.
 
 When deallocating databases from servers, it is important to be mindful of the topology for each database to ensure that there are sufficient servers left in the cluster to satisfy the topologies of each database.
 Attempting to deallocate database(s) from a server that would result in less available servers than required fails with an error and no changes are made.
@@ -230,6 +371,8 @@ Deallocation is currently prevented in the following situations.
 * If a quorum of servers hosting the database in primary mode are cordoned.
 ====
 
+Once the command has been executed, the server changes state to `deallocating` and it cannot readily be enabled again.
+
 === Dropping a server
 
 Once `DEALLOCATE DATABASES` is executed for a server, its databases begin being moved.
@@ -249,7 +392,8 @@ neo4j@neo4j> SHOW SERVERS;
 
 The deallocation process may take some time, as `foo` must be successfully copied and started on a new server before it is stopped on `135ad202-5405-4d3c-9822-df39f59b823c` in order to preserve the availability and fault tolerance of `foo`.
 
-Once `SHOW SERVERS` reflects that the server no longer hosts `foo`, the server may be dropped:
+Once `SHOW SERVERS` reflects that the server no longer hosts `foo`, the server may be dropped.
+Either the server ID or its name can be used:
 
 [source,cypher]
 ----
@@ -263,7 +407,9 @@ Once this command has been executed successfully, the neo4j process on the serve
 [[alter-server-options]]
 === Altering server options
 
-A running server can have its options modified using the `ALTER SERVER` command.
+A running server can have its options modified using the `ALTER SERVER 'name' SET OPTIONS { option: value }` command.
+Either the ID or the name of the server can be used.
+
 For example, to prevent a server from hosting databases in `PRIMARY`, execute the following:
 
 [source,cypher]
@@ -273,8 +419,37 @@ neo4j@neo4j> ALTER SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' SET OPTIONS {mo
 
 Altering servers may cause databases to be moved, and should be performed with care.
 For example, if the server `25a7efc7-d063-44b8-bdee-f23357f89f01` hosts database `foo` in primary mode when the above command is executed, then another server must begin hosting `foo` in primary mode.
+
 Likewise, if `ALTER SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' SET OPTIONS {allowedDatabases:['bar','baz']};` is executed, then `foo` is forced to move.
-For a description of all the server options (e.g., server tags) that can be altered via the `ALTER SERVER` command, see the xref:link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/administration/servers/#server-management-alter-server[Cypher Manual -> Modifying servers].
+
+The possible options when altering a server are:
+
+[options="header", width="100%", cols="2a,2,^.^"]
+|===
+| Option
+| Allowed values
+| Description
+
+| modeConstraint
+| `PRIMARY`, `SECONDARY`, `NONE`
+| Databases may only be hosted on the server in the mode specified by the constraint.
+`None` means there is no constraint and any mode is allowed.
+
+| allowedDatabases
+| list of database names, e.g. `["db1", "db2"]`
+| Only databases matching the specified names may be hosted on the server.
+This may not be specified in combination with `deniedDatabases`.
+
+| deniedDatabases
+| list of database names, e.g. `["db1", "db2"]`
+| Only databases **not** matching the specified names may be hosted on the server.
+This may not be specified in combination with `allowedDatabases`.
+
+| tags
+| list of server tags, e.g. `["tag1", "tag2"]`
+| List of server tags used during database allocation and for load balancing and routing policies.
+label:new[Introduced in 5.6]
+|===
 
 [NOTE]
 ====
@@ -300,6 +475,7 @@ neo4j@neo4j> RENAME SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' TO 'eu-server-
 ----
 
 This only affects the name of the server; the ID of the server remains fixed as `25a7efc7-d063-44b8-bdee-f23357f89f01`.
+Keep in mind that the name of the server must be unique.
 
 [[server-error-handling]]
 == Error handling
