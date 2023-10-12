@@ -52,6 +52,9 @@ ALTER DATABASE foo SET TOPOLOGY 2 PRIMARIES 1 SECONDARY
 
 Like the `CREATE DATABASE` command, this command results in an error if the cluster does not contain sufficient servers to satisfy the requested topology.
 
+Additionally, `ALTER DATABASE` is optionally idempotent and also results in an error if the database does not exist.
+It is possible to append the command with `IF EXISTS` to make sure that no error is returned if the database does not exist.
+
 When there is more than one possible permutation of the specified topology, Neo4j uses an allocator to decide how to spread the database across the cluster.
 Note, like `CREATE DATABASE`, the `ALTER DATABASE` command allocates the database and there is no requirement to execute `REALLOCATE DATABASES` unless there is a desire to re-balance databases across all servers that are part of the cluster.
 This normally happens when the cluster is configured with more servers than the sum of the number of primaries and secondaries for any one database.
@@ -98,6 +101,27 @@ ALTER DATABASE foo SET ACCESS {READ ONLY | READ WRITE}
 ----
 
 By default, a newly created database has both read and write access.
+
+== Reallocate databases
+
+If there is a need to rebalance database allocation across the cluster, for example if new servers have been added, use the `REALLOCATE DATABASE[S]`.
+This command can be used with `DRYRUN` to preview the new allocation of databases.
+
+[NOTE]
+====
+`DRYRUN` is introduced in Neo4j 5.2 and thus does not work in previous versions.
+====
+
+[source,cypher]
+----
+neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
++----------------------------------------------------------------------------------------------------------------------------------------+
+| database | fromServerName | fromServerId                           | toServerName | toServerId                             | mode      |
++----------------------------------------------------------------------------------------------------------------------------------------+
+| "bar"    | "server-1"     | "00000000-27e1-402b-be79-d28047a9418a" | "server-5"   | "00000003-b76c-483f-b2ca-935a1a28f3db" | "primary" |
+| "bar"    | "server-3"     | "00000001-7a21-4780-bb83-cee4726cb318" | "server-4"   | "00000002-14b5-4d4c-ae62-56845797661a" | "primary" |
++----------------------------------------------------------------------------------------------------------------------------------------+
+----
 
 [[cluster-seed]]
 == Seed a cluster
