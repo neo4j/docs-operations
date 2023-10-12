@@ -70,7 +70,7 @@ label:new[Introduced in 5.6]
 
 [NOTE]
 ====
-When a server is enabled, if `tags` are not provided in `OPTIONS`, the default server tags are taken from the setting `initial.server.tags`.
+When a server is enabled, if no `OPTIONS` are not provided, the default server values are taken from the settings `initial.server.mode_constraint`, `initial.server.allowed_databases`, `initial.server.denied_databases`, and/or `initial.server.tags`.
 ====
 
 Once enabled, the server may be allocated databases to host.
@@ -183,7 +183,7 @@ The table of results shows information about the servers:
 | {check-mark}
 
 | state
-| Information of the state of the server: `free`, `enabled`, `deallocating`, or `dropped`.
+| Information of the state of the server: `free`, `enabled`, `deallocating`,`cordoned`, or `dropped`.
 | STRING
 | {check-mark}
 | {check-mark}
@@ -276,7 +276,7 @@ When altering server tags via cypher, the encoding is done via UTF-8.
 ====
 
 If no options are set, a server can host any database in any mode.
-Servers can also provide default values for these options via their _neo4j.conf_ files on first startup.
+Servers can also provide default values for these options via their _neo4j.conf_ files when enabled.
 
 [source,properties]
 ----
@@ -308,24 +308,8 @@ Once enabled, a server does not automatically host databases unless:
 * Another server is transitioned to the _Deallocating_ state.
 * You explicitly rebalance the databases across the cluster.
 
-The command `REALLOCATE DATABASE[S]` can be used to rebalance database allocations across the cluster, adding some to the newly added server(s).
-This command can be used with `DRYRUN` to get a view of how the databases would be rebalanced.
+The command `REALLOCATE DATABASE[S]` can be used to rebalance database allocations across the cluster, adding some to the newly added server(s), see xref:clustering/databases.adoc#_reallocate_databases[Reallocate databases] for more information.
 
-[NOTE]
-====
-`DRYRUN` is introduced in Neo4j 5.2 and thus does not work in previous versions.
-====
-
-[source,cypher]
-----
-neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
-+----------------------------------------------------------------------------------------------------------------------------------------+
-| database | fromServerName | fromServerId                           | toServerName | toServerId                             | mode      |
-+----------------------------------------------------------------------------------------------------------------------------------------+
-| "bar"    | "server-1"     | "00000000-27e1-402b-be79-d28047a9418a" | "server-5"   | "00000003-b76c-483f-b2ca-935a1a28f3db" | "primary" |
-| "bar"    | "server-3"     | "00000001-7a21-4780-bb83-cee4726cb318" | "server-4"   | "00000002-14b5-4d4c-ae62-56845797661a" | "primary" |
-+----------------------------------------------------------------------------------------------------------------------------------------+
-----
 
 [[removing-servers]]
 == Removing a server from the cluster
@@ -342,9 +326,6 @@ Either the server ID or its name can be used with the `DEALLOCATE DATABASES` com
 ----
 neo4j@neo4j> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
 ----
-
-Multiple servers can be deallocated at the same time.
-For example: `DEALLOCATE DATABASES FROM SERVER 'server-1', 'server-2'`.
 
 When deallocating databases from servers, it is important to be mindful of the topology for each database to ensure that there are sufficient servers left in the cluster to satisfy the topologies of each database.
 Attempting to deallocate database(s) from a server that would result in less available servers than required fails with an error and no changes are made.
@@ -372,7 +353,7 @@ Deallocation is currently prevented in the following situations.
 * If a quorum of servers hosting the database in primary mode are cordoned.
 ====
 
-Once the command has been executed, the server changes state to `deallocating` and it cannot readily be enabled again, see the earlier section, xref:clustering/servers.adoc#_dropped_state[Dropped state] for more information.
+Once the command has been executed, the server changes state to `deallocating` and it cannot readily be enabled again, see  xref:clustering/servers.adoc#_dropped_state[Dropped state] for more information.
 
 === Dropping a server
 
@@ -476,7 +457,7 @@ neo4j@neo4j> RENAME SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' TO 'eu-server-
 ----
 
 This only affects the name of the server; the ID of the server remains fixed as `25a7efc7-d063-44b8-bdee-f23357f89f01`.
-Keep in mind that the name of the server must be unique.
+Keep in mind that the name of the server must be unique among existing servers.
 
 [[server-error-handling]]
 == Error handling
