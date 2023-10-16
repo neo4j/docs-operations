@@ -1,0 +1,91 @@
+[[neo4j-conf-expand-commands]]
+= Command expansion
+
+Command expansion provides an additional capability to configure Neo4j by allowing you to specify scripts that set values sourced from external files.
+This is especially useful for:
+
+* avoiding setting sensitive information, such as usernames, passwords, keys, etc., in the _neo4j.conf_ file in plain text.
+* handling the configuration settings of instances running in environments where the file system is not accessible.
+
+== How it works
+
+The scripts are specified in the _neo4j.conf_ file with a `$` prefix and the script to execute within brackets (), i.e., `dbms.setting=$(script_to_execute)`. +
+The configuration accepts any command that can be executed within a child process by the user who owns and executes the Neo4j server.
+This also means that, in the case of Neo4j set as a service, the commands are executed within the service.
+
+A generic example would be:
+
+[source, role=nocopy]
+----
+neo4j.configuration.example=$(/bin/bash echo "expanded value")
+----
+
+By providing such a configuration in the _neo4j.conf_ file upon server start with command expansion enabled, Neo4j evaluates the script and retrieves the value of the configuration settings prior to the instantiation of Neo4j.
+The values are then passed to the starting Neo4j instance and kept in memory, in the running instance.
+
+[NOTE]
+====
+You can also use the `curl` (https://curl.se/docs/manpage.html) command to fetch a token or value for a configuration setting.
+For example, you can apply an extra level of security by replacing any sensitive information in your _neo4j.conf_ file with a secured reference to a provider of some sort.
+====
+
+Scripts are run by the Neo4j process and are expected to exit with code `0` within a reasonable time.
+The script output should be of a valid type for the setting.
+Failure to do so prevents Neo4j from starting.
+
+[NOTE]
+====
+Scripts and their syntax differ between operating systems.
+====
+
+== Enabling
+
+The Neo4j startup script and the `neo4j` service can expand and execute the external commands by using the argument `--expand-commands`.
+
+[source, shell]
+----
+bin/neo4j start --expand-commands
+----
+
+If the startup script does not receive the `--expand-commands` argument, commands in the configuration file are treated as invalid settings.
+
+Neo4j performs the following basic security checks on the _neo4j.conf_ file.
+If they fail, Neo4j does not evaluate the script commands in _neo4j.conf_, and the Neo4j process does not start.
+
+On Unix (both Linux and Mac OS)::
+
+* The _neo4j.conf_ file must, at least, be readable by its owner or by the user-group to which the owner belongs.
+* The Neo4j process must run as a user who is either the owner of the _neo4j.conf_ file or in the user-group which owns the _neo4j.conf_ file.
+
+[NOTE]
+====
+The Linux permissions bitmask for the least restrictive permissions is `640`.
+More restrictive Linux permissions are also allowed.
+For example, the _neo4j.conf_ file can have no group permissions and only be readable by its owner (`400` bitmask).
+====
+
+On Windows::
+
+* The _neo4j.conf_ file must, at least, be readable by the user that the Neo4j process runs as.
+
+== Logging
+
+The execution of scripts is logged in _neo4j.log_.
+For each setting that requires the execution of an external command, Neo4j adds an entry into the log file that contains information, for example:
+
+[source, role=noheader]
+----
+… Executing the external script to retrieve the value of <setting>...
+----
+
+== Error Handling
+
+The scripts' execution may generate two types of errors:
+
+* Errors during the execution -- These errors are reported in the _debug.log_, with a code returned from the external execution.
+In this case, the execution stops and the server does not start.
+
+* Errors for incorrect values -- The returned value is not the one expected for the setting.
+In this case, the server does not start.
+
+For more information, see xref:tools/neo4j-admin/index.adoc#neo4j-admin-exit-codes[Exit codes].
