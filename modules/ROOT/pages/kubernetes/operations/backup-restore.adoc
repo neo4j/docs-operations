@@ -33,8 +33,38 @@ To perform a backup of a Neo4j database to any cloud provider (AWS, GCP, and Azu
 ----
 helm repo update
 ----
+. Configure the credentials to access the cloud provider bucket by either using a service account or a Kubernetes secret:
++
+Service account::
+In some deployment situations, it may be desirable to assign a Kubernetes Service Account to the Neo4j pod.
+For example, if processes in the pod want to connect to services that require Service Account authorization.
+To configure the Neo4j pod to use a Kubernetes service account, set `podSpec.serviceAccountName` to the name of the service account to use.
++
+For example:
++
+[source, yaml]
+----
+# neo4j-values.yaml
+neo4j:
+  password: "my-password"
 
-. Create a Kubernetes secret with the credentials to access the cloud provider bucket using one of the following options:
+podSpec:
+  serviceAccountName: "sa-name"
+----
++
+[NOTE]
+====
+The service account must already exist.
+The Neo4j Helm chart does not create or configure Service Accounts.
+For more information on setting up a service account with workload identity, see the respective cloud provider documentation:
+
+* link:https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview?tabs=go[Microsoft Azure -> Use Microsoft Entra Workload ID with Azure Kubernetes Service (AKS)]
+* link:https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity[Google Kubernetes Engine (GKE) -> Use Workload Identity]
+* link:https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html[Amazon EKS -> Configuring a Kubernetes service account to assume an IAM role]
+====
+
+Kubernetes secret::
+Alternatively, you can create a Kubernetes secret with the credentials to access the cloud provider bucket using one of the following options:
 +
 [.tabbed-example]
 =====
@@ -86,7 +116,7 @@ kubectl create secret generic azurecred --from-file=credentials=/path/to/your/cr
 ======
 =====
 
-. Configure the backup parameters in the _backup-values.yaml_ file using one of the following options:
+. Configure the backup parameters in the _backup-values.yaml_ file by providing either `secretName` and `secretKeyName` or `serviceAccountName` as per your cloud provider:
 +
 [NOTE]
 ====
@@ -102,7 +132,7 @@ For more information about the available backup parameters, see <<kubernetes-neo
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "5.10.0"
+  imageTag: "5.12.0"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -113,8 +143,9 @@ backup:
   databaseAdminServiceName:  "standalone-admin" #This is the Neo4j Admin Service name.
   database: "neo4j,system"
   cloudProvider: "gcp"
-  secretName: "gcpcreds"
-  secretKeyName: "credentials"
+  #secretName: "gcpcreds"
+  #secretKeyName: "credentials"
+  #gcpServiceAccountName: "gcp-sa"
 
 consistencyCheck:
   enabled: true
@@ -138,8 +169,9 @@ backup:
   databaseAdminServiceName:  "standalone-admin"
   database: "neo4j,system"
   cloudProvider: "aws"
-  secretName: "awscreds"
-  secretKeyName: "credentials"
+  #secretName: "awscreds"
+  #secretKeyName: "credentials"
+  #awsServiceAccountName: "aws-sa"
 
 consistencyCheck:
   enabled: true
@@ -163,8 +195,9 @@ backup:
   databaseAdminServiceName:  "standalone-admin"
   database: "neo4j,system"
   cloudProvider: "azure"
-  secretName: "azurecreds"
-  secretKeyName: "credentials"
+  #secretName: "azurecreds"
+  #secretKeyName: "credentials"
+  #azureStorageAccountName: "storageAccountName"
 
 consistencyCheck:
   enabled: true
@@ -228,7 +261,7 @@ disableLookups: false
 
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "5.11.0"
+  imageTag: "5.13.0"
   podLabels: {}
 #    app: "demo"
 #    acac: "dcdddc"
@@ -303,7 +336,9 @@ backup:
   secretName: ""
   # provide the keyname used in the above secret
   secretKeyName: ""
-
+  # provide the azure storage account name
+  # this to be provided when you are using workload identity integration for azure
+  azureStorageAccountName: ""
   #setting this to true will not delete the backup files generated at the /backup mount
   keepBackupFiles: true
 
@@ -334,6 +369,10 @@ consistencyCheck:
   verbose: true
 
 # Set to name of an existing Service Account to use if desired
+# Follow the following links for setting up a service account with workload identity
+# Azure - https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview?tabs=go
+# GCP - https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity
+# AWS - https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html
 serviceAccountName: ""
 
 # Volume to use as temporary storage for files before they are uploaded to cloud. For large databases local storage may not have sufficient space.
