@@ -1,0 +1,232 @@
+:description: This page describes how to manage composite databases.
+[role=enterprise-edition not-on-aura]
+[[composite-databases]]
+= Managing composite databases
+
+Composite databases are managed using Cypher(R) administrative commands.
+Note that it is not possible to modify access options or database topologies for composite databases as these are inherited from the constituent databases.
+For information about modifying access options, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-alter[Alter database access mode].
+For information about about topologies for databases, see xref:clustering/setup/deploy.adoc#cluster-example-create-databases-on-cluster[Create databases in a cluster].
+// The above two links will have to be changed when server management and access control sections are migrated from Cypher Manual. 
+
+[[composite-databases-list]]
+== Listing composite databases
+
+////
+[source, cypher, role=test-setup]
+---- 
+CREATE COMPOSITE DATABASE `library`;
+CREATE DATABASE `sci-fi`;
+CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi`;
+----
+////
+
+The `type` column returned by the `SHOW DATABASES` command will display which databases are composite databases.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name      | type        | aliases            | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents       |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "library" | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | ["library.sci-fi"] |
+| "neo4j"   | "standard"  | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []                 |
+| "sci-fi"  | "standard"  | ["library.sci-fi"] | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "system"  | "system"    | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+For a description of all the returned column of this command, ways in which the `SHOW DATABASE` command can be filtered, and details about the privileges required for the command, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-list[listing standard databases].
+
+For composite databases, the `constituents` column is particularly interesting as it lists the aliases that make up the composite database.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE library YIELD name, constituents
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------+
+| name      | constituents       |
++--------------------------------+
+| "library" | ["library.sci-fi"] |
++--------------------------------+
+----
+
+[[composite-databases-create]]
+== Create a composite database
+
+Composite databases can be created using `CREATE COMPOSITE DATABASE`.
+
+Composite database names are subject to the same rules as xref:administration-databases-create-database[standard databases].
+One difference is however that the deprecated syntax using dots without enclosing the name in backticks is not available.
+Both dots and dashes need to be enclosed within backticks when using composite databases.
+
+[NOTE]
+====
+Having dots (`.`) in the composite database names is not recommended.
+This is due to the difficulty of determining if a dot is part of the composite database name or a delimiter for a database alias in a composite database.
+====
+
+.Query
+[source, cypher, role=test-setup]
+----
+CREATE COMPOSITE DATABASE inventory
+----
+
+When a composite database has been created, it shows up in the listing provided by the command `SHOW DATABASES`.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name        | type        | aliases            | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents       |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "inventory" | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "library"   | "composite" | []                 | "read-only"  | "localhost:7687" | NULL      | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | ["library.sci-fi"] |
+| "neo4j"     | "standard"  | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE  | []                 |
+| "sci-fi"    | "standard"  | ["library.sci-fi"] | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
+| "system"    | "system"    | []                 | "read-write" | "localhost:7687" | "primary" | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []                 |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+For a full description of the columns returned by this command, and how to sort the results by specific columns, see xref:database-administration/standard-databases/manage-databases.adoc#manage-databases-listing-databases[Managing databases].
+
+To create database aliases in the composite database, give the composite database as a namespace for the alias.
+For information about creating aliases in composite databases, see xref:database-administration/aliases/manage-aliases-composite-databases.adoc#create-composite-database-alias[Managing aliases in composite databases].
+
+[[composite-databases-existing]]
+=== Use `IF EXISTS` or `OR REPLACE` when creating composite databases
+
+The `CREATE COMPOSITE DATABASE` command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
+There are two ways to circumvent this behavior.
+
+First, appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database already exist.
+
+.Query
+[source, cypher]
+----
+CREATE COMPOSITE DATABASE inventory IF NOT EXISTS
+----
+
+This will not create a new composite database, because a composite database with the name `inventory` already exists.
+
+Second, adding `OR REPLACE` to the command will result in any existing database being deleted and a new one being created.
+
+.Query
+[source, cypher]
+----
+CREATE OR REPLACE COMPOSITE DATABASE inventory
+----
+
+This is equivalent to running `DROP DATABASE inventory IF EXISTS` followed by `CREATE COMPOSITE DATABASE inventory`.
+
+The behavior of `IF EXISTS` and `OR REPLACE` apply to both standard and composite databases (e.g. a composite database may replace a standard database or another composite database).
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
+====
+
+[[composite-databases-stop]]
+== Stop composite databases
+
+Databases can be stopped using the command `STOP DATABASE`.
+
+.Query
+[source, cypher]
+----
+STOP DATABASE inventory
+----
+
+[NOTE]
+====
+Both standard databases and composite databases can be stopped using this command.
+====
+
+The status of the stopped database can be seen using the command `SHOW DATABASE name`.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE inventory YIELD name, requestedStatus, currentStatus
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------+
+| name        | requestedStatus | currentStatus |
++-----------------------------------------------+
+| "inventory" | "offline"       | "offline"     |
++-----------------------------------------------+
+----
+
+[[composite-databases-start]]
+== Start composite databases
+
+Databases can be started using the command `START DATABASE`.
+
+.Query
+[source, cypher]
+----
+START DATABASE inventory
+----
+
+[NOTE]
+====
+Both standard databases and composite databases can be started using this command.
+====
+
+The status of the started database can be seen using the command `SHOW DATABASE name`.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASE inventory YIELD name, requestedStatus, currentStatus
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="3*<m"]
+----
++-----------------------------------------------+
+| name        | requestedStatus | currentStatus |
++-----------------------------------------------+
+| "inventory" | "online"        | "online"      |
++-----------------------------------------------+
+----
+
+[[composite-databases-delete]]
+== Delete composite databases
+
+Composite databases can be deleted using the command `DROP COMPOSITE DATABASE name`.
+This command will fail if the targeted database is not a composite database.
+
+.Query
+[source, cypher]
+----
+DROP COMPOSITE DATABASE inventory
+----
+
+It is also possible to use the shorter command `DROP DATABASE name` for composite databases, but this command will drop any database and not fail in case the targeted database is not a composite database.
+
+[[composite-databases-drivers]]
+== Drivers and applications
+
+Drivers and client applications connect to Composite databases just like standard databases.
+For more information, see the manuals for the different link:{neo4j-docs-base-uri}/create-applications/[Neo4j drivers and applications].
