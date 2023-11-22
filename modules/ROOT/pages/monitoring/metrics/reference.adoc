@@ -87,6 +87,9 @@ By default, database metrics include:
 |<prefix>.bolt.messages_failed|The total number of messages that have failed while processing. A high number of failures may indicate an issue with the server and further investigation of the logs is recommended. (counter)
 |<prefix>.bolt.accumulated_queue_time|(unsupported feature) When `internal.server.bolt.thread_pool_queue_size` is enabled,  the total time in milliseconds that a Bolt message waits in the processing queue before a Bolt worker thread becomes available to process it. Sharp increases in this value indicate that the server is running at capacity. If `internal.server.bolt.thread_pool_queue_size` is disabled, the value should be `0`, meaning that messages are directly handed off to worker threads. (counter)
 |<prefix>.bolt.accumulated_processing_time|The total amount of time in milliseconds that worker threads have been processing messages. Useful for monitoring load via Bolt drivers in combination with other metrics. (counter)
+|<prefix>.bolt.response_success|(unsupported feature) When `internal.server.bolt.response_metrics` is enabled, number of `encounteredsuccess` responses. (counter)
+|<prefix>.bolt.response_ignored|(unsupported feature) When `internal.server.bolt.response_metrics` is enabled, number of `encounteredignored` responses (counter)
+|<prefix>.bolt.response_failed|(unsupported feature) When `internal.server.bolt.response_metrics` is enabled, number of `encounteredinstances` of a given error code. (counter)
 |<prefix>.bolt_driver.managed_transaction_function_calls|The total number of managed transaction function calls. (counter)
 |<prefix>.bolt_driver.unmanaged_transaction_calls|The total number of un-managed transaction function calls. (counter)
 |<prefix>.bolt_driver.implicit_transaction_calls|The total number of implicit transaction function calls. (counter)
@@ -102,6 +105,8 @@ By default, database metrics include:
 |<prefix>.check_point.total_time|The total time, in milliseconds, spent in checkpointing so far. (counter)
 |<prefix>.check_point.duration|The duration, in milliseconds, of the last checkpoint event. Checkpoints should generally take several seconds to several minutes. Long checkpoints can be an issue, as these are invoked when the database stops, when a hot backup is taken, and periodically as well. Values over `30` minutes or so should be cause for some investigation. (gauge)
 |<prefix>.check_point.flushed_bytes|label:new[Introduced in 5.10]The accumulated number of bytes flushed during the last checkpoint event. (gauge)
+|<prefix>.check_point.limit_millis|Number of millisecond checkpoint was paused by io limiter. (gauge)
+|<prefix>.check_point.limit_times|Number of times checkpoint was paused by io limiter. (gauge)
 |<prefix>.check_point.pages_flushed|The number of pages that were flushed during the last checkpoint event. (gauge)
 |<prefix>.check_point.io_performed|The number of IOs from Neo4j perspective performed during the last check point event. (gauge)
 |<prefix>.check_point.io_limit|The IO limit used during the last checkpoint event. (gauge)
@@ -150,7 +155,7 @@ By default, database metrics include:
 |<prefix>.db.operation.count.recovered|Count of database operations that failed previously but have recovered. (counter)
 |===
 
-.Database state metrics
+.Database state count metrics
 
 [options="header",cols="<3m,<4"]
 |===
@@ -198,6 +203,9 @@ By default, database metrics include:
 |<prefix>.page_cache.page_faults|The total number of page faults in the page cache. If this count keeps increasing over time, it may indicate that more page cache is required. However, note that when Neo4j Enterprise starts up, all page cache warmup activities result in page faults. Therefore, it is normal to observe a significant page fault count immediately after startup. (counter)
 |<prefix>.page_cache.page_fault_failures|The total number of failed page faults happened in the page cache. (counter)
 |<prefix>.page_cache.page_cancelled_faults|The total number of canceled page faults happened in the page cache. (counter)
+|<prefix>.page_cache.page_vectored_faults|The total number of vectored page faults happened in the page cache. (counter)
+|<prefix>.page_cache.page_vectored_faults_failures|The total number of failed vectored page faults happened in the page cache. (counter)
+|<prefix>.page_cache.page_no_pin_page_faults|The total number of page faults that are not caused by the page pins happened in the page cache. Represent pages loaded by the vectored faults (counter)
 |<prefix>.page_cache.hits|The total number of page hits happened in the page cache. (counter)
 |<prefix>.page_cache.hit_ratio|The ratio of hits to the total number of lookups in the page cache. Performance relies on efficiently using the page cache, so this metric should be in the 98-100% range consistently. If it is much lower than that, then the database is going to disk too often. (gauge)
 |<prefix>.page_cache.usage_ratio|The ratio of number of used pages to total number of available pages. This metric shows what percentage of the allocated page cache is actually being used. If it is 100%, then it is likely that the hit ratio will start dropping, and you should consider allocating more RAM to page cache. (gauge)
@@ -217,6 +225,22 @@ By default, database metrics include:
 |<prefix>.db.query.execution.success|Count of successful queries executed. (counter)
 |<prefix>.db.query.execution.failure|Count of failed queries executed. (counter)
 |<prefix>.db.query.execution.latency.millis|Execution time in milliseconds of queries executed successfully. (histogram)
+|<prefix>.db.query.execution.parallel.success|Count of successful queries executed by the parallel runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.parallel.failure|Count of failed queries executed by the parallel runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.parallel.latency.millis|Execution time in milliseconds of queries executed successfully in parallel runtime. (histogram)
+|<prefix>.db.query.execution.pipelined.success|Count of successful queries executed by the pipelined runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.pipelined.failure|Count of failed queries executed by the pipelined runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.pipelined.latency.millis|Execution time in milliseconds of queries executed successfully in pipelined runtime. (histogram)
+|<prefix>.db.query.execution.slotted.success|Count of successful queries executed by the slotted runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.slotted.failure|Count of failed queries executed by the slotted runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.slotted.latency.millis|Execution time in milliseconds of queries executed successfully in slotted runtime. (histogram)
+|===
+
+.Query routing metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
 |<prefix>.dbms.routing.query.count.local|label:new[Introduced in 5.10]
 The total number of queries executed locally. (counter)
 |<prefix>.dbms.routing.query.count.remote_internal|label:new[Introduced in 5.10]
@@ -328,6 +352,15 @@ The total number of queries executed remotely to a member of a different cluster
 |<prefix>.cluster.discovery.cluster.converged|Discovery cluster convergence. (gauge)
 |===
 
+.Discovery metrics
+
+[options="header",cols="<3m,<4"]
+|===
+|Name |Description
+|<prefix>.cluster.discovery.restart.success_count|Discovery restart count. (gauge)
+|<prefix>.cluster.discovery.restart.failed_count|Discovery restart failed count. (gauge)
+|===
+
 .Raft database primary metrics
 
 [options="header",cols="<3m,<4"]
@@ -361,7 +394,7 @@ The total number of queries executed remotely to a member of a different cluster
 |<prefix>.cluster.raft.last_leader_message|The time elapsed since the last message from a leader in milliseconds. Should reset periodically. (gauge)
 |===
 
-.Database secondary Metrics
+.Database secondary Metrics / Store copy metrics
 
 [options="header",cols="<3m,<4"]
 |===
