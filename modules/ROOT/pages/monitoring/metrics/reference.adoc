@@ -106,7 +106,7 @@ By default, database metrics include:
 |<prefix>.check_point.events|The total number of checkpoint events executed so far. (counter)
 |<prefix>.check_point.total_time|The total time, in milliseconds, spent in checkpointing so far. (counter)
 |<prefix>.check_point.duration|The duration, in milliseconds, of the last checkpoint event. Checkpoints should generally take several seconds to several minutes. Long checkpoints can be an issue, as these are invoked when the database stops, when a hot backup is taken, and periodically as well. Values over `30` minutes or so should be cause for some investigation. (gauge)
-|<prefix>.check_point.flushed_bytes|label:new[Introduced in 5.10]The accumulated number of bytes flushed during the last checkpoint event. (gauge)
+|<prefix>.check_point.flushed_bytes|label:new[Introduced in 5.10]The accumulated number of bytes flushed during all checkpoint events combined. (counter)
 |<prefix>.check_point.limit_millis|Number of millisecond checkpoint was paused by io limiter. (gauge)
 |<prefix>.check_point.limit_times|Number of times checkpoint was paused by io limiter. (gauge)
 |<prefix>.check_point.pages_flushed|The number of pages that were flushed during the last checkpoint event. (gauge)
@@ -179,10 +179,10 @@ By default, database metrics include:
 [options="header",cols="<3m,<4"]
 |===
 |Name |Description
-|<prefix>.ids_in_use.relationship_type|The total number of different relationship types stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
-|<prefix>.ids_in_use.property|The total number of different property names used in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
-|<prefix>.ids_in_use.relationship|The total number of relationships stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
-|<prefix>.ids_in_use.node|The total number of nodes stored in the database. Informational, not an indication of any issue. Spikes or large increases indicate large data loads, which could correspond with some behavior you are investigating. (gauge)
+|<prefix>.ids_in_use.relationship_type|The total number of internally generated IDs for the different relationship types stored in the database. These IDs do not reflect changes in the actual data. Informational, not an indication of any issue. (gauge)
+|<prefix>.ids_in_use.property|The total number of internally generated IDs for the different property names stored in the database. These IDs do not reflect changes in the actual data. Informational, not an indication of any issue. (gauge)
+|<prefix>.ids_in_use.relationship|The total number of internally generated reusable IDs for the relationships stored in the database. These IDs do not reflect changes in the actual data. If you want to have a rough metric of how big your graph is, use `<prefix>.neo4j.count.relationship` instead. (gauge)
+|<prefix>.ids_in_use.node|The total number of internally generated reusable IDs for the nodes stored in the database. These IDs do not reflect changes in the actual data. If you want to have a rough metric of how big your graph is, use `<prefix>.neo4j.count.node` instead. (gauge)
 |===
 
 [[global-neo4j-pools-metrics]]
@@ -217,14 +217,15 @@ By default, database metrics include:
 |<prefix>.page_cache.page_vectored_faults|The total number of vectored page faults happened in the page cache. (counter)
 |<prefix>.page_cache.page_vectored_faults_failures|The total number of failed vectored page faults happened in the page cache. (counter)
 |<prefix>.page_cache.page_no_pin_page_faults|The total number of page faults that are not caused by the page pins happened in the page cache. Represent pages loaded by the vectored faults (counter)
+|<prefix>.page_cache.page_cancelled_faults|The total number of cancelled page faults happened in the page cache. (counter)
 |<prefix>.page_cache.hits|The total number of page hits happened in the page cache. (counter)
 |<prefix>.page_cache.hit_ratio|The ratio of hits to the total number of lookups in the page cache. Performance relies on efficiently using the page cache, so this metric should be in the 98-100% range consistently. If it is much lower than that, then the database is going to disk too often. (gauge)
 |<prefix>.page_cache.usage_ratio|The ratio of number of used pages to total number of available pages. This metric shows what percentage of the allocated page cache is actually being used. If it is 100%, then it is likely that the hit ratio will start dropping, and you should consider allocating more RAM to page cache. (gauge)
 |<prefix>.page_cache.bytes_read|The total number of bytes read by the page cache. (counter)
 |<prefix>.page_cache.bytes_written|The total number of bytes written by the page cache. (counter)
-|<prefix>.page_cache.iops|The total number of IO operations performed by page cache.
-|<prefix>.page_cache.throttled.times|The total number of times page cache flush IO limiter was throttled during ongoing IO operations.
-|<prefix>.page_cache.throttled.millis|The total number of millis page cache flush IO limiter was throttled during ongoing IO operations.
+|<prefix>.page_cache.iops|The total number of IO operations performed by page cache. (counter)
+|<prefix>.page_cache.throttled.times|The total number of times page cache flush IO limiter was throttled during ongoing IO operations. (counter)
+|<prefix>.page_cache.throttled.millis|The total number of millis page cache flush IO limiter was throttled during ongoing IO operations. (counter)
 |<prefix>.page_cache.pages_copied|The total number of page copies happened in the page cache. (counter)
 |===
 
@@ -234,8 +235,8 @@ By default, database metrics include:
 [options="header",cols="<3m,<4"]
 |===
 |Name |Description
-|<prefix>.db.query.execution.success|Count of successful queries executed. (counter)
-|<prefix>.db.query.execution.failure|Count of failed queries executed. (counter)
+|<prefix>.db.query.execution.success|Count of successful queries executed. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
+|<prefix>.db.query.execution.failure|Count of failed queries executed. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
 |<prefix>.db.query.execution.latency.millis|Execution time in milliseconds of queries executed successfully. (histogram)
 |<prefix>.db.query.execution.parallel.success|Count of successful queries executed by the parallel runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
 |<prefix>.db.query.execution.parallel.failure|Count of failed queries executed by the parallel runtime. Server-side routed queries contribute to this count on the server where they eventually land and are executed, not on the intermediate, routing server. (counter)
@@ -352,7 +353,7 @@ The total number of queries executed remotely to a member of a different cluster
 == Metrics specific to clustering
 
 [[catchup-metrics]]
-.Catchup Metrics
+.Catchup metrics
 
 [options="header",cols="<3m,<4"]
 |===
@@ -380,9 +381,9 @@ The total number of queries executed remotely to a member of a different cluster
 [options="header",cols="<3m,<4"]
 |===
 |Name |Description
-|<prefix>.cluster.raft.append_index|The append index of the Raft log. Each index represents a write transaction (possibly internal) proposed for commitment. The values mostly increase, but sometimes they can decrease as a consequence of leader changes. The append index should always be less than or equal to the commit index. (gauge)
-|<prefix>.cluster.raft.commit_index|The commit index of the Raft log. Represents the commitment of previously appended entries. Its value increases monotonically if you do not unbind the cluster state. The commit index should always be bigger than or equal to the appended index. (gauge)
-|<prefix>.cluster.raft.applied_index|The applied index of the Raft log. Represents the application of the committed Raft log entries to the database and internal state. The applied index should always be bigger than or equal to the commit index. The difference between this and the commit index can be used to monitor how up-to-date the follower database is. (gauge)
+|<prefix>.cluster.raft.append_index|The append index of the Raft log. Each index represents a write transaction (possibly internal) proposed for commitment. The values mostly increase, but sometimes they can decrease as a consequence of leader changes. The append index should always be bigger than or equal to the commit index. (gauge)
+|<prefix>.cluster.raft.commit_index|The commit index of the Raft log. Represents the commitment of previously appended entries. Its value increases monotonically if you do not unbind the cluster state. The commit index should always be less than or equal to the append index and bigger than or equal to the applied index. (gauge)
+|<prefix>.cluster.raft.applied_index|The applied index of the Raft log. Represents the application of the committed Raft log entries to the database and internal state. The applied index should always be less than or equal to the commit index. The difference between this and the commit index can be used to monitor how up-to-date the follower database is. (gauge)
 |<prefix>.cluster.raft.term|The Raft Term of this server. It increases monotonically if you do not unbind the cluster state. (gauge)
 |<prefix>.cluster.raft.tx_retries|Transaction retries. (counter)
 |<prefix>.cluster.raft.is_leader|Is this server the leader? Track this for each database primary in the cluster. It reports `0` if it is not the leader and `1` if it is the leader. The sum of all of these should always be `1`. However, there are transient periods in which the sum can be more than `1` because more than one member thinks it is the leader. Action may be needed if the metric shows `0` for more than 30 seconds. (gauge)
