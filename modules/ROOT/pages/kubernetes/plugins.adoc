@@ -1,88 +1,5 @@
 = Plugins
 
-[[operations-using-apoc-core]]
-== Configure and install APOC core only
-
-APOC core is shipped with Neo4j, but it is not installed in the Neo4j _plugins_ directory.
-If APOC core is the _only_ plugin that you want to add to Neo4j, it is not necessary to perform plugin installation as described in xref:kubernetes/configuration.adoc#operations-installing-plugins[Install Plugins].
-Instead, you can configure the helm deployment to use APOC core by upgrading the deployment with these additional settings in the _values.yaml_ file:
-
-. Configure APOC core by loading and unresticting the functions and procedures you need (for more details see link:{neo4j-docs-base-uri}/apoc/{page-version}/installation/#restricted[APOC installation guide]).
-For example:
-+
-[source, yaml]
-----
-config:
-  server.directories.plugins: "/var/lib/neo4j/labs"
-  dbms.security.procedures.unrestricted: "apoc.cypher.doIt"
-  server.config.strict_validation.enabled: "false"
-  dbms.security.procedures.allowlist: "apoc.math.maxInteger,apoc.cypher.doIt"
-----
-+
-. Under `apoc_config`, configure the APOC settings that you want, for example:
-+
-[source, yaml]
-----
-apoc_config:
-  apoc.trigger.enabled: "true"
-  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
-  apoc.import.file.enabled: "true"
-----
-
-. Under `env`, set the `NEO4J_PLUGINS` variable to `'["apoc"]'`, for example:
-+
-[source, yaml]
-----
-env:
-  NEO4J_PLUGINS: '["apoc"]'
-----
-
-. Run `helm upgrade` to apply the changes:
-+
-[source, shell]
-----
-helm upgrade <release-name> neo4j/neo4j -f values.yaml
-----
-
-. After the Helm upgrade rollout is complete, verify that APOC core has been configured by running the following Cypher query using `cypher-shell` or Neo4j Browser:
-+
-[source, cypher]
-----
-RETURN apoc.version()
-----
-
-== Configure credentials for plugin's aliases using APOC-extended
-
-From 5.11, the Neo4j Helm chart supports configuring credentials for the plugin's aliases using a Kubernetes secret mounted on the provided path.
-This feature is available `apoc.jdbc.<aliasname>.url` and `apoc.es.<aliasname>.url` via
-APOC-extended.
-
-[NOTE]
-====
-The secret must be created beforehand and must contain the key-named `URL`, otherwise, the Helm chart throws an error. For example:
-`kubectl create secret generic jdbcsecret --from-literal=URL="jdbc:mysql://30.0.0.0:3306/Northwind?user=root&password=password"`
-====
-
-Under `apoc_credentials`, configure `aliasName`, `secretName`, and `secretMountPath`.
-For example:
-
-[source, yaml]
-----
-apoc_credentials: {}
-#   jdbc:
-#    aliasName: "jdbc"
-#    secretName: "jdbcsecret"
-#    secretMountPath: "/secret/jdbcCred"
-#
-#   elasticsearch:
-#     aliasName: "es"
-#     secretName: "essecret"
-#     secretMountPath: "/secret/esCred"
-----
-
-[[operations-installing-plugins]]
-== Install Plugins
-
 There are three recommended methods for adding Neo4j plugins to Neo4j Helm chart deployments.
 You can use:
 
@@ -91,12 +8,12 @@ You can use:
 * <<plugins-volume, a `plugins` volume>>.
 
 [[automatic-plugin-download]]
-=== Add plugins using an automatic plugin download
+== Add plugins using an automatic plugin download
 
 You can configure the Neo4j deployment to automatically download and install plugins.
 If licenses are required for the plugins, you must provide the licenses in a secret.
 
-==== Install GDS Community Edition (CE)
+=== Install GDS Community Edition (CE)
 
 GDS Community Edition does not require a license.
 To add the GDS CE, configure the Neo4j _values.yaml_ and set the `env` to download the plugins:
@@ -116,7 +33,7 @@ config:
   dbms.security.procedures.unrestricted: "gds.*"
 ----
 
-==== Install GDS Enterprise Edition (EE) and Bloom plugins
+=== Install GDS Enterprise Edition (EE) and Bloom plugins
 
 To install GDS EE and Bloom, you must provide a license for each plugin.
 You provide the licenses in a Kubernetes secret.
@@ -160,7 +77,7 @@ config:
 ----
 
 [[custom-container]]
-=== Add plugins using a custom container image
+== Add plugins using a custom container image
 
 The best method for adding plugins to Neo4j running in Kubernetes is to create a new Docker container image that contains both Neo4j and the Neo4j plugins.
 This way, you can ensure when building the container that the correct plugin version for the Neo4j version of the container is used and that the resulting image encapsulates all Neo4j runtime dependencies.
@@ -211,7 +128,7 @@ Strict config validation can be disabled by setting `server.config.strict_valida
 ====
 
 [[plugins-volume]]
-=== Add plugins using a plugins volume
+== Add plugins using a plugins volume
 
 An alternative method for adding Neo4j plugins to a Neo4j Helm deployment uses a `plugins` volume mount.
 With this method, the plugin jar files are stored on a Persistent Volume that is mounted to the `/plugins` directory of the Neo4j container.
@@ -263,4 +180,77 @@ kubectl rollout restart statefulset/<neo4j-statefulset-name>
 
 # Verify plugins are still present after restart
 kubectl exec <neo4j-pod-name> -- ls /plugins
+----
+
+[[operations-using-apoc-core]]
+== Configure and install APOC core only
+
+APOC core library is shipped with Neo4j and is located in the _labs_ folder.
+
+If APOC core is the _only_ plugin that you want to add to Neo4j, it is not necessary to perform plugin installation as described above.
+Instead, you can configure the helm deployment to use APOC core by upgrading the deployment with these additional settings in the _values.yaml_ file:
+
+. Configure APOC core by directly pointing to the location of the APOC core library in the _labs_ folder and by loading and unrestricting the functions and procedures you need (for more details see link:{neo4j-docs-base-uri}/apoc/{page-version}/installation/#restricted[APOC installation guide]).
+For example:
++
+[source, yaml]
+----
+config:
+  server.directories.plugins: "/var/lib/neo4j/labs"
+  dbms.security.procedures.unrestricted: "apoc.*"
+  server.config.strict_validation.enabled: "false"
+  dbms.security.procedures.allowlist: "apoc.math.*,apoc.cypher.*"
+----
++
+. Under `apoc_config`, configure the APOC settings that you want, for example:
++
+[source, yaml]
+----
+apoc_config:
+  apoc.trigger.enabled: "true"
+  apoc.jdbc.neo4j.url: "jdbc:foo:bar"
+  apoc.import.file.enabled: "true"
+----
+
+. Run `helm upgrade` to apply the changes:
++
+[source, shell]
+----
+helm upgrade <release-name> neo4j/neo4j -f values.yaml
+----
+
+. After the Helm upgrade rollout is complete, verify that APOC core has been configured by running the following Cypher query using `cypher-shell` or Neo4j Browser:
++
+[source, cypher]
+----
+RETURN apoc.version()
+----
+
+== Configure credentials for the plugin's aliases using APOC-extended
+
+From 5.11, the Neo4j Helm chart supports configuring credentials for the plugin's aliases using a Kubernetes secret mounted on the provided path.
+This feature is available `apoc.jdbc.<aliasname>.url` and `apoc.es.<aliasname>.url` via
+APOC-extended.
+
+[NOTE]
+====
+The secret must be created beforehand and must contain the key-named `URL`, otherwise, the Helm chart throws an error. For example:
+`kubectl create secret generic jdbcsecret --from-literal=URL="jdbc:mysql://30.0.0.0:3306/Northwind?user=root&password=password"`
+====
+
+Under `apoc_credentials`, configure `aliasName`, `secretName`, and `secretMountPath`.
+For example:
+
+[source, yaml]
+----
+apoc_credentials: {}
+#   jdbc:
+#    aliasName: "jdbc"
+#    secretName: "jdbcsecret"
+#    secretMountPath: "/secret/jdbcCred"
+#
+#   elasticsearch:
+#     aliasName: "es"
+#     secretName: "essecret"
+#     secretMountPath: "/secret/esCred"
 ----
