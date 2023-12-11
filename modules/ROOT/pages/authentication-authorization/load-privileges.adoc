@@ -4,6 +4,7 @@
 [source, cypher, role=test-setup]
 ----
 CREATE ROLE roleLoadAllData
+CREATE ROLE roleLoadCidr
 ----
 ////
 
@@ -40,6 +41,12 @@ GRANT [IMMUTABLE] LOAD
   TO role[, ...]
 | Enables the specified roles to load external data in queries.
 
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] LOAD
+  ON CIDR cidr
+  TO role[, ...]
+| Enables the specified roles to load external data from the given CIDR range in queries.label:new[Introduced in 5.16]
+
 |===
 
 [NOTE]
@@ -49,6 +56,7 @@ More details about the syntax descriptions can be found xref:database-administra
 
 Unlike other privileges, the `LOAD` privilege is not granted, denied, or revoked on `DBMS`, `Database`, or `Graph`, but instead on the data source to load from.
 Adding `ON ALL DATA` means a role has the privilege to load data from all sources.
+To only allow loading data from sources given by a specific CIDR range use `ON CIDR cidr`.
 
 [[access-control-load-all-data]]
 == The `ALL DATA` privilege
@@ -80,3 +88,38 @@ a|Rows: 1
 |===
 
 The `LOAD ON ALL DATA` privilege is granted to the `PUBLIC` role by default.
+
+[[access-control-load-cidr]]
+== The `CIDR` privilege
+
+_This feature was released in Neo4j 5.16._
+
+The load privilege on `CIDR cidr` enables or disables loading data from the given IPv4 or IPv6 CIDR range.
+If granted, the user can load data from sources in the given CIDR range.
+If missing or denied, no data can be loaded from sources in the given CIDR range.
+
+For example, the below query denies users with the role `roleLoadCidr` the ability to load data with `LOAD CSV` from `127.0.0.1/32`:
+
+[source, cypher, role=noplay]
+----
+DENY LOAD ON CIDR "127.0.0.1/32" TO roleLoadCidr
+----
+
+The below query lists all privileges for the role `roleLoadCidr` as commands:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE roleLoadCidr PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY LOAD ON CIDR "127.0.0.1/32" TO `roleLoadCidr`"
+a|Rows: 1
+|===
+
+The `LOAD ON CIDR` privileges replace the `internal.dbms.cypher_ip_blocklist` configuration setting.
+The configuration setting is still honoured and will be translated into immutable privileges.
+These cannot be revoked, but will be updated on each restart with the current configuration values.
