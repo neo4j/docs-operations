@@ -4,6 +4,7 @@
 [source, cypher, role=test-setup]
 ----
 CREATE ROLE roleLoadAllData
+CREATE ROLE roleLoadCidr
 ----
 ////
 
@@ -11,7 +12,7 @@ CREATE ROLE roleLoadAllData
 [[access-control-load-privileges]]
 = Load privileges
 
-_This feature was released in Neo4j 5.13._
+_This feature is available from Neo4j 5.13._
 
 This section explains how to use Cypher to manage load privileges.
 All load privileges apply to the whole system.
@@ -25,6 +26,8 @@ image::privileges_grant_and_deny_syntax_load_privileges.svg[width="800", title="
 
 The load privileges apply to the Cypher link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/clauses/load-csv/[`LOAD CSV` clause], deciding whether or not the data can be loaded from the given source.
 
+== Load privileges syntax
+
 The load privileges are assigned using Cypher administrative commands.
 They can be granted, denied, and revoked in the same way as other privileges.
 For more details, see xref:authentication-authorization/manage-privileges.adoc[RBAC and fine-grained privileges].
@@ -34,11 +37,17 @@ For more details, see xref:authentication-authorization/manage-privileges.adoc[R
 |===
 | Command | Description
 
-| [source, syntax, role=noheader]
+| [source, syntax]
 GRANT [IMMUTABLE] LOAD
   ON ALL DATA
   TO role[, ...]
 | Enables the specified roles to load external data in queries.
+
+| [source, syntax]
+GRANT [IMMUTABLE] LOAD
+  ON CIDR cidr
+  TO role[, ...]
+| Enables the specified roles to load external data from the given CIDR range in queries.label:new[Introduced in 5.16]
 
 |===
 
@@ -47,8 +56,9 @@ GRANT [IMMUTABLE] LOAD
 More details about the syntax descriptions can be found xref:database-administration/syntax.adoc[Cypher syntax for administration commands].
 ====
 
-Unlike other privileges, the `LOAD` privilege is not granted, denied, or revoked on `DBMS`, `Database`, or `Graph`, but instead on the data source to load from.
+Unlike other privileges, the `LOAD` privilege is not granted, denied, or revoked on `DBMS`, `DATABASE`, or `GRAPH`, but instead on the data source to load from.
 Adding `ON ALL DATA` means a role has the privilege to load data from all sources.
+To only allow loading data from sources given by a specific CIDR range use `ON CIDR cidr`.
 
 [[access-control-load-all-data]]
 == The `ALL DATA` privilege
@@ -57,16 +67,17 @@ The load privilege on `ALL DATA` enables or disables loading data.
 If granted, the user can load data from any source.
 If missing or denied, no data can be loaded at all.
 
-For example, the below query grants users with the role `roleLoadAllData` the ability to load data with `LOAD CSV`:
-
-[source, cypher, role=noplay]
+.Grant users with the role `roleLoadAllData` the ability to load data with `LOAD CSV`
+====
+[source, cypher]
 ----
 GRANT LOAD ON ALL DATA TO roleLoadAllData
 ----
+====
 
-The below query lists all privileges for the role `roleLoadAllData` as commands:
-
-[source, cypher, role=noplay]
+.List all privileges for the role `roleLoadAllData` as commands
+====
+[source, cypher]
 ----
 SHOW ROLE roleLoadAllData PRIVILEGES AS COMMANDS
 ----
@@ -78,5 +89,39 @@ SHOW ROLE roleLoadAllData PRIVILEGES AS COMMANDS
 |"GRANT LOAD ON ALL DATA TO `roleLoadAllData`"
 a|Rows: 1
 |===
+====
 
 The `LOAD ON ALL DATA` privilege is granted to the `PUBLIC` role by default.
+
+[[access-control-load-cidr]]
+== The `CIDR` privilege
+
+_This feature is available from Neo4j 5.16._
+
+The load privilege on `CIDR cidr` enables or disables loading data from the given IPv4 or IPv6 CIDR range.
+If granted, the user can load data from sources in the given CIDR range.
+If missing or denied, no data can be loaded from sources in the given CIDR range.
+
+.Denies users with the role `roleLoadCidr` the ability to load data with `LOAD CSV` from `127.0.0.1/32`
+====
+[source, cypher]
+----
+DENY LOAD ON CIDR "127.0.0.1/32" TO roleLoadCidr
+----
+====
+
+.List all privileges for the role `roleLoadCidr` as commands
+====
+[source, cypher]
+----
+SHOW ROLE roleLoadCidr PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY LOAD ON CIDR "127.0.0.1/32" TO `roleLoadCidr`"
+a|Rows: 1
+|===
+====
