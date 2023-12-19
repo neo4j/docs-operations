@@ -2,13 +2,6 @@
 :description: This page describes store formats in Neo4j.
 
 The store format dictates how a database in Neo4j, is stored on disk. 
-Neo4j's newest store format is `block`, it has the best performance and supports the highest limits. 
-`block` format is intended to replace all the older formats.
-The older store formats are based on the original `standard` format, each with different features and limitations.
-
-The default store format of new databases is controlled by the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting in the _neo4j.conf_ file. 
-Or the store format can be passed as an argument to the tool creating the database, e.g. xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[`neo4j-admin import`] or xref:backup-restore/copy-database.adoc[`neo4j-admin copy`] commands.
-
 The available formats are:
 
 * `aligned` label:default[Default]
@@ -16,7 +9,36 @@ The available formats are:
 * `high_limit` label:enterprise-edition[]
 * `block` label:enterprise-edition[]label:version-number[Neo4j 5.14]
 
-== Key aspects of the store formats
+Neo4j's newest store format is `block`, it has the best performance and supports the highest limits. 
+`block` format is intended to replace all the older formats.
+The `block` format uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk. This allows more related data to be fetched by fewer read operations, resulting in better resource utilization. 
+
+The older store formats are based on the original `standard` format, each with different features and limitations.
+Aligned, Standard, and High-limit formats store most graph data in linked list-like structures on disk. 
+The `aligned` format performs better than `standard` but requires slightly more disk space.
+The `high-limit` format allows more nodes and relationships to be stored than `standard` but peforms slightly worse and requires more disk space.  
+
+
+== How to set the database store format
+
+=== Creating new databases
+
+The default store format of new databases is controlled by the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting in the _neo4j.conf_ file. 
+Or the store format can be passed as an argument to the tool creating the database, e.g. xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[`neo4j-admin import`] or xref:backup-restore/copy-database.adoc[`neo4j-admin copy`] commands.
+
+=== Changing an existing database
+
+Changing the store format is possible by re-writing all data in the new format using the `neo4j-admin database migrate` or xref:backup-restore/copy-database.adoc[`neo4j-admin copy`] commands.
+
+Changing the store format requires that:
+
+* The database is offline.
+* There is enough disk space for both old and new copies of the database.
+* The graph fits within the new xref:#neo4j-admin-store-entity-limits[format's entity limits].
+
+Changing store format can be a time-consuming operation, depending on the size and complexity of the data in the database. Performance heavily depends on the speed of the disk and the amount of available memory.
+
+=== Effects of store formats choice
 
 The store format is responsible for how data is written to disk and how to read it.
 Some key aspects that may differ between formats are:
@@ -36,34 +58,8 @@ Different store formats may traverse and return data in different order.
 Especially `neo4j-admin database check` and `neo4j-admin database import` commands.
 Performance and resource utilization may differ.
 
-
-== Changing the store format
-
-Each format has a different layout of the data stored on disk.
-Changing the format is possible by re-writing all data in the new format using the `neo4j-admin database migrate` and `neo4j-admin database copy` commands.
-Keep in mind that both operations require the database to be offline.
-
-
-[NOTE]
-====
-Changing the format of a database requires enough free disk space to hold both the current and the new database.
-It may also be a time-consuming operation, depending on the size and complexity of the data in the database. The migration performance heavily depends on the speed of the disk and the amount of available memory.
-====
-
-[WARNING]
-====
-Different formats have different limitations, e.g. the number of nodes and relationships that can at most fit.
-Ensure that the new format can fit all the data in the database.
-====
-
 [[neo4j-admin-store-entity-limits]]
 == Store format versions and entity limits
-
-Aligned, Standard, and High-limit formats store most graph data in linked list-like structures on disk.
-The high-limit format allows for more nodes and relationships to be stored, at the cost of slightly lower performance and bigger disk size.
-
-The block format uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk.
-This allows more related data to be fetched by fewer read operations, resulting in better resource utilization.
 
 The following tables show the version and limits of the different store formats:
 
