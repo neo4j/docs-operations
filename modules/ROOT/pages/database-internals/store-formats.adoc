@@ -2,36 +2,39 @@
 :description: This page describes store formats in Neo4j.
 
 The store format is a core component of a database in Neo4j, describing how data is stored on disk and how to read it.
+Neo4j has several defined store formats, each with different features and limitations.
+The store format of a database is controlled by the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting in the _neo4j.conf_ file before you create the database, or as can be passed as an argument to the tool creating the database, e.g. `neo4j-admin import` or `neo4j-admin copy` commands.
 
-== Store formats in Neo4j
-Neo4j has several defined store formats, each with different features and limitations. 
-The store format of a database is decided when the database is created, most commonly controlled by the `db.format` setting in the _neo4j.conf_ file, or as an argument to the tool creating the database, e.g. `neo4j-admin import` or `neo4j-admin copy` tools.
 The currently available formats are:
 
-* `aligned`
+* `aligned` label:default[Default]
 * `standard`
 * `high_limit` label:enterprise-edition[]
 * `block` label:enterprise-edition[]
 
-== Properties of a store formats
+== Key aspects of the store formats
+
 The store format is responsible for how data is written to disk and how to read it.
 Some key aspects that may differ between formats are:
 
 * The performance and resource consumption of read and write transactions.
 An operation may be faster on one store format than another.
-* The physical size on disk. Two databases with identical logical data on different format may have different size.
+* Size of database files on disk.
+Two databases containing identical logical data may have different sizes due to different formats.
+* Which files/filenames exist in the database directory.
 * Performance in memory-constrained environments.
 The same query on different formats may have a different page cache hit ratio when the database does not entirely fit in the page cache.
 * The amount of data that can be stored.
-See xref:tools/neo4j-admin/neo4j-admin-store-info.adoc#neo4j-admin-store-entity-limits[entity limits] for limitations of the individual formats.
+See <<neo4j-admin-store-entity-limits, Store formats and entity limits>> for limitations of the individual formats.
 * The order of query results when the order is not specified.
 Different store formats may traverse and return data in different order.
 * Algorithms used by the Neo4j Admin tools.
 Especially `neo4j-admin database check` and `neo4j-admin database import` commands.
-Performance and resource utilization may differ. 
+Performance and resource utilization may differ.
 
 
-== Changing store format
+== Changing the store format
+
 Each format has a different layout of the data stored on disk.
 Changing the format is possible by re-writing all data in the new format using the `neo4j-admin database migrate` and `neo4j-admin database copy` commands.
 Keep in mind that both operations require the database to be offline.
@@ -49,10 +52,252 @@ Different formats have different limitations, e.g. the number of nodes and relat
 Ensure that the new format can fit all the data in the database.
 ====
 
-== Standard, Aligned, and High-limit formats
-Standard, Aligned, and High-limit formats store most graph data in linked-list like structures on disk.
-The high-limit format allows for more nodes and and relationships to be stored, at the cost of slightly lower performance and bigger disk size. 
+[[neo4j-admin-store-entity-limits]]
+== Store format versions and entity limits
+
+Aligned, Standard, and High-limit formats store most graph data in linked list-like structures on disk.
+The high-limit format allows for more nodes and relationships to be stored, at the cost of slightly lower performance and bigger disk size.
+
+The block format uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk.
+This allows more related data to be fetched by fewer read operations, resulting in better resource utilization.
+
+The following tables show the version and limits of the different store formats:
+
+[[neo4j-admin-store-aligned]]
+=== Aligned format
+
+.Store versions -- `aligned`
+[options="header"]
+|===
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `ALIGNED_V5_0` label:default[Default]
+| `record-aligned-1.1`
+| `5.0.0`
+|
+
+| `ALIGNED_V4_3`
+| `AF4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `ALIGNED_V4_1`
+| `AF4.1.a`
+| `4.1.0`
+| `5.0.0`
+|===
 
 
-== Block format
-The block format is utilizing multiple different data structures to allow for data locality, i.e. graph data that belongs together is stored in the same place on disk. This allows more related data to be fetched by fewer read operations, resulting in better resource utilization.
+[[neo4j-admin-store-aligned-limits]]
+.Store limits -- `aligned`
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^35` (34 359 738 368)
+
+| Relationships
+| `2^35` (34 359 738 368)
+
+| Properties
+| `2^36` (68 719 476 736)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^16` (65 536)
+
+| Relationship groups
+| `2^35` (34 359 738 368)
+|===
+
+[[neo4j-admin-store-standard]]
+=== Standard format
+
+.Store versions -- `standard`
+[options="header"]
+|===
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `STANDARD_V5_0`
+| `record-standard-1.1`
+| `5.0.0`
+|
+
+| `STANDARD_V4_3`
+| `SF4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `STANDARD_V4_0`
+| `SF4.0.0`
+| `4.0.0`
+| `5.0.0`
+
+| `STANDARD_V3_4`
+| `v0.A.9`
+| `3.4.0`
+| `5.0.0`
+|===
+
+
+[[neo4j-admin-store-standard-limits]]
+.Store limits -- `standard`
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^35` (34 359 738 368)
+
+| Relationships
+| `2^35` (34 359 738 368)
+
+| Properties
+| `2^36` (68 719 476 736)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^16` (65 536)
+
+| Relationship groups
+| `2^35` (34 359 738 368)
+|===
+
+[role=enterprise-edition]
+[[neo4j-admin-store-high-limit]]
+=== High_limit format
+
+
+.Store versions -- `high_limit`
+[options="header"]
+|===
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `HIGH_LIMIT_V5_0`
+| `record-high_limit-1.1`
+| `5.0.0`
+|
+
+| `HIGH_LIMIT_V4_3_0`
+| `HL4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V4_0_0`
+| `HL4.0.0`
+| `4.0.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_4_0`
+| `vE.H.4`
+| `3.4.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_2_0`
+| `vE.H.3`
+| `3.2.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_1_0`
+| `vE.H.2`
+| `3.1.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_0_6`
+| `vE.H.0b`
+| `3.0.6`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_0_0`
+| `vE.H.0`
+| `3.0.0`
+| `5.0.0`
+|===
+
+
+[[neo4j-admin-store-high-limits]]
+.Store limits -- `high_limit`
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^50` (1 Quadrillion)
+
+| Relationships
+| `2^50` (1 Quadrillion)
+
+| Properties
+| `2^50` (1 Quadrillion)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^24` (16 777 216)
+
+| Relationship groups
+| `2^50` (1 Quadrillion)
+|===
+
+[role=enterprise-edition]
+[[neo4j-admin-store-block]]
+=== Block format
+
+.Store versions -- `block`
+[options="header"]
+|===
+| Store Format Name | Store Format Version | Introduced in | Unsupported from
+
+| `BLOCK_V1`
+| `block-block-1.1`
+| `5.14.0`
+|
+
+| `BLOCK_V2B` (beta)
+| `block-block-2b.1`
+| `5.10.0`
+| `5.14.0`
+
+|===
+
+
+[[neo4j-admin-store-block-limits]]
+.Store limits -- `block`
+[options="header"]
+|===
+| Name | Limit
+
+| Nodes
+| `2^48` (281 474 976 710 656)
+
+| Relationships
+| `∞` (no defined upper bound)
+
+| Properties
+| `∞` (no defined upper bound)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^30` (1 073 741 824)
+
+| Property keys
+| `2^31` (2 147 483 648)
+
+|===
