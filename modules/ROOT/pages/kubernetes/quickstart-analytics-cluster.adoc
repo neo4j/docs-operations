@@ -1,0 +1,180 @@
+:description: How to deploy a Neo4j cluster that comprises one primary server and N secondary servers to support analytic queries.
+[role=enterprise-edition]
+[[quick-start-analytic-cluster]]
+= Quickstart: Deploy a Neo4j cluster for analytic queries
+
+_The feature is available in the Neo4j Helm chart from version 5.14._
+
+This quickstart shows how to configure and deploy a special Neo4j cluster that comprises one primary server and N secondary servers to support analytic queries.
+The primary server handles the transaction workloads, whereas the secondary servers are configured with the Neo4j Graph Data Science library (GDS) and are used only for the analytic workload. +
+Information on using GDS in a cluster can be found in the link:https://neo4j.com/docs/graph-data-science/current/[Neo4j Graph Data Science library documentation].
+
+The cluster is deployed to a cloud or a local Kubernetes cluster using the Neo4j Helm chart.
+
+== Prerequisites
+
+Before you can deploy a Neo4j cluster on Kubernetes, you need to have:
+
+* A Kubernetes cluster running and the `kubectl` command-line tool installed and configured to communicate with your cluster.
+For more information, see link:xref:kubernetes/quickstart-cluster/prerequisites.adoc[Quickstart: Deploy a cluster -> Prerequisites].
+* A valid license for Neo4j Enterprise Edition.
+For more information, see xref:/kubernetes/plugins.adoc#install-gds-ee-bloom[Install GDS Enterprise Edition (EE) and Bloom plugins].
+* The xref:kubernetes/helm-charts-setup.adoc[latest version of the Neo4j Helm chart repository].
+* (Optional) A valid license for GDS Enterprise Edition.
+To install a licensed plugin, you must provide the license files in a Kubernetes secret.
+For more information, see xref:/kubernetes/plugins.adoc#install-gds-ee-bloom[Install GDS Enterprise Edition (EE) and Bloom plugins].
+
+== Create a value YAML file for each type of server
+
+To set up a Neo4j cluster for analytic queries, you need to create a value YAML file for each type of server, primary and secondary.
+For example:
+
+[.tabbed-example]
+=====
+[.include-with-primary]
+======
+
+Create a value YAML file for the primary server, for example, _primary-value.yaml_:
+
+[source, yaml]
+----
+neo4j:
+  name: analytics-cluster
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+  password: my-password
+volumes:
+  data:
+    mode: defaultStorageClass
+
+# Disable the Neo4j load balancer and enable the internal service so that the servers can access each other:
+services:
+  neo4j:
+    enabled: false
+  internals:
+    enabled: true
+
+# Enable the analytics cluster and set the type to primary:
+analytics:
+  enabled: true
+  type:
+    name: primary
+----
+======
+[.include-with-secondary]
+======
+Create a value YAML file for the secondary servers, for example, _secondary-gds.yaml_.
+The password must be the same as for the primary server.
+If you are using GDS Enterprise Edition, you also need to create a secret with the license file and mount it as the _/licenses_ volume mount.
+For more information on how to create a secret, see xref:/kubernetes/plugins.adoc#install-gds-ee-bloom[Install GDS Enterprise Edition (EE) and Bloom plugins].
+
+[source, yaml]
+----
+neo4j:
+  name: analytics-cluster
+  acceptLicenseAgreement: "yes"
+  edition: enterprise
+  password: my-password
+volumes:
+  data:
+    mode: defaultStorageClass
+  # Define the volume mount for the license file:
+  licenses:
+    disableSubPathExpr: true
+    mode: volume
+    volume:
+      secret:
+        secretName: gds-license
+        items:
+          - key: gds.license
+            path: gds.license
+
+# Set the environment variables to download the plugins:
+env:
+  NEO4J_PLUGINS: '["graph-data-science"]'
+
+# Set the configuration for the plugins directory and the mount for the license file:
+config:
+  gds.enterprise.license_file: "/licenses/gds.license"
+  server.directories.plugins: "plugins"
+
+# Disable the Neo4j load balancer and enable the internal service so that the servers can access each other:
+services:
+  neo4j:
+    enabled: false
+  internals:
+    enabled: true
+
+# Enable the analytics cluster and set the type to secondary:
+analytics:
+  enabled: true
+  type:
+    name: secondary
+
+----
+======
+=====
+
+For all available options, see xref:kubernetes/configuration.adoc[Customizing a Neo4j Helm chart].
+
+== Install the servers
+
+. Install a single Neo4j server using the _neo4j-primary.yaml_ file, created in the previous section:
++
+[source, bash]
+----
+helm install primary neo4j/neo4j -f /path/to/neo4j-primary.yaml
+----
+. Install the first secondary server using the _secondary-gds.yaml_ file, created in the previous section:
++
+[source, bash]
+----
+helm install gds1 neo4j/neo4j -f /path/to/secondary-gds.yaml
+----
+. Repeat step 2 to deploy a second secondary server.
+Use a different name, for example, _gds2_.
+
+== Verify that the GDS library is installed and licensed
+
+. Connect to each of the `gds` pods using the `kubectl exec` command:
++
+[source, bash]
+----
+kubectl exec -it gds1-0 -- bash
+----
+. From the _bin_ folder, connect to the `system` database of the `gds1` server using the `cypher-shell` command:
++
+[source, bash]
+----
+cypher-shell -u neo4j -p my-password -d system -a bolt://gds1-internals.default.svc.cluster.local:7687
+----
+. Run the following Cypher function to verify that the GDS library is installed:
++
+[source, cypher]
+----
+RETURN gds.version();
+----
+. Call `gds.isLicensed()` to verify that the GDS library is licensed:
++
+[source, cypher]
+----
+RETURN gds.isLicensed();
+----
++
+The returned value must be `true`.
+
+== Verify the cluster formation
+
+To verify that the cluster is deployed and running, you can install a load balancer and access Neo4j from the Neo4j Browser.
+
+. Deploy a Neo4j load balancer to the same namespace as the Neo4j cluster:
++
+[source, bash]
+----
+helm install lb neo4j/neo4j-load-balancer --set neo4j.name="analytics-cluster"
+----
+. When deployed, copy the `EXTERNAL_IP` of the LoadBalancer service.
+For more information, see xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
+. In a web browser, open the Neo4j Browser at _http://EXTERNAL_IP:7474/browser_ and log in using the password you have configured in your values YAML files.
+. Run the `SHOW SERVERS` command to verify that the cluster is deployed and running.
+. Run the `SHOW DATABASES` command to verify that the standalone server is of type `primary` and the GDS servers are of type `secondary`.
