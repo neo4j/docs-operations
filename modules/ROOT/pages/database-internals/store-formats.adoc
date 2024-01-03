@@ -1,0 +1,308 @@
+= Store formats
+:description: This page describes store formats in Neo4j.
+
+The store format dictates how a database in Neo4j, is stored on disk.
+The available formats are:
+
+* `aligned` label:default[Default]
+* `standard`
+* `high_limit` label:enterprise-edition[]
+* `block` label:enterprise-edition[]label:version-number[Neo4j 5.14]
+
+Neo4j's newest store format is `block`, it has the best performance and supports the highest limits.
+`block` format is intended to replace all the older formats.
+The `block` format uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk.
+This allows more related data to be fetched by fewer read operations, resulting in better resource utilization.
+
+The older store formats are based on the original `standard` format, each with different features and limitations.
+`aligned`, `standard`, and `high_limit` formats store most graph data in linked list-like structures on disk.
+The `aligned` format performs better than the `standard` but requires slightly more disk space.
+The `high-limit` format allows more nodes and relationships to be stored than `standard` but performs slightly worse and requires more disk space.
+
+
+== How to set the database store format
+
+You can either set the store format when creating a new database or change the store format of an existing database.
+
+=== Creating new databases
+
+The default store format of new databases is controlled by the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting in the _neo4j.conf_ file.
+Or the store format can be passed as an argument to the tool creating the database, e.g. xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[`neo4j-admin database import`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands.
+
+=== Changing an existing database
+
+Changing the store format is possible by re-writing all data in the new format using the xref:tools/neo4j-admin/migrate-database.adoc[`neo4j-admin database migrate`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands.
+
+Changing the store format requires that:
+
+* The database is offline.
+* There is enough disk space for both old and new copies of the database.
+* The graph fits within the new <<store-formats-entity-limits, format's entity limits>>.
+
+Changing store format can be a time-consuming operation, depending on the size and complexity of the data in the database. Performance heavily depends on the speed of the disk and the amount of available memory.
+
+=== Effects of store format choice
+
+The store format is responsible for how data is written to disk and how to read it.
+Some key aspects that may differ between formats are:
+
+* The performance and resource consumption of read and write transactions.
+An operation may be faster on one store format than another.
+* Size of database files on disk.
+Two databases containing identical logical data may have different sizes due to different formats.
+* Which files/filenames exist in the database directory.
+* Performance in memory-constrained environments.
+The same query on different formats may have a different page cache hit ratio when the database does not entirely fit in the page cache.
+* The amount of data that can be stored.
+See <<store-formats-entity-limits, Store formats and entity limits>> for limitations of the individual formats.
+* The order of query results when the order is not specified.
+Different store formats may traverse and return data in different order.
+* Algorithms used by the Neo4j Admin tools.
+Especially `neo4j-admin database check` and `neo4j-admin database import` commands.
+Performance and resource utilization may differ.
+
+[[store-formats-entity-limits]]
+== Store formats and entity limits
+
+The following tables show the format and Neo4j version compatibility and the limits of the different store formats:
+
+[[aligned-format]]
+=== Aligned format
+
+.Aligned format and Neo4j version compatibility
+[options="header"]
+|===
+| Name | Store format version | Introduced in | Unsupported from
+
+| `ALIGNED_V5_0` label:default[Default]
+| `record-aligned-1.1`
+| `5.0.0`
+|
+
+| `ALIGNED_V4_3`
+| `AF4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `ALIGNED_V4_1`
+| `AF4.1.a`
+| `4.1.0`
+| `5.0.0`
+|===
+
+
+[[aligned-limits]]
+.Aligned format entity limits
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^35` (34 359 738 368)
+
+| Relationships
+| `2^35` (34 359 738 368)
+
+| Properties
+| `2^36` (68 719 476 736)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^16` (65 536)
+
+| Relationship groups
+| `2^35` (34 359 738 368)
+|===
+
+
+[[standard-format]]
+=== Standard format
+
+
+.Standard format and Neo4j version compatibility
+[options="header"]
+|===
+| Name | Store format version | Introduced in | Unsupported from
+
+| `STANDARD_V5_0`
+| `record-standard-1.1`
+| `5.0.0`
+|
+
+| `STANDARD_V4_3`
+| `SF4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `STANDARD_V4_0`
+| `SF4.0.0`
+| `4.0.0`
+| `5.0.0`
+
+| `STANDARD_V3_4`
+| `v0.A.9`
+| `3.4.0`
+| `5.0.0`
+|===
+
+
+[[standard-limits]]
+.Standard format entity limits
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^35` (34 359 738 368)
+
+| Relationships
+| `2^35` (34 359 738 368)
+
+| Properties
+| `2^36` (68 719 476 736)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^16` (65 536)
+
+| Relationship groups
+| `2^35` (34 359 738 368)
+|===
+
+[role=enterprise-edition]
+[[high-limit-format]]
+=== High_limit format
+
+
+.High_limit format and Neo4j version compatibility
+[options="header"]
+|===
+| Name | Store format version | Introduced in | Unsupported from
+
+| `HIGH_LIMIT_V5_0`
+| `record-high_limit-1.1`
+| `5.0.0`
+|
+
+| `HIGH_LIMIT_V4_3_0`
+| `HL4.3.0`
+| `4.3.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V4_0_0`
+| `HL4.0.0`
+| `4.0.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_4_0`
+| `vE.H.4`
+| `3.4.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_2_0`
+| `vE.H.3`
+| `3.2.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_1_0`
+| `vE.H.2`
+| `3.1.0`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_0_6`
+| `vE.H.0b`
+| `3.0.6`
+| `5.0.0`
+
+| `HIGH_LIMIT_V3_0_0`
+| `vE.H.0`
+| `3.0.0`
+| `5.0.0`
+|===
+
+
+[[high-format-limits]]
+.High_limit format entity limits
+[options="header"]
+|===
+| Name | Limit
+
+| Property keys
+| `2^24` (16 777 216)
+
+| Nodes
+| `2^50` (1 Quadrillion)
+
+| Relationships
+| `2^50` (1 Quadrillion)
+
+| Properties
+| `2^50` (1 Quadrillion)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^24` (16 777 216)
+
+| Relationship groups
+| `2^50` (1 Quadrillion)
+|===
+
+[role=enterprise-edition]
+[[block-format]]
+=== Block format
+
+.Block format and Neo4j version compatibility
+[options="header"]
+|===
+| Name | Store format version | Introduced in | Unsupported from
+
+| `BLOCK_V1`
+| `block-block-1.1`
+| `5.14.0`
+|
+
+| `BLOCK_V2B` (beta)
+| `block-block-2b.1`
+| `5.10.0`
+| `5.14.0`
+
+|===
+
+
+[[block-format-limits]]
+.Block format entity limits
+[options="header"]
+|===
+| Name | Limit
+
+| Nodes
+| `2^48` (281 474 976 710 656)
+
+| Relationships
+| `∞` (no defined upper bound)
+
+| Properties
+| `∞` (no defined upper bound)
+
+| Labels
+| `2^31` (2 147 483 648)
+
+| Relationship types
+| `2^30` (1 073 741 824)
+
+| Property keys
+| `2^31` (2 147 483 648)
+
+|===

@@ -12,8 +12,9 @@ For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 == Back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
 
 You can perform a backup of a Neo4j database(s) to any cloud provider (AWS, GCP, and Azure) bucket using the _neo4j/neo4j-admin_ Helm chart.
-From Neo4j 5.10.0, the _neo4j/neo4j-admin_ Helm chart also supports performing a backup of multiple databases.
-And from 5.13.0, the _neo4j/neo4j-admin_ Helm chart also supports workload identity integration for GCP, AWS, and Azure.
+From Neo4j 5.10, the _neo4j/neo4j-admin_ Helm chart also supports performing a backup of multiple databases.
+From 5.13, the _neo4j/neo4j-admin_ Helm chart also supports workload identity integration for GCP, AWS, and Azure.
+From 5.14, the _neo4j/neo4j-admin_ Helm chart also supports MinIO (an AWS S3-compatible object storage API) for Non-TLS/SSL endpoints.
 
 === Prerequisites
 
@@ -28,6 +29,9 @@ Before you can back up a database and upload it to your bucket, verify that you 
 ** For more information on setting up an Azure storage account with workload identity, link:https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview?tabs=go[Microsoft Azure -> Use Microsoft Entra Workload ID with Azure Kubernetes Service (AKS)]
 * A Kubernetes cluster running on one of the cloud providers with the Neo4j Helm chart installed.
 For more information, see xref:kubernetes/quickstart-standalone/index.adoc[Quickstart: Deploy a standalone instance] or xref:kubernetes/quickstart-cluster/index.adoc[Quickstart: Deploy a cluster].
+* MinIO server (an AWS S3-compatible object storage API) if you want to push your backups to a MinIO bucket.
+Only non-TLS/SSL endpoints are supported.
+For more information, see link:https://min.io/docs/minio/linux/integrations/aws-cli-with-minio.html[MinIO official documentation].
 * The latest Neo4j Helm charts.
 You can update the repository to get the latest charts using `helm repo update`.
 
@@ -286,6 +290,40 @@ You need to create the persistent volume and persistent volume claim before inst
 For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
+==== Configure the _backup-values.yaml_ file for using MinIO
+
+_This feature is available from Neo4j 5.14._
+
+MinIO is an AWS S3-compatible object storage API.
+You can specify the `minioEndpoint` parameter in the _backup-values.yaml_ file to push your backups to your MinIO bucket.
+This endpoint must be a s3 API endpoint or else the backup Helm chart will fail.
+Only non-TLS/SSL endpoints are supported.
+For example:
+
+[source, yaml, role='noheader']
+----
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.14.0"
+  jobSchedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 3
+
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName:  "standalone-admin"
+  minioEndpoint: "http://demo.minio.svc.cluster.local:9000"
+  database: "neo4j,system"
+  cloudProvider: "aws"
+  secretName: "awscreds"
+  secretKeyName: "credentials"
+
+consistencyCheck:
+  enabled: true
+----
+
+
 [[kubernetes-neo4j-backup-parameters]]
 === Backup parameters
 
@@ -357,6 +395,12 @@ backup:
   databaseBackupPort: ""
   #default value is cluster.local
   databaseClusterDomain: ""
+
+  # specify minio endpoint ex: http://demo.minio.svc.cluster.local:9000
+  # please ensure this endpoint is the s3 api endpoint or else the backup helm chart will fail
+  # as of now it works only with non tls endpoints
+  # to be used only when aws is used as cloudProvider
+  minioEndpoint: ""
 
   #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
