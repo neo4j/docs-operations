@@ -408,10 +408,28 @@ If importing to a database that has not explicitly been created prior to the imp
 
 label:enterprise-only[]
 
-When the initial data load cannot be completed in a single full import, incremental import allows the operation to be completed as a series of smaller imports.
+Incremental import allows you to incorporate large amounts of data in batches into the graph.
+You can run this operation as part of the initial data load when it cannot be completed in a single full import.
+Besides, you can update your graph by importing data incrementally, which is more performant than transactional insertion of such data.
 
-Incremental import requires the use of `--force` because it must only be run on databases in precisely the expected state and as part of an initial load.
-When an incremental import fails, it can leave the data corrupted.
+Incremental import requires the use of `--force` and can be run on an existing database only.
+
+You must stop your database, if you want to perform the incremental import within one command.
+
+If you cannot afford a full downtime of your database, split the operation into several stages:
+
+* _prepare_ stage (offline)
+* _build_ stage (offline or read-only)
+* _merge_ stage (offline)
+
+The database must be stopped for the `prepare` and `merge` stages.
+During the `build` stage, the database can be left online but put into read-only mode.
+For a detailed example, see <<incremental-import-stages>>.
+
+[WARNING]
+====
+It is highly recommended to back up your database before running the incremental import, as if the _merge_ stage fails, is aborted, or crashes, it may corrupt the database.
+====
 
 [[import-tool-incremental-syntax]]
 === Syntax
@@ -446,6 +464,7 @@ The incremental import command can be used to add:
 [WARNING]
 ====
 Note that you must have node property uniqueness constraints in place for the property key and label combinations that form the primary key, or the uniquely identifiable nodes.
+Otherwise, the command will throw an error and exit.
 For more information, see <<import-tool-header-format>>.
 ====
 * New relationships between existing or new nodes.
@@ -692,30 +711,13 @@ performance, this value should not be greater than the number of available proce
 [[import-tool-incremental-examples]]
 === Examples
 
-There are two ways of importing data incrementally:
+There are two ways of importing data incrementally.
 
-* If downtime is not a concern, you can run a single command with the option `--stage=all`.
+==== Incremental import in a single command
+
+If downtime is not a concern, you can run a single command with the option `--stage=all`.
 This option requires the database to be stopped.
-* If you cannot afford a full downtime of your database, you can run the import in three stages:
 
-** _prepare_ stage:
-+
-During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
-The import command is run with the option `--stage=prepare` and the database must be stopped.
-
-** _build_ stage:
-+
-During this stage, the import tool imports the data into the database.
-This is the longest stage and you can put the database in read-only mode to allow read access.
-The import command is run with the option `--stage=build`.
-
-** _merge_ stage:
-+
-During this stage, the import tool merges the new with the existing data in the database.
-It also updates the affected indexes and upholds the affected property uniqueness constraints and property existence constraints.
-The import command is run with the option `--stage=merge` and the database must be stopped.
-
-.Incremental import in a single command
 ====
 [source, shell, role=noplay]
 ----
@@ -725,9 +727,17 @@ $ bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-d
 ----
 ====
 
-.Incremental import in stages
+[[incremental-import-stages]]
+==== Incremental import in stages
+
+If you cannot afford a full downtime of your database, you can run the import in three stages.
+
 ====
 . `prepare` stage:
++
+During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
+The import command is run with the option `--stage=prepare` and the database must be stopped.
++
 .. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 The database must be stopped to run `--stage=prepare`.
 +
@@ -742,6 +752,11 @@ neo4j@system> STOP DATABASE db1 WAIT;
 $ bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/c.csv db1
 ----
 . `build` stage:
++
+During this stage, the import tool imports the data, deduplicates it, and validates it in the new increment database path.
+This is the longest stage and you can put the database in read-only mode to allow read access.
+The import command is run with the option `--stage=build`.
++
 .. Put the database in read-only mode:
 +
 [source, shell, role=noplay]
@@ -756,6 +771,9 @@ $ bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw
 ----
 . `merge` stage:
 +
+During this stage, the import tool merges the new with the existing data in the database.
+It also updates the affected indexes and upholds the affected property uniqueness constraints and property existence constraints.
+The import command is run with the option `--stage=merge` and the database must be stopped.
 It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
 +
 .. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
