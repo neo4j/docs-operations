@@ -47,7 +47,7 @@ These are some things you need to keep in mind when creating your input files:
 * Multiple data sources can be used for both nodes and relationships.
 * A data source can optionally be provided using multiple files.
 * A separate file with a header that provides information on the data fields, must be the first specified file of each data source.
-* Fields without corresponding information in the header will not be read.
+* Fields without corresponding information in the header are not read.
 * UTF-8 encoding is used.
 * By default, the importer trims extra whitespace at the beginning and end of strings.
   Quote your data to preserve leading and trailing whitespaces.
@@ -829,7 +829,11 @@ ID::
   The unique ID is persisted in a property whose name is defined by the `<name>` part of the field definition `<name>:ID`.
   If no such property `name` is defined, the unique ID will be used for the import but not be available for reference later.
   If no ID is specified, the node will be imported, but it will not be connected to other nodes during the import.
-  When a property `name` is provided, that property type can only be configured globally via the `--id-type` option and cannot be specified by `<field_type>` in the header field (as for <<import-tool-header-format-properties, properties>>). +
+  When a property `name` is provided, that property type can be configured globally via the `--id-type` option  (as for <<import-tool-header-format-properties>>). +
+  From Neo4j 5.1, you can specify a different value ID type to be stored for a node property in its group using the option `id-type` in the header, e.g: `id:ID(MyGroup){label:MyLabel, id-type: int}`.
+  This ID type overrides the global `--id-type` option.
+  For example, the global `id-type` can be a string, but the nodes will have their IDs stored as `int` type in their ID properties.
+  For more information, see <<import-tool-id-types-header>>. +
   From Neo4j 5.3, a node header can also contain multiple `ID` columns, where the relationship data references the composite value of all those columns.
   This also implies using `string` as `id-type`.
   For each `ID` column, you can specify to store its values as different node properties.
@@ -839,7 +843,7 @@ LABEL::
   Read one or more labels from this field.
   Like array values, multiple labels are separated by `;`, or by the character specified with `--array-delimiter`.
 
-.Define nodes files
+.Define node files
 ====
 
 You define the headers for movies in the _movies_header.csv_ file.
@@ -929,15 +933,12 @@ carrieanne,"Trinity",tt0242653,ACTED_IN
 
 
 [[import-tool-header-format-properties]]
-== Properties
+== Property data types
 
 For properties, the `<name>` part of the field designates the property key, while the `<field_type>` part assigns a data type.
 You can have properties in both node data files and relationship data files.
 
-=== Data types
-
-Use one of `int`, `long`, `float`, `double`, `boolean`, `byte`, `short`, `char`, `string`, `point`, `date`, `localtime`, `time`, `localdatetime`,
-`datetime`, and `duration` to designate the data type for properties.
+Use one of `int`, `long`, `float`, `double`, `boolean`, `byte`, `short`, `char`, `string`, `point`, `date`, `localtime`, `time`, `localdatetime`, datetime`, and `duration` to designate the data type for properties.
 By default, types (except arrays) are converted to Cypher types.
 See link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/values-and-types/property-structural-constructed/#_property_types[Cypher Manual -> Property, structural, and constructed values].
 
@@ -1192,6 +1193,51 @@ aa11,WORKS_WITH,bb22
 ----
 ====
 
+[[import-tool-id-types-header]]
+== Storing a different value type for IDs in a group
+
+From Neo4j 5.1, you can control the ID type of the node property that will be stored by defining the `id-type` option in the header, for example, `:ID{id-type:long}`.
+The `id-type` option in the header overrides the global `--id-type` value provided to the command.
+This way, you can have property values of different types for different groups of nodes.
+For example, the global `id-type` can be a string, but some nodes can have their IDs stored as `long` type in their ID properties.
+
+.Import nodes with different ID value types
+====
+.persons_header.csv
+[source, csv]
+----
+id:ID(GroupOne){id-type:long},name,:LABEL
+----
+
+.persons.csv
+[source, csv]
+----
+123,P1,Person
+456,P2,Person
+----
+
+.games_header.csv
+[source, csv]
+----
+id:ID(GroupTwo),name,:LABEL
+----
+
+.games.csv
+[source, csv]
+----
+ABC,G1,Game
+DEF,G2,Game
+----
+
+.Import the nodes
+[source, shell, role=noplay]
+----
+neo4j_home$ --nodes persons.csv --nodes games.csv --id-type string
+----
+
+The `id` property of the nodes in the `persons` group will be stored as `long` type, while the `id` property of the nodes in the `games` group will be stored as `string` type, as the global `id-type` is a string.
+====
+
 [[import-tool-header-format-skip-columns]]
 == Skipping columns
 
@@ -1222,7 +1268,7 @@ If all your superfluous data is placed in columns located to the right of all th
 
 
 [[import-tool-header-format-compressed-files]]
-== Import compressed files
+== Importing compressed files
 
 The import tool can handle files compressed with `zip` or `gzip`.
 Each compressed file must contain a single file.
