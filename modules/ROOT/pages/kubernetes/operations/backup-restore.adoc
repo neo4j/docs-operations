@@ -9,7 +9,7 @@ For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
 [[kubernetes-neo4j-backup-cloud]]
-== Back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
+== Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
 
 You can perform a backup of a Neo4j database(s) to any cloud provider (AWS, GCP, and Azure) bucket using the _neo4j/neo4j-admin_ Helm chart.
 From Neo4j 5.10, the _neo4j/neo4j-admin_ Helm chart also supports performing a backup of multiple databases.
@@ -323,9 +323,48 @@ consistencyCheck:
   enabled: true
 ----
 
+[[kubernetes-neo4j-backup-on-prem]]
+== Prepare to back up a database(s) to on-premises storage
+
+_This feature is available from Neo4j 5.16._
+
+You can perform a backup of a Neo4j database(s) to on-premises storage using the _neo4j/neo4j-admin_ Helm chart.
+When configuring the _backup-values.yaml_ file, keep the “cloudProvider” field empty and provide a persistent volume in the `tempVolume` section to ensure the backup files are persistent if the pod is deleted.
+
+[NOTE]
+====
+You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart.
+For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
+====
+
+For example:
+
+[source, yaml, role='noheader']
+----
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "5.16.0"
+  jobSchedule: "* * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 3
+
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName:  "standalone-admin"
+  database: "neo4j,system"
+  cloudProvider:
+
+consistencyCheck:
+  enabled: true
+
+tempVolume:
+  persistentVolumeClaim:
+    claimName: backup-pvc
+----
 
 [[kubernetes-neo4j-backup-parameters]]
-=== Backup parameters
+== Backup parameters
 
 To see what options are configurable on the Helm chart use `helm show values` and the Helm chart _neo4j/neo4j-admin_. +
 From Neo4j 5.10, the _neo4j/neo4j-admin_ Helm chart also supports assigning your Neo4j pods to specific nodes using `nodeSelector` labels, and from Neo4j 5.11, using affinity/anti-affinity rules or tolerations.
@@ -351,7 +390,7 @@ disableLookups: false
 
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "5.13.0"
+  imageTag: "5.16.0"
   podLabels: {}
 #    app: "demo"
 #    acac: "dcdddc"
@@ -395,7 +434,6 @@ backup:
   databaseBackupPort: ""
   #default value is cluster.local
   databaseClusterDomain: ""
-
   # specify minio endpoint ex: http://demo.minio.svc.cluster.local:9000
   # please ensure this endpoint is the s3 api endpoint or else the backup helm chart will fail
   # as of now it works only with non tls endpoints
@@ -406,7 +444,11 @@ backup:
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
   # cloudProvider can be either gcp, aws, or azure
+  # if cloudProvider is empty then the backup will be done to the /backups mount.
+  # the /backups mount can point to a persitentVolume based on the definition set in tempVolume
   cloudProvider: ""
+
+
 
   # name of the kubernetes secret containing the respective cloud provider credentials
   # Ensure you have read,write access to the mentioned bucket
@@ -490,8 +532,12 @@ securityContext:
 resources:
   requests:
     ephemeralStorage: "4Gi"
+    cpu: ""
+    memory: ""
   limits:
     ephemeralStorage: "5Gi"
+    cpu: ""
+    memory: ""
 
 # nodeSelector labels
 # please ensure the respective labels are present on one of nodes or else helm charts will throw an error
@@ -534,7 +580,9 @@ tolerations: []
 #    effect: "NoSchedule"
 ----
 
-=== Install the _neo4j-admin_ Helm chart
+== Back up your database(s)
+
+To back up your database(s), you install the _neo4j-admin_ Helm chart using the configured _backup-values.yaml_ file.
 
 . Install _neo4j-admin_ Helm chart using the _backup-values.yaml_ file:
 +
@@ -547,7 +595,7 @@ The _neo4j/neo4j-admin_ Helm chart installs a cronjob that launches a pod based 
 This pod performs a backup of one or multiple databases, a consistency check of the backup file(s),  and uploads them to the cloud provider bucket.
 
 . Monitor the backup pod logs using `kubectl logs pod/<neo4j-backup-pod-name>` to check the progress of the backup.
-. Check that the backup files and the consistency check reports have been uploaded to the cloud provider bucket.
+. Check that the backup files and the consistency check reports have been uploaded to the cloud provider bucket or on-premises storage.
 
 [[kubernetes-neo4j-restore]]
 == Restore a single database
