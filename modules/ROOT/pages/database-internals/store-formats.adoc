@@ -11,8 +11,9 @@ The available formats are:
 
 Neo4j's newest store format is `block`.
 It has the best performance and supports the highest limits.
-`block` format is intended to replace all the older formats.
-The `block` format uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk.
+
+The `block` format is intended to replace all the older formats.
+It uses a range of different data structures and inlining techniques to achieve data locality and store related data together on disk.
 This allows more related data to be fetched by fewer read operations, resulting in better resource utilization.
 
 The older store formats are based on the original `standard` format, each with different features and limitations.
@@ -27,12 +28,47 @@ You can either set the store format when creating a new database or change the s
 
 === Creating new databases
 
-The default store format of new databases is controlled by the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting in the _neo4j.conf_ file.
-Or the store format can be passed as an argument to the tool creating the database, e.g. xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[`neo4j-admin database import`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands.
+The default store format for all new databases is `aligned`.
+If you want to change it, you can set a new value for the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration in the _neo4j.conf_ file.
 
-=== Changing an existing database
+You can also create a new database on a specific store format by passing the new format as an argument to the command creating the database, for example, xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-full[`neo4j-admin database import full`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands.
 
-Changing the store format is possible by re-writing all data in the new format using the xref:tools/neo4j-admin/migrate-database.adoc[`neo4j-admin database migrate`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands.
+For example:
+
+[source,shell]
+----
+neo4j-admin database import full ... --format=block blockdb
+----
+
+//There are several ways to create a new database in a specific store format:
+
+// * Specify the store format when creating a new database using the `CREATE DATABASE` Cypher statement.
+// For example:
+// +
+// [source,cypher]
+// ----
+// CREATE DATABASE blockdb OPTIONS {storeFormat: 'block'}
+// ----
+
+=== Changing the format of existing databases
+
+Changing the store format is possible by re-writing all data in the new format using one of the following options:
+
+* Migrate an existing database using xref:tools/neo4j-admin/migrate-database.adoc[`neo4j-admin database migrate`] command.
+For example:
++
+[source,shell]
+----
+neo4j-admin database migrate --to-format="block" mydb
+----
+
+* Pass the new store format as an argument when using the xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] command to create a copy of an existing database.
+For example:
++
+[source,shell]
+----
+neo4j-admin database copy --to-format="block" mydb blockdb
+----
 
 Changing the store format requires that:
 
@@ -41,6 +77,30 @@ Changing the store format requires that:
 * The graph fits within the new <<store-formats-entity-limits, format's entity limits>>.
 
 Changing store format can be a time-consuming operation, depending on the size and complexity of the data in the database. Performance heavily depends on the speed of the disk and the amount of available memory.
+
+=== Verify the store format
+
+You can verify the store format of a database using the following Cypher:
+
+[source,cypher]
+----
+SHOW DATABASES YIELD name, store
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------+
+| name      | store                |
++----------------------------------+
+| "blockdb" | "block-block-1.1"    |
+| "neo4j"   | "record-aligned-1.1" |
+| "system"  | "record-aligned-1.1" |
++----------------------------------+
+----
+
+Additionally, you can use the `neo4j-admin database info` command to get detailed information about the store format of a database.
+For details, see xref:tools/neo4j-admin/neo4j-admin-store-info.adoc[Display store information].
 
 === Effects of store format choice
 
