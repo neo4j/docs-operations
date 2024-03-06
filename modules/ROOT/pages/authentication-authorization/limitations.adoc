@@ -277,6 +277,61 @@ CALL db.labels()
 
 will only return label `:A`, because that is the only label for which traversal was granted.
 
+[[access-control-limitations-non-existing-labels]]
+=== Privileges for non-existing labels, relationship types, and property names
+
+Privileges for non-existent labels, relationship types, and property names have an effect only once the latter are created.
+In other words, when authorizing a user, only privileges for existing labels, relationship types, and property names are applied.
+This is because the graph elements must be resolved internally to be able to check against the privileges when users try to use them later.
+If a label, relationship type, or property name does not yet exist, it will not resolve, and therefore, the privileges will not apply.
+
+A way around this is to create the label, relationship type, or property name using the `db.createLabel()`, `db.createRelationshipType()`, and `db.createProperty()` procedures on the relevant database when creating the privileges.
+
+Labels, relationship types, and property names are considered non-existent in a database if:
+
+* There has never been a node with that label, a relationship with that relationship type, or a property with that name.
+* There has been no attempt to add a node with that label, a relationship with that relationship type, or a property with that name. +
+The attempted creation adds it to the known labels, relationship types, and property names even if the creation itself fails (unless it fails on missing or denied privileges to create new labels, relationship types, or property names).
+* They have not been created using any of the `db.createLabel()`, `db.createRelationshipType()`, or `db.createProperty()` procedures.
+
+There is currently no way to remove a label, relationship type, or property name from the database.
+Once existent in the database, they cannot return to non-existent.
+
+For example, let's assume that you have a new, freshly-created empty database, called `testing`, and a user named `Alice` with a `custom` role.
+[NOTE]
+=====
+The example focuses only on nodes and their labels, though the same principle applies to relationships and their relationship type, and properties (on both nodes and relationships) and their names.
+=====
+
+Using the following command, you define some privileges to the `custom` role:
+[source, cypher]
+----
+GRANT MATCH {*} ON GRAPH testing NODES * TO custom
+GRANT CREATE ON GRAPH testing NODES `A` TO custom
+GRANT SET LABEL `A` ON GRAPH testing TO custom
+GRANT CREATE NEW NODE LABEL ON DATABASE testing TO custom
+----
+
+This means that when `Alice` executes:
+
+[source, cypher]
+----
+CREATE (:`A`)
+----
+
+She will get the following exception even though she is allowed to create new labels:
+[source]
+----
+Create node with labels 'A' on database 'testing' is not allowed for user 'Alice' with roles [PUBLIC, custom].
+----
+
+However, rerunning the same query will create the node.
+This is because the failed creation still creates the label, making it no longer non-existent when the query is run a second time.
+
+To ensure success on the first attempt, when setting up the privileges for the `custom` role, the administrator should run the `db.createLabel()` procedure on the affected databases for all non-existing labels that get assigned privileges.
+In this example, when creating the custom role, connect to `testing` and run `CALL db.createLabel('A')` to ensure Alice creates the node successfully on her first attempt.
+
+
 
 [[access-control-limitations-db-operations]]
 == Security and count store operations
