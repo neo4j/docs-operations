@@ -1,0 +1,154 @@
+:description: how to modify standard databases in Neo4j using the Cypher command `ALTER DATABASE`.
+[role=enterprise-edition not-on-aura]
+[[administration-databases-alter-database]]
+= Alter databases
+Standard databases can be modified using the command `ALTER DATABASE`.
+
+[role=enterprise-edition not-on-aura]
+[[manage-databases-alter]]
+== Alter database access mode
+
+By default, a database has read-write access mode on creation.
+The database can be limited to read-only mode on creation using the configuration parameters `dbms.databases.default_to_read_only`, `dbms.databases.read_only`, and `dbms.database.writable`.
+For details, see the section on xref::database-administration/standard-databases/configuration-parameters.adoc#[Configuration parameters].
+A database that was created with read-write access mode can be changed to read-only.
+To change it to read-only, you can use the `ALTER DATABASE` command with the sub-clause `SET ACCESS READ ONLY`.
+Subsequently, the database access mode can be switched back to read-write using the sub-clause `SET ACCESS READ WRITE`.
+Altering the database access mode is allowed at all times, whether a database is online or offline.
+
+If conflicting modes are set by the `ALTER DATABASE` command and the configuration parameters, i.e. one says read-write and the other read-only, the database will be read-only and prevent write queries.
+
+The `WAIT` _sub-clause was added as an option to the_ `ALTER DATABASE` _command in Neo4j 5.7._
+
+[NOTE]
+====
+Modifying access mode is only available to standard databases and not composite databases.
+====
+
+
+=== Alter database access mode to read-only
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE customers SET ACCESS READ ONLY
+----
+
+The database access mode can be seen in the `access` output column of the command `SHOW DATABASES`.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES yield name, access
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------+
+| name        | access       |
++----------------------------+
+| "customers" | "read-only"  |
+| "movies"    | "read-write" |
+| "neo4j"     | "read-write" |
+| "system"    | "read-write" |
++----------------------------+
+----
+
+=== Alter database access using `IF EXISTS`
+
+`ALTER DATABASE` commands are optionally idempotent, with the default behavior to fail with an error if the database does not exist.
+Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE nonExisting IF EXISTS
+SET ACCESS READ WRITE
+----
+
+== Alter database topology
+
+In a cluster environment, you can use the `ALTER DATABASE` command to change the number of servers hosting a database.
+For more information, see xref::clustering/databases.adoc#alter-topology[Managing databases in a cluster].
+
+[role=enterprise-edition]
+[[alter-database-options]]
+== Alter database options
+
+The `ALTER DATABASE` command can be used to set or remove specific options for a database.
+
+[options="header", cols="1m,1m,3a"]
+|===
+| Key
+| Value
+| Description
+
+| txLogEnrichment
+| FULL\|DIFF\|NONE
+| Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/{page-version}/getting-started/enrichment-mode[Change Data Capture Manual -> Getting Started -> Enrichment mode].
+|===
+
+[NOTE]
+====
+There are no available `OPTIONS` values for composite databases.
+====
+
+=== Alter the options set for a database
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE `movies`
+SET OPTION txLogEnrichment 'FULL'
+----
+
+The database set options can be seen in the `options` output column of the command `SHOW DATABASES`.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES yield name, options
+----
+// Limited result set.
+// The output has been capped.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +options+
+| +"customers"+ | +{}+
+| +"movies"+ | +{txLogEnrichment: "FULL"}+
+| +"neo4j"+ | +{}+
+| +"system"+ | +{}+
+2+d|Rows: 4
+|===
+
+=== Remove the options set for a database
+
+.Query
+[source, cypher]
+----
+ALTER DATABASE `movies`
+REMOVE OPTION txLogEnrichment
+----
+
+The `REMOVE OPTION` clause removes the specified option from the database using the `ALTER DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW DATABASES YIELD name, options
+----
+// Limited result set.
+// The output has been capped.
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| +name+ | +options+
+| +"customers"+ | +{}+
+| +"movies"+ | +{}+
+| +"neo4j"+ | +{}+
+| +"system"+ | +{}+
+2+d|Rows: 4
+|===
