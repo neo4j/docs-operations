@@ -386,14 +386,19 @@ For example, `nodes 0-nodes.csv -- mydatabase`.
 ====
 As of Neo4j 5.19, the `--nodes` and `--relationships` options can also import files from AWS S3 URIs.
 Neo4j uses link:https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html[default AWS credentials] to access AWS S3 URIs.
+For more information, see <<import-files-from-aws-s3-uris>>.
 ====
 
 
 [[import-tool-examples]]
 === Examples
 
-.Import data from CSV files
+[NOTE]
 ====
+If importing to a database that has not explicitly been created before the import, it must be created subsequently in order to be used.
+====
+
+==== Import data from CSV files
 
 Assume that you have formatted your data as per xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-header-format[CSV header format] so that you have it in six different files:
 
@@ -412,11 +417,10 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 --nodes import/actors_header.csv,import/actors.csv \
 --relationships import/roles_header.csv,import/roles.csv
 ----
-====
+
 
 [[import-tool-multiple-input-files-regex-example]]
-.Import data from CSV files using regular expression
-====
+==== Import data from CSV files using regular expression
 
 Assume that you want to include a header and then multiple files that match a pattern, e.g. containing numbers.
 In this case, a regular expression can be used.
@@ -428,10 +432,8 @@ For example:
 ----
 bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data_\d+\.csv
 ----
-====
 
-.Import data from CSV files using a more complex regular expression
-====
+==== Import data from CSV files using a more complex regular expression
 
 For regular expression patterns containing commas, which is also the delimiter between files in a group, the pattern can be quoted to preserve the pattern.
 
@@ -441,22 +443,23 @@ For example:
 ----
 bin/neo4j-admin database import full --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv' databasename
 ----
-====
 
-.Importing files from AWS S3 URIs
-====
-The following is an example of how to import files from AWS S3 URIs, as of Neo4j 5.19.
+[[import-files-from-aws-s3-uris]]
+==== Importing files from an AWS S3 storage
 
+_This feature is available from Neo4j 5.19._
+
+To import data stored in an AWS S3 storage, you can use the `--nodes` and `--relationships` options with S3 URIs.
+For example, use the following steps:
+
+include::partial$/aws-s3-credentials.adoc[]
+
+. Run the `neo4j-admin database import` command to import your database from the AWS S3 storage:
++
 [source, shell, role=noplay]
 ----
 bin/neo4j-admin database import full --nodes s3://my-bucket/data/nodes.csv --relationships s3://my-bucket/data/relationships.csv newdb
 ----
-====
-
-[NOTE]
-====
-If importing to a database that has not explicitly been created prior to the import, it must be created subsequently in order to be used.
-====
 
 
 [role=label--enterprise-edition]
@@ -814,12 +817,12 @@ If you cannot afford a full downtime of your database, you can run the import in
 During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
 The import command is run with the option `--stage=prepare` and the database must be stopped.
 +
-.. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 The database must be stopped to run `--stage=prepare`.
 +
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1 WAIT;
+STOP DATABASE db1 WAIT
 ----
 .. Run the incremental import command with the `--stage=prepare` option:
 +
@@ -837,7 +840,7 @@ The import command is run with the option `--stage=build`.
 +
 [source, shell, role=noplay]
 ----
-ALTER DATABASE db1 SET ACCESS READ ONLY;
+ALTER DATABASE db1 SET ACCESS READ ONLY
 ----
 .. Run the incremental import command with the `--stage=build` option:
 +
@@ -852,11 +855,11 @@ It also updates the affected indexes and upholds the affected property uniquenes
 The import command is run with the option `--stage=merge` and the database must be stopped.
 It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
 +
-.. Stop the database with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 +
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1 WAIT;
+STOP DATABASE db1 WAIT
 ----
 .. Run the incremental import command with the `--stage=merge` option:
 +
