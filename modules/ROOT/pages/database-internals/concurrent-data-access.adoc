@@ -1,19 +1,7 @@
-= Locks and deadlocks
-:description: This page discusses how locks are used in Neo4j, isolation levels, default locking behavior, deadlocks and strategies to avoid deadlocks, delete semantics, creating unique nodes, and transaction events.
+= Concurrent data access
+:description: This page discusses concurrent data access, how locks are used in Neo4j, isolation levels, default locking behavior, deadlocks and strategies to avoid deadlocks, delete semantics, creating unique nodes, and transaction events.
 
-When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
-
-== Locks
-
-Locks are taken automatically by the queries that users run.
-They ensure that a node/relationship is locked to one particular transaction until that transaction is completed.
-In other words, a lock on a node or a relationship by one transaction pauses other transactions to concurrently modify the same node or relationship.
-As such, locks prevent concurrent modifications of shared resources between transactions.
-
-=== Isolation levels
-
-Locks are used in Neo4j to ensure data consistency and isolation levels.
-They not only protect logical entities (such as nodes and relationships) but also the integrity of internal data structures.
+== Isolation levels
 
 Neo4j supports the following isolation levels:
 
@@ -25,8 +13,14 @@ Using locks allows for simulating the effects of higher levels of isolation by o
 For example, if a write lock is taken on a common node or relationship, then all transactions are serialized on that lock -- giving the effect of a _serializable isolation level_.
 For more information on how to manually acquire write locks, see <<transactions-isolation-lostupdates>>.
 
+== Anomalies
+
+Depending on the isolation level, different anomalies may occur when multiple transactions concurrently read or write the same data.
+
+All the anomalies listed here can only occur with the read-committed isolation level.
+
 [[transactions-isolation-lostupdates]]
-=== Lost updates in Cypher
+=== Lost updates
 
 In Cypher, it is possible to acquire write locks to simulate improved isolation in some cases.
 Consider the case where multiple concurrent Cypher queries increment the value of a property.
@@ -106,6 +100,60 @@ REMOVE n._LOCK_
 
 The existence of the `+SET n._LOCK_+` statement before the read of the `n.prop` read ensures the lock is acquired before the read action, and no updates are lost due to enforced serialization of all concurrent queries on that specific node.
 
+=== Non-repeatable reads
+
+A non-repeatable read is when the same transaction reads the same data but gets inconsistent results.
+This can easily happen if reading the same data twice in a query and the data gets modified in-between by another concurrent query.
+
+.Non-repeatable read
+====
+The following example query shows that reading the same property twice can give inconsistent results.
+If there are other queries running concurrently, it is not guaranteed that `p1` and `p2` have the same value.
+
+[source, cypher, role="noheader"]
+----
+MATCH (n:Example {id: 42})
+WITH n.prop AS p1
+// another concurrent query changes the value of n.prop here.
+WITH *, n.prop AS p2
+RETURN p1, p2
+----
+====
+
+The easiest way to work around this is to only read each property once, and keep it as long as needed in the query.
+
+=== Missing and double reads
+
+When scanning an xref:performance/index-configuration.adoc[index], entities may be observed multiple times or skipped entirely, even if they are present in the index.
+This is true even for indexes that back link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/constraints/examples/#constraints-examples-node-uniqueness[uniqueness constraints].
+
+During the scan, if another concurrent query changes an entity's property to a position ahead of the scan, the entity might appear again in the index.
+Similarly, the entity may not appear at all if the property is changed to a previously scanned position.
+
+This anomaly can only occur with operators that scan an index, or parts of an index, for example link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/planning-and-tuning/operators/operators-detail/#query-plan-node-index-scan[`NodeIndexScan`] or link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/planning-and-tuning/operators/operators-detail/#query-plan-directed-relationship-index-seek-by-range[`DirectedRelationshipIndexSeekByRange`].
+
+.Missing and double read
+====
+In the following query, each node `n` that has the property `prop` is expected to appear exactly once.
+However, concurrent updates that modify the `prop` property during index scanning may cause a node to appear multiple times or not at all in the result set.
+[source, cypher, role="noheader"]
+----
+MATCH (n:Example) WHERE n.prop IS NOT NULL
+RETURN n
+----
+====
+
+== Locks
+
+When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
+
+Locks are used in Neo4j to ensure data consistency and isolation levels.
+They not only protect logical entities (such as nodes and relationships) but also the integrity of internal data structures.
+
+Locks are taken automatically by the queries that users run.
+They ensure that a node/relationship is locked to one particular transaction until that transaction is completed.
+In other words, a lock on a node or a relationship by one transaction pauses other transactions to concurrently modify the same node or relationship.
+As such, locks prevent concurrent modifications of shared resources between transactions.
 
 [[transactions-locking]]
 === Default locking behavior
