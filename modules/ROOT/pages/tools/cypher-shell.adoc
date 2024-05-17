@@ -21,7 +21,8 @@ The Cypher Shell CLI is located in the `bin` directory if installed as part of t
  cypher-shell [-h] [-a ADDRESS]
               [-u USERNAME] [--impersonate IMPERSONATE]
               [-p PASSWORD] [--encryption {true,false,default}]
-              [-d DATABASE] [--format {auto,verbose,plain}]
+              [-d DATABASE] [--access-mode {read,write}]
+              [--format {auto,verbose,plain}]
               [-P PARAM] [--non-interactive] [--sample-rows SAMPLE-ROWS]
               [--wrap {true,false}] [-v] [--driver-version]
               [-f FILE] [--change-password] [--log [LOG-FILE]]
@@ -144,6 +145,10 @@ Can also be specified using the environment variable `NEO4J_ADDRESS` or `NEO4J_U
 | -d DATABASE --database DATABASE
 | Database to connect to. Can also be specified using the environment variable `NEO4J_DATABASE`.
 |
+
+| --access-mode {read,write}
+| Access mode.
+| write
 |===
 
 [[cypher-shell-run]]
@@ -196,6 +201,90 @@ Type :help for a list of available commands or :exit to exit the shell.
 Note that Cypher queries must end with a semicolon.
 ----
 
+[[cypher-shell-access-mode]]
+== Changing the access mode
+
+_This feature is available in Neo4j 5.20 and later._
+
+By default, the access mode is set to `write`.
+However, you can change the access mode to `read` or `write` using the `--access-mode` argument when connecting to a Neo4j DBMS with the `cypher-shell` command or by using the `:access-mode` command in the interactive shell.
+Keep in mind that access mode can affect which servers in a cluster a query can get routed to.
+For example, a server with `modeConstraint=SECONDARY` can only do reads.
+
+The following is an example of how you can connect to a Neo4j DBMS in read mode and then change the access mode to write in the interactive shell.
+
+. Connect to a Neo4j DBMS in read mode:
++
+[source, shell]
+----
+bin/cypher-shell -u neo4j -p <password> --access-mode read
+----
++
+[result]
+----
+Connected to Neo4j using Bolt protocol version 5.4 at neo4j://localhost:7687 as user neo4j.
+Type :help for a list of available commands or :exit to exit the shell.
+Note that Cypher queries must end with a semicolon.
+----
+. Try to create a node in read access mode:
++
+[source, shell]
+----
+create ();
+----
++
+[result]
+----
+Writing in read access mode not allowed. Attempted write to neo4j
+----
+. Change the access mode to write in the interactive shell:
++
+[source, shell]
+----
+:access-mode write
+----
+. Verify the access mode:
++
+[source, shell]
+----
+:access-mode
+----
++
+[result]
+----
+Access mode write
+----
+. Create a node in write access mode:
++
+[source, shell]
+----
+create ();
+----
++
+[result]
+----
+0 rows
+ready to start consuming query after 66 ms, results consumed after another 0 ms
+Added 1 nodes
+----
+
+[TIP]
+====
+For more information on the `:access-mode` command, run the following command in the interactive shell:
+
+[source, shell]
+----
+:help access-mode
+----
+
+[result]
+----
+usage: :access-mode - Display current access mode
+:access-mode read - Reconnect with read access mode
+:access-mode write - Reconnect with write access mode
+----
+====
+
 [[cypher-shell-commands]]
 == Available commands
 
@@ -214,6 +303,7 @@ The output is the following:
 [queryresult]
 ----
 Available commands:
+  :access-mode View or set access mode  # <1>
   :begin        Open a transaction
   :commit       Commit the currently open transaction
   :connect      Connects to a database
@@ -222,10 +312,10 @@ Available commands:
   :help         Show this help message
   :history      Statement history
   :impersonate  Impersonate user
-  :param        Set, list or clear query parameters
+  :param       Set the value of a query parameter
   :rollback     Rollback the currently open transaction
   :source       Executes Cypher statements from a file
-  :sysinfo      Show Neo4j system information # <1>
+  :sysinfo      Neo4j system information # <2>
   :use          Set the active database
 
 
@@ -238,7 +328,8 @@ Keyboard shortcuts:
 ----
 ====
 
-<1> label:new[Introduced in Neo4j 5.11]
+<1> label:new[Introduced in Neo4j 5.20]
+<2> label:new[Introduced in Neo4j 5.11]
 
 [[cypher-shell-statements]]
 == Running Cypher statements
