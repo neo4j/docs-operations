@@ -43,7 +43,16 @@ See also, <<Transaction log settings>>.
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Configures the general policy for when checkpoints should occur. The default policy is the 'periodic' checkpoint policy, as specified by the xref:configuration/configuration-settings.adoc#config_db.checkpoint.interval.tx[`db.checkpoint.interval.tx`] and  xref:configuration/configuration-settings.adoc#config_db.checkpoint.interval.time[`db.checkpoint.interval.time`] settings. The Neo4j Enterprise Edition provides two alternative policies: The first is the 'continuous' checkpoint policy, which will ignore those settings and run the checkpoint  process all the time. The second is the 'volumetric' checkpoint policy, which makes a best-effort at checkpointing often enough so that the database doesn't get too far behind on deleting old transaction logs in accordance with the `<<config_db.tx_log.rotation.retention_policy,db.tx_log.rotation.retention_policy>>` setting.
+a|Configures the general policy for when checkpoints should occur.
+Possible values are:
+
+* `PERIODIC` (default)- it runs a checkpoint as per the interval specified by `<<config_db.checkpoint.interval.tx,db.checkpoint.interval.tx>>` and `<<config_db.checkpoint.interval.time,db.checkpoint.interval.time>>`.
+
+* `VOLUME` -- it runs a checkpoint when the size of the transaction logs reaches the value specified by the `<<config_db.checkpoint.interval.volume,db.checkpoint.interval.volume>>` setting. By default, it is set to `250.00MiB`.
+
+* `CONTINUOUS` (Enterprise Edition) -- it ignores `<<config_db.checkpoint.interval.tx,db.checkpoint.interval.tx>>` and `<<config_db.checkpoint.interval.time,db.checkpoint.interval.time>>` settings and runs the checkpoint process all the time.
+
+* `VOLUMETRIC` (Enterprise Edition) -- it makes the best effort to checkpoint often enough so that the database does not get too far behind on deleting old transaction logs as specified in the `<<config_db.tx_log.rotation.retention_policy,db.tx_log.rotation.retention_policy>>` setting.
 |Valid values
 a|One of [PERIODIC, CONTINUOUS, VOLUME, VOLUMETRIC].
 |Default value
@@ -58,7 +67,11 @@ m|+++PERIODIC+++
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Configures the time interval between checkpoints. The database will not checkpoint more often than this (unless checkpointing is triggered by a different event), but might checkpoint less often than this interval, if performing a checkpoint takes longer time than the configured interval. A checkpoint is a point in the transaction logs, which recovery would start from. Longer checkpoint intervals typically mean that recovery will take longer to complete in case of a crash. On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.
+a|Configures the time interval between checkpoints.
+The database does not checkpoint more often than the specified interval (unless checkpointing is triggered by a different event) but might checkpoint less often if performing a checkpoint takes longer time than the configured interval.
+A checkpoint is a point in the transaction logs from which recovery starts.
+Longer checkpoint intervals typically mean that recovery takes longer to complete in case of a crash.
+On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.
 |Valid values
 a|A duration (Valid units are: `ns`, `μs`, `ms`, `s`, `m`, `h` and `d`; default unit is `s`).
 |Default value
@@ -73,7 +86,12 @@ m|+++15m+++
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Configures the transaction interval between checkpoints. The database will not checkpoint more often  than this (unless check pointing is triggered by a different event), but might checkpoint less often than this interval, if performing a checkpoint takes longer time than the configured interval. A checkpoint is a point in the transaction logs, which recovery would start from. Longer checkpoint intervals typically mean that recovery will take longer to complete in case of a crash. On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.  The default is '100000' for a checkpoint every 100000 transactions.
+a|Configures the transaction interval between checkpoints.
+The database does not checkpoint more often than the specified interval (unless checkpointing is triggered by a different event) but might checkpoint less often if performing a checkpoint takes longer time than the configured interval.
+A checkpoint is a point in the transaction logs from which recovery starts.
+Longer checkpoint intervals typically mean that recovery takes longer to complete in case of a crash.
+On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.
+The default is `100000` for a checkpoint every 100000 transactions.
 |Valid values
 a|An integer that is minimum `1`.
 |Default value
@@ -88,7 +106,11 @@ m|+++100000+++
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Configures the volume of transaction logs between checkpoints. The database will not checkpoint more often than this (unless check pointing is triggered by a different event), but might checkpoint less often than this interval, if performing a checkpoint takes longer time than the configured interval. A checkpoint is a point in the transaction logs, which recovery would start from. Longer checkpoint intervals typically mean that recovery will take longer to complete in case of a crash. On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.
+a|Configures the volume of transaction logs between checkpoints.
+The database does not checkpoint more often than the specified interval (unless checkpointing is triggered by a different event) but might checkpoint less often if performing a checkpoint takes longer time than the configured interval.
+A checkpoint is a point in the transaction logs, which recovery would start from.
+Longer checkpoint intervals typically mean that recovery takes longer to complete in case of a crash.
+On the other hand, a longer checkpoint interval can also reduce the I/O load that the database places on the system, as each checkpoint implies a flushing and forcing of all the store files.
 |Valid values
 a|A byte size (valid multipliers are `B`, `KiB`, `KB`, `K`, `kB`, `kb`, `k`, `MiB`, `MB`, `M`, `mB`, `mb`, `m`, `GiB`, `GB`, `G`, `gB`, `gb`, `g`, `TiB`, `TB`, `PiB`, `PB`, `EiB`, `EB`) that is minimum `1.00KiB`.
 |Default value
@@ -100,13 +122,22 @@ m|+++250.00MiB+++
 [[config_db.checkpoint.iops.limit]]
 === `db.checkpoint.iops.limit`
 
-// label:dynamic[Dynamic]
+label:enterprise-edition[Enterprise Edition] label:dynamic[Dynamic]
 
 .db.checkpoint.iops.limit
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Limit the number of IOs the background checkpoint process will consume per second. This setting is advisory, is ignored in Neo4j Community Edition, and is followed to best effort in Enterprise Edition. An IO is in this case a 8 KiB (mostly sequential) write. Limiting the write IO in this way will leave more bandwidth in the IO subsystem to service random-read IOs, which is important for the response time of queries when the database cannot fit entirely in memory. The only drawback of this setting is that longer checkpoint times may lead to slightly longer recovery times in case of a database or system crash. A lower number means lower IO pressure, and consequently longer checkpoint times. Set this to -1 to disable the IOPS limit and remove the limitation entirely; this will let the checkpointer flush data as fast as the hardware will go. Removing the setting, or commenting it out, will set the default value of 600.
+a|Limit the number of IOs the background checkpoint process consumes per second.
+This setting is advisory.
+It is ignored in Neo4j Community Edition and is followed to best effort in Enterprise Edition.
+An IO is, in this case, an 8 KiB (mostly sequential) write.
+Limiting the write IO in this way leaves more bandwidth in the IO subsystem to service random-read IOs, which is important for the response time of queries when the database cannot fit entirely in memory.
+The only drawback of this setting is that longer checkpoint times may lead to slightly longer recovery times in case of a database or system crash.
+A lower number means lower IO pressure and, consequently, longer checkpoint times.
+Set this to `-1` to disable the IOPS limit and remove the limitation entirely.
+This lets the checkpointer flush data as fast as the hardware goes.
+Removing or commenting out the setting sets the default value of `600`.
 |Valid values
 a|An integer.
 |Default value
@@ -2224,6 +2255,19 @@ a|A long that is minimum `2`.
 m|+++100+++
 |===
 
+[config_dbms.usage_report.enabled]
+=== `dbms.usage_report.enabled`
+
+.dbms.usage_report.enabled
+[frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
+|===
+|Description
+a|Anonymous Usage Data reporting.
+|Valid values
+a|A boolean.
+|Default value
+m|+++true+++
+|===
 
 == Import settings
 
