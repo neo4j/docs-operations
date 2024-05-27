@@ -4,6 +4,8 @@
 
 A database dump can be loaded to a Neo4j instance using the `load` command of `neo4j-admin`.
 
+From Neo4j 5.20, the `neo4j-admin database load` command also supports loading a database from xref:backup-restore/online-backup.adoc#backup-artifact[full database backup artifacts].
+
 [NOTE]
 ====
 Change Data Capture does **not** capture any data changes resulting from the use of `neo4j-admin database load`.
@@ -14,7 +16,8 @@ See link:{neo4j-docs-base-uri}/cdc/current/get-started/self-managed/#non-tx-log-
 [[restore-dump-command]]
 == Command
 
-The `neo4j-admin database load` command loads a database from an archive created with the xref:backup-restore/offline-backup.adoc#offline-backup-command[`neo4j-admin database dump`] command.
+The `neo4j-admin database load` command loads a database from an archive created with the xref:backup-restore/offline-backup.adoc#offline-backup-command[`neo4j-admin database dump`] command or from xref:backup-restore/online-backup.adoc#online-backup-command[full Neo4j Enterprise backup] (available from Neo4j 5.20).
+
 Alternatively, `neo4j-admin database load` can accept a dump from standard input, enabling it to accept input from `neo4j-admin database dump` or another source.
 
 The command can be run from an online or an offline Neo4j DBMS.
@@ -37,7 +40,8 @@ neo4j-admin database load [-h] [--expand-commands] [--info] [--verbose] [--overw
 === Description
 
 Load a database from an archive.
-_<archive-path>_ must be a directory containing an archive(s) created with the dump command.
+_<archive-path>_ must be a directory containing an archive(s).
+Archive can be a database dump created with the dump command, or can be a full backup artifact created by the backup command from Neo4j Enterprise.
 If neither `--from-path` or `--from-stdin` is supplied `server.directories.dumps.root` setting will be searched for the archive.
 Existing databases can be replaced by specifying `--overwrite-destination`.
 It is not possible to replace a database that is mounted in a running Neo4j server.
@@ -74,11 +78,11 @@ If `--info` is specified, then the database is not loaded, but information (i.e.
 |
 
 |--from-path=<path>
-|Path to a directory containing archive(s) created with the dump command.
+|Path to a directory containing archive(s).
 |
 
 |--from-stdin
-|Read dump from standard input.
+|Read archive from standard input.
 |
 
 |-h, --help
@@ -99,34 +103,23 @@ If `--info` is specified, then the database is not loaded, but information (i.e.
 
 [NOTE]
 ====
-As of Neo4j 5.19, the `--from-path=<path>` option can also load databases from AWS S3 URIs.
-Neo4j uses link:https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html[default AWS credentials] to access AWS S3 URIs. 
+From Neo4j 5.19, the `--from-path=<path>` option can also load databases from AWS S3 URIs.
+For more information, see <<restore-dump-example>>.
 ====
 
 [[restore-dump-example]]
 == Example
 
-The following is an example of how to load the dump of the `neo4j` database (_neo4j.dump_) created in the section xref:backup-restore/offline-backup.adoc#offline-backup-example[Back up an offline database], using the `neo4j-admin database load` command.
+The following are examples of how to load the dump of the `neo4j` database (_neo4j.dump_) created in the section xref:backup-restore/offline-backup.adoc#offline-backup-example[Back up an offline database], using the `neo4j-admin database load` command.
 When replacing an existing database, you have to shut it down before running the command.
 The `--overwrite-destination` option is required because you are replacing an existing database.
 
 If you are not replacing an existing database, you must create the database (using `CREATE DATABASE` against the `system` database) after the load operation finishes.
 
-[source,shell, role="nocopy"]
-----
-bin/neo4j-admin database load --from-path=/full-path/data/dumps <database> --overwrite-destination=true
-----
-
-The following is an example of how to load the dump from an AWS S3 URI, as of Neo4j 5.19.
-
-[source,shell, role="nocopy"]
-----
-./neo4j-admin database load --from-path=s3://full/path/to/aws-s3-dumps/ <database> --overwrite-destination=true
-----
-
 [TIP]
 ====
-The command looks for a file called _<database>.dump_ where `<database>` is the database specified in the command.
+The command looks for a file called _<database>.dump_ where `<database>` is the database specified in the command. +
+As of Neo4j 5.20, the command also looks for a full backup artifact.
 ====
 
 [NOTE]
@@ -142,3 +135,45 @@ For more information, see xref:clustering/databases.adoc#cluster-seed[Seed a clu
 `neo4j-admin database load` cannot be applied to xref:database-administration/composite-databases/concepts.adoc[Composite databases].
 It must be run directly on the databases that are associated with that Composite database.
 ====
+
+=== Load a dump from a local directory
+
+You can load a dump from a local directory using the following command:
+
+[source,shell, role="nocopy"]
+----
+bin/neo4j-admin database load --from-path=/full-path/data/dumps <database> --overwrite-destination=true
+----
+
+Starting from Neo4j 5.20, you can use the same command to load the database from its full backup artifact:
+
+[source,shell, role="nocopy"]
+----
+bin/neo4j-admin database load --from-path=/full-path/to/backups <database> --overwrite-destination=true
+----
+
+The following example shows how to designate a specific archive for the `load` command.
+
+[source,shell, role="nocopy"]
+----
+cat foo.dump | neo4j-admin database load --from-stdin mydatabase
+----
+
+=== Load a dump from an AWS S3 storage
+
+_This feature is available from Neo4j 5.19._
+
+You can load a dump from an AWS S3 storage using the following steps.
+
+include::partial$/aws-s3-overrides.adoc[]
+
+include::partial$/aws-s3-credentials.adoc[]
+
+. Run the `neo4j-admin database load` command to load a dump from your AWS S3 storage:
++
+[source,shell, role="nocopy"]
+----
+bin/neo4j-admin database load --from-path=s3://myBucket/myDirectory/ <database> --overwrite-destination=true
+----
+
+

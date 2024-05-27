@@ -64,9 +64,12 @@ helm upgrade <release-name> neo4j/neo4j -f values.yaml
 
 You can add a new server to the Neo4j cluster to scale out write or read workloads.
 
-Example -- add a new server to an existing cluster::
-The following example assumes that you have a cluster with 3 servers.
-. In the Kubernetes cluster, verify that you have a node that you can use for the new server, `server4`.
+The following examples assume that you have a running Neo4j cluster with 3 servers and your Kubernetes cluster has a node available for the new server, `server4`.
+
+Install `server4` using one of the following options:
+
+=== Add a new server and enable it manually
+
 . Install `server4` using the same value for `neo4j.name` as your existing cluster:
 +
 [source, shell, subs="attributes"]
@@ -128,9 +131,104 @@ SHOW SERVERS;
 | "eefd7216-6096-46f5-9c41-a74f79684172" | "server1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
 +---------------------------------------------------------------------------------------------------------------------------------+
 ----
+
+=== Add a new server and enable it automatically
+
+_This feature is available from Neo4j 5.20._
+
+You can enable a new server automatically when it joins the cluster by setting the `neo4j.operations.enableServer` value to `true` in the _values.yaml_ file or using the `--set` flag when running `helm install`.
+This feature is useful when you want to add a new server to the cluster and enable it without manual intervention.
+
+. Install `server4` using one of the following options:
+
+* Run `helm install` with the same value for `neo4j.name` as your existing cluster:
 +
+[source, shell, subs="attributes"]
+----
+helm install server4 neo4j --set neo4j.edition=enterprise --set neo4j.acceptLicenseAgreement=yes --set volumes.data.mode=defaultStorageClass --set neo4j.password="password" --set neo4j.minimumClusterSize=3 --set neo4j.name=my-cluster --set neo4j.operations.enableServer=true --set image="neo4j/helm-charts-operations:5.20.0" --set protocol="neo4j"
+----
+
+* Use a _values.yaml_ file to set the values for the new server and the _neo4j/neo4j_ Helm chart to install the new server.
++
+.. Ensure that the `neo4j.name` value is the same as your existing cluster and the neo4j.operations.enableServer is set to `true`.
++
+[source, yaml]
+----
+neo4j:
+  name: "my-cluster"
+  minimumClusterSize: 3
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+  password: "my-password"
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: "dynamic"
+    dynamic:
+      # * premium-rwo provisions SSD disks (recommended)
+      # * standard-rwo provisions balanced SSD-backed disks
+      # * standard provisions HDD disks
+      storageClassName: premium-rwo
+
+operations:
+      enableServer: false
+      image: "neo4j/helm-charts-operations:5.20.0"
+      # protocol can be "neo4j or "neo4j+ssc" or "neo4j+s". Default set to neo4j
+      # Note: Do not specify bolt protocol here...it will FAIL.
+      protocol: "neo4j"
+      labels: {}
+----
++
+[TIP]
+====
+For all possible configuration options and more information on customizing your deployment, see xref:kubernetes/configuration.adoc[Customizing a Neo4j Helm chart].
+For more information on how to create a _values.yaml_ file and install Neo4j cluster servers, see
+xref:kubernetes/quickstart-cluster/create-value-file.adoc[Create Helm deployment values files] and xref:kubernetes/quickstart-cluster/install-servers.adoc[Install Neo4j cluster servers].
+====
++
+.. Run `helm install` with the modified deployment _values.yaml_ file and the Neo4j Helm chart to apply the changes.
++
+[source, shell]
+----
+helm install server4 neo4j -f values.yaml
+----
++
+When the new server joins the cluster, it will automatically be enabled and ready to host databases.
+
+. Using Cypher Shell (or Neo4j Browser), verify that the new server is in the state `Enabled`:
+.. Access the Cypher Shell on `server1`:
++
+[source, shell, subs="attributes"]
+----
+kubectl exec -ti server1-0 -- cypher-shell -u neo4j -p password -d neo4j
+----
+.. Run `SHOW SERVERS;` to verify that `server4` is enabled:
++
+[source, shell, subs="attributes"]
+----
+SHOW SERVERS;
+----
++
+[source,role="noheader"]
+----
++---------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                | state     | health      | hosting             |
++---------------------------------------------------------------------------------------------------------------------------------+
+| "0908819d-238a-473d-9877-5cc406050ea2" | "server4.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system"]          |
+| "19817354-5cd1-4579-8c45-8b897808fdb4" | "server2.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b3c91592-1806-41d0-9355-8fc6ba236043" | "server3.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "eefd7216-6096-46f5-9c41-a74f79684172" | "server1.neo4j.svc.cluster.local:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
++---------------------------------------------------------------------------------------------------------------------------------+
+----
+
+=== Change the database topology
+
 Notice in the output that although `server4` is now enabled, it is not hosting the `neo4j` database.
 You need to change the database topology to also use the new server.
+
 . Alter the `neo4j` database topology to be hosted on three primary and one secondary servers:
 +
 [source, shell, subs="attributes"]
