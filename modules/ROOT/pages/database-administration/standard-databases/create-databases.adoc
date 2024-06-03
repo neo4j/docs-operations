@@ -18,7 +18,7 @@ For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/upg
 [[create-neo4j-database]]
 == Create databases
 
-You can create a database using the Cypher command xref:database-administration/syntax.adoc#administration-syntax-database-management[`CREATE DATABASE`].
+You can create a database using the Cypher command `CREATE DATABASE`.
 
 [NOTE]
 ====
@@ -27,72 +27,42 @@ Having dots (`.`) in the database names is not recommended.
 This is due to the difficulty of determining if a dot is part of the database name or a delimiter for a database alias in a composite database.
 ====
 
-.Query
-[source, cypher]
-----
-CREATE DATABASE customers
-----
-
 In Neo4j, the default store format for all new databases is `aligned`.
 If you want to change it, you can set a new value for the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration in the _neo4j.conf_ file. +
 Alternatively, you can set the store format of new databases using the `CREATE DATABASE databasename OPTIONS {storeFormat: 'the-new-format'}` command. 
 However, if the store is seeded with `seedURI` or `existingDataSeedInstance`, or if the command is being used to mount pre-existing store files already present on the disk, they will use their current store format without any alterations.
+
 See xref:database-internals/store-formats.adoc[Store formats], for more details about available database store formats in Neo4j.
 
-When a database is created, it shows up in the listing provided by the command `SHOW DATABASES`:
+=== Syntax
 
-.Query
-[source, cypher]
-----
-SHOW DATABASES YIELD name
-----
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
 
-.Result
-[role="queryresult",options="header,footer",cols="1*<m"]
+| CREATE DATABASE
+|
+[source, syntax, role="noheader"]
 ----
-+-------------+
-| name        |
-+-------------+
-| "customers" |
-| "movies"    |
-| "neo4j"     |
-| "system"    |
-+-------------+
+CREATE DATABASE name [IF NOT EXISTS]
+[TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
-[[manage-databases-existing]]
-=== Use `IF NOT EXISTS` or `OR REPLACE` when creating databases
-
-The `CREATE DATABASE` command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
-There are two ways to circumvent this behavior.
-
-First, appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database already exist.
-
-.Query
-[source, cypher]
+[source, syntax, role="noheader"]
 ----
-CREATE DATABASE customers IF NOT EXISTS
+CREATE OR REPLACE DATABASE name
+[TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
-Second, adding `OR REPLACE` to the command results in any existing database being deleted and a new one being created.
+|===
 
-.Query
-[source, cypher]
-----
-CREATE OR REPLACE DATABASE customers
-----
-
-This is equivalent to running `DROP DATABASE customers IF EXISTS` followed by `CREATE DATABASE customers`.
-
-The behavior of `IF NOT EXISTS` and `OR REPLACE` apply to both standard and composite databases (e.g. a composite database may replace a standard database or another composite database).
-
-[NOTE]
-====
-The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
-====
 
 [[manage-databases-create-database-options]]
-=== Create database options
+=== Options
 
 The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
 
@@ -119,7 +89,7 @@ The server ID can be found in the `serverId` column after running `SHOW SERVERS`
 Defines an identical seed from an external source which will be used to seed all servers.
 
 | `seedConfig`
-| comma-separated list of configuration values.
+| Comma-separated list of configuration values.
 |
 Defines additional configuration specified by comma-separated `name=value` pairs that might be required by certain seed providers.
 
@@ -149,25 +119,131 @@ More details about seeding options can be found in xref::clustering/databases.ad
 ====
 
 
+=== Examples
+
+==== Create a database
+
+To create a database named `customers`, use the command `CREATE DATABASE` followed by the name of this database.
+
+[source, cypher]
+----
+CREATE DATABASE customers
+----
+
+When you create a database, it shows up in the listing provided by the command `SHOW DATABASES`:
+
+[source, cypher]
+----
+SHOW DATABASES YIELD name
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+----
++-------------+
+| name        |
++-------------+
+| "customers" |
+| "movies"    |
+| "neo4j"     |
+| "system"    |
++-------------+
+----
+
+
+==== Create a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
+
+Sub-clause `WAIT` allows you to specify a time limit in which the command must complete and return. 
+
+[source, cypher]
+----
+CREATE DATABASE slow WAIT 5 SECONDS
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------+
+| address          | state      | message     | success |
++-------------------------------------------------------+
+| "localhost:7687" | "CaughtUp" | "caught up" | TRUE    |
++-------------------------------------------------------+
+----
+
+The `success` column provides an aggregate status of whether or not the command is considered successful.
+Thus, every row has the same value, determined on a successful completion without a timeout.
+
+
+==== Create databases with `IF NOT EXISTS` or `OR REPLACE`
+
+The `CREATE DATABASE` command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
+There are two ways to circumvent this behavior.
+
+First, appending `IF NOT EXISTS` to the command ensures that no error is returned and that nothing happens if the database already exists.
+
+[source, cypher]
+----
+CREATE DATABASE customers IF NOT EXISTS
+----
+
+Second, adding `OR REPLACE` to the command deletes any existing database and creates a new one.
+
+[source, cypher]
+----
+CREATE OR REPLACE DATABASE customers
+----
+
+This is equivalent to running `DROP DATABASE customers IF EXISTS` followed by `CREATE DATABASE customers`.
+
+The behavior of `IF NOT EXISTS` and `OR REPLACE` apply to both standard and composite databases (e.g. a composite database may replace a standard database or another composite database).
+
+[NOTE]
+====
+The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
+====
+
+
 [[manage-databases-start]]
 == Start databases
 
 Databases can be started using the command `START DATABASE`.
-
-.Query
-[source, cypher]
-----
-START DATABASE customers
-----
 
 [NOTE]
 ====
 Both standard databases and composite databases can be started using this command.
 ====
 
-The status of the started database can be seen using the command `SHOW DATABASE name`.
 
-.Query
+=== Syntax
+
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
+
+| START DATABASE
+|
+[source, syntax, role="noheader"]
+----
+START DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+|===
+
+=== Examples
+
+==== Start a database
+
+Starting a database is a straightforward operation.
+Suppose you have a database named `customers`.
+To start it, use the following command:
+
+[source, cypher]
+----
+START DATABASE customers
+----
+
+You can see the status of the started database by running the command `SHOW DATABASE name`.
+
 [source, cypher]
 ----
 SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
@@ -183,12 +259,43 @@ SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
 +-----------------------------------------------+
 ----
 
+
+==== Start a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
+
+You can start your database using `WAIT` sub-clause to ensure that the command waits for a specified amount of time until the database is started. 
+
+[source, cypher]
+----
+START DATABASE customers WAIT 5 SECONDS
+----
+
+
 [[manage-databases-stop]]
 == Stop databases
 
 Databases can be stopped using the command `STOP DATABASE`.
 
-.Query
+=== Syntax
+
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
+
+| STOP DATABASE
+|
+[source, syntax, role="noheader"]
+----
+STOP DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+|===
+
+=== Examples
+
+==== Stop a database
+
+To stop a database, use the following command:
+
 [source, cypher]
 ----
 STOP DATABASE customers
@@ -199,9 +306,8 @@ STOP DATABASE customers
 Both standard databases and composite databases can be stopped using this command.
 ====
 
-The status of the stopped database can be seen using the command `SHOW DATABASE name`.
+The status of the stopped database can be seen using the command `SHOW DATABASE name`:
 
-.Query
 [source, cypher]
 ----
 SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
@@ -216,6 +322,16 @@ SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
 | "customers" | "offline"       | "offline"     |
 +-----------------------------------------------+
 ----
+
+==== Stop a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
+
+You can also stop your database using the `WAIT` sub-clause, which allows you to specify the amount of time that the system should wait for the database to stop.
+
+[source, cypher]
+----
+STOP DATABASE customers WAIT 10 SECONDS
+----
+
 
 [NOTE]
 ====
