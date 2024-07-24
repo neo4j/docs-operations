@@ -147,10 +147,11 @@ a|
 [source, syntax, role="noheader"]
 ----
 CREATE USER name [IF NOT EXISTS]
-  SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'
+  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
 ----
 
 | Description
@@ -180,10 +181,11 @@ a|
 [source, syntax, role="noheader"]
 ----
 CREATE OR REPLACE USER name
-  SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'
+  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
 ----
 
 | Description
@@ -254,7 +256,10 @@ ALTER USER name [IF EXISTS]
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE \| SUSPENDED} ]
   [SET HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
   [REMOVE HOME DATABASE]
+  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] } \| { ALL AUTH [PROVIDER[S]] }]
+
 ----
 
 | Description
@@ -548,10 +553,11 @@ Users can be created using `CREATE USER`.
 [source, syntax, role="noheader"]
 ----
 CREATE USER name [IF NOT EXISTS]
-  SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'
+  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
-  [SET STATUS {ACTIVE | SUSPENDED}]
+  [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
 ----
 
 Users can be created or replaced using `CREATE OR REPLACE USER`.
@@ -559,10 +565,11 @@ Users can be created or replaced using `CREATE OR REPLACE USER`.
 [source, syntax, role="noheader"]
 ----
 CREATE OR REPLACE USER name
-  SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'
+  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
-  [SET STATUS {ACTIVE | SUSPENDED}]
+  [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
 ----
 
 * For `SET PASSWORD`:
@@ -585,6 +592,9 @@ The `SET PASSWORD` part is only optional if it directly follows the `SET PASSWOR
 A home database will be resolved if it is either pointing to a database or a database alias.
 If no home database is set, the DBMS default database is used as the home database for the user.
 * The `SET PASSWORD CHANGE [NOT] REQUIRED`, `SET STATUS`, and `SET HOME DATABASE` clauses can be applied in any order.
+[role=label--new-5.24]
+* One or more `SET AUTH` clauses can be used to set xref:authentication-authorization/auth-objects.adoc[Auth Objects], which define authentication / authorization providers for the user. This might be used to configure external auth providers like LDAP or OIDC, but can also be used as an alternative way to set the native (password-based) auth settings like `SET PASSWORD` and `SET PASSWORD CHANGE REQUIRED`.
+Examples can be found below for `native`, xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-objects[here] for OIDC and xref:authentication-authorization/ldap-integration.adoc#auth-ldap-auth-objects[here] for LDAP.
 
 [NOTE]
 ====
@@ -608,10 +618,22 @@ SET STATUS SUSPENDED
 SET HOME DATABASE anotherDb
 ----
 
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
+
+[source,cypher,role=noplay]
+----
+CREATE USER jake
+SET STATUS SUSPENDED
+SET HOME DATABASE anotherDb
+SET AUTH 'native' {SET PASSWORD 'abcd1234' SET PASSWORD CHANGE REQUIRED}
+----
+
+
+
 ======
 
 
-.Create user
+.Create user with an encrypted password
 ======
 Or you can create the user `Jake` in an active state, with an encrypted password (taken from the _data/scripts/databasename/restore_metadata.cypher_ of a database backup), and the requirement to not change the password by running:
 
@@ -621,12 +643,21 @@ CREATE USER Jake
 SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' CHANGE NOT REQUIRED
 SET STATUS ACTIVE
 ----
+[role=label--new-5.24]
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
+
+[source,cypher,role=noplay]
+----
+CREATE USER jake
+SET STATUS ACTIVE
+SET AUTH 'native' {SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED}
+----
 
 ======
 
 [NOTE, role=label--enterprise-edition]
 ====
-The `SET STATUS {ACTIVE | SUSPENDED}` and `SET HOME DATABASE` parts of the commands are only available in Neo4j Enterprise Edition.
+The `SET STATUS {ACTIVE | SUSPENDED}`, `SET HOME DATABASE` and `SET AUTH` parts of the commands are only available in Neo4j Enterprise Edition.
 ====
 
 The `CREATE USER` command is optionally idempotent, with the default behavior to throw an exception if the user already exists.
@@ -640,6 +671,16 @@ Appending `IF NOT EXISTS` to the `CREATE USER` command will ensure that no excep
 CREATE USER jake IF NOT EXISTS
 SET PLAINTEXT PASSWORD 'abcd1234'
 ----
+
+[role=label--new-5.24]
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
+
+[source,cypher,role=noplay]
+----
+CREATE USER jake IF NOT EXISTS
+SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'}
+----
+
 
 ======
 
@@ -655,6 +696,17 @@ SET PLAINTEXT PASSWORD 'abcd1234'
 ----
 
 This is equivalent to running `DROP USER jake IF EXISTS` followed by `CREATE USER jake SET PASSWORD 'abcd1234'`.
+
+[role=label--new-5.24]
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
+
+[source,cypher,role=noplay]
+----
+CREATE OR REPLACE USER jake
+SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'}
+----
+
+
 
 ======
 
@@ -718,7 +770,9 @@ ALTER USER name [IF EXISTS]
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE | SUSPENDED}]
   [SET HOME DATABASE name]
-  [REMOVE HOME DATABASE name]
+  [SET AUTH [PROVIDER] 'provider' "{"SET <key> <value>"}"]
+  [REMOVE HOME DATABASE]
+  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] } \| { ALL AUTH [PROVIDER[S]] }]
 ----
 
 * At least one `SET` or `REMOVE` clause is required for the command.
@@ -743,33 +797,67 @@ The `SET PASSWORD` part is only optional if it directly follows the `SET PASSWOR
 * `SET HOME DATABASE` can be used to configure a home database for a user.
 A home database will be resolved if it is either pointing to a database or a database alias.
 If no home database is set, the DBMS default database is used as the home database for the user.
+[role=label--new-5.24]
+* One or more `SET AUTH` clauses can be used to set xref:authentication-authorization/auth-objects.adoc[Auth Objects], which define authentication / authorization providers for the user. This might be used to configure external auth providers like LDAP or OIDC, but can also be used as an alternative way to set the native (password-based) auth settings like `SET PASSWORD` and `SET PASSWORD CHANGE REQUIRED`. TODO: Insert links to the LDAP and OIDC examples.
 * `REMOVE HOME DATABASE` is used to unset the home database for a user.
 This results in the DBMS default database being used as the home database for the user.
+[role=label--new-5.24]
+* `REMOVE AUTH` is used to remove one or many xref:authentication-authorization/auth-objects.adoc[Auth Object(s)] from a user. It cannot be used such that a user would have no Auth Objects.
+* `REMOVE ALL AUTH` is used to remove all existing xref:authentication-authorization/auth-objects.adoc[Auth Objects] from a user and replace them with new ones. It must be used in conjunction with at least one `SET AUTH` clause.
 
-For example, you can modify the user `bob` with a new password and active status, and remove the requirement to change his password:
 
-[source, cypher, role=noplay]
+.Modify the user `bob` with a new password and active status, and remove the requirement to change his password:
+======
+[source,cypher,role=noplay]
 ----
 ALTER USER bob
 SET PASSWORD 'abcd5678' CHANGE NOT REQUIRED
 SET STATUS ACTIVE
 ----
 
-Or you may decide to assign the user `bob` a different home database:
+[role=label--new-5.24]
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
 
-[source, cypher, role=noplay]
+----
+ALTER USER bob
+SET AUTH 'native' {SET PASSWORD 'abcd5678' SET PASSWORD CHANGE NOT REQUIRED}
+SET STATUS ACTIVE
+----
+======
+
+.Modify the user `bob` to expire his current password so that he must change it the next time he logs in:
+======
+[source,cypher,role=noplay]
+----
+ALTER USER bob
+SET PASSWORD CHANGE REQUIRED
+----
+
+[role=label--new-5.24]
+The equivalent command using the xref:authentication-authorization/auth-objects.adoc[Auth Objects] syntax would be:
+
+----
+ALTER USER bob
+SET AUTH 'native' {SET PASSWORD CHANGE REQUIRED}
+----
+======
+
+.Assign the user `bob` a different home database:
+======
+[source,cypher,role=noplay]
 ----
 ALTER USER bob
 SET HOME DATABASE anotherDbOrAlias
 ----
 
-Or remove the home database from the user `bob`:
+Or remove the `HOME` database from the user `bob`:
 
-[source, cypher, role=noplay]
+[source,cypher,role=noplay]
 ----
 ALTER USER bob
 REMOVE HOME DATABASE
 ----
+======
 
 [NOTE]
 ====
@@ -779,7 +867,7 @@ For example, leaving out the `CHANGE [NOT] REQUIRED` part of the query will leav
 
 [NOTE, role=label--enterprise-edition]
 ====
-The `SET STATUS {ACTIVE | SUSPENDED}`, `SET HOME DATABASE`, and `REMOVE HOME DATABASE` parts of the command are only available in Neo4j Enterprise Edition.
+The `SET STATUS {ACTIVE | SUSPENDED}`, `SET HOME DATABASE`, `REMOVE HOME DATABASE`, `SET AUTH` and `REMOVE AUTH` parts of the command are only available in Neo4j Enterprise Edition.
 ====
 
 The changes to the user will appear on the list provided by `SHOW USERS`:

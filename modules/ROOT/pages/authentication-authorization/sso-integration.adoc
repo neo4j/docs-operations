@@ -253,6 +253,109 @@ dbms.security.oidc.mysso.claims.groups=roles
 +
 See xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the Identity Provider Groups to the Neo4j Roles].
 
+
+[role=label--new-5.24]
+[[auth-sso-auth-objects]]
+=== Use Auth Objects to configure SSO at the user level
+xref:authentication-authorization/auth-objects.adoc[Auth Objects] can be used to determine which users can authenticate and authorize using the configured providers.
+
+[NOTE]
+====
+You need to set `internal.dbms.security.require_local_user` to `true` to use Auth Objects. This means that a user with a matching Auth Object *must* exist in order to be able to authenticate and authorize.
+====
+
+The following examples show how you can use Cypher to do this.
+
+
+.Create a user with an Auth Object who can authenticate and authorize using `oidc-mysso`.
+======
+----
+CREATE USER jake
+SET AUTH 'oidc-mysso' {SET ID 'jakesUniqueMySso1Id'} // this must match the claim that you configured via dbms.security.oidc.mysso.claims.username
+----
+This will create a user who can authenticate and authorize using `mysso` if they present a valid token with a `sub` claim of `jakesUniqueMySso1Id`. The claim used for authentication is determined by the xref:configuration/configuration-settings.adoc#config_dbms.security.oidc.-provider-.claims.username[`dbms.security.oidc.mysso.claims.username`] config setting (default the default is the `sub` claim).
+
+When `internal.dbms.security.require_local_user` is set to `true`, users can *only* authenticate when there is a user in the database with an Auth Object which links to the provider that the user is trying to authenticate with. If there is no matching Auth Object, the user will not be able to authenticate or authorize. This applies to all providers.
+======
+
+
+.Create a user with two Auth Objects allowing the user to authenticate and authorize with either of two providers.
+======
+----
+CREATE USER jake
+SET HOME DATABASE anotherDb
+SET AUTH 'oidc-mysso1' {SET ID 'jakesUniqueMySso1Id'} // this must match the claim that you configured via dbms.security.oidc.mysso1.claims.username
+SET AUTH 'oidc-mysso2' {SET ID 'jakesUniqueMySso2Id'} // this must match the claim that you configured via dbms.security.oidc.mysso2.claims.username
+----
+This will create a user who can authenticate and authorize using `oidc-mysso1` or `oidc-mysso2`.
+This example also illustrates that the user can have their `HOME` database set even when using an external auth provider.
+======
+
+
+.Alter a user to remove one of their Auth Objects.
+======
+----
+ALTER USER jake
+REMOVE AUTH 'oidc-mysso2'
+
+----
+This will prevent the user from being able to authenticate and authorize with the `oidc-mysso2` provider.
+======
+
+.Alter a user to allow them to authenticate and authorize using username and password
+======
+----
+ALTER USER jake
+SET AUTH 'native' {SET PASSWORD 'changeme' SET PASSWORD CHANGE REQUIRED}
+
+----
+This will allow the user to authenticate and authorize using the specified username and password
+======
+
+
+.Configure the database to allow authentication via `oidc-mysso` and authorization via the `native` provider.
+======
+
+Set the following database config:
+[source,configuration,role="noheader"]
+----
+dbms.security.authentication_providers=oidc-mysso
+dbms.security.authorization_providers=native
+----
+
+Then create a user with a `oidc-mysso` Auth Object:
+----
+CREATE USER jake
+SET AUTH 'oidc-mysso' {SET ID 'jakesUniqueMySsoId'} // this must match the claim that you configured via dbms.security.oidc.mysso.claims.username
+----
+
+Then natively grant the `ANALYST` role to the user:
+----
+GRANT ROLE ANALYST TO alice
+----
+
+This will allow the user to authenticate using `oidc-mysso` and receive the `ANALYST` role from the `native` provider.
+
+It would also be possible to give the user the union of roles from `oidc-mysso` *and* `native` by setting `oidc-mysso` as an authorization provider too:
+
+----
+dbms.security.authentication_providers=oidc-mysso
+dbms.security.authorization_providers=native,oidc-mysso
+----
+======
+
+
+.Suspend a user
+======
+----
+ALTER USER jake
+SET STATUS SUSPENDED
+
+----
+This will completely prevent the user from being able to authenticate/authorize by any means.
+======
+
+
 [[auth-sso-configure-provider-userinfo]]
 === OpenID Connect Fetching Claims from Provider
 
