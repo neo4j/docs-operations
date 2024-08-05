@@ -8,6 +8,7 @@ The number of both primary and secondary servers to host a database can be set w
 The command `CREATE DATABASE` can be used to specify the initial topology and `ALTER DATABASE` can be used to change the topology once the database is created.
 If a database is no longer needed, the command `DROP DATABASE` deletes the database from the cluster.
 
+[[create-database]]
 == `CREATE DATABASE`
 
 The command to create a database in a cluster is not significantly different from the command to create a database in a non-clustered environment (see xref:database-administration/standard-databases/create-databases.adoc[Create, start, and stop databases] for more information on database management on single servers).
@@ -35,12 +36,13 @@ However, over time, or after several `CREATE DATABASE` commands have been issued
 At this point you can run `REALLOCATE DATABASES` to make the cluster re-balance databases across all servers that are part of the cluster.
 ====
 
-[[alter-topology]]
+[[alter-database]]
 == `ALTER DATABASE`
 
 To alter the topology of or read/write access to a database after it has been created, use the command `ALTER DATABASE`.
 
-=== Alter topology
+[[alter-topology]]
+=== Alter database topology
 
 To change the topology of the database `foo` from the previous example, the command can look like this:
 
@@ -91,7 +93,8 @@ ALTER DATABASE nonExisting IF EXISTS SET TOPOLOGY 1 PRIMARY 0 SECONDARY
 // * `OPTIMAL_DISC_USAGE`
 // * `ALL`
 
-=== Alter access
+[[alter-access]]
+=== Alter database access
 
 To alter the access to the database `foo`, the syntax looks like this:
 
@@ -103,22 +106,27 @@ ALTER DATABASE foo SET ACCESS {READ ONLY | READ WRITE}
 By default, a newly created database has both read and write access.
 
 [role=label--new-5.23]
-[[deallocatedatabase]]
-== Deallocate database
+[[deallocate-databases]]
+== Deallocate databases
 
-To relieve the load of a particular server, you can use the procedure `dbms.cluster.deallocateDatabase("server-name", "database-name") to deallocate the database causing the pressure.
-For example, `server1` contains the small databases' foo' and `bar` and the very large database `baz`, while other servers contain fewer or smaller databases.
+To relieve the load of a specific server(s), you can use one of the following procedures to deallocate databases causing the pressure from the server(s):
 
-To relieve pressure off `server1`, you can deallocate `baz` off `server1` by running:
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServer[`dbms.cluster.deallocateDatabaseFromServer("server-name", "database-name")`]
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServers[`dbms.cluster.deallocateDatabaseFromServers(["server-name1", "server-name2"], "database-name")`]
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateNumberOfDatabases[`dbms.cluster.deallocateNumberOfDatabases("server-name", number)`]
+
+For example, `server01` hosts two small databases, `foo` and `bar`, and one very large database `baz`, while other servers contain fewer or smaller databases, and `server01` is under pressure.
+
+You can use one of the following approaches to deallocate `baz` from `server01` or to deallocate a number of databases from `server01`:
 
 .Deallocating a database from a server
 [source, cypher]
 ----
 // With dry run
-neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server1", "baz", true);
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server01", "baz", true);
 
 // Without dry run
-neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server1", "baz");
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server01", "baz");
 
 ----
 
@@ -126,10 +134,10 @@ neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server1", "baz");
 [source, cypher]
 ----
 // With dry run
-neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server1", "server2"], "baz", true);
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server01", "server02"], "baz", true);
 
 // Without dry run
-neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server1", "server2"], "baz");
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server01", "server02"], "baz");
 
 ----
 
@@ -137,23 +145,28 @@ neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server1", "serve
 [source, cypher]
 ----
 // With dry run
-neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server1", 3, true);
+neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server01", 3, true);
 
 // Without dry run
-neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server1", 3);
+neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server01", 3);
 ----
 
+
+[[reallocate-databases]]
+== Reallocate databases
+
+To rebalance all database allocations across the cluster, for example, because you added new servers, use either procedures or Cypher commands to reallocate databases onto the new servers.
+
 [role=label--new-5.23]
-[[reallocatedatabase]]
-== Reallocate a single database
+[[reallocate-databases-procedure]]
+=== Reallocate databases using a procedure
 
-To relieve the overloaded servers after adding new servers, you can use the procedure `dbms.cluster.reallocateDatabase()` to offload the database, causing it onto the new servers.
-It is different from `deallocateDatabase` as no specific server is chosen.
-Instead, the cluster offloads the specified database from all servers containing it.
-Other databases are not affected.
-For example, let's say you add three new servers and want to move the large database `baz` from all the old servers to the new servers.
+You can use the procedure xref:reference/procedures.adoc#procedure_dbms_cluster_reallocateDatabase[`dbms.cluster.reallocateDatabase()`] to offload a specific database from all servers containing it onto new servers or xref:reference/procedures.adoc#procedure_dbms_cluster_reallocateNumberOfDatabases[dbms.cluster.reallocateNumberOfDatabases] to rebalance all database allocations across the cluster and relieve overloaded servers.
+These procedures do not require a server name and can be executed with or without a dry run.
 
-.Reallocating one database to new servers
+For example, you add three new servers and want to move a very large database, `baz`, from all the servers containing it to the new servers.
+
+.Reallocate one database to new servers
 [source, cypher]
 ----
 // With dry run
@@ -173,14 +186,15 @@ neo4j@system> CALL dbms.cluster.reallocateNumberOfDatabases(3, true);
 neo4j@system> CALL dbms.cluster.reallocateNumberOfDatabases(3);
 ----
 
-== Reallocating databases
+[[reallocate-databases-cypher]]
+=== Reallocate databases using a Cypher command
 
-To rebalance all database allocations across the cluster, for example, because you added new servers, use the Cypher command `REALLOCATE DATABASE[S]`.
-This command can be used with `DRYRUN` to preview the new allocation of databases.
+You can use the Cypher command `REALLOCATE DATABASES` to rebalance all database allocations across the cluster and relieve overloaded servers.
+This command can also be used with `DRYRUN` to preview the new allocation of databases.
 
 [NOTE]
 ====
-`DRYRUN` is introduced in Neo4j 5.2 and thus does not work in previous versions.
+`DRYRUN` is available from Neo4j 5.2 and later.
 ====
 
 [source,cypher]
