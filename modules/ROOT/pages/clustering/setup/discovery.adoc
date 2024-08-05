@@ -232,41 +232,60 @@ For more information, see <<clustering-discovery-k8s>>.
 In-place rolling reduces fault tolerance temporarily because you are restarting a running server.
 To keep fault-tolerance, you can introduce a fourth server temporarily.
 ====
-. Ensure that the new settings are added to the configuration as detailed in the xref:clustering/setup/discovery.adoc#_preparation[preparation] section.
-. Restart server01 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
+. For all the servers, ensure that new settings are added to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[preparation] section.
++
+As an example, for those using the list resolver, the settings for all the servers should include:
++
+```
+dbms.cluster.discovery.resolver_type=LIST
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
+```
+. Restart server1 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
 +
 image:discovery-service/in-place-1-v1-over-v2.png[]
-
-. Then repeat step 2 for server02 and server03.
-Ensure to restart them sequentially, not in parallel.
+. Run `Show servers;` and ensure that all three members are alive.
+. Then repeat steps 2 and 3 for server2 and server3. Ensure that they are set to `dbms.cluster.discovery.version=V1_OVER_V2`
+Restart them sequentially, not in parallel.
 +
 image:discovery-service/in-place-23-v1-over-v2.png[]
 
-. Using `bolt://`, connect to the system database of servers 1, 2, 3 and run the following procedure.
+. Using `bolt://`, connect to the system database of servers 1, 2, 3, and run the following procedure.
+This can be done using via `./cypher-shell -a bolt://localhost:7681 -d system` for example.
 +
 [source,cypher]
 ----
 CALL dbms.cluster.showParallelDiscoveryState();
 ----
 +
-For example this can be done using via `./cypher-shell -a bolt://localhost:7681 -d system`
-It is important to connect via `bolt://` because otherwise the procedure might be routed and executed not on the intended server.
-+
 They should display "Matching" in the `stateComparison`.
++
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
++
 If they are not, wait and try again.
 +
 . Restart server1 again with the new setting `dbms.cluster.discovery.version=V2_OVER_V1`.
 +
 image:discovery-service/in-place-1-v2-over-v1.png[]
-
-. Then repeat step 5 for servers 2 and 3.
-Ensure to restart them sequentially, not in parallel.
++
+. Run `Show servers;` and ensure that all three members are alive.
+. Then repeat steps 6 and 7 for servers 2 and 3.
+Ensure that they are set to `dbms.cluster.discovery.version=V2_OVER_V1`
+Restart them sequentially, not in parallel.
 +
 image:discovery-service/in-place-23-v2-over-v1.png[]
 
-. Similar to step 4, verify that `stateComparison` shows `Matching`.
+. Similar to step 5, verify that `stateComparison` shows `Matching`.
 
-. Repeat steps 5, 6 and 7, restarting servers 1, 2, and 3 sequentially, with the new setting `dbms.cluster.discovery.version=V2_ONLY`
+. Repeat steps 6, 7, 8, 9, restarting servers 1, 2, and 3 sequentially, with the new setting `dbms.cluster.discovery.version=V2_ONLY`
 image:discovery-service/in-place-123-v2-only.png[]
 . Verify that `CALL dbms.cluster.showParallelDiscoveryState()` now shows `V2_ONLY` running.
 Note that `stateComparison` is `N/A` because you do not have v1 to compare states anymore.
@@ -282,7 +301,7 @@ As an example, for those using the list resolver, the settings for all the serve
 dbms.cluster.discovery.resolver_type=LIST
 
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000,server06.example.com:5000
-dbms.cluster.discovery.v2.endpoints=server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
 ```
 . Start up the three new servers with the setting `dbms.cluster.discovery.version=V1_OVER_V2`.
 +
