@@ -242,11 +242,11 @@ dbms.cluster.discovery.resolver_type=LIST
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
 ```
-. Restart server1 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
+. Restart server01 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
 +
 image:discovery-service/in-place-1-v1-over-v2.png[]
 . Run `Show servers;` and ensure that all three members are alive.
-. Then repeat steps 2 and 3 for server2 and server3. Ensure that they are set to `dbms.cluster.discovery.version=V1_OVER_V2`
+. Then repeat steps 2 and 3 for server02 and server03. Ensure that they are set to `dbms.cluster.discovery.version=V1_OVER_V2`
 Restart them sequentially, not in parallel.
 +
 image:discovery-service/in-place-23-v1-over-v2.png[]
@@ -272,7 +272,7 @@ They should display "Matching" in the `stateComparison`.
 +
 If they are not, wait and try again.
 +
-. Restart server1 again with the new setting `dbms.cluster.discovery.version=V2_OVER_V1`.
+. Restart server01 again with the new setting `dbms.cluster.discovery.version=V2_OVER_V1`.
 +
 image:discovery-service/in-place-1-v2-over-v1.png[]
 +
@@ -385,20 +385,23 @@ One should see the following:
 // so no lighthouse-specific server restarts are required if all is done correctly.
 //Note that the settings detailed above must first be set and the servers restarted to allow the settings to take effect.
 
-. Ensure that the new settings are added to the configuration as detailed in the xref:clustering/setup/discovery.adoc#_preparation[preparation] section.
-. Using Cypher Shell, connect to server01 using `bolt://`.
+. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[preparation] section.
++
+As an example, for those using the list resolver, the settings for all the servers should include:
++
+```
+dbms.cluster.discovery.resolver_type=LIST
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
+```
++
+. Using Cypher Shell, connect to the system database of server01 using `bolt://`.
 It is important to connect via `bolt://` because otherwise the procedure might be routed and executed not on the intended server.
 +
 [source, shell, role=nocopy noplay]
 ----
 ./cypher-shell -a bolt://localhost:7681 -d system
-----
-
-. Change the active database to `system`:
-+
-[source, cypher]
-----
-:use system;
 ----
 
 . Run the procedure:
@@ -412,11 +415,11 @@ The output indicates mode `V1_ONLY`, i.e., only v1 is running on this server.
 +
 [queryresult]
 ----
-+-----------------------------+
-| mode      | stateComparison |
-+-----------------------------+
-| "V1_ONLY" | "N/A"           |
-+-----------------------------+
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V1_ONLY" | "N/A"           | "3"           | "N/A"         |
++-------------------------------------------------------------+
 ----
 
 . Run the following procedure to turn on v2 in the background, but keep v1 running in the foreground:
@@ -437,14 +440,15 @@ Now the returned mode for this server must be `V1_OVER_V2` and the `stateCompari
 +
 [queryresult]
 ----
-+------------------------------------------------------------------------+
-| mode         | stateComparison                                         |
-+------------------------------------------------------------------------+
-| "V1_OVER_V2" | "States are not matching after PT1M24.778S: (score:18)" |
-+------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------+
+| mode         | stateComparison                                        | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------------------------------------------------+
+| "V1_OVER_V2" | "States are not matching after PT1M9.518S: (score:18)" | "3"           | "1"           |
++-------------------------------------------------------------------------------------------------------+
 ----
 +
 The score is a measure of how different the states are.
+The serverCounts tells us how many servers can be found by v1 and v2 of the discovery service.
 The score is 0 when the states are matching.
 When some members are running just one of the discovery services (v1 or v2) and other members run both, the score stays permanently high.
 This is no reason for worry.
@@ -454,14 +458,15 @@ This is no reason for worry.
 
 . Check the state on all servers again.
 It should show that the states are `Matching`.
+Both serverCounts should be 3.
 +
 [queryresult]
 ----
-+--------------------------------+
-| mode         | stateComparison |
-+--------------------------------+
-| "V1_OVER_V2" | "Matching"      |
-+--------------------------------+
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
 ----
 
 . On all three servers, run:
@@ -475,11 +480,11 @@ At this point, v2 is the service that is running the cluster, with v1 running in
 +
 [queryresult]
 ----
-+--------------------------------+
-| mode         | stateComparison |
-+--------------------------------+
-| "V2_OVER_V1" | "Matching"      |
-+--------------------------------+
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V2_OVER_V1" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
 ----
 
 
@@ -495,11 +500,11 @@ Note that `stateComparison` is `N/A` because you do not have v1 to compare state
 +
 [queryresult]
 ----
-+-----------------------------+
-| mode      | stateComparison |
-+-----------------------------+
-| "V2_ONLY" | "N/A"           |
-+-----------------------------+
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
++-------------------------------------------------------------+
 ----
 +
 .Important
