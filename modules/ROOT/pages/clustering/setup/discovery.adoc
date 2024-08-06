@@ -295,19 +295,23 @@ Note that `stateComparison` is `N/A` because you do not have v1 to compare state
 [[discovery-v1-to-v2-new-server]]
 === New server rolling
 The new server rolling requires three running servers and three new servers.
-. For all the servers, ensure that new settings are added to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
+
+. Start up the three new servers with the setting `dbms.cluster.discovery.version=V1_OVER_V2`.
 +
-As an example, for those using the list resolver, the settings for all the servers should include:
+image:discovery-service/v1_over_v2.png[]
++
+The new servers should have settings which are updated as detailed in the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
+The discovery addresses should include addresses of the new members, and the previous members.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
 +
 ```
 dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V1_OVER_V2
 
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000,server06.example.com:5000
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
 ```
-. Start up the three new servers with the setting `dbms.cluster.discovery.version=V1_OVER_V2`.
-+
-image:discovery-service/v1_over_v2.png[]
 +
 . Using `bolt://`, connect to the system database of servers 4, 5, 6, and run the following procedure.
 This can be done using via `./cypher-shell -a bolt://localhost:7685 -d system` for example.
@@ -318,7 +322,7 @@ CALL dbms.cluster.showParallelDiscoveryState();
 ----
 +
 The expected result should display `v2ServerCount` as 3.
-`stateComparison` that does show matching is fine at this point.
+`stateComparison` is not expected to match at this stage because the original servers are not visible to the V2 discovery service.
 +
 .Expected result
 [queryresult]
@@ -331,13 +335,24 @@ The expected result should display `v2ServerCount` as 3.
 ----
 +
 . Deallocate, drop, and shut down servers 1, 2, 3. 
-. Run `neo4j-admin unbind` on these three servers.
 +
-. Start up servers 1, 2, 3 again, this time with the setting `dbms.cluster.discovery.version=V2_OVER_V1`.
+. Start up servers 7, 8, 9, this time with the setting `dbms.cluster.discovery.version=V2_OVER_V1`.
 +
 image:discovery-service/v2_over_v1.png[]
 +
-. Using `bolt://`, connect to the system database of servers 1, 2, and 3, and run the following procedure:
+The discovery addresses in the settings should include addresses of the new members, and the previous members.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
++
+```
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_OVER_V1
+
+dbms.cluster.discovery.endpoints=server04.example.com:5000,server05.example.com:5000,server06.example.com:5000,server07.example.com:5000,server08.example.com:5000,server09.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server04.example.com:6000,server05.example.com:6000,server06.example.com:6000,server07.example.com:6000,server08.example.com:6000,server09.example.com:6000
+```
++
+. Using `bolt://`, connect to the system database of servers 7, 8, 9 and run the following procedure:
 +
 [source,cypher]
 ----
@@ -358,20 +373,31 @@ If they are not, wait and try again till matching.
 ----
 +
 . Deallocate, drop, and shut down servers 4, 5, and 6.
-. Run `neo4j-admin unbind` on these three servers.
 +
-. Start up servers 4, 5, and 6, this time with the setting `dbms.cluster.discovery.version=V2_ONLY`.
+. Start up servers 10, 11, 12, this time with the setting `dbms.cluster.discovery.version=V2_ONLY`.
 +
 image:discovery-service/v2_only.png[]
-. Deallocate, drop, and shut down servers 1, 2, 3.
 +
-. Finally, using `bolt://`, connect to the system database of servers 4, 5, and 6, and run the following procedure to check the version of the discovery service:
+The discovery addresses in the settings should include addresses of the new members, and the previous members.
+Note that only the v2 settings are required.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
++
+```
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_ONLY
+
+dbms.cluster.discovery.v2.endpoints=server07.example.com:6000,server08.example.com:6000,server09.example.com:6000,server10.example.com:6000,server11.example.com:6000,server12.example.com:6000
+```
++
+. Deallocate, drop, and shut down servers 7, 8, 9.
++
+. Finally, using `bolt://`, connect to the system database of servers 10, 11, 12, and run the following procedure to check the version of the discovery service:
 +
 [source,cypher]
 ----
 CALL dbms.cluster.showParallelDiscoveryState();
 ----
-+
 +
 .Expected result
 [queryresult]
