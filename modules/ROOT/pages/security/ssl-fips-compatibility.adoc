@@ -1,0 +1,182 @@
+:description: How to configure Neo4j to use FIPS compatible SSL encryption.
+[role=enterprise-edition]
+[[ssl-fips-compatibility]]
+= Configuring SSL for FIPS 140-2 compatibility
+
+Federal Information Processing Standards (FIPS) is ...
+
+https://csrc.nist.gov/pubs/fips/140-2/upd2/final
+
+This is a guide to help configure Neo4j to use SSL encryption in a FIPS compatible way.
+It is supplementary to xref:security/ssl-framework.adoc[] as many of the configuration processes and requirements are the same.
+
+. Enable a FIPS certified cryptographic provider
+. Generate SSL certificate and private key xref:security/ssl-framework.adoc#ssl-certificates[instructions]
+. Configure Neo4j to use SSL for all network connections xref:security/ssl-framework.adoc#ssl-configuration[]
+. Setup a non-native authentication provider, for example LDAP or SSO. xref:authentication-authorization/index.adoc[]
+. verify?
+. security checklist? (cross ref)
+
+
+== Prerequisites
+TODO
+
+* FIPS compatible operating system and hardware. Only Linux operating systems are supported for Neo4j FIPS compatibility at this time.
+* Neo4j Enterprise 5.23.0 or later.
+
+== Enable FIPS SSL Provider (Docker)
+
+The Neo4j RedHat UBI9 Docker image comes with the SSL provider and dependencies pre-installed, but it is not enabled by default.
+
+[NOTE]
+====
+The Debian based Neo4j Docker image does *not* support FIPS compatible encryption.
+====
+
+To enable the OpenSSL FIPS provider, set the environment variable `NEO4J_OPENSSL_FIPS_ENABLE=true` when starting the container.
+
+[source, shell, subs="attributes"]
+.Example starting a Neo4j UBI9 container with FIPS enable flag set.
+----
+docker run -it --rm \
+    --publish=7474:7474 \
+    --publish=7687:7687 \
+    --env=NEO4J_OPENSSL_FIPS_ENABLE=true \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/conf:/conf \
+    --volume=$HOME/neo4j/certificates:/ssl \
+neo4j:{neo4j-version-exact}-enterprise-ubi9
+----
+
+== Enable FIPS SSL provider
+
+[IMPORTANT]
+====
+Skip this section if using Neo4j in Docker.
+====
+
+The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
+Specifically Netty's "Forked Tomcat Native" library called https://github.com/netty/netty-tcnative[netty-tcnative].
+
+To be FIPS compatible, the dynamically linked version of `netty-tcnative` must be used, alongside a FIPS compatible installation of OpenSSL.
+
+The `netty-tcnative` library is provided in several variants, but
+to be FIPS compatible the dynamically linked version of `netty-tcnative` must be used.
+This dynamically linked library requires that the following dependencies are installedfootnote:[https://netty.io/wiki/forked-tomcat-native.html]:
+
+* Apache Portable Runtime Library
+* A FIPS certified version of OpenSSL, with a FIPS provider installed and set as default.
+
+Refer to https://netty.io/wiki/forked-tomcat-native.html for more information.
+
+
+[NOTE]
+====
+Netty provide a convenient pre-build, statically linked version of `netty-tcnative` using BoringSSL, but this is not FIPS certifiedfootnote:[https://boringssl.googlesource.com/boringssl/+/master/crypto/fipsmodule/FIPS.md].
+
+By using the dynamic `netty-tcnative` library variant combined with a FIPS certified OpenSSL installation, Neo4j's cryptographic operations are delegated by `netty-tcnative` to OpenSSL, transitively giving FIPS compatibility.
+====
+
+[[install-apr]]
+=== Install Apache portable runtime library
+
+The simplest way to install https://apr.apache.org[Apache Portable Runtime Library] is to use the operating system's package manager.
+
+In Debian/Ubuntu this package is usually called `libapr1`
+[source, shell, subs="attributes"]
+.Install Apache Portable Runtime Library in Debian or Ubuntu
+----
+apt install -y libapr1
+----
+
+In RedHat Enterprise Linux the package is usually called `apr`:
+
+[source, shell, subs="attributes"]
+.Install Apache Portable Runtime Library in RedHat
+----
+dnf install -y apr
+----
+
+=== Install OpenSSL
+
+Instructions on how to build and install a FIPS compatible OpenSSL are out of scope for this document. Installation steps can differ depending on operating system, and other security requirements you might have for OpenSSL.
+
+In general:
+
+* A list of FIPS certified OpenSSL versions can be found at https://openssl-library.org/source/
+* A FIPS provider must be installed into OpenSSL.
++
+See: https://github.com/openssl/openssl/blob/master/README-FIPS.md
+* OpenSSL must be configured to use the FIPS provider by default.
++
+See: https://docs.openssl.org/master/man7/fips_module/
+
+OpenSSL documentation can be found at:
+
+* https://openssl-library.org/
+
+and on the project's Github page:
+
+* https://github.com/openssl/openssl
+
+
+=== Install correct `netty-tcnative` library
+
+Since Neo4j 5.23.0, builds of `netty-tcnative` dynamic library are provided in
+the Neo4j `lib` directory under their own subfolder called `netty-tcnative`.
+
+Installation is just a case of copying the correct jar for the local machine's operating system and architecture into the
+
+To install the `netty-tcnative` dynamic library:
+
+. Locate the Neo4j `lib` directory.
++
+The location of the `lib` directory is different depending on the method used to install Neo4j. Check the xref:configuration/file-locations.adoc#neo4j-lib[file locations] documentation for the correct location.
++
+This location will be referred to as _<NEO4J_LIB>_.
++
+. BLAh
++
+[source, shell]
+.Check which netty-tcnative libraries are available
+----
+ls -l <NEO4J_LIB>/netty-tcnative
+----
+There should be
+
+
+2. verify jar
+3. copy jar to <neo4j_home>/lib
+
+
+
+<home>/lib/netty-tcnative
+copy the jar matching OS and arch to <home>/lib/
+xref:configuration/file-locations.adoc#neo4j-lib[]
+
+
+Finally, test the library by extracting the jar and using `ldd` to verify all its dependencies are met:
+eg
+[source, shell, subs="attributes"]
+----
+unzip -d /tmp /usr/share/neo4j/lib/netty-tcnative/netty-tcnative-*-linux-$(arch).jar
+ldd /tmp/META-INF/native/libnetty_tcnative_linux_*.so
+rm -rf /tmp/META-INF
+----
+The `ldd` command will show a list of `netty-tcnative` library dependencies and where they will be loaded from on the local machine.
+If any dependencies are missing, they must be installed or Neo4j will fail to run.
+
+
+== Generate SSL certificate and private key
+
+Neo4j SSL encryption requires a
+xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard, encoded in PEM format.
+and a private key in xref:security/ssl-framework.adoc#term-ssl-pkcs8[PKCS #8] format, also PEM encoded.
+
+For FIPS compatibility, the private key must also be secured with a passphrase.
+
+Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for a detailed setup guide to creating the SSL certificate and key pair.
+
+== Configure Neo4j to use SSL encryption
+
+xxx
