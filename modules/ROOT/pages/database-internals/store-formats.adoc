@@ -4,14 +4,14 @@
 Store formats are responsible for how data is written to disk and how it is read.
 The choice of store format can affect the performance and resource consumption of read and write transactions, the size of database files on disk, and the amount of data that can be stored.
 
-// * Which files/filenames exist in the database directory.
-// * Performance in memory-constrained environments.
-// The same query on different formats may have a different page cache hit ratio when the database does not entirely fit in the page cache.
-// * The order of query results when the order is not specified.
-// Different store formats may traverse and return data in different order.
-// * Algorithms used by the Neo4j Admin tools.
-// Especially `neo4j-admin database check` and `neo4j-admin database import` commands.
-// Performance and resource utilization may differ.
+Starting from 5.23, the `block` format is the preferred format for Enterprise Edition due to its superior performance and scalability.
+Therefore, migrating all databases to the `block` format is recommended to ensure optimal performance.
+This format uses advanced data structures and inlining techniques to enhance data locality, which leads to better resource utilization.
+
+`aligned` is the only format available in Community Edition and allows a smooth transition from Community to Enterprise Edition.
+
+`standard` and `high_limit` record formats are deprecated starting from Neo4j 5.23.
+For more information, see <<record-format-deprecation, Record format deprecation>>.
 
 [[store-format-overview]]
 == Available store formats
@@ -20,86 +20,54 @@ Here’s an overview of the available formats and their features:
 
 Block:: label:enterprise-edition[] label:version-number[GA in Neo4j 5.16] +
 * Default format from Neo4j 5.22 for new databases (unless xref:configuration/configuration-settings.adoc##config_db.format[`db.format`] is specified).
-* Best performance, supports the highest limits, uses advanced data structures and inlining techniques for better data locality.
-* Allows more related data to be fetched by fewer read operations, enhancing resource utilization.
-* Able to run graphs at large scales.
-* For store format version compatibility and limits, see <<block-format, Block format>>.
+* *Performance:* Faster queries, uses advanced data structures and inlining techniques for better data locality.
+* *Memory efficiency:* Optimized collocation of data, which allows more related data to be fetched by fewer read operations, enhancing resource utilization.
+Block format means a few pages need to be loaded to serve a query, which means fewer page faults and less IO.
+* *Property access:* Properties are stored in blocks with their nodes and relationships drastically reducing the amount of pointer chasing required to access properties.
+* *Entity limits:* Able to run graphs at large scales.
+Supports the highest limits at the time of writing.
+See <<block-format-limits, Block format entity limits>> for details.
+* *Future-proofing:* Designed to be extended and improved without requiring store migrations. New features such as data types, or performance enhancements are available without rewriting the store.
 
 Aligned::
 * Default format in Community Edition and for all new databases in Enterprise Edition prior to Neo4j 5.22.
-* Based on `standard`.
-* Performs better than `standard` but requires slightly more disk space.
-* Stores graph data in linked list-like structures on disk.
-* For store format version compatibility and limits, see <<aligned-format, Aligned format>>.
+* *Performance:* Performs better than `standard` but requires slightly more disk space.
+* *Memory efficiency:* Based on `standard` but with improved memory efficiency.
+* *Property access:* Stores graph data in linked list-like structures on disk.
+* *Entity limits:* Supports graphs within some limits.
+See <<aligned-limits, Aligned format entity limits>> for details.
 
 Standard:: label:deprecated[Deprecated in 5.23]
-* Basic, foundational format.
-* Stores graph data in linked list-like structures on disk.
-* For store format version compatibility and limits, see <<standard-format, Standard format>>.
+* *Performance:* Basic, foundational format.
+* *Property access:* Stores graph data in linked list-like structures on disk.
+* *Entity limits:* Supports graphs within some limits.
+See <<standard-limits, Standard format entity limits>> for details.
 
 High_limit:: label:enterprise-edition[] label:deprecated[Deprecated in 5.23]
-* Based on `standard` but allows more nodes and relationships.
-* Requires more disk space.
-* Stores graph data in linked list-like structures on disk.
-* For store format version compatibility and limits, see <<high-limit-format, High_limit format>>.
+* *Performance:* Performs slightly worse than `standard` and requires more disk space, but allows more nodes and relationships.
+* *Memory efficiency:* Based on `standard` but with improved memory efficiency.
+* *Property access:* Stores graph data in linked list-like structures on disk.
+* *Entity limits:* From the record formats, supports the highest limits at the time of writing.
+For more information, see <<high-format-limits, High_limit format entity limits>>.
 
-[[store-format-comparison]]
-== Which store format to choose
-
-Starting from 5.23, the `block` format is the preferred format for Enterprise Edition due to its superior performance and scalability.
-Therefore, migrating all databases to the `block` format is recommended to ensure optimal performance.
-This format uses advanced data structures and inlining techniques to enhance data locality, which leads to better resource utilization.
-
-`aligned` is the only format available in Community Edition and allows a smooth transition from Community to Enterprise Edition.
+[[record-format-deprecation]]
+== Record format deprecation
 
 `standard` and `high_limit` formats are deprecated starting from Neo4j 5.23. +
+With the completion of `block` format there is no longer any advantage to using the record formats.
 However, they will remain part of the product throughout the Neo4j 5 and vNext server lifecycles.
 The last version of Neo4j to include these formats will be vNext.LTS, which is planned for release in November 2026 and will be supported for three years.
+This means that support for H`standard` and `high_limit` formats is planned to end in November 2029.
+
+It is recommended that users migrate all databases to block format at their earliest convenience to ensure the best possible performance.
+For more information, see <<change-store-format, Changing the store format of existing databases>>.
 
 [role="enterprise-edition"]
-[[store-format-faq]]
-Questions to consider when selecting a store format for your Enterprise Edition database::
-. What should I consider before deciding on a store format? +
-Evaluate the performance needs, scalability requirements, and compatibility with existing systems.
-Consider future-proofing by choosing a format that will be supported long-term.
-+
-. What if I am on X format? +
-If you are on `aligned`, you can stay on it unless you need to migrate to `block` for better performance and scalability.
-If you are on `standard` or `high_limit`, consider migrating to `block`.
-+
-. Which format to choose if I want to migrate from Community to Enterprise Edition? +
-If you are migrating from Community to Enterprise Edition, you can stay on the `aligned` format as it allows a smooth transition.
-Then, at a later stage, you can migrate to `block` for better performance and scalability.
-+
-. When should I plan to migrate from deprecated formats? +
-It’s best to migrate sooner rather than later to ensure ongoing support and take advantage of the enhanced performance offered by the `block` format.
-+
-. Can I have zero downtime migration?
-No, changing the store format requires the database to be offline.
-For more information on how to change the store format of an existing database, see <<change-store-format, Changing the store format of existing databases>>.
-+
-. How long does it take to migrate to `block`? +
-Migrating to `block` format is an IO-intensive offline operation.
-The duration of the migration process depends on several factors:
-+
-* Database Size: Larger databases take longer to migrate.
-* Graph Complexity: More complex graphs require more processing time.
-* Hardware Performance: Faster hardware can significantly reduce migration time.
-+
-Therefore, it is recommended to perform a dry run on a backup to estimate the required time for the migration.
-Under optimal conditions, migrating 100GB of data typically takes around 10 minutes.
-+
-. How much disk space is required for migrating to `block` format? +
-The database is inherently compacted during the migration process.
-Therefore, the disk space required for the migration is approximately the same as the size of the database.
-You can use the xref:monitoring/metrics/reference.adoc#db-store-size-metrics[database store size metrics] to determine your available disk space and potentially reusable space.
-
 [[how-to-set-store-format]]
 == How to set the database store format
 
 You can either set the store format when creating a new database or change the store format of an existing database.
 
-[role="enterprise-edition"]
 [[create-new-databases]]
 === Creating new databases
 
@@ -129,20 +97,28 @@ bin/neo4j-admin database copy --to-format="block" mydb blockdb
 CREATE DATABASE blockdb OPTIONS {storeFormat: 'block'}
 ----
 
+
 [[change-store-format]]
 === Changing the store format of existing databases
 
-Changing the store format is possible by re-writing all data in the new format.
+Starting from 5.23, the `block` format is the preferred format for Enterprise Edition due to its superior performance and scalability.
+Therefore, migrating all databases to the `block` format is recommended to ensure optimal performance.
+
+Changing the store format is an IO-intensive offline operation, which re-writes all data in the new format.
 Therefore, it requires that:
 
 * There is enough disk space for both old and new copies of the database.
+During the migration to `block` format, the database is inherently compacted.
+Therefore, the disk space required for the migration is approximately the same as the size of the database.
+You can use the xref:monitoring/metrics/reference.adoc#db-store-size-metrics[database store size metrics] to determine your available disk space and potentially reusable space.
 * The graph fits within the new <<store-formats-entity-limits, format's entity limits>>.
 
 [NOTE]
 ====
 Changing the store format can be a time-consuming operation, depending on the size and complexity of the data in the database.
 Performance heavily depends on the speed of the disk and the amount of available memory.
-For more information see <<store-format-faq, Questions to consider when selecting a store format for your Enterprise Edition database>>.
+Therefore, it is recommended to perform a dry run on a backup to estimate the required time for the migration.
+Under optimal conditions, migrating 100GB of data to `block` format typically takes around 10 minutes.
 ====
 
 [[change-store-format-standalone]]
