@@ -8,6 +8,7 @@ The number of both primary and secondary servers to host a database can be set w
 The command `CREATE DATABASE` can be used to specify the initial topology and `ALTER DATABASE` can be used to change the topology once the database is created.
 If a database is no longer needed, the command `DROP DATABASE` deletes the database from the cluster.
 
+[[create-database]]
 == `CREATE DATABASE`
 
 The command to create a database in a cluster is not significantly different from the command to create a database in a non-clustered environment (see xref:database-administration/standard-databases/create-databases.adoc[Create, start, and stop databases] for more information on database management on single servers).
@@ -35,12 +36,13 @@ However, over time, or after several `CREATE DATABASE` commands have been issued
 At this point you can run `REALLOCATE DATABASES` to make the cluster re-balance databases across all servers that are part of the cluster.
 ====
 
-[[alter-topology]]
+[[alter-database]]
 == `ALTER DATABASE`
 
 To alter the topology of or read/write access to a database after it has been created, use the command `ALTER DATABASE`.
 
-=== Alter topology
+[[alter-topology]]
+=== Alter database topology
 
 To change the topology of the database `foo` from the previous example, the command can look like this:
 
@@ -91,7 +93,8 @@ ALTER DATABASE nonExisting IF EXISTS SET TOPOLOGY 1 PRIMARY 0 SECONDARY
 // * `OPTIMAL_DISC_USAGE`
 // * `ALL`
 
-=== Alter access
+[[alter-access]]
+=== Alter database access
 
 To alter the access to the database `foo`, the syntax looks like this:
 
@@ -102,14 +105,106 @@ ALTER DATABASE foo SET ACCESS {READ ONLY | READ WRITE}
 
 By default, a newly created database has both read and write access.
 
-== Reallocate databases
+[role=label--new-5.23]
+[[deallocate-databases]]
+== Deallocate databases
 
-If there is a need to rebalance database allocation across the cluster, for example if new servers have been added, use the `REALLOCATE DATABASE[S]`.
-This command can be used with `DRYRUN` to preview the new allocation of databases.
+To relieve the load of a specific server(s), you can use one of the following procedures to deallocate databases causing the pressure from the server(s):
+
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServer[`dbms.cluster.deallocateDatabaseFromServer("server-name", "database-name")`]
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServers[`dbms.cluster.deallocateDatabaseFromServers(git["server-name1", "server-name2"\], "database-name")`]
+* xref:reference/procedures.adoc#procedure_dbms_cluster_deallocateNumberOfDatabases[`dbms.cluster.deallocateNumberOfDatabases("server-name", number)`]
 
 [NOTE]
 ====
-`DRYRUN` is introduced in Neo4j 5.2 and thus does not work in previous versions.
+You must have the `SERVER MANAGEMENT` privilege to execute these procedures.
+====
+
+For example, `server01` hosts two small databases, `foo` and `bar`, and one very large database `baz`, while other servers contain fewer or smaller databases, and `server01` is under pressure.
+
+You can use one of the following approaches to deallocate `baz` from `server01` or to deallocate a number of databases from `server01`:
+
+.Deallocating a database from a server
+[source, cypher]
+----
+// With dry run
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server01", "baz", true);
+
+// Without dry run
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServer("server01", "baz");
+
+----
+
+.Deallocating a database from multiple servers
+[source, cypher]
+----
+// With dry run
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server01", "server02"], "baz", true);
+
+// Without dry run
+neo4j@system> CALL dbms.cluster.deallocateDatabaseFromServers(["server01", "server02"], "baz");
+
+----
+
+.Deallocating three databases from a server
+[source, cypher]
+----
+// With dry run
+neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server01", 3, true);
+
+// Without dry run
+neo4j@system> CALL dbms.cluster.deallocateNumberOfDatabases("server01", 3);
+----
+
+
+[[reallocate-databases]]
+== Reallocate databases
+
+To rebalance all database allocations across the cluster, for example, because you added new servers, use either procedures or Cypher commands to reallocate databases onto the new servers.
+
+[role=label--new-5.23]
+[[reallocate-databases-procedure]]
+=== Reallocate databases using a procedure
+
+You can use the procedure xref:reference/procedures.adoc#procedure_dbms_cluster_reallocateDatabase[`dbms.cluster.reallocateDatabase()`] to offload a specific database from all servers containing it onto new servers or xref:reference/procedures.adoc#procedure_dbms_cluster_reallocateNumberOfDatabases[dbms.cluster.reallocateNumberOfDatabases] to rebalance all database allocations across the cluster and relieve overloaded servers.
+These procedures do not require a server name and can be executed with or without a dry run.
+
+[NOTE]
+====
+You must have the `SERVER MANAGEMENT` privilege to execute these procedures.
+====
+
+For example, you add three new servers and want to move a very large database, `baz`, from all the servers containing it to the new servers.
+
+.Reallocate one database to new servers
+[source, cypher]
+----
+// With dry run
+neo4j@system> CALL dbms.cluster.reallocateDatabase("baz", true);
+
+// Without dry run
+neo4j@system> CALL dbms.cluster.reallocateDatabase("baz");
+----
+
+.Reallocating a number of databases to new servers
+[source, cypher]
+----
+// With dry run
+neo4j@system> CALL dbms.cluster.reallocateNumberOfDatabases(3, true);
+
+// Without dry run
+neo4j@system> CALL dbms.cluster.reallocateNumberOfDatabases(3);
+----
+
+[[reallocate-databases-cypher]]
+=== Reallocate databases using a Cypher command
+
+You can use the Cypher command `REALLOCATE DATABASES` to rebalance all database allocations across the cluster and relieve overloaded servers.
+This command can also be used with `DRYRUN` to preview the new allocation of databases.
+
+[NOTE]
+====
+`DRYRUN` is available from Neo4j 5.2 and later.
 ====
 
 [source,cypher]
