@@ -8,9 +8,12 @@ In addition to storing the container configuration, docker compose can simplify 
 [[docker-image]]
 == Using a docker compose configuration file
 
-In order to create a docker compose configuration file, create a file named `docker-compose.yml` with the following content:
+In order to create a docker compose configuration file, create a file named `docker-compose.yml`.
 
-[source,yaml,subs="attributes"]
+.Create a neo4j container
+====
+.docker-compose.yaml
+[source,yaml,subs="attributes+,+macros"]
 ----
 services:
   neo4j:
@@ -20,36 +23,37 @@ services:
       - "7687:7687"
     restart: always
 ----
-
-Then you can start your container by executing in the same directory as the `docker-compose.yml` file:
-
-[source,shell,subs="attributes"]
+.Execute
+[source,shell,subs="attributes+,+macros"]
 ----
-docker-compose up -d
+docker-compose up -d #<1>
 ----
+<1> The `-d` flag will start the container in detached mode.
+====
 
-the `-d` flag will start the container in detached mode.
+Similarly, you can mount volumes and configure environment variables.
 
-The above example is equivalent to executing the command in this xref:docker/introduction.adoc#docker-image[example].
-
-Similarly, you can mount volumes and configure environment variables by changing your `docker-compose.yml` file in the following way:
-
-[source,yaml,subs="attributes"]
+.Mount logs, config and plugins to the equivalent container mount points
+====
+[source,yaml,subs="attributes+,+macros"]
 ----
 services:
   neo4j:
     image: neo4j:{neo4j-version-exact}
     volumes:
-        - /$HOME/neo4j/logs:/logs # Mounting the neo4j logs directory to a host local directory
-        - /$HOME/neo4j/config:/config # Mounting the neo4j config directory to a host local directory
-        - /$HOME/neo4j/plugin:/plugins # Mounting the neo4j plugin directory to a host local directory
+        - /$HOME/neo4j/logs:/logs # <1>
+        - /$HOME/neo4j/config:/config
+        - /$HOME/neo4j/plugins:/plugins
     environment:
-        - NEO4J_AUTH=neo4j/password # Setting the neo4j username and password
+        - NEO4J_AUTH=neo4j/your_password # <2>
     ports:
       - "7474:7474"
       - "7687:7687"
     restart: always
 ----
+<1> Mounting the neo4j logs directory to a host local directory
+<2> Setting the neo4j username and password
+====
 
 [[docker-secrets]]
 == Using Docker secrets
@@ -57,43 +61,47 @@ services:
 It is advisable to not store sensitive information in the `docker-compose.yml` file, such as the database username and password like in the above example.
 You can instead store your secrets in files and use them in your `docker-compose.yml` file without exposing their values.
 
-To store the username and password in a file and use it in your container you will need a file named `neo4j_auth.txt` with the following content:
-
+.Create a ne4j container with the username and password defined as a secret
+====
+.neo4j_auth.txt
 [source,text,subs="attributes"]
 ----
-neo4j:password
+neo4j:your_password
 ----
-
-and the following `docker-compose.yml` file:
-
-[source,yaml,subs="attributes"]
+.docker-compose.yaml
+[source,yaml,subs="attributes+,+macros"]
 ----
 services:
   neo4j:
     image: neo4j:{neo4j-version-exact}
     volumes:
-        - /$HOME/neo4j/logs:/logs # Mounting the neo4j logs directory to a host local directory
-        - /$HOME/neo4j/config:/config # Mounting the neo4j config directory to a host local directory
-        - /$HOME/neo4j/plugin:/plugins # Mounting the neo4j plugin directory to a host local directory
+        - /$HOME/neo4j/logs:/logs
+        - /$HOME/neo4j/config:/config
+        - /$HOME/neo4j/plugin:/plugins
     environment:
-        - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth_file # Setting the neo4j username and password
+        - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth_file # <1>
     ports:
       - "7474:7474"
       - "7687:7687"
     restart: always
     secrets:
-      - neo4j_auth_file
+      - neo4j_auth_file #<4>
 secrets:
-  neo4j_auth_file:
-    file: ./neo4j_auth.txt
+  neo4j_auth_file: # <2>
+    file: ./neo4j_auth.txt # <3>
 ----
+<1> Defining the file where the value for the `NEO4J_AUTH` environment variable can be found
+<2> Defining the secret named `neo4j_auth_file`
+<3> Pointing to the `neo4j_auth.txt` file
+<4> Using the secret in the `neo4j` service
+====
 
-In the secrets section you are defining the path to the `neo4j_auth.txt` file and in the `secrets` section of the `neo4j`
-service you are instructing docker to mount the file under the `run/secrets/neo4j_auth_file` path. This then allows you to use the
-file as the value of the `NEO4J_AUTH_FILE` environment variable.
-
+[NOTE]
+====
 You can define any neo4j variable as a secret in the same way, by simply using the same variable name with the `_FILE` suffix.
-
-The secret value will override the equivalent environment variable if they are both defined. So for example if we had also defined an
-environment variable `NEO4J_AUTH=j4oen/drowssap` in the `environment` section of the `neo4j` service, the value of `NEO4J_AUTH_FILE` would
-be the one used.
+====
+[WARNING]
+====
+The secret value will override the equivalent environment variable if they are both defined.
+So for example if we had also defined an environment variable `NEO4J_AUTH=neo4j/your_other_password` in the `environment` section of the `neo4j` service, the value of `NEO4J_AUTH_FILE` would be the one used.
+====
