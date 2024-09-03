@@ -17,7 +17,7 @@ Note that all database aliases must be dropped before dropping a database.
 |
 [source, syntax, role="noheader"]
 ----
-DROP [COMPOSITE] DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+DROP [COMPOSITE] DATABASE name [IF EXISTS] [RESTRICT \| CASCADE ALIAS[ES]] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 |===
@@ -92,9 +92,9 @@ In Neo4j, dumps can be stored in the directory specified by the xref:configurati
 The option `DESTROY DATA` explicitly requests the default behavior of the command.
 
 [[delete-existing-db-with-dump]]
-=== Delete a database with `IF{nbsp}EXISTS` and  `DUMP DATA`/ `DESTROY DATA`
+=== Delete a database with `IF{nbsp}EXISTS` and  `DUMP DATA`/`DESTROY DATA`
 
-The options `IF EXISTS` and `DUMP DATA`/ `DESTROY DATA` can also be combined.
+The options `IF EXISTS` and `DUMP DATA`/`DESTROY DATA` can also be combined.
 
 An example could look like this:
 
@@ -103,4 +103,44 @@ An example could look like this:
 DROP DATABASE customers IF EXISTS DUMP DATA
 ----
 
+[[delete-databases-with-aliases]]
+=== Delete a database with local database aliases targeting it
+
+In general, deleting a database that is the target of any local database aliases will fail due to those database aliases.
+Any remote database aliases targeting the database does not affect the deletion of the database.
+
+By appending `CASCADE ALIASES` to the command `DROP DATABASE`, those local database aliases can be dropped together with the database.
+Any remote database aliases targeting the database will not be affected of the `CASCADE ALIASES`, they will simply no longer resolve their targets (which is the same behaviour as if you create them targeting a non-existing database).
+
+Given database and database alias:
+[source, cypher]
+----
+CREATE DATABASE movies
+CREATE ALIAS films FOR DATABASE movies
+----
+
+Then both the database alias `films` and the database `movies` will be dropped with:
+[source, cypher]
+----
+DROP DATABASE movies CASCADE ALIASES
+----
+
+The option `RESTRICT` explicitly requests the default behavior of the command.
+
+[NOTE]
+====
+The `CASCADE ALIASES` option will drop the same aliases that would be given in the error message from trying to drop the database using the `RESTRICT` mode instead.
+====
+
+[[delete-existing-databases-with-aliases]]
+=== Delete a database with `RESTRICT`/`CASCADE ALIASES` and other command parts
+
+The options `RESTRICT`/`CASCADE ALIASES` can also be combined with `IF EXISTS` and `DUMP DATA`/`DESTROY DATA`.
+
+An example could look like this:
+
+[source, cypher]
+----
+DROP DATABASE movies IF EXISTS CASCADE ALIASES DUMP DATA
+----
 
