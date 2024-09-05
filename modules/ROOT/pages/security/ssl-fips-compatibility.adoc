@@ -1,28 +1,33 @@
-:description: How to configure Neo4j to use FIPS compatible SSL encryption.
 [role=enterprise-edition]
 [[ssl-fips-compatibility]]
 = Configuring SSL for FIPS 140-2 compatibility
+:description: How to configure Neo4j to use FIPS compatible SSL encryption.
+:keywords: ssl, tls, authentication, encryption, encrypted, security, fips, fips 140, fips 140-2, nist, hipaa
 
-Federal Information Processing Standards (FIPS) is ...
+Federal Information Processing Standards (FIPS) 140 is a U.S. government standard established by the National Institute of Standards and Technology (NIST) which is used to accredit cryptographic modules such as those used in TLS network encryption.  While FIPS 140 compliance is primarily required for federal agencies and their contractors, it also is used in the healthcare sector under regulations like the Health Insurance Portability and Accountability Act (HIPAA) to protect patient data.
 
-https://csrc.nist.gov/pubs/fips/140-2/upd2/final
+For more information see:
 
-This is a guide to help configure Neo4j to use SSL encryption in a FIPS compatible way.
-It is supplementary to xref:security/ssl-framework.adoc[] as many of the configuration processes and requirements are the same.
+* https://cloudsecurityalliance.org/blog/2023/03/23/what-is-fips-140-and-what-does-it-mean-to-be-fips-compliant
+* https://csrc.nist.gov/pubs/fips/140-2/upd2/final
 
-. Enable a FIPS certified cryptographic provider
-. Generate SSL certificate and private key xref:security/ssl-framework.adoc#ssl-certificates[instructions]
-. Configure Neo4j to use SSL for all network connections xref:security/ssl-framework.adoc#ssl-configuration[]
-. Setup a non-native authentication provider, for example LDAP or SSO. xref:authentication-authorization/index.adoc[]
-. verify?
-. security checklist? (cross ref)
+This is a guide to help configure Neo4j to use TLS / SSL encryption in a FIPS compatible way.
+It is supplementary to the xref:security/ssl-framework.adoc[] documentation, as many of the configuration processes and requirements are the same.
+
+// . Enable a FIPS certified cryptographic provider
+// . Generate SSL certificate and private key xref:security/ssl-framework.adoc#ssl-certificates[instructions]
+// . Configure Neo4j to use SSL for all network connections xref:security/ssl-framework.adoc#ssl-configuration[]
+// . Setup a non-native authentication provider, for example LDAP or SSO. xref:authentication-authorization/index.adoc[]
+// . verify?
 
 
 == Prerequisites
-TODO
 
-* FIPS compatible operating system and hardware. Only Linux operating systems are supported for Neo4j FIPS compatibility at this time.
+* Verify that the machine running Neo4j has FIPS compatible hardware and operating system.
+Only xref:installation/requirements.adoc#deployment-requirements-software[Linux operating systems] are supported for Neo4j FIPS compatibility at this time.
 * Neo4j Enterprise 5.23.0 or later.
+* Install and configure a non-native authentication provider, for example LDAP or SSO. See xref:authentication-authorization/index.adoc[].
+// * Follow the xref:security/checklist.adoc[] to ensure good security practices.
 
 == Enable FIPS SSL Provider (Docker)
 
@@ -105,8 +110,6 @@ In general:
 
 * A list of FIPS certified OpenSSL versions can be found at https://openssl-library.org/source/
 * A FIPS provider must be installed into OpenSSL.
-+
-See: https://github.com/openssl/openssl/blob/master/README-FIPS.md
 * OpenSSL must be configured to use the FIPS provider by default.
 +
 See: https://docs.openssl.org/master/man7/fips_module/
@@ -135,48 +138,134 @@ The location of the `lib` directory is different depending on the method used to
 +
 This location will be referred to as _<NEO4J_LIB>_.
 +
-. BLAh
+. Check which netty-tcnative libraries are available
 +
 [source, shell]
-.Check which netty-tcnative libraries are available
 ----
 ls -l <NEO4J_LIB>/netty-tcnative
 ----
-There should be
-
-
-2. verify jar
-3. copy jar to <neo4j_home>/lib
-
-
-
-<home>/lib/netty-tcnative
-copy the jar matching OS and arch to <home>/lib/
-xref:configuration/file-locations.adoc#neo4j-lib[]
-
-
-Finally, test the library by extracting the jar and using `ldd` to verify all its dependencies are met:
-eg
+There should be linux and fedora linux variants available, compiled for both x86_64 and arm64 architectures.
+Select the one matching the local machine's operating system and architecture.
++
+. Verify the dependencies are correctly installed using https://www.man7.org/linux/man-pages/man1/ldd.1.html[`ldd`]:
++
 [source, shell, subs="attributes"]
+.Verify netty-tcnative dependencies are installed
 ----
 unzip -d /tmp /usr/share/neo4j/lib/netty-tcnative/netty-tcnative-*-linux-$(arch).jar
 ldd /tmp/META-INF/native/libnetty_tcnative_linux_*.so
 rm -rf /tmp/META-INF
 ----
-The `ldd` command will show a list of `netty-tcnative` library dependencies and where they will be loaded from on the local machine.
-If any dependencies are missing, they must be installed or Neo4j will fail to run.
++
+[source, shell, subs="attributes"]
+.Verify fedora variant of netty-tcnative dependencies are installed
+----
+unzip -d /tmp /usr/share/neo4j/lib/netty-tcnative/netty-tcnative-*-linux-$(arch)-fedora.jar
+ldd /tmp/META-INF/native/libnetty_tcnative_linux_$(arch).so
+rm -rf /tmp/META-INF
+----
+The `ldd` command will show a list of library dependencies and where they will be loaded from on the local machine.
+** If any dependencies are missing, they must be installed or Neo4j will fail to run.
+** The `libssl.so` and `libcrypto.so` libraries listed must be the ones installed with OpenSSL in the previous steps.
++
+. Copy the verified jar to _<NEO4J_LIB>_.
++
+[NOTE]
+====
+Only copy *one* of the jars, otherwise Neo4j will not be able to resolve dependencies at runtime.
+The error, if this happens, will contain a message like:
+[source]
+----
+"Failed to load any of the given libraries: [netty_tcnative_linux_x86_64, netty_tcnative_linux_x86_64_fedora, netty_tcnative_x86_64, netty_tcnative]".
+----
+====
 
 
 == Generate SSL certificate and private key
 
-Neo4j SSL encryption requires a
-xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard, encoded in PEM format.
+Neo4j SSL encryption requires a xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard, encoded in PEM format.
 and a private key in xref:security/ssl-framework.adoc#term-ssl-pkcs8[PKCS #8] format, also PEM encoded.
+*For FIPS compatibility, the private key must be secured with a password*.
 
-For FIPS compatibility, the private key must also be secured with a passphrase.
+Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for more information.
 
-Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for a detailed setup guide to creating the SSL certificate and key pair.
 
 == Configure Neo4j to use SSL encryption
 
-xxx
+// TODO
+
+
+SSL configuration is described in detail at xref:security/ssl-framework.adoc#ssl-configuration[SSL framework configuration].
+
+this section describes configuration that must be done *in addition to* standard non-FIPS compliant SSL configuration.
+
+connectors are bolt, https, cluster and backup.
+
+=== Bolt
+
+. Set `xref:configuration/configuration-settings.adoc#config_dbms.netty.ssl.provider[dbms.netty.ssl.provider]=OPENSSL`
+. Set `xref:configuration/configuration-settings.adoc#config_server.bolt.tls_level[server.bolt.tls_level]=REQUIRED`
+. Follow instructions to xref:security/ssl-framework.adoc#ssl-bolt-config[Configure SSL over bolt].
+. Set additional bolt configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.bolt.trust_all=false
+dbms.ssl.policy.bolt.tls_level=REQUIRED
+dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.bolt.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+
+
+=== HTTPS
+
+This section is only applicable if HTTPS is enabled.
+
+. Follow instructions to xref:security/ssl-framework.adoc#ssl-https-config[Configure SSL over HTTPS].
++
+. Set additional HTTPS configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.https.trust_all=false
+dbms.ssl.policy.https.tls_level=REQUIRED
+dbms.ssl.policy.https.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.https.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_CCM,TLS_ECDHE_ECDSA_WITH_AES_128_CCM,TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.https.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+
+=== Intra-cluster encryption
+
+For FIPS compatbility, intra-cluster encryption must be enabled if you are running a Neo4j cluster.
+
+. Follow instructions to xref:security/ssl-framework.adoc#ssl-cluster-config[configure SSL for intra-cluster communication].
+. Set additional cluster configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.cluster.enabled=true
+dbms.ssl.policy.cluster.tls_level=REQUIRED
+dbms.ssl.policy.cluster.client_auth=REQUIRED
+dbms.ssl.policy.cluster.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.cluster.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+
+
+=== Backup
+
+This section is applicable on instances or cluster members used for taking backups.
+
+. Follow instructions to xref:security/ssl-framework.adoc#ssl-backup-config[configure SSL for backup communication].
+. Set additional backup configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.backup.enabled=true
+dbms.ssl.policy.backup.client_auth=REQUIRED
+dbms.ssl.policy.backup.trust_all=false
+dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.backup.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.backup.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
