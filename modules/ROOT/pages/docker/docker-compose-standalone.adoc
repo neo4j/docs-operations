@@ -1,0 +1,106 @@
+:description: Running Neo4j in a Docker container using Docker Compose
+[[docker-compose-neo4j-standalone]]
+= Deploy a Neo4j standalone server using Docker Compose
+
+You can deploy a Neo4j standalone server using Docker Compose by defining the container configuration in a _docker-compose.yml_ file and authenticating with basic authentication or Docker secrets.
+
+[[docker-compose-basic-authentication]]
+== Deploy a Neo4j server using basic authentication mechanism
+
+Before you start, verify that you have installed Docker Compose.
+For more information, see the https://docs.docker.com/compose/install/[Install Docker Compose official documentation].
+
+. Create a project folder where you will store your _docker-compose.yml_ file and run your Neo4j server.
+. Prepare your _docker-compose.yml_ file using the following example.
+For more information, see the Docker Compose official documentation on https://docs.docker.com/compose/compose-file/#service-configuration-reference[Docker Compose specification].
++
+.Example of a _docker-compose.yml_ file
+[source,yaml,subs="attributes+,+macros"]
+----
+services:
+  neo4j:
+    image: neo4j:latest
+    volumes:  # <1>
+        - /$HOME/neo4j/logs:/logs
+        - /$HOME/neo4j/config:/config
+        - /$HOME/neo4j/data:/data
+        - /$HOME/neo4j/plugins:/plugins
+    environment:
+        - NEO4J_AUTH=neo4j/your_password # <2>
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    restart: always
+----
+<1> Mount the _/$HOME/neo4j/<..>:_ directories to local directories on your host machine to store logs, configuration, data, and plugins.
+For more information about mounting volumes, see xref:docker/mounting-volumes.adoc[].
+<2> Set the `neo4j` username and password.
+
+. Deploy your Neo4j server by running `docker-compose up` from your project folder.
++
+[source,shell,subs="attributes+,+macros"]
+----
+docker-compose up -d
+----
++
+The `-d` flag starts the container in detached mode.
+
+[role=label--recommended]
+[[docker-compose-secrets]]
+== Deploy a Neo4j server with Docker secrets
+
+It is advisable not to store sensitive information, such as the database username and password, in the _docker-compose.yml_ file.
+You can instead store your credentials in files and use them in your _docker-compose.yml_ file without exposing their values.
+
+. Create a file, for example, _neo4j_auth.txt_, containing the username and password for the Neo4j server to be used as a Docker secret.
++
+[source,text,subs="attributes"]
+----
+neo4j:your_password
+----
+. Prepare your _docker-compose.yml_ file using the following example.
+For more information, see the Docker Compose official documentation on https://docs.docker.com/compose/compose-file/#service-configuration-reference[Docker Compose specification].
++
+.Example of a _docker-compose.yml_ file
+[source,yaml,subs="attributes+,+macros"]
+----
+services:
+  neo4j:
+    image: neo4j:latest
+    volumes: # <1>
+        - /$HOME/neo4j/logs:/logs
+        - /$HOME/neo4j/config:/config
+        - /$HOME/neo4j/data:/data
+        - /$HOME/neo4j/plugin:/plugins
+    environment:
+        - NEO4J_AUTH_FILE=/run/secrets/neo4j_auth_file # <2>
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    restart: always
+    secrets:
+      - neo4j_auth_file #<3>
+secrets:
+  neo4j_auth_file: # <4>
+    file: ./neo4j_auth.txt # <5>
+----
+<1> Mount the _/$HOME/neo4j/<..>:_ directories to local directories on your host machine to store logs, configuration, data, and plugins.
+<2> Path to the file where the value for the `NEO4J_AUTH` environment variable can be found.
+<3> The name of the secret, for example `neo4j_auth_file`.
+<4> Path to the _neo4j_auth.txt_ file.
+<5> The name of the secret in the `neo4j` service.
++
+[WARNING]
+====
+The secret value overrides the equivalent environment variable if they are both defined.
+So, for example, if you also define an environment variable `NEO4J_AUTH=neo4j/your_other_password` in the `environment` section of the `neo4j` service, the value of `NEO4J_AUTH_FILE` will be the one used.
+====
+
+. Deploy your Neo4j server by running `docker-compose up` from your project folder.
++
+[source,shell,subs="attributes+,+macros"]
+----
+docker-compose up -d
+----
++
+The `-d` flag starts the container in detached mode.
