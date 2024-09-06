@@ -334,7 +334,7 @@ For example to create a user `jake` who can authenticate and authorize using Ent
 ----
 CREATE USER jake
 SET HOME DATABASE 'jakesHomeDb'
-SET AUTH 'oidc-okta' {SET ID 'jakesUniqueEntraUserId'} // `jakesUniqueEntraUserId` must match the value of the claim that you configured via dbms.security.oidc.azure.claims.username
+SET AUTH 'oidc-azure' {SET ID 'jakesUniqueAzureUserId'} // `jakesUniqueAzureUserId` must match the value of the claim that you configured via dbms.security.oidc.azure.claims.username
 ----
 
 See xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[SSO integration] for further examples.
@@ -375,9 +375,14 @@ dbms.security.oidc.google.config=token_type_principal=id_token;token_type_authen
 
 There are then two ways to create the user in the database (which is required to give the users roles from native authorization):
 
-. Using Auth Providers
-xref:authentication-authorization/auth-providers.adoc[Auth Providers] allow us to specify auth providers at the user-level which is useful in this scenario.
-This approach allows us to have an `admin` user who can authenticate natively, and can then create less privileged users who may only authenticate using `oidc-google` and will receive the roles granted to them using `native` authorization.
+. Using Auth Providers.
+xref:authentication-authorization/auth-providers.adoc[Auth Providers] allow us to specify authentication and authorization providers at the user-level which is useful in this scenario.
+This approach relies on the existence of an `admin` user who can authenticate natively, and can themselves create less privileged users who may only authenticate using `oidc-google` and who will receive the roles granted to them using `native` authorization.
+
+[NOTE]
+====
+An admin user with the name `neo4j` is created by default when the database is xref:configuration/set-initial-password.adoc[first started].
+====
 
 .. Change the configuration to allow `native` authentication (for use only by the `admin` user):
 
@@ -387,7 +392,7 @@ dbms.security.authentication_providers=oidc-google, native
 ----
 
 .. Set the `dbms.security.require_local_user` configuration setting to `true` in the _neo4j.conf_ file.
-This will switch to User Auth Providers mode whereby users can only authenticate and authorize if they have a corresponding Auth Provider in the database.
+This will switch to __User Auth Providers__ mode whereby users can only authenticate and authorize if they have a corresponding Auth Provider in the database.
 
 [source, properties]
 ----
@@ -411,9 +416,9 @@ SET AUTH 'oidc-google' {SET ID 'jakesUniqueGoogleUserId'} // `jakesUniqueGoogleU
 GRANT ROLE reader TO jake
 ----
 
-The user will implicitly receive `native` authorization because `native` is in the list of authorization providers and you have explicitly granted the user a `ROLE`.
+The user will implicitly receive `native` authorization because `native` is in the list of authorization providers and you have explicitly granted the user a role.
 
-You can now disable native authentication for the database completely:
+Once you have set up your users in this way, you can now disable native authentication for the database completely:
 
 [source, properties]
 ----
@@ -465,10 +470,6 @@ REQUIRED
 ----
 GRANT ROLE reader TO jakesUniqueGoogleUserId
 ----
-
-
-
-
 
 == FAQ
 
