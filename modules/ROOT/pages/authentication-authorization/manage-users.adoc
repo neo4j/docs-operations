@@ -71,6 +71,7 @@ a|
 [source, syntax, role="noheader"]
 ----
 SHOW USER[S]
+  [WITH AUTH]
   [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
   [WHERE expression]
   [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -329,6 +330,11 @@ GRANT SET USER STATUS
 GRANT SET USER HOME DATABASE
 ----
 
+[source, privilege, role="noheader"]
+----
+GRANT SET AUTH
+----
+
 (see xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-user-management[DBMS USER MANAGEMENT privileges])
 
 |===
@@ -479,7 +485,7 @@ This command is only supported for a logged-in user and will return an empty res
 [[access-control-list-users]]
 == Listing users
 
-Available users can be seen using `SHOW USERS`, which will produce a table of users with the following columns:
+Available users can be seen using `SHOW USERS`, which will produce a table containing a single row per user with the following columns:
 
 [options="header", width="100%", cols="2a,4,2m,^.^,^.^"]
 |===
@@ -496,7 +502,11 @@ Available users can be seen using `SHOW USERS`, which will produce a table of us
 | {check-mark}
 
 | roles
-| Roles granted to the user.
+| Native roles granted to the user using the `GRANT ROLE` command.
+
+This is not necessarily the set of roles that a user will receive in practice. The latter depends on DMBS configuration as well as the user's xref:authentication-authorization/auth-providers.adoc[Auth Providers].
+
+Examples of where a user would receive a different set of roles from that which appears in this column would include cases where they use external (e.g. LDAP or OIDC) auth, or where they do not have the `native` xref:authentication-authorization/auth-providers.adoc[Auth Provider].
 
 Will return `null` in community edition.
 | LIST OF STRING
@@ -504,7 +514,7 @@ Will return `null` in community edition.
 | {check-mark}
 
 | passwordChangeRequired
-| If `true`, the user must change their password at the next login.
+| If `true`, the user must change their password at the next login. This will be null if the user has `native` auth disabled.
 | BOOLEAN
 | {check-mark}
 | {check-mark}
@@ -528,6 +538,7 @@ Will return `null` in community edition.
 | {check-mark}
 |===
 
+
 [source, cypher, role=noplay]
 ----
 SHOW USERS
@@ -547,12 +558,91 @@ SHOW USERS
 |false
 |false
 |<null>
-
-5+a|Rows: 1
+|"jake"
+|["PUBLIC"]
+|false
+|false
+|<null>
+5+a|Rows: 2
 |===
 
+To inspect users' xref:authentication-authorization/auth-providers.adoc[Auth Providers], use `SHOW USERS WITH AUTH`. This command will produce a row per user per Auth Provider and will yield the following two columns in addition to those output by `SHOW USERS`:
+
+[options="header", width="100%", cols="2a,4,2m,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+
+| provider
+| The name of the auth provider.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| auth
+| A map containing configuration for the user. E.g. dn of the user for an `ldap` auth provider, the unique external identifier for an `oidc` auth provider, or password status for a native auth provider.
+
+| MAP
+| {check-mark}
+| {check-mark}
+|===
+
+
+[source, cypher, role=noplay]
+----
+SHOW USERS WITH AUTH
+----
+
+.Result
+[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m,4m"]
+|===
+|user
+|roles
+|passwordChangeRequired
+|suspended
+|home
+|provider
+|auth
+|"neo4j"
+|["admin","PUBLIC"]
+|false
+|false
+|<null>
+|"native"
+|{
+"password": "***",
+"changeRequired": false
+}
+|"jack"
+|["PUBLIC"]
+|false
+|false
+|<null>
+|"native"
+|{
+"password": "***",
+"changeRequired": false
+}
+|"jack"
+|["PUBLIC"]
+|false
+|false
+|<null>
+|"oidc1"
+|{
+"id": "jacksIdForOidc1"
+}
+7+a|Rows: 1
+|===
+
+[NOTE]
+====
 When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
 It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise it is necessary to change the password after the first login.
+====
 
 .Show user
 ======
@@ -578,6 +668,16 @@ In this example, the `RETURN` clause is used to filter out the `roles` column an
 SHOW USERS YIELD roles, user
 WHERE 'admin' IN roles
 RETURN user AS adminUser
+----
+======
+
+.Show user with auth
+======
+Show all of the users with the `oidc` Auth Provider.
+[source,cypher,role=noplay]
+----
+SHOW USERS WITH AUTH
+WHERE provider = 'oidc1'
 ----
 ======
 
