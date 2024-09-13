@@ -40,7 +40,7 @@ The Debian based Neo4j Docker image does *not* support FIPS compatible encryptio
 
 To enable the OpenSSL FIPS provider, set the environment variable `NEO4J_OPENSSL_FIPS_ENABLE=true` when starting the container.
 
-[source, shell, subs="attributes"]
+[source, console, subs="attributes"]
 .Example starting a Neo4j UBI9 container with FIPS enable flag set.
 ----
 docker run -it --rm \
@@ -63,10 +63,8 @@ Skip this section if using Neo4j in Docker.
 The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
 Specifically Netty's "Forked Tomcat Native" library called https://github.com/netty/netty-tcnative[netty-tcnative].
 
-To be FIPS compatible, the dynamically linked version of `netty-tcnative` must be used, alongside a FIPS compatible installation of OpenSSL.
-
 The `netty-tcnative` library is provided in several variants, but
-to be FIPS compatible the dynamically linked version of `netty-tcnative` must be used.
+to be FIPS compatible the dynamically linked version of `netty-tcnative` must be used, alongside a FIPS compatible installation of OpenSSL.
 This dynamically linked library requires that the following dependencies are installedfootnote:[https://netty.io/wiki/forked-tomcat-native.html]:
 
 * Apache Portable Runtime Library
@@ -88,7 +86,7 @@ By using the dynamic `netty-tcnative` library variant combined with a FIPS certi
 The simplest way to install https://apr.apache.org[Apache Portable Runtime Library] is to use the operating system's package manager.
 
 In Debian/Ubuntu this package is usually called `libapr1`
-[source, shell, subs="attributes"]
+[source, console, subs="attributes"]
 .Install Apache Portable Runtime Library in Debian or Ubuntu
 ----
 apt install -y libapr1
@@ -96,7 +94,7 @@ apt install -y libapr1
 
 In RedHat Enterprise Linux the package is usually called `apr`:
 
-[source, shell, subs="attributes"]
+[source, console, subs="attributes"]
 .Install Apache Portable Runtime Library in RedHat
 ----
 dnf install -y apr
@@ -128,8 +126,6 @@ and on the project's Github page:
 Since Neo4j 5.23.0, builds of `netty-tcnative` dynamic library are provided in
 the Neo4j `lib` directory under their own subfolder called `netty-tcnative`.
 
-Installation is just a case of copying the correct jar for the local machine's operating system and architecture into the
-
 To install the `netty-tcnative` dynamic library:
 
 . Locate the Neo4j `lib` directory.
@@ -137,30 +133,36 @@ To install the `netty-tcnative` dynamic library:
 The location of the `lib` directory is different depending on the method used to install Neo4j. Check the xref:configuration/file-locations.adoc#neo4j-lib[file locations] documentation for the correct location.
 +
 This location will be referred to as _<NEO4J_LIB>_.
+. Make sure there are no `netty-tcnative-boringssl` libraries present in the _<NEO4J_LIB>_ folder.
 +
-. Check which netty-tcnative libraries are available
+[source, console]
+----
+find <NEO4J_LIB> -name "netty-tcnative-boringssl*.jar" -delete
+----
 +
-[source, shell]
+. Check which netty-tcnative libraries are available:
++
+[source, console]
 ----
 ls -l <NEO4J_LIB>/netty-tcnative
 ----
-There should be linux and fedora linux variants available, compiled for both x86_64 and arm64 architectures.
+There are linux and fedora linux variants available, compiled for both x86_64 and ARM 64 architectures.
 Select the one matching the local machine's operating system and architecture.
 +
 . Verify the dependencies are correctly installed using https://www.man7.org/linux/man-pages/man1/ldd.1.html[`ldd`]:
 +
-[source, shell, subs="attributes"]
+[source, console]
 .Verify netty-tcnative dependencies are installed
 ----
-unzip -d /tmp /usr/share/neo4j/lib/netty-tcnative/netty-tcnative-*-linux-$(arch).jar
+unzip -d /tmp <NEO4J_LIB>/netty-tcnative/netty-tcnative-*-linux-$(arch).jar
 ldd /tmp/META-INF/native/libnetty_tcnative_linux_*.so
 rm -rf /tmp/META-INF
 ----
 +
-[source, shell, subs="attributes"]
+[source, console]
 .Verify fedora variant of netty-tcnative dependencies are installed
 ----
-unzip -d /tmp /usr/share/neo4j/lib/netty-tcnative/netty-tcnative-*-linux-$(arch)-fedora.jar
+unzip -d /tmp <NEO4J_LIB>/netty-tcnative/netty-tcnative-*-linux-$(arch)-fedora.jar
 ldd /tmp/META-INF/native/libnetty_tcnative_linux_$(arch).so
 rm -rf /tmp/META-INF
 ----
@@ -192,14 +194,11 @@ Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate a
 
 == Configure Neo4j to use SSL encryption
 
-// TODO
-
 
 SSL configuration is described in detail at xref:security/ssl-framework.adoc#ssl-configuration[SSL framework configuration].
 
-this section describes configuration that must be done *in addition to* standard non-FIPS compliant SSL configuration.
+This section describes configuration that must be done *in addition to* standard non-FIPS compliant SSL configuration.
 
-connectors are bolt, https, cluster and backup.
 
 === Bolt
 
@@ -213,7 +212,7 @@ connectors are bolt, https, cluster and backup.
 dbms.ssl.policy.bolt.trust_all=false
 dbms.ssl.policy.bolt.tls_level=REQUIRED
 dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3
-dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+dbms.ssl.policy.bolt.ciphers=TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
 ----
 . Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.bolt.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
 
@@ -231,7 +230,7 @@ This section is only applicable if HTTPS is enabled.
 dbms.ssl.policy.https.trust_all=false
 dbms.ssl.policy.https.tls_level=REQUIRED
 dbms.ssl.policy.https.tls_versions=TLSv1.2,TLSv1.3
-dbms.ssl.policy.https.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_CCM,TLS_ECDHE_ECDSA_WITH_AES_128_CCM,TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+dbms.ssl.policy.https.ciphers=TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
 ----
 . Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.https.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
 
@@ -248,7 +247,7 @@ dbms.ssl.policy.cluster.enabled=true
 dbms.ssl.policy.cluster.tls_level=REQUIRED
 dbms.ssl.policy.cluster.client_auth=REQUIRED
 dbms.ssl.policy.cluster.tls_versions=TLSv1.2,TLSv1.3
-dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+dbms.ssl.policy.cluster.ciphers=TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
 ----
 . Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.cluster.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
 
@@ -266,6 +265,6 @@ dbms.ssl.policy.backup.enabled=true
 dbms.ssl.policy.backup.client_auth=REQUIRED
 dbms.ssl.policy.backup.trust_all=false
 dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
-dbms.ssl.policy.backup.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+dbms.ssl.policy.backup.ciphers=TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
 ----
 . Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.backup.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
