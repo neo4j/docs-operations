@@ -506,7 +506,7 @@ Available users can be seen using `SHOW USERS`, which will produce a table conta
 
 This is not necessarily the set of roles that a user will receive in practice. The latter depends on DMBS configuration as well as the user's xref:authentication-authorization/auth-providers.adoc[Auth Providers].
 
-Examples of where a user would receive a different set of roles from that which appears in this column would include cases where they use external (e.g. LDAP or OIDC) auth, or where they do not have the `native` xref:authentication-authorization/auth-providers.adoc[Auth Provider].
+Examples of where a user would receive a different set of roles from that which appears in this column would include where they use external (e.g. LDAP or OIDC) auth, or where `native` is not listed in the xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`] configuration setting.
 
 Will return `null` in community edition.
 | LIST OF STRING
@@ -538,7 +538,14 @@ Will return `null` in community edition.
 | {check-mark}
 |===
 
+[NOTE]
+====
+When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
+It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise it is necessary to change the password after the first login.
+====
 
+.Show users
+======
 [source, cypher, role=noplay]
 ----
 SHOW USERS
@@ -565,6 +572,61 @@ SHOW USERS
 |<null>
 5+a|Rows: 2
 |===
+======
+
+.Show user with column reorder and filtering
+======
+This example shows how to:
+
+* Reorder the columns using a `YIELD` clause.
+* Filter the results using a `WHERE` clause.
+
+[source, cypher, role=noplay]
+----
+SHOW USER YIELD user, suspended, passwordChangeRequired, roles, home
+WHERE user = 'jake'
+----
+
+.Result
+[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
+|===
+|user
+|suspended
+|passwordChangeRequired
+|roles
+|home
+|"jake"
+|false
+|false
+|["PUBLIC"]
+|<null>
+5+a|Rows: 1
+|===
+
+======
+
+.Show user with return clause
+======
+It is possible to add a `RETURN` clause to further manipulate the results after filtering.
+In this example, the `RETURN` clause is used to filter out the `roles` column and rename the `user` column to `adminUser`.
+
+[source,cypher,role=noplay]
+----
+SHOW USERS YIELD roles, user
+WHERE 'admin' IN roles
+RETURN user AS adminUser
+----
+.Result
+[role="queryresult" options="header,footer", width="100%", cols="2m"]
+|===
+|adminUser
+|"neo4j"
+1+a|Rows: 1
+|===
+======
+
+[[access-control-list-user-auth-providers]]
+=== Listing User Auth Providers
 
 To inspect users' xref:authentication-authorization/auth-providers.adoc[Auth Providers], use `SHOW USERS WITH AUTH`. This command will produce a row per user per Auth Provider and will yield the following two columns in addition to those output by `SHOW USERS`:
 
@@ -590,7 +652,8 @@ To inspect users' xref:authentication-authorization/auth-providers.adoc[Auth Pro
 | {check-mark}
 |===
 
-
+.Show users with auth
+======
 [source, cypher, role=noplay]
 ----
 SHOW USERS WITH AUTH
@@ -635,43 +698,11 @@ SHOW USERS WITH AUTH
 |{
 "id": "jacksIdForOidc1"
 }
-7+a|Rows: 1
+7+a|Rows: 3
 |===
-
-[NOTE]
-====
-When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
-It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise it is necessary to change the password after the first login.
-====
-
-.Show user
-======
-This example shows how to:
-
-* Reorder the columns using a `YIELD` clause.
-* Filter the results using a `WHERE` clause.
-
-[source, cypher, role=noplay]
-----
-SHOW USER YIELD user, suspended, passwordChangeRequired, roles, home
-WHERE user = 'jake'
-----
 ======
 
-.Show user
-======
-It is possible to add a `RETURN` clause to further manipulate the results after filtering.
-In this example, the `RETURN` clause is used to filter out the `roles` column and rename the `user` column to `adminUser`.
-
-[source,cypher,role=noplay]
-----
-SHOW USERS YIELD roles, user
-WHERE 'admin' IN roles
-RETURN user AS adminUser
-----
-======
-
-.Show user with auth
+.Show user with auth using filtering
 ======
 Show all of the users with the `oidc` Auth Provider.
 [source,cypher,role=noplay]
@@ -679,6 +710,29 @@ Show all of the users with the `oidc` Auth Provider.
 SHOW USERS WITH AUTH
 WHERE provider = 'oidc1'
 ----
+
+.Result
+[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m,4m"]
+|===
+|user
+|roles
+|passwordChangeRequired
+|suspended
+|home
+|provider
+|auth
+|"jack"
+|["PUBLIC"]
+|false
+|false
+|<null>
+|"oidc1"
+|{
+"id": "jacksIdForOidc1"
+}
+7+a|Rows: 1
+|===
+
 ======
 
 [NOTE]
