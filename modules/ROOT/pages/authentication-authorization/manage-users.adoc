@@ -286,13 +286,13 @@ a|
 [source, syntax, role="noheader"]
 ----
 ALTER USER name [IF EXISTS]
+  [REMOVE HOME DATABASE]
+  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]...
   [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE \| SUSPENDED} ]
   [SET HOME DATABASE name]
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]...
-  [REMOVE HOME DATABASE]
-  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]...
 ----
 `<key><value>` pairs for the `SET AUTH` clause could include:
 [source, syntax, role="noheader"]
@@ -309,7 +309,10 @@ SET AUTH [PROVIDER] 'provider' "{"
 | Description
 a|
 Modifies the settings for an existing user.
-At least one `SET` or `REMOVE` clause is required.
+
+* At least one `SET` or `REMOVE` clause is required.
+* Any `REMOVE` clause(s) must appear before the first `SET` clause.
+
 
 For more information, see xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
 
@@ -676,7 +679,7 @@ SHOW USERS WITH AUTH
 |<null>
 |"native"
 |{
-"password": "***",
+"password": "*********",
 "changeRequired": false
 }
 |"jack"
@@ -686,7 +689,7 @@ SHOW USERS WITH AUTH
 |<null>
 |"native"
 |{
-"password": "***",
+"password": "*********",
 "changeRequired": false
 }
 |"jack"
@@ -973,13 +976,13 @@ Users can be modified with `ALTER USER`.
 [source, syntax, role="noheader"]
 ----
 ALTER USER name [IF EXISTS]
+  [REMOVE HOME DATABASE]
+  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]...
   [SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE | SUSPENDED}]
   [SET HOME DATABASE name]
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]...
-  [REMOVE HOME DATABASE]
-  [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]...
 ----
 `<key><value>` pairs for the `SET AUTH` clause could include:
 [source, syntax, role="noheader"]
@@ -1061,6 +1064,31 @@ SET AUTH 'native' {SET PASSWORD CHANGE REQUIRED}
 ----
 ======
 
+[role=label--new-5.24]
+[role=label--enterprise-edition]
+.Modify the user `bob` to remove his native (username / password) auth and add an external OIDC Auth Provider:
+======
+[source,cypher,role=noplay]
+----
+ALTER USER bob
+REMOVE AUTH 'native'
+SET AUTH 'oidc-mysso1' {SET ID 'bobsUniqueMySso1Id'}
+----
+======
+
+[role=label--new-5.24]
+[role=label--enterprise-edition]
+.Modify the user `bob` to remove any/all of his existing Auth Providers and add two external OIDC Auth Providers:
+======
+[source,cypher,role=noplay]
+----
+ALTER USER bob
+REMOVE ALL AUTH
+SET AUTH 'oidc-mysso1' {SET ID 'bobsUniqueMySso1Id'}
+SET AUTH 'oidc-mysso2' {SET ID 'bobsUniqueMySso2Id'}
+----
+======
+
 .Assign the user `bob` a different home database:
 ======
 [source,cypher,role=noplay]
@@ -1070,12 +1098,13 @@ SET HOME DATABASE anotherDbOrAlias
 ----
 ======
 
-.Remove the home database from the user `bob`:
+.Remove the home database from the user `bob` and set their status to suspended:
 ======
 [source,cypher,role=noplay]
 ----
 ALTER USER bob
 REMOVE HOME DATABASE
+SET STATUS SUSPENDED
 ----
 ======
 
