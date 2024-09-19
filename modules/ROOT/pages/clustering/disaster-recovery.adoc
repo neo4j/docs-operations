@@ -58,48 +58,42 @@ See xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] f
 The first step of recovery is to ensure that the `system` database is available.
 The `system` database is required for clusters to function properly.
 
-. Start all servers that are _offline_.
-(If a server is unable to start, inspect the logs and contact support personnel.
-The server may have to be considered indefinitely lost.)
-. *Validate the `system` database's availability.*
-.. Run `SHOW DATABASE system`.
-If the response does not contain a writer, the `system` database is unavailable and needs to be recovered, continue to step 3.
-.. Optionally, you can create a temporary user to validate the `system` database's writability by running `CREATE USER 'temporaryUser' SET PASSWORD 'temporaryPassword'`.
-.. Confirm that the temporary user is created as expected, by running `SHOW USERS`, then continue to xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
-If not, continue to step 3.
+. *Start all servers that are _offline_*.
+If a server is unable to start, inspect the logs and contact support personnel.
+The server may have to be considered indefinitely lost.
+. *Validate the `system` database's availability.* Use one of the following options:
+** Run `SHOW DATABASE system`.
+If the response contain a writer, the `system` database is write available and does not need to be recovered, skip to step  xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
+** Create a temporary user by running `CREATE USER 'temporaryUser' SET PASSWORD 'temporaryPassword'`.
+Check if the temporary user is created by running `SHOW USERS`. If it was created as expected, the `system` database is write available and does not need to be recovered, skip to step  xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
+
 +
 . *Restore the `system` database.*
 +
 [NOTE]
 ====
-Only do the steps below if the `system` database's availability cannot be validated by the first two steps in this section.
+Only do the steps below if the `system` database's write availability cannot be validated by the first two steps in this section.
 ====
 +
-[NOTE]
-====
-Recall that the cluster remains fault tolerant, and thus able to serve both reads and writes, as long as a majority of the primaries are available.
-In case of a disaster affecting one or more server(s), but where the majority of servers are still available, it is possible to add a new server to the cluster and recover the `system` database (and any other affected user databases) on it by copying the `system` database (and affected user databases) from one of the available servers.
-This method prevents downtime for the other databases in the cluster.
-If this is the case, ie. if a majority of servers are still available, follow the instructions in <<recover-servers>>.
-====
-+
+
 The following steps create a new `system` database from a backup of the current `system` database.
-This is required since the current `system` database has lost too many members in the server failover.
+This is required since the current `system` database has lost too many members to be able to accept writes.
 
 .. Shut down the Neo4j process on all servers.
 Note that this causes downtime for all databases in the cluster.
 .. On each server, run the following `neo4j-admin` command `bin/neo4j-admin dbms unbind-system-db` to reset the `system` database state on the servers.
-See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[`neo4j-admin` commands] for more information.
+See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[neo4j-admin commands] for more information.
 .. On each server, run the following `neo4j-admin` command `bin/neo4j-admin database info system` to find out which server is most up-to-date, ie. has the highest last-committed transaction id.
 .. On the most up-to-date server, take a dump of the current `system` database by running `bin/neo4j-admin database dump system --to-path=[path-to-dump]` and store the dump in an accessible location.
-See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[`neo4j-admin` commands] for more information.
-.. Ensure there are enough `system` database primaries to create the new `system` database with fault tolerance.
-Either:
-... Add completely new servers (see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster]) or
-... Change the `system` database mode (`server.cluster.system_database_mode`) on the current `system` database's secondary servers to allow them to be primaries for the new `system` database.
+See xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[neo4j-admin commands] for more information.
+.. Ensure there are enough `system` database primaries to create the new `system` database.
+The amount of primaries needed is equal or more than the `dbms.cluster.minimum_initial_system_primaries_count` config, see xref:tools/neo4j-admin/index.adoc#neo4j-admin-commands[fix link] for more information.
+Use one of the following options:
+** Add completely new servers, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster].
+** Change the `system` database mode (`server.cluster.system_database_mode`) on the current `system` database's secondary servers to allow them to be primaries for the new `system` database.
 .. On each server, run `bin/neo4j-admin database load system --from-path=[path-to-dump] --overwrite-destination=true` to load the current `system` database dump.
-.. Ensure that `dbms.cluster.discovery.endpoints` are set correctly on all servers, see xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information.
-.. Return to step 1.
+.. Ensure that the discovery settings are correct on all servers, see xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information.
+.. Return to step 1, to start all servers and confirm the `system` database is now available.
 
 
 [[recover-servers]]
