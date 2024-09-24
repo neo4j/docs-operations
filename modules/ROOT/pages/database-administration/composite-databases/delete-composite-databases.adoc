@@ -3,12 +3,63 @@
 [[composite-databases-delete]]
 = Delete composite databases
 
-You can delete composite databases using either the command `DROP COMPOSITE DATABASE name` or the more general one  `DROP DATABASE name`.
-However, keep in mind that the first command will fail if the target database is not composite, while the second one will not fail because it targets any database.
+There are two ways of deleting a composite database with constituent database aliases (local or remote) by either dropping the constituent database aliases first and then deleting the composite database, or deleting the composite database while also dropping the constituent database aliases.
+
+[[composite-databases-delete-without-aliases]]
+== Delete a composite database
+
+Before deleting a composite database, you must ensure that it is not in use by any database aliases.
+If the composite database is in use, you must first drop the aliases that reference it.
+For more information, see xref:database-administration/aliases/manage-aliases-composite-databases.adoc#delete-composite-database-alias[Delete database aliases in composite databases].
+
+You can delete composite databases using either the command `DROP COMPOSITE DATABASE name` or the more general one `DROP DATABASE name`.
+However, keep in mind that the first command targets only composite databases, while the second one targets any database.
 
 .Query
 [source, cypher]
 ----
 DROP COMPOSITE DATABASE inventory
 ----
+
+[role=label--new-5.24]
+[[composite-databases-delete-with-aliases]]
+== Delete a composite database while dropping its constituents
+
+You can use the `CASCADE ALIASES` option of the `DROP COMPOSITE DATABASE` Cypher command to drop the constituent database aliases while deleting the composite database.
+
+[NOTE]
+====
+This operation does not deletes the actual target databases of the constituent database aliases.
+====
+
+The `CASCADE ALIASES` option is useful when you want to delete a composite database and its constituent database aliases in one step.
+Using `CASCADE ALIASES` requires the `DROP ALIAS` privilege.
+For more information about this privilege, see xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[ALIAS MANAGEMENT privileges].
+
+.Drop a composite database and its consitutent alias
+====
+This example shows how to create a composite database `movies` and a database alias `movies.sweden` for the database `swedish-movies` and then delete the alias `sweden` and the composite database `movies`.
+
+.Create a composite database `movies` and a database alias `movies.sweden` for the database `swedish-movies`
+[source, cypher]
+----
+CREATE COMPOSITE DATABASE movies
+CREATE ALIAS movies.sweden FOR DATABASE `swedish-movies`
+----
+
+.Delete the composite database `movies` while also dropping the alias `movies.sweden`
+[source, cypher]
+----
+DROP COMPOSITE DATABASE movies CASCADE ALIASES
+----
+====
+
+This behavior is the same for the more general command `DROP DATABASE name` when using it to drop a composite database.
+
+//The option `RESTRICT` explicitly requests the default behavior of the command.
+
+[NOTE]
+====
+For composite databases, the aliases that are dropped when using the `CASCADE ALIASES` option can be found in the `constituents` column of `SHOW DATABASE`.
+====
 

@@ -17,7 +17,7 @@ Note that all database aliases must be dropped before dropping a database.
 |
 [source, syntax, role="noheader"]
 ----
-DROP [COMPOSITE] DATABASE name [IF EXISTS] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+DROP [COMPOSITE] DATABASE name [IF EXISTS] [RESTRICT \| CASCADE ALIAS[ES]] [{DUMP\|DESTROY} [DATA]] [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 
 |===
@@ -92,9 +92,9 @@ In Neo4j, dumps can be stored in the directory specified by the xref:configurati
 The option `DESTROY DATA` explicitly requests the default behavior of the command.
 
 [[delete-existing-db-with-dump]]
-=== Delete a database with `IF{nbsp}EXISTS` and  `DUMP DATA`/ `DESTROY DATA`
+=== Delete a database with `IF{nbsp}EXISTS` and  `DUMP DATA`/`DESTROY DATA`
 
-The options `IF EXISTS` and `DUMP DATA`/ `DESTROY DATA` can also be combined.
+The options `IF EXISTS` and `DUMP DATA`/`DESTROY DATA` can also be combined.
 
 An example could look like this:
 
@@ -103,4 +103,54 @@ An example could look like this:
 DROP DATABASE customers IF EXISTS DUMP DATA
 ----
 
+[[delete-databases-with-aliases]]
+=== Delete a database with local database aliases targeting it
+
+There are two ways of dropping a database that is the target of local database aliases:
+
+* Drop the local database aliases first, then use `DROP DATABASE name` to drop the database.
+Remote database aliases targeting the database do not affect the deletion of the database and therefore dos not need to be dropped beforehand.
+* Use `DROP DATABASE name CASCADE ALIASES` to also drop the local database aliases targeting it while dropping the database.
+If any of the dropped database aliases are constituents of composite databases, those composite databases will not be dropped.
+This command does not affect the remote database aliases targeting the database being dropped.
+They will simply no longer resolve their targets as if they were created targeting a non-existing database.
+
+Using `CASCADE ALIASES` requires the `DROP ALIAS` privilege.
+For more information about the privilege, see xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[ALIAS MANAGEMENT privileges].
+
+.Drop a database and the local database alias targeting it
+====
+The following example creates a database `movies` and a local database alias `films` targeting it:
+
+[source, cypher]
+----
+CREATE DATABASE movies
+CREATE ALIAS films FOR DATABASE movies
+----
+
+Then, the database `movies` and the local database alias `films` can be dropped using the following command:
+
+[source, cypher]
+----
+DROP DATABASE movies CASCADE ALIASES
+----
+====
+
+The option `RESTRICT` explicitly requests the default behavior of the command.
+
+[NOTE]
+====
+For standard databases, the aliases that are dropped when using the `CASCADE ALIASES` option can be found in the `aliases` column of `SHOW DATABASE`.
+====
+
+[[delete-existing-databases-with-aliases]]
+=== Delete a database with `RESTRICT`/`CASCADE ALIASES` and other command parts
+
+The options `RESTRICT`/`CASCADE ALIASES` can also be combined with `IF EXISTS` and `DUMP DATA`/`DESTROY DATA`.
+For example:
+
+[source, cypher]
+----
+DROP DATABASE movies IF EXISTS CASCADE ALIASES DUMP DATA
+----
 
