@@ -225,6 +225,129 @@ neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
 +----------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+[role=label--new-5.24]
+[[recreate-databases]]
+== Recreate a database
+
+Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure, which allows you:
+
+* To change the database store to a specified backup, while keeping all the associated privileges for the database.
+
+* To make your database write-available again after it has been lost (for example, due to a disaster).
+// See xref:clustering/disaster-recovery.adoc[] for more information.
+ 
+[CAUTION]
+====
+The recreate procedure works only for real user databases and not for composite databases, or the `system` database.
+
+Remember that the recreate procedure results in downtime while the stores get updated.
+The time is unbounded and may depend on different factors -- for example, the size of the store, network speed, etc.
+====
+
+The database in question can be in an `online` or `offline` state when it is recreated, but a successful operation starts the database regardless of its previous state.
+
+If your database has Change Data Capture (CDC) enabled, the CDC chain will stop when the database is recreated, even though CDC remains enabled in the recreated database.
+To restore CDC functionality, follow the guide on how link:https://neo4j.com/docs/cdc/current/existing-databases/[to initialize CDC applications from an existing database].
+
+Before recreating a database, any eventual quarantined states need to be addressed.
+For more information, see xref:database-administration/standard-databases/errors.adoc#quarantine[Standard databases -> Error handling].
+
+You need xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-database-management[the `CREATE DATABASE` and `DROP DATABASE` privileges] to run the recreate procedure.
+
+To check if the recreation is successful, use the `SHOW DATABASES` command and verify that all allocations have been started.
+
+Additionally, you have the option to modify <<alter-topology-recreate, the topology>> during the recreation process.
+However, note that the store format, access, and enrichment cannot be altered during recreation.
+
+[[recreate-seeding-options]]
+=== Seeding options
+
+The store to be used during the recreation of a database can be defined in different ways.
+One method uses a backup, while others use available allocations in the cluster.
+
+You can use either <<uri-seed, `seedURI`>> or <<seed-servers, `seedingServers`>> to specify the source from which the database should be recreated.
+
+* If you define neither, an error is thrown.
+
+* If you define both of them, then `seedingServers` must be an empty list.
+See <<undefined-servers-backup, Undefined servers with fallback backup>> for more details.
+
+* If `seedingServers` is not empty and `seedURI` is also defined, an error will occur.
+
+[[uri-seed]]
+==== Use backup as a seed
+
+If you provide a URI to a backup or a dump, the stores on all allocations will be replaced by the backup or the dump at the given URI.
+The new allocations can be put on any `ENABLED` server in the cluster.
+See <<cluster-seed-uri, Seed from URI>> for more details.
+
+
+[source, shell]
+----
+CALL dbms.cluster.recreateDatabase("neo4j", {seedURI: "s3:/myBucket/myBackup.backup"});
+----
+
+[[seed-servers]]
+==== Use available servers as a seed
+
+After the recreation is complete, the database will have the latest data store from the seeding servers.
+
+[CAUTION]
+====
+Recreation is based on remaining stores or a store defined by the user.
+This means that stores which were lost or not defined are not used for the recreation.
+If not used stores were more up to date than the used ones, this results in data loss.
+====
+
+[[specified-servers]]
+===== Specified servers
+
+You can specify a set of available servers.
+The stores on all allocations will be synchronized to the most up-to-date store from the defined servers.
+The number of defined servers cannot exceed the number of total allocations in the desired topology. 
+
+[source, shell]
+----
+CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: ["serverId1", "serverId2", "serverId3"]});
+----
+
+[[undefined-servers]]
+===== Undefined servers
+
+If you provide an empty list of seeding servers and do not specify a `seedURI`, Neo4j automatically selects all available allocations of the database as seeders.
+The store will be replaced by the most up-to-date seeder available in the cluster.
+
+[source, shell]
+----
+CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: []});
+----
+
+[[undefined-servers-backup]]
+===== Undefined servers with fallback backup
+
+If both an empty list of seeding servers and a `seedURI` are provided, Neo4j finds all available allocations of the database and use those as seeders.
+However, if no available servers can be found, the database is recreated based on the backup or the dump defined by the URI.
+This means the store is replaced by the most up-to-date seeder if available; otherwise, the backup is used.
+
+[source, shell]
+----
+CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: [], seedURI: "s3:/myBucket/myBackup.backup"});
+----
+
+[[alter-topology-recreate]]
+=== Change the topology
+
+There is an option to define a new topology when recreating a database.
+This can be beneficial during a disaster, if enough servers are not available to recreate the database with the original topology.
+When altering the total number of allocations down during a recreation, it is important to remember that the number of seeding servers cannot exceed the number of total allocations of the database.
+This also holds true when using recreate with an empty list of seeders.
+If there are more available servers in the cluster hosting the database than the number of new allocations, the recreation will fail. 
+
+[source, shell]
+----
+CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: [], primaries: 3, secondaries: 0});
+----
+
 [[cluster-seed]]
 == Seed a cluster
 
