@@ -53,6 +53,7 @@ One way to remedy this is to connect directly to the server using `bolt` instead
 See xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] for more information on the `bolt` scheme.
 ====
 
+[[restore-the-system-database]]
 === Restore the `system` database
 
 The first step of recovery is to ensure that the `system` database is available.
@@ -97,59 +98,66 @@ Use one of the following options:
 
 
 [[recover-servers]]
-=== Recover servers
+=== Recover servers and user databases
 
 Once the `system` database is available, the cluster can be managed.
 Following the loss of one or more servers, the cluster's view of servers must be updated, ie. the lost servers must be replaced by new servers.
-The steps here identify the lost servers and safely detach them from the cluster.
+The steps here identify the lost servers and safely detach them from the cluster, while recreating any databases that cannot be moved for different reasons.
 
 . Run `SHOW SERVERS`.
 If *all* servers show health `AVAILABLE` and status `ENABLED` continue to xref:clustering/disaster-recovery.adoc#recover-databases[Recover databases].
 . For each `UNAVAILABLE` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
-. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
-. For each server that failed to deallocate with one of the following messages:
-.. `Could not deallocate server(s) 'serverId'. Unable to reallocate 'DatabaseId.\*'. +
-Required topology for 'DatabaseId.*' is 3 primaries and 0 secondaries. +
-Consider running SHOW SERVERS to determine what action is suitable to resolve this issue.`
-+
-or
-+
-`Could not deallocate server(s) `serverId`.
-Database [database] has lost quorum of servers, only found [existing number of primaries] of [expected number of primaries].
-Cannot be safely reallocated.`
-+
-First ensure that there is a backup for the database in question (see xref:backup-restore/online-backup.adoc[Online backup]), and then drop the database by running `DROP DATABASE database-name`.
-Return to step 3.
-.. `Could not deallocate server [server]. Cannot change allocations for database [stopped-db] because it is offline.`
-+
-Try to start the offline database by running `START DATABASE stopped-db WAIT`.
-If it starts successfully, return to step 3.
-Otherwise, ensure that there is a backup for the database before dropping it with `DROP DATABASE stopped-db`.
-Return to step 3.
+. For each `CORDONED` server, make sure a new unconstrained server has been added to the cluster to take its place, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] to add additional servers.
+If no servers were added in xref:clustering/disaster-recovery.adoc#restore-the-system-database[Restore the system database], the amount of servers that needs to be added is equal to the number of `CORDONED` servers.
+. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers. If all deallocations succedded, skip to step 6.
+. Make sure deallocating the servers is possible by doing the following steps:
+.. Run `SHOW DATABASES`.
+.. Fix `QUARANTINED` databases.
+.. Try to start the offline databases allocated on any of the `CORDONED` servers by running `START DATABASE stopped-db WAIT`.
 +
 [NOTE]
 ====
 A database can be set to `READ-ONLY`-mode before it is started to avoid updates on a database that is desired to be stopped with the following:
 `ALTER DATABASE database-name SET ACCESS READ ONLY`.
 ====
-
-.. `Could not deallocate server [server]. Reallocation of [database] not possible, no new target found. All existing servers: [existing-servers]. Actual allocated server with mode [mode] is [current-hostings].`
-+
-Add new servers and enable them and then return to step 3, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] for more information.
-. Run `SHOW SERVERS YIELD *` once all enabled servers host the requested databases (`hosting`-field contains exactly the databases in the `requestedHosting` field), and proceed to the next step.
-Note that this may take a few minutes.
+.. Run CALL statusCheck() for all databases, and recreate all databases that failed replication.
+See REF for more information on how to recreate databases. Remember to make sure there are recent backups for the databases, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
+.. Return to step 4 to retry deallocating all servers.
 . For each deallocated server, run `DROP SERVER deallocated-server-id`.
-. Return to step 1.
+. Return to step 1 to make sure all servers in the cluster are `AVAILABLE`.
+
+
+`Could not deallocate server(s) 'serverId'. Unable to reallocate 'DatabaseId.\*'. +
+Required topology for 'DatabaseId.*' is 3 primaries and 0 secondaries. +
+Consider running SHOW SERVERS to determine what action is suitable to resolve this issue.`
+
+-> What does this error message mean? IS THIS QUARANTINE? However, drop would not have worked here either.
+
 
 [[recover-databases]]
-=== Recover databases
+=== Verify recovery of databases
 
-Once the `system` database is verified available, and all servers are online, the databases can be managed.
-The steps here aim to make the unavailable databases available.
+Once the `system` database is verified available, and all servers are online, verify that all databases are in a desirable state.
 
-. If you have previously dropped databases as part of this guide, re-create each one from a backup.
-See the xref:database-administration/standard-databases/create-databases.adoc[Create databases] section for more information on how to create a database.
-. Run `SHOW DATABASES`.
-If all databases are in desired states on all servers (`requestedStatus`=`currentStatus`), disaster recovery is complete.
-// . For each database that remains unavailable, refer to <<unavailable-databases, Managing unavailable databases in a cluster>>.
-// Perform the actions required to get the database available then return to step 2.
+. Run `SHOW DATABASES`. If all databases are in desired states on all servers (`requestedStatus`=`currentStatus`), disaster recovery is complete.
++
+[NOTE]
+====
+Recreating a database can take an unbounded amount of time since it may involve copying the store to a new server, as described in REF(Recreate docs).
+Therefore, an allocation in STARTING state might reach the requestedStatus given some time.
+====
++
+[NOTE]
+====
+Deallocating databases can take an unbounded amount of time since it involves copying the store to a server.
+Therefore, an allocation in STORE_COPY state should reach the requestedStatus given some time.
+====
+
+. For any recreated databases in `STARTING` state with one of the following messages displayed in the message field:
+** `Seeders ServerId1 and ServerId2 have different checksums for transaction TransactionId. All seeders must have the same checksum for the same append index.`
+** `Seeders ServerId1 and ServerId2 have incompatible storeIds. All seeders must have compatible storeIds.`
+** `No store found on any of the seeders ServerId1, ServerId2...`
++
+Recreate them from backup using REF(recreate with seed from URI) or define seeding servers in the recreate procedure so that problematic allocations are excluded.
+. Return to step 1 to make sure all databases are in their desired state.
+
