@@ -154,7 +154,7 @@ If a proxy is required, this can be https://docs.oracle.com/en/java/javase/17/do
 Proxies that require credentials are not supported.
 
 [[auth-sso-map-idp-roles]]
-== Map the Identity Provider Groups to the Neo4j Roles
+== Map the identity provider groups to the Neo4j roles
 
 Before identity provider managed groups can be used with Neo4j, you have to decide on an approach for mapping identity provider groups to Neo4j roles.
 The simplest approach is to create identity provider groups with the same names as Neo4j roles.
@@ -186,15 +186,15 @@ See xref:authentication-authorization/manage-roles.adoc[Manage roles].
 ====
 
 [[auth-sso-configure-provider]]
-== Configure Neo4j to use an OpenID Connect Identity Provider
+== Configure Neo4j to use an OpenID Connect identity provider
 
 This option allows users to log in through an OIDC compliant identity provider by offering a token from the provider instead of a username and password.
 Typically, these tokens take the form of a signed JSON Web Token (JWT).
-In the configuration examples below, we are using `mysso` as our provider name.
+The following configuration examples use `mysso` as the provider's name.
 It is recommended to use a name describing the provider that is being integrated.
 
 [[auth-sso-configure-provider-jwt]]
-=== OpenID Connect Using JWT Claims
+=== OpenID Connect using JWT claims
 
 In this configuration, Neo4j receives a JWT from the identity provider containing claims representing the database username (e.g. email), and the Neo4j roles.
 
@@ -206,7 +206,7 @@ In the _neo4j.conf_ file, uncomment and configure the following settings:
 ----
 dbms.security.oidc.mysso.display_name=SSO Provider
 ----
-This is displayed on a button on the login page of clients such as Neo4j Browser and Bloom, so that users can identify the provider they are using to login.
+This is displayed on a button on the login page of clients, such as Neo4j Browser and Bloom so that you can identify the provider you are using to login.
 
 . Configure discovery.
 +
@@ -216,7 +216,7 @@ Uncomment and configure the following settings:
 ----
 dbms.security.oidc.mysso.well_known_discovery_uri=https://my-idp.example.com/.well-known/openid-configuration
 ----
-The `well_known_discovery` endpoint of the identity provider supplies the OpenID Provider Metadata to allow Neo4j to interact with a provider.
+The `well_known_discovery` endpoint of the identity provider supplies the OpenID provider metadata to allow Neo4j to interact with that provider.
 It is also possible to configure the provider settings manually:
 +
 [source, properties]
@@ -251,10 +251,11 @@ dbms.security.oidc.mysso.claims.groups=roles
 
 . Optionally, map the groups in the OIDC groups claim to the Neo4j built-in and custom roles.
 +
-See xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the Identity Provider Groups to the Neo4j Roles].
+See <<auth-sso-map-idp-roles, Map the identity provider groups to the Neo4j roles>>
+
 
 [[auth-sso-configure-provider-userinfo]]
-=== OpenID Connect Fetching Claims from Provider
+=== OpenID Connect fetching claims from a provider
 
 In this configuration, Neo4j receives a token from the identity provider and uses that token to call back to the identity provider using its _UserInfo_ endpoint to retrieve claims for the database username and Neo4j roles.
 
@@ -267,7 +268,117 @@ In this configuration, Neo4j receives a token from the identity provider and use
 dbms.security.oidc.mysso.get_username_from_user_info=true
 dbms.security.oidc.mysso.get_groups_from_user_info=true
 ----
++
 It is possible to fetch just the username, just the groups, or both from the userinfo endpoint.
+
+[role=label--new-5.24]
+[[auth-sso-auth-providers]]
+=== Configure SSO at the user level using auth providers
+xref:authentication-authorization/auth-providers.adoc[User auth providers] can be used to determine which users can authenticate and authorize using the configured providers.
+
+You must change the xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] configuration setting to `true` to use auth providers.
+This means that a user with a matching auth provider *must* exist in order to be able to authenticate and authorize.
+This applies to all providers.
+
+Conversely, when xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] is set to `false`, users' auth providers have no bearing on the way that they are authenticated and authorized, instead authentication and authorization is controlled centrally (for all users) by the database configuration.
+
+The following examples show how to configure users with auth provider using Cypher.
+
+.Create a user with an auth provider who can authenticate and authorize using `mysso`
+======
+[source,cypher,role=noplay]
+----
+CREATE USER jake
+SET AUTH 'oidc-mysso' {SET ID 'jakesUniqueMySsoId'} // the id must match the claim that you configured via dbms.security.oidc.mysso.claims.username
+----
+
+The command creates the user `jake` who can authenticate and authorize using `mysso` provided they present a valid token with a `sub` claim of `jakesUniqueMySsoId`.
+The claim used for authentication is determined by the xref:configuration/configuration-settings.adoc#config_dbms.security.oidc.-provider-.claims.username[`dbms.security.oidc.mysso.claims.username`] config setting (the default is the `sub` claim).
+======
+
+
+.Create a user with two auth providers allowing the user to authenticate and authorize with one of them
+======
+[source,cypher,role=noplay]
+----
+CREATE USER jake
+SET HOME DATABASE anotherDb
+SET AUTH 'oidc-mysso1' {SET ID 'jakesUniqueMySso1Id'} // `jakesUniqueMySso1Id` must match the value of the claim that you configured via dbms.security.oidc.mysso1.claims.username
+SET AUTH 'oidc-mysso2' {SET ID 'jakesUniqueMySso2Id'} // `jakesUniqueMySso2Id` must match the value of the claim that you configured via dbms.security.oidc.mysso2.claims.username
+----
+The command creates the user `jake` who can authenticate and authorize using `mysso1` or `mysso2`.
+The example also illustrates that the user can have their home database set even when using only external auth providers.
+======
+
+
+.Alter a user to remove one of their auth providers
+======
+[source,cypher,role=noplay]
+----
+ALTER USER jake
+REMOVE AUTH 'oidc-mysso2'
+----
+The command prevents the user `jake` from being able to authenticate and authorize with the `mysso2` provider.
+======
+
+.Alter a user to allow them to authenticate and authorize using username and password
+======
+[source,cypher,role=noplay]
+----
+ALTER USER jake
+SET AUTH 'native' {SET PASSWORD 'changeme' SET PASSWORD CHANGE REQUIRED}
+----
+The command allows the user `jake` to authenticate and authorize using the specified username and password (in addition to what they are already configured to use).
+======
+
+
+.Configure the database to allow authentication via `mysso` and authorization via the `native` provider
+======
+
+. Set the following database config:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-mysso
+dbms.security.authorization_providers=native
+----
+
+. Create a user with a `mysso` auth provider:
++
+[source,cypher,role=noplay]
+----
+CREATE USER jake
+SET AUTH 'oidc-mysso' {SET ID 'jakesUniqueMySsoId'} // `jakesUniqueMySsoId` must match the value of the claim that you configured via dbms.security.oidc.mysso.claims.username
+----
+
+. Natively grant the `READER` role to the user:
++
+[source,cypher,role=noplay]
+----
+GRANT ROLE READER TO jake
+----
++
+The command allows the user `jake` to authenticate using `mysso` and receive the `READER` role from the `native` provider.
+
+. You can also give the user the union of roles from `mysso` *and* `native` by setting `mysso` as an authorization provider too:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-mysso
+dbms.security.authorization_providers=native,oidc-mysso
+----
+======
+
+.Suspend a user
+======
+[source,cypher,role=noplay]
+----
+ALTER USER jake
+SET STATUS SUSPENDED
+
+----
+The command completely prevents the user from being able to authenticate/authorize by any means.
+======
 
 [[auth-sso-self-signed-certificate]]
 == Use a self-signed certificate (SSL) in a test environment
