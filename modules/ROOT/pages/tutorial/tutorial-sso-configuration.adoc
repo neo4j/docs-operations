@@ -1,6 +1,6 @@
 [role=enterprise-edition]
 [[tutorial-sso-configuration]]
-= Neo4j Single Sign-On (SSO) configuration
+= Configuring Neo4j Single Sign-On (SSO)
 :description: Detailed examples of how to configure Single Sign-On (SSO) for several identity providers. It also presents frequently asked questions and solutions to common problems encountered when configuring SSO.
 
 Neo4j supports SSO authentication and authorization through identity providers implementing the OpenID Connect (OIDC) standard.
@@ -23,7 +23,18 @@ SSO works in the following way:
 . The client (e.g., Bloom, Neo4j Browser, etc.) asks the user for credentials and contacts the identity provider.
 . The identity provider responds with a JSON Web Token (JWT), a JSON file containing fields (claims) relative to the user (email, audience, groups, etc.).
 . The client provides the server with the JWT, and the server verifies its signature with the JWKs.
-+
+. label:new[Introduced in 5.24] Optionally, you can control the authentication and authorization on a user level by setting xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true` in the _neo4j.conf_ file and the xref:authentication-authorization/auth-providers.adoc[auth providers] for the users, which authentication and authorization you want to control, using Cypher.
+This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
+For information on how to modify or create users in this mode, see xref:authentication-authorization/manage-users.adoc[Manage users]. +
+This mode allows you the following using Cypher:
+.. Suspend SSO users.
+.. Set a home database for an SSO user.
+.. Set a user-friendly name for an SSO user (rather than relying on the external identifier).
+.. Set a password for an SSO user.
+.. Set a password change requirement for an SSO user.
+
+For further information and examples, see xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers].
+
 [IMPORTANT]
 ====
 JWTs must *always* contain a value for `sub` even when using a different claim for `username`.
@@ -124,6 +135,23 @@ dbms.security.oidc.okta.config=token_type_principal=id_token;token_type_authenti
 . You should now find the audience under Okta's sign-on tab:
 +
 image::sso-configuration-tutorials/okta-sign-on-tab.svg[title="Okta's sign-on tab"]
++
+. label:new[Introduced in 5.24] (Optional) If you want control the authentication and authorization on a user level, configure xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true` in the _neo4j.conf_ file.
+This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
+For information on how to create users in this mode, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
++
+For example, to create the user `jake` who can authenticate using `native` or `okta`, and authorize using Okta (as configured in step 3), you can use the following Cypher query:
++
+[source, cypher, role=noplay]
+----
+CREATE USER jake
+SET HOME DATABASE 'jakesHomeDb'
+SET AUTH 'oidc-okta' {SET ID 'jakesUniqueOktaUserId'} // `jakesUniqueOktaUserId` must match the value of the claim that you configured via dbms.security.oidc.okta.claims.username
+SET AUTH 'native' {SET PASSWORD 'changeme' SET PASSWORD CHANGE REQUIRED}
+----
++
+See xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers] for further examples.
+
 
 
 == Microsoft Entra ID (formerly Azure Active Directory)
@@ -140,7 +168,7 @@ This example shows how to configure Entra ID for authentication and authorizatio
 . Open the **Expose an API** tab and select **Add a Scope**.
 .. If you click the **Add a Scope** button for the first time, you see a new pane stating that you need to add an _Application ID URI_ before proceeding.
 +
-You can find it on your app *Overview* page. 
+You can find it on your app *Overview* page.
 +
 .The GUID is used to identify specific resources or instances within Azure. You can find it on the app registration page.
 image::sso-configuration-tutorials/azure-id.svg[]
@@ -263,7 +291,7 @@ In the next step, you must map these to user roles in the Neo4j settings.
 image::sso-configuration-tutorials/oidc-azure-server-groups.png[title="Entra OIDC server groups"]
 
 . Configure a mapping from Entra Group Object IDs to Neo4j roles.
-For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the Identity Provider Groups to the Neo4j Roles].
+For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
 +
 [source, properties]
 ----
@@ -279,14 +307,14 @@ dbms.security.oidc.azure.authorization.group_to_role_mapping= "e8b6ddfa-688d-4ac
 dbms.security.oidc.azure.claims.groups=groups
 ----
 
-==== Using Entra ID App Roles
+==== Using Entra ID App roles
 
 . On the app's home page, navigate to *App roles* and add the Neo4j roles to the Microsoft Entra ID.
 +
 image::sso-configuration-tutorials/oidc-azure-app-roles.png[title="Entra OIDC app roles config"]
 
-. The *Value* column in the App roles config must either correspond to Neo4j Roles or be mapped in the _neo4j.conf_ file.
-For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the Identity Provider Groups to the Neo4j Roles].
+. The *Value* column in the App roles config must either correspond to Neo4j roles or be mapped in the _neo4j.conf_ file.
+For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
 +
 [source, properties]
 ----
@@ -302,10 +330,27 @@ dbms.security.oidc.azure.authorization.group_to_role_mapping= "managers" = admin
 dbms.security.oidc.azure.claims.groups=roles
 ----
 
+. label:new[Introduced in 5.24] (Optional) If you want control the authentication and authorization on a user level, configure xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true` in the _neo4j.conf_ file.
+This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
+For information on how to create users in this mode, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
++
+For example, to create a user `jake` who can authenticate and authorize using Azure, you can use the following Cypher query:
++
+[source, cypher, role=noplay]
+----
+CREATE USER jake
+SET HOME DATABASE 'jakesHomeDb'
+SET AUTH 'oidc-azure' {SET ID 'jakesUniqueAzureUserId'} // `jakesUniqueAzureUserId` must match the value of the claim that you configured via dbms.security.oidc.azure.claims.username
+----
++
+See xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers] for further examples.
+
+
 == Google
 
-This example shows how to use Google OpenID Connect for authentication using ID tokens in conjunction with native authorization.
+=== ID token
 
+This example shows how to use Google OpenID Connect for authentication using ID tokens in conjunction with native authorization.
 
 . Configure the client and the redirect URI:
 +
@@ -319,15 +364,7 @@ SSO authorization does not work with Google, as the JWT returned by Google does 
 Therefore, it is recommended to use native (or another flavor) authorization by creating a native version of the user in Neo4j.
 ====
 
-. The role assigned to the email used to log in with SSO, in this case, `alice@neo4j-test.com`, must have `GRANT ROLE` permissions in the database (`native` authentication temporarily enabled):
-+
-[source]
-----
-CREATE USER `alice@neo4j-test.com` SET PASSWORD 'secretpassword';
-GRANT ROLE admin to `alice@neo4j-test.com`;
-----
-
-. Configure Neo4j to use Google authentication by configuring the following settings in the _neo4j.conf_ file:
+. Configure Neo4j to use Google authentication by setting the following configurations in the _neo4j.conf_ file:
 +
 [source, properties]
 ----
@@ -343,14 +380,108 @@ dbms.security.oidc.google.token_params=client_secret=GOCSPX-v4cGkygPJvm3Sjjbc0hv
 dbms.security.oidc.google.config=token_type_principal=id_token;token_type_authentication=id_token
 ----
 
-. Log in with your Google SSO credentials using the email address and get the `admin` role when doing so:
+. Using one of the following options, create a user in the database who can authenticate and authorize natively to be able to give the users roles from native authorization.
 +
-image::sso-configuration-tutorials/oidc-azure-successful-login.png[title="Entra OIDC successful login"]
-+
+[.tabbed-example]
+=====
+[.include-with-auth-providers]
+======
+label:new[Introduced in 5.24]
+
+This approach relies on the existence of an admin user who can authenticate natively and then create less privileged users via xref:authentication-authorization/auth-providers.adoc[auth providers], who can authenticate only using `oidc-google`, but will receive the roles granted to them using `native` authorization.
+
 [NOTE]
 ====
-The native authentication is disabled to prevent someone from logging in to _alice@neo4j-test.com_ with the set password.
+An admin user with the name `neo4j` is created by default when the database is xref:configuration/set-initial-password.adoc[first started].
 ====
+
+. In the _neo4j.conf_ file, temporarily enable native authentication for the `admin` user only and enable the user-level control of authentication and authorization:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-google, native
+dbms.security.require_local_user=true
+----
+This will switch to __user auth providers__ mode whereby users can only authenticate and authorize if they have a corresponding auth provider in the database.
+
+. Create a user who can authenticate and authorize only using `oidc-google`:
++
+[source, cypher, role=noplay]
+----
+CREATE USER jake
+SET HOME DATABASE 'jakesHomeDb'
+SET AUTH 'oidc-google' {SET ID 'jakesUniqueGoogleUserId'} # <1>
+----
++
+<1> `jakesUniqueGoogleUserId` must match the value of the claim that you configured via `dbms.security.oidc.google.claims.username`.
+
+. Grant the user `jake` roles, for example, `reader`:
++
+[source, cypher, role=noplay]
+----
+GRANT ROLE reader TO jake
+----
++
+The user implicitly receives `native` authorization because `native` is in the list of authorization providers and you have explicitly granted the user a role.
+
+. Once you have set up your users in this way, you can disable native authentication for the database completely.
+This will prevent all users, including the admin, from logging in with a username and password:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-google
+----
+
+======
+
+[.include-with-native-authentication]
+======
+
+Alternatively, if you do not use auth providers, you can temporarily enable `native` authentication to create an SSO-authenticated admin user `alice` who can then create other users who can only authenticate using SSO.
+
+. Temporarily enable `native` authentication:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-google, native
+----
+
+. Create an SSO-authenticated `admin` user (in this example an equivalent of `alice@neo4j-test.com` must be set up in the Google SSO provider and their credentials must be known):
++
+[source]
+----
+CREATE USER `alice@neo4j-test.com` SET PASSWORD 'secretpassword';
+GRANT ROLE admin to `alice@neo4j-test.com`;
+----
+
+. Disable native authentication for the database to prevent users logging in with username and password:
++
+[source, properties]
+----
+dbms.security.authentication_providers=oidc-google
+----
+
+. Log in via Google SSO as `alice@neo4j-test.com`, the `admin` user.
+
+. Create other users who can authenticate only using `oidc-google` and will receive the roles granted to them using `native` authorization.
++
+[source, cypher, role=noplay]
+----
+CREATE USER jakesUniqueGoogleUserId # <1>
+SET HOME DATABASE 'jakesHomeDb'
+SET PASSWORD 'secretpassword' SET PASSWORD CHANGE NOT
+REQUIRED
+----
+<1> `jakesUniqueGoogleUserId` must match the value of the claim that you configured via `dbms.security.oidc.google.claims.username`.
+
+. Grant the user roles using native authorization:
++
+[source, cypher, role=noplay]
+----
+GRANT ROLE reader TO jakesUniqueGoogleUserId
+----
+======
+=====
 
 == FAQ
 
