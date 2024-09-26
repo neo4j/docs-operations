@@ -1,0 +1,77 @@
+:description: This section describes how to monitor a database's availability with the help of the cluster status check procedure.
+
+:page-role: enterprise-edition new-5.24
+[[cluster-status-check]]
+= Cluster status check
+
+Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_statusCheck[`dbms.cluster.statusCheck()`] procedure, which can be used to monitor the ability to replicate in clustered databases, which in most cases means being able to write to the database.
+You can also use the procedure to check which members are up-to-date and can participate in a successful replication.
+Therefore, it is useful in determining the fault-tolerance of a clustered database as well.
+A third and final function is to determine the leader of the cluster.
+
+[NOTE]
+====
+The member on which the procedure is called replicates a dummy transaction in the same cluster as the real transactions, and verifies that it can be replicated and applied.
+
+Since the status check doesn't replicate an actual transaction, it's not guaranteed that the database is write available even though the status check reports that it can replicate.
+Apart from replication there are other stops in the write path that can potentially block a transaction from being applied, e.g. issues in the database.
+However, it tells that the cluster is healthy and in most cases that means that the database is write available.
+====
+
+[[procedure-syntax]]
+== Syntax
+
+[source, shell]
+----
+CALL dbms.cluster.statusCheck(databases :: LIST<STRING>, timeoutMilliseconds = null :: INTEGER)
+----
+
+* *databases:* the list of databases for which the status check should run.
+Providing an empty list runs the status check for all *clustered* databases on that server, i.e. the status check won't run on singles or secondaries.
+* *timeoutMilliseconds:* specifies how long the replication may take.
+Default value is 1000 milliseconds.
+If replication takes longer than this timeout, it will return that replication is unsuccessful.
+
+
+The procedure returns a row for all primary members of all the requested databases where each row consists of:
+
+* *database:* the database for which the `status check entry` was replicated.
+* *serverId:* the server id of each primary member, which did or did not participate in a successful replication of the `status check entry`.
+* *serverName:* the server name of each primary member.
+* *address:* the Bolt address of each primary member.
+* *replicationSuccessful:* indicates if the server (on which the procedure is run) can replicate a transaction.
++
+** `TRUE` -- if this server managed to replicate the dummy transaction to a majority of cluster members within the given timeout.
+** `FALSE` -- if it failed to replicate within the timeout.
+The value is the same column-wise.
+A failed replication can either mean a real issue in the cluster (e.g., no leader) or that this server is too far behind in apply and can't replicate.
+* *memberStatus:* shows the status of each primary member.
+It can be `APPLYING`, `REPLICATING`, or `UNAVAILABLE`.
++
+** `APPLYING` means that the member can replicate and is actively applying transactions.
+** `REPLICATING` means that the member can participate in replicating, but can't apply.
+This state is uncommon, but may happen while waiting for the database to start and accept transactions.
+* *recognisedLeader:* shows the server id of the perceived leader of each primary member.
+* *recognisedLeaderTerm:* shows the term of the perceived leader of each primary member.
+If the members report different leaders, the one with the highest term should be trusted.
+* *requester:* is `TRUE` for the server on which the procedure is run, and `FALSE` on the remaining servers.
+* *error:* contains the error message if there is one.
+An example of an error is that one or more of the requested databases doesn't exist on the requester.
+
+In general, you can use the `replicationSuccessful` field to determine overall write-availability, whereas the `memberStatus` field can be checked in order to see whether the database is fault-tolerant or not.
+
+[NOTE]
+====
+Members that are `REPLICATING` are good from a data safety point of view.
+They can participate in replication and keep the data durably until application.
+They are also up-to-date and therefore eligible leaders.
+So they add to the fault-tolerance.
+
+Members that are `APPLYING` have all the qualities of `REPLICATING` members, so they too add to the fault-tolerance.
+But they are also applying to the database, which is a requirement for writing transactions and reading with bookmarks in a timely manner.
+
+Lastly, `UNAVAILABLE` members are either too far behind or unreachable.
+They are unhealthy and cannot add to the fault-tolerance.
+====
+
+
