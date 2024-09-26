@@ -1,0 +1,69 @@
+:description: This section explains how to use Cypher to manage authentication and authorization at the user level using Cypher.
+:page-role: enterprise-edition new-5.24
+
+[[access-control-auth-providers]]
+= User auth providers
+
+Authentication and authorization can be controlled on a user level using Cypher by setting auth providers on users.
+
+To use auth providers, you need to set the xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] configuration setting to `true`.
+This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
+
+User auth providers allow you to link externally-defined users (e.g., in a third-party ID provider like OIDC or LDAP) to the Neo4j internal user model.
+The internal model can define roles (authorization), `SUSPENDED` status, `HOME DATABASE`, and metadata such as the unique displayed name of the user.
+For consistency, you can also define `native` (password-based) auth using the auth provider syntax, including native-only users (i.e., users who can only authenticate with a password).
+
+== Use cases
+
+User auth providers can be used for a variety of use cases, including:
+
+* Provisioning different auth providers (including native username/password auth) for different users.
+* Setting an arbitrary easy username for a user while using an external unique identifier (like `sub` for OIDC auths, which itself is not a user-friendly value).
+* Setting `HOME DATABASE` for externally authenticated users.
+* Setting `SUSPENDED` status for an externally authenticated user.
+* Using native authorization to manage roles for externally authenticated users.
+* Retaining full control of which users can authenticate from within the database.
+
+== How it works
+
+When a user authenticates, their identifying attributes are checked against the relevant property of the auth providers in the database.
+If there is a match, then the user is linked to the Neo4j user and authorized according to the DBMS security configuration settings that match the name of the matching auth provider.
+
+How the matching lookup is done depends on the type of provider.
+For example:
+
+* For an OIDC provider, the claim configured by xref:configuration/configuration-settings.adoc#config_dbms.security.oidc.-provider-.claims.username[`dbms.security.oidc.mysso.claims.username`] (default `sub`) is taken from the token and is used to look up an auth provider whose `ID` and `provider` properties match the `sub` and provider respectively of the OIDC provider.
+* For an LDAP provider, the `dn` is used to look up an auth provider with a `provider` property of `ldap` and an `ID` property that matches the supplied `dn`.
+* For the `native` (username/password) provider, the supplied username itself is used to look up the auth provider.
+
+== Enabling user auth providers mode
+
+To enable user auth providers mode, set the configuration setting xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true`.
+This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
+
+When the user authenticates, Neo4j searches for a user with a matching authentication provider.
+If a match is found, the user can log in and be authorized successfully.
+
+== Migrating to auth providers mode
+
+If you have existing users in the database and want to migrate to auth providers mode, you can use the `ALTER USER ... SET AUTH` command to attach an auth provider to each of them.
+Until you change `dbms.security.require_local_user` to `true`, this will not impact the users' ability to authenticate and authorize as they always have done.
+
+Once the process of adding auth providers to your users finishes, you can set `dbms.security.require_local_user` to `true` and restart the DBMS to complete the migration.
+After this time, only users with a corresponding auth provider in the database will be able to authenticate and authorize.
+
+[NOTE]
+====
+Existing users created using the original `CREATE USER ... SET PASSWORD` command implicitly have the native (username/password) auth provider, so you do not need to add it explicitly using `SET AUTH`.
+
+To verify which auth providers are attached to a user, use the xref:authentication-authorization/manage-users.adoc#access-control-list-users[`SHOW USERS WITH AUTH`] command.
+====
+
+== Examples
+
+For examples of how to use auth providers with different authentication providers, see the following sections:
+
+- xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers]
+- xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users]
+- xref:authentication-authorization/ldap-integration.adoc#auth-ldap-auth-providers[Configure authentication/authorization at the user level using LDAP as an auth provider]
+

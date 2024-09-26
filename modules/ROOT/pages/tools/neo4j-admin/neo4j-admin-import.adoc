@@ -64,6 +64,10 @@ These are some things you need to keep in mind when creating your input files:
 ====
 Indexes and constraints are not created during the import.
 Instead, you have to add these afterward (see link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/indexes-for-full-text-search[Cypher Manual -> Indexes]).
+
+Starting from Neo4j 5.24, you can use the `--schema` option to create indexes and contraints during the import process.
+The option is available in the Enterprise Edition and works only for the block format.
+See <<indexes-constraints-import, Provide indexes and constraints during import>> for more information.
 ====
 
 [[import-tool-full]]
@@ -85,9 +89,9 @@ neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-sk
                                  [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
                                  [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
                                  [--input-encoding=<character-set>] [--max-off-heap-memory=<size>] [--quote=<char>]
-                                 [--read-buffer-size=<size>] [--report-file=<path>] [--threads=<num>] --nodes=[<label>[:
-                                 <label>]...=]<files>... [--nodes=[<label>[:<label>]...=]<files>...]...
-                                 [--relationships=[<type>=]<files>...]... <database>
+                                 [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>] [--threads=<num>]
+                                 --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>[:<label>]...=]
+                                 <files>...]... [--relationships=[<type>=]<files>...]... <database>
 ----
 
 === Description
@@ -287,6 +291,10 @@ If you need to debug the import, it might be useful to collect the stack trace.
 This is done by using the `--verbose` option.
 |import.report
 
+|--schema=<path> label:new[Introduced in 5.24] label:enterprise[Enterprise edition]
+|File in which to store the Cypher schema commands to run as part of the data import.
+|
+
 |--skip-bad-entries-logging[=true\|false]
 |When set to `true`, the details of bad entries are not written in the log. Disabling logging can improve performance when the data contains lots of faults. Cleaning the data before importing it is highly recommended because faults dramatically affect the tool's performance even without logging.
 |false
@@ -416,6 +424,40 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 --relationships import/roles_header.csv,import/roles.csv
 ----
 
+[role=label--enterprise-edition label--new-5.24]
+[[indexes-constraints-import]]
+==== Provide indexes and constraints during import
+
+Starting with Neo4j 5.24, you can use the `--schema` option that allows Cypher commands to be provided to create indexes/constraints during the initial import process.
+It currently only works for the block format and full import.
+
+You should have a Cypher script containing only `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
+This file uses ';' as the separator.
+
+For example:
+
+[source, cypher, role=nocopy]
+----
+CREATE INDEX PersonNameIndex FOR (i:Person) ON (i.name);
+CREATE CONSTRAINT PersonAgeConstraint FOR (c:Person) REQUIRE c.age IS :: INTEGER
+----
+
+List of supported indexes and constraints that can be created by the import tool:
+
+* RANGE
+* LOOKUP
+* POINT
+* TEXT
+* FULL-TEXT
+* VECTOR
+
+For example:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher 
+----
+
 
 [[import-tool-multiple-input-files-regex-example]]
 ==== Import data from CSV files using regular expression
@@ -478,8 +520,21 @@ The example assumes that you have data stored in the `myBucket/data` folder in y
 bin/neo4j-admin database import full --nodes gs://myBucket/data/nodes.csv --relationships gs://myBucket/data/relationships.csv newdb
 ----
 ======
-=====
 
+[.include-with-Azure-cloud-storage]
+======
+
+include::partial$/azb-credentials.adoc[]
+
+. Run the `neo4j-admin database import` command to import your data from your Azure blob storage container.
+The example assumes that you have data stored in the `myStorageAccount/myContainer/data` folder in your container.
++
+[source,shell]
+----
+bin/neo4j-admin database import full --nodes azb://myStorageAccount/myContainer/data/nodes.csv --relationships azb://myStorageAccount/myContainer/data/relationships.csv newdb
+----
+======
+=====
 
 [role=label--enterprise-edition]
 [[import-tool-incremental]]
