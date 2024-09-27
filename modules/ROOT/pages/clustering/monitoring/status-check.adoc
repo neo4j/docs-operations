@@ -1,13 +1,14 @@
 :description: This section describes how to monitor a database's availability with the help of the cluster status check procedure.
 
 :page-role: enterprise-edition new-5.24
-[[cluster-status-check]]
-= Cluster status check
+[[monitoring-replication]]
+= Monitor replication status
 
-Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_statusCheck[`dbms.cluster.statusCheck()`] procedure, which can be used to monitor the ability to replicate in clustered databases, which in most cases means being able to write to the database.
-You can also use the procedure to check which members are up-to-date and can participate in a successful replication.
-Therefore, it is useful in determining the fault-tolerance of a clustered database as well.
-A third and final function is to determine the leader of the cluster.
+Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_statusCheck[`dbms.cluster.statusCheck()`] procedure, which can be used to monitor the ability to replicate in clustered databases. 
+In most cases this means a clustered database is write available.
+The procedure identifies which members of a clustered database are up-to-date and can participate in successful replication.
+Therefore, it is useful in determining the fault tolerance of a clustered database.
+Additionally, you can use the procedure to identify the leader of a clustered database within the cluster.
 
 [NOTE]
 ====
@@ -18,45 +19,62 @@ Apart from replication there are other stops in the write path that can potentia
 However, it tells that the cluster is healthy and in most cases that means that the database is write available.
 ====
 
-[[procedure-syntax]]
-== Syntax
+[[cluster-status-check]]
+== Cluster status check
 
+*Syntax:*
 [source, shell]
 ----
 CALL dbms.cluster.statusCheck(databases :: LIST<STRING>, timeoutMilliseconds = null :: INTEGER)
 ----
 
-* *databases:* the list of databases for which the status check should run.
-Providing an empty list runs the status check for all *clustered* databases on that server, i.e. the status check won't run on singles or secondaries.
-* *timeoutMilliseconds:* specifies how long the replication may take.
-Default value is 1000 milliseconds.
-If replication takes longer than this timeout, it will return that replication is unsuccessful.
+*Arguments:*
 
+[options="header", cols="m,a,a"]
+|===
+| Name                | Type         | Description
+| databases           | List<String> | Databases for which the status check should run.
+Providing an empty list runs the status check for all *clustered* databases on that server, i.e. it won't run on singles or secondaries.
+| timeoutMilliseconds | Integer | How long to allow for replication, before returning it was unsuccessful.
+Default value is 1000 milliseconds. 
+|===
+
+*Returns:*
 
 The procedure returns a row for all primary members of all the requested databases where each row consists of:
 
-* *database:* the database for which the `status check entry` was replicated.
-* *serverId:* the server id of each primary member, which did or did not participate in a successful replication of the `status check entry`.
-* *serverName:* the server name of each primary member.
-* *address:* the Bolt address of each primary member.
-* *replicationSuccessful:* indicates if the server (on which the procedure is run) can replicate a transaction.
-+
-** `TRUE` -- if this server managed to replicate the dummy transaction to a majority of cluster members within the given timeout.
-** `FALSE` -- if it failed to replicate within the timeout.
-The value is the same column-wise.
-A failed replication can either mean a real issue in the cluster (e.g., no leader) or that this server is too far behind in apply and can't replicate.
-* *memberStatus:* shows the status of each primary member.
-It can be `APPLYING`, `REPLICATING`, or `UNAVAILABLE`.
-+
-** `APPLYING` means that the member can replicate and is actively applying transactions.
-** `REPLICATING` means that the member can participate in replicating, but can't apply.
-This state is uncommon, but may happen while waiting for the database to start and accept transactions.
-* *recognisedLeader:* shows the server id of the perceived leader of each primary member.
-* *recognisedLeaderTerm:* shows the term of the perceived leader of each primary member.
+[options="header", cols="m,a,a"]
+|===
+| Name                  | Type         | Description
+| database              | String       | The database for which a `status check entry` was replicated.
+| serverId              | String       | The UUID of the server, which did or did not participate in a successful replication of the `status check entry`.
+| serverName            | String       | The friendly name of the server, or its UUID if no name is set.
+| address               | String       | The address of the Bolt port for the server.
+| replicationSuccessful | Boolean      | Indicates if the server (on which the procedure is run) can replicate a transaction.
+| memberStatus          | String       | The status of each primary member.
+| recognisedLeader      | String       | The server id of the perceived leader of each primary member.
+| recognisedLeaderTerm  | Integer      | The term of the perceived leader of each primary member. 
 If the members report different leaders, the one with the highest term should be trusted.
-* *requester:* is `TRUE` for the server on which the procedure is run, and `FALSE` on the remaining servers.
-* *error:* contains the error message if there is one.
-An example of an error is that one or more of the requested databases doesn't exist on the requester.
+| requester             | Boolean      | Whether a server is the requester or not.
+| error                 | String       | Contains the error message if one is present. 
+An example of an error is that one or more of the requested databases do not exist on the requester.
+|===
+
+=== Possible values of `replicationSuccessful`
+* `TRUE` -- if this server managed to replicate the dummy transaction to a majority of cluster members within the given timeout.
+* `FALSE` -- if it failed to replicate within the timeout.
+The value is the same column-wise.
+A failed replication can either indicate a real issue in the cluster (e.g., no leader) or that this server is too far behind in applying updates and can't replicate.
+
+=== Possible values of `memberStatus`
+* `APPLYING` means that the member can replicate and is actively applying transactions.
+* `REPLICATING` means that the member can participate in replicating, but can't apply.
+This state is uncommon, but may happen while waiting for the database to start and accept transactions.
+* `UNAVAILABLE` means that the member is either too far behind the leader or unreachable.
+
+=== Possible values of `requester`
+* `TRUE` -- for the server on which the procedure is run.
+* `FALSE` -- on the remaining servers.
 
 In general, you can use the `replicationSuccessful` field to determine overall write-availability, whereas the `memberStatus` field can be checked in order to see whether the database is fault-tolerant or not.
 
@@ -73,5 +91,25 @@ But they are also applying to the database, which is a requirement for writing t
 Lastly, `UNAVAILABLE` members are either too far behind or unreachable.
 They are unhealthy and cannot add to the fault-tolerance.
 ====
+
+[[status-check-example]]
+== Example
+
+=== Running the status check
+When running the cluster status check against a server, expect similar output to the following:
+
+[source,queryresults,role=noplay]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| database | serverId                               | serverName                             | address          | replicationSuccessful | memberStatus | recognisedLeader                       | recognisedLeaderTerm | requester | error |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j"  | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | "localhost:7682" | TRUE                  | "APPLYING"   | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | 4                    | FALSE     | NULL  |
+| "neo4j"  | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | "localhost:7681" | TRUE                  | "APPLYING"   | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | 4                    | TRUE      | NULL  |
+| "neo4j"  | "58c70f4b-910d-4d0e-b0f2-3084554079ec" | "58c70f4b-910d-4d0e-b0f2-3084554079ec" | "localhost:7683" | TRUE                  | "APPLYING"   | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | 4                    | FALSE     | NULL  |
+| "system" | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | "565130e8-b8f0-41ad-8f9d-c660bd8d5519" | "localhost:7681" | TRUE                  | "APPLYING"   | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | 1                    | TRUE      | NULL  |
+| "system" | "58c70f4b-910d-4d0e-b0f2-3084554079ec" | "58c70f4b-910d-4d0e-b0f2-3084554079ec" | "localhost:7683" | TRUE                  | "APPLYING"   | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | 1                    | FALSE     | NULL  |
+| "system" | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | "localhost:7682" | TRUE                  | "APPLYING"   | "d3fe2e6a-494d-4ab8-81b1-7de2ce31ce11" | 1                    | FALSE     | NULL  |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
 
 
