@@ -4,14 +4,15 @@
 :description: How to configure Neo4j to use FIPS compatible SSL encryption.
 :keywords: ssl, tls, authentication, encryption, encrypted, security, fips, fips 140, fips 140-2, nist, hipaa
 
-Federal Information Processing Standards (FIPS) 140 is a U.S. government standard established by the National Institute of Standards and Technology (NIST) which is used to accredit cryptographic modules such as those used in TLS network encryption.  While FIPS 140 compliance is primarily required for federal agencies and their contractors, it also is used in the healthcare sector under regulations like the Health Insurance Portability and Accountability Act (HIPAA) to protect patient data.
+Federal Information Processing Standards (FIPS) 140 is a U.S. government standard established by the National Institute of Standards and Technology (NIST) which is used to accredit cryptographic modules such as those used in TLS network encryption.
+While FIPS 140 compliance is primarily required for federal agencies and their contractors, it also is used in the healthcare sector under regulations like the Health Insurance Portability and Accountability Act (HIPAA) to protect patient data.
 
-For more information see:
+For more information, see:
 
-* https://cloudsecurityalliance.org/blog/2023/03/23/what-is-fips-140-and-what-does-it-mean-to-be-fips-compliant
-* https://csrc.nist.gov/pubs/fips/140-2/upd2/final
+* https://cloudsecurityalliance.org/blog/2023/03/23/what-is-fips-140-and-what-does-it-mean-to-be-fips-compliant[What is FIPS 140 and What Does it Mean to Be “FIPS Compliant”?]
+* https://csrc.nist.gov/pubs/fips/140-2/upd2/final[FIPS 140-2. Security Requirements for Cryptographic Modules]
 
-This is a guide to help configure Neo4j to use TLS / SSL encryption in a FIPS compatible way.
+This is a guide on how to configure Neo4j to use TLS / SSL encryption in a FIPS compatible way.
 It is supplementary to the xref:security/ssl-framework.adoc[] documentation, as many of the configuration processes and requirements are the same.
 
 // . Enable a FIPS certified cryptographic provider
@@ -21,15 +22,17 @@ It is supplementary to the xref:security/ssl-framework.adoc[] documentation, as 
 // . verify?
 
 
+[[ssl-fips-prerequisites]]
 == Prerequisites
 
 * Verify that the machine running Neo4j has FIPS compatible hardware and operating system.
 Only xref:installation/requirements.adoc#deployment-requirements-software[Linux operating systems] are supported for Neo4j FIPS compatibility at this time.
-* Neo4j Enterprise 5.23.0 or later.
+* Use Neo4j Enterprise 5.23.0 or later.
 * Install and configure a non-native authentication provider, for example LDAP or SSO. See xref:authentication-authorization/index.adoc[].
 // * Follow the xref:security/checklist.adoc[] to ensure good security practices.
 
-== Enable FIPS SSL Provider (Docker)
+[[fips-ssl-provider-docker]]
+== Enable FIPS SSL provider (Docker)
 
 The Neo4j RedHat UBI9 Docker image comes with the SSL provider and dependencies pre-installed, but it is not enabled by default.
 
@@ -53,6 +56,7 @@ docker run -it --rm \
 neo4j:{neo4j-version-exact}-enterprise-ubi9
 ----
 
+[[fips-ssl-provider]]
 == Enable FIPS SSL provider
 
 [IMPORTANT]
@@ -60,22 +64,23 @@ neo4j:{neo4j-version-exact}-enterprise-ubi9
 Skip this section if using Neo4j in Docker.
 ====
 
-The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
-Specifically Netty's "Forked Tomcat Native" library called https://github.com/netty/netty-tcnative[netty-tcnative].
+The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider and Netty-supported OpenSSL derivatives.
+Specifically Netty's _Forked Tomcat Native_ library called https://github.com/netty/netty-tcnative[netty-tcnative].
 
-The `netty-tcnative` library is provided in several variants, but
-to be FIPS compatible the dynamically linked version of `netty-tcnative` must be used, alongside a FIPS compatible installation of OpenSSL.
-This dynamically linked library requires that the following dependencies are installedfootnote:[https://netty.io/wiki/forked-tomcat-native.html]:
+The `netty-tcnative` library is provided in several variants.
+However, to achieve FIPS compliance, you must use the dynamically linked version of `netty-tcnative` alongside a FIPS-compatible installation of OpenSSL.
+
+The dynamically linked library requires the following dependencies to be installedfootnote:[https://netty.io/wiki/forked-tomcat-native.html]:
 
 * Apache Portable Runtime Library
 * A FIPS certified version of OpenSSL, with a FIPS provider installed and set as default.
 
-Refer to https://netty.io/wiki/forked-tomcat-native.html for more information.
+Refer to https://netty.io/wiki/forked-tomcat-native.html/[Forked Tomcat Native] for more information.
 
 
 [NOTE]
 ====
-Netty provide a convenient pre-build, statically linked version of `netty-tcnative` using BoringSSL, but this is not FIPS certifiedfootnote:[https://boringssl.googlesource.com/boringssl/+/master/crypto/fipsmodule/FIPS.md].
+Netty provides a convenient pre-build, statically linked version of `netty-tcnative` using BoringSSL, but this is not FIPS certifiedfootnote:[https://boringssl.googlesource.com/boringssl/+/master/crypto/fipsmodule/FIPS.md].
 
 By using the dynamic `netty-tcnative` library variant combined with a FIPS certified OpenSSL installation, Neo4j's cryptographic operations are delegated by `netty-tcnative` to OpenSSL, transitively giving FIPS compatibility.
 ====
@@ -83,7 +88,7 @@ By using the dynamic `netty-tcnative` library variant combined with a FIPS certi
 [[install-apr]]
 === Install Apache portable runtime library
 
-The simplest way to install https://apr.apache.org[Apache Portable Runtime Library] is to use the operating system's package manager.
+To install https://apr.apache.org[Apache Portable Runtime Library], use the operating system's package manager.
 
 In Debian/Ubuntu this package is usually called `libapr1`
 [source, console, subs="attributes"]
@@ -92,7 +97,7 @@ In Debian/Ubuntu this package is usually called `libapr1`
 apt install -y libapr1
 ----
 
-In RedHat Enterprise Linux the package is usually called `apr`:
+In RedHat Enterprise Linux, the package is usually called `apr`:
 
 [source, console, subs="attributes"]
 .Install Apache Portable Runtime Library in RedHat
@@ -100,37 +105,34 @@ In RedHat Enterprise Linux the package is usually called `apr`:
 dnf install -y apr
 ----
 
+[[install-openssl]]
 === Install OpenSSL
 
-Instructions on how to build and install a FIPS compatible OpenSSL are out of scope for this document. Installation steps can differ depending on operating system, and other security requirements you might have for OpenSSL.
+Instructions on how to build and install a FIPS-compatible OpenSSL are out of the scope of this document.
+Installation steps can differ depending on operating system and other security requirements you might have for OpenSSL.
 
 In general:
 
-* A list of FIPS certified OpenSSL versions can be found at https://openssl-library.org/source/
+* For a list of FIPS certified OpenSSL versions, see https://openssl-library.org/source/[].
 * A FIPS provider must be installed into OpenSSL.
 * OpenSSL must be configured to use the FIPS provider by default.
 +
-See: https://docs.openssl.org/master/man7/fips_module/
+For instructions, see https://docs.openssl.org/master/man7/fips_module/[].
 
-OpenSSL documentation can be found at:
-
-* https://openssl-library.org/
-
-and on the project's Github page:
-
-* https://github.com/openssl/openssl
+You can find OpenSSL documentation at https://openssl-library.org/[] and on the project's Github page https://github.com/openssl/openssl[].
 
 
-=== Install correct `netty-tcnative` library
+[[install-netty-tcnative-lib]]
+=== Install the correct `netty-tcnative` library
 
-Since Neo4j 5.23.0, builds of `netty-tcnative` dynamic library are provided in
-the Neo4j `lib` directory under their own subfolder called `netty-tcnative`.
+Since Neo4j 5.23.0, builds of `netty-tcnative` dynamic library are provided in the Neo4j `lib` directory under their own subfolder called `netty-tcnative`.
 
 To install the `netty-tcnative` dynamic library:
 
 . Locate the Neo4j `lib` directory.
 +
-The location of the `lib` directory is different depending on the method used to install Neo4j. Check the xref:configuration/file-locations.adoc#neo4j-lib[file locations] documentation for the correct location.
+The location of the `lib` directory is different depending on the method used to install Neo4j.
+Check the xref:configuration/file-locations.adoc#neo4j-lib[file locations] documentation for the correct location.
 +
 This location will be referred to as _<NEO4J_LIB>_.
 . Make sure there are no `netty-tcnative-boringssl` libraries present in the _<NEO4J_LIB>_ folder.
@@ -146,7 +148,7 @@ find <NEO4J_LIB> -name "netty-tcnative-boringssl*.jar" -delete
 ----
 ls -l <NEO4J_LIB>/netty-tcnative
 ----
-There are linux and fedora linux variants available, compiled for both x86_64 and ARM 64 architectures.
+There are Linux and Fedora Linux variants available, compiled for both x86_64 and ARM 64 architectures.
 Select the one matching the local machine's operating system and architecture.
 +
 . Verify the dependencies are correctly installed using https://www.man7.org/linux/man-pages/man1/ldd.1.html[`ldd`]:
@@ -160,13 +162,13 @@ rm -rf /tmp/META-INF
 ----
 +
 [source, console]
-.Verify fedora variant of netty-tcnative dependencies are installed
+.Verify Fedora variant of netty-tcnative dependencies are installed
 ----
 unzip -d /tmp <NEO4J_LIB>/netty-tcnative/netty-tcnative-*-linux-$(arch)-fedora.jar
 ldd /tmp/META-INF/native/libnetty_tcnative_linux_$(arch).so
 rm -rf /tmp/META-INF
 ----
-The `ldd` command will show a list of library dependencies and where they will be loaded from on the local machine.
+The `ldd` command shows a list of library dependencies and where they will be loaded from on the local machine.
 ** If any dependencies are missing, they must be installed or Neo4j will fail to run.
 ** The `libssl.so` and `libcrypto.so` libraries listed must be the ones installed with OpenSSL in the previous steps.
 +
@@ -175,37 +177,40 @@ The `ldd` command will show a list of library dependencies and where they will b
 [NOTE]
 ====
 Only copy *one* of the jars, otherwise Neo4j will not be able to resolve dependencies at runtime.
-The error, if this happens, will contain a message like:
+The error, if this happens, contains a message like:
 [source]
 ----
 "Failed to load any of the given libraries: [netty_tcnative_linux_x86_64, netty_tcnative_linux_x86_64_fedora, netty_tcnative_x86_64, netty_tcnative]".
 ----
 ====
 
-
+[[generate-ssl-cert-private-key]]
 == Generate SSL certificate and private key
 
-Neo4j SSL encryption requires a xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard, encoded in PEM format.
-and a private key in xref:security/ssl-framework.adoc#term-ssl-pkcs8[PKCS #8] format, also PEM encoded.
-*For FIPS compatibility, the private key must be secured with a password*.
+Neo4j SSL encryption requires a xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the xref:security/ssl-framework.adoc#term-ssl-x509[X.509] standard and a private key in xref:security/ssl-framework.adoc#term-ssl-pkcs8[PKCS #8] format, both encoded in PEM format.
+
+[IMPORTANT]
+====
+For FIPS compatibility, the private key must be secured with a password.
+====
 
 Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for more information.
 
 
+[[configure-neo4j-ssl-encryption]]
 == Configure Neo4j to use SSL encryption
 
-
-SSL configuration is described in detail at xref:security/ssl-framework.adoc#ssl-configuration[SSL framework configuration].
+SSL configuration is described in detail in xref:security/ssl-framework.adoc#ssl-configuration[SSL framework configuration].
 
 This section describes configuration that must be done *in addition to* standard non-FIPS compliant SSL configuration.
 
-
+[[bolt-ssl-fips]]
 === Bolt
 
 . Set `xref:configuration/configuration-settings.adoc#config_dbms.netty.ssl.provider[dbms.netty.ssl.provider]=OPENSSL`
 . Set `xref:configuration/configuration-settings.adoc#config_server.bolt.tls_level[server.bolt.tls_level]=REQUIRED`
-. Follow instructions to xref:security/ssl-framework.adoc#ssl-bolt-config[Configure SSL over bolt].
-. Set additional bolt configurations:
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-bolt-config[Configure SSL over Bolt].
+. Set additional Bolt configurations:
 +
 [source, properties]
 ----
@@ -214,14 +219,16 @@ dbms.ssl.policy.bolt.tls_level=REQUIRED
 dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3
 dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
-. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.bolt.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.bolt.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
 
 
+[[https-ssl-fips]]
 === HTTPS
 
 This section is only applicable if HTTPS is enabled.
 
-. Follow instructions to xref:security/ssl-framework.adoc#ssl-https-config[Configure SSL over HTTPS].
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-https-config[Configure SSL over HTTPS].
 +
 . Set additional HTTPS configurations:
 +
@@ -232,8 +239,9 @@ dbms.ssl.policy.https.tls_level=REQUIRED
 dbms.ssl.policy.https.tls_versions=TLSv1.2,TLSv1.3
 dbms.ssl.policy.https.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
-. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.https.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.https.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
 
+[[intra-cluster-encryption-ssl-fips]]
 === Intra-cluster encryption
 
 For FIPS compatbility, intra-cluster encryption must be enabled if you are running a Neo4j cluster.
@@ -249,14 +257,16 @@ dbms.ssl.policy.cluster.client_auth=REQUIRED
 dbms.ssl.policy.cluster.tls_versions=TLSv1.2,TLSv1.3
 dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
-. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.cluster.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.cluster.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
 
 
+[[backup-ssl-fips]]
 === Backup
 
 This section is applicable on instances or cluster members used for taking backups.
 
-. Follow instructions to xref:security/ssl-framework.adoc#ssl-backup-config[configure SSL for backup communication].
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-backup-config[Configure SSL for backup communication].
 . Set additional backup configurations:
 +
 [source, properties]
@@ -267,4 +277,6 @@ dbms.ssl.policy.backup.trust_all=false
 dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
 dbms.ssl.policy.backup.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
-. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework/Using encrypted private key] to configure `dbms.ssl.policy.backup.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.backup.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
+
