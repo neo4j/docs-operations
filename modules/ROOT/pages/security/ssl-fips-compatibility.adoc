@@ -1,0 +1,130 @@
+:description: how to configure SSL in Neo4j 4.4 to be FIPS 140-2 compliant.
+
+:page-role: enterprise-edition
+
+[[neo4j-ssl-fips-compliance]]
+= Configure SSL for FIPS 140-2 compatibility
+
+The National Institute of Standards and Technology (NIST) developed the Federal Information Processing Standard (FIPS) Publication 140-2 as a security standard that sets forth requirements for cryptographic modules, including hardware, software, and/or firmware, for U.S. federal agencies.
+While FIPS 140 compliance is primarily required for federal agencies and their contractors, it also is used in the healthcare sector under regulations like the Health Insurance Portability and Accountability Act (HIPAA) to protect patient data.
+
+Neo4j 4.4 officially supports FIPS 140-2 compliance.
+
+This guide helps configure Neo4j to use TLS/SSL encryption in a FIPS-compliant way.
+It is supplementary to the xref:security/ssl-framework.adoc[SSL framework documentation], as many of the configuration processes and requirements are the same.
+
+
+[[fips-prerequisites]]
+== Prerequisites
+
+* Verify that the machine running Neo4j has FIPS-compatible hardware and operating system.
+Only xref:installation/requirements.adoc#deployment-requirements-software[Linux operating systems] are supported for Neo4j FIPS compatibility.
+* Deploy OpenSSL 3.0.8/3.0.9 in the FIPS mode.
+* Install and configure a non-native authentication provider, for example LDAP or SSO.
+See xref:authentication-authorization/index.adoc[].
+
+
+[[fips-ssl-providers]]
+== Enable FIPS SSL provider
+
+Set SSL policies on Bolt and HTTPS in the _neo4j.conf_ file.
+See xref:security/ssl-framework.adoc#ssl-configuration[SSL framework -> Configuration] for detailed instructions.
+
+=== Set SSL provider to OpenSSL
+
+Instructions on how to build and install a FIPS-compatible OpenSSL are out of scope for this document.
+Installation steps can differ depending on operating system, and other security requirements you might have for OpenSSL.
+
+* For a list of FIPS certified OpenSSL versions, see link:https://openssl-library.org/source/[].
+* A FIPS provider must be installed into OpenSSL.
+* OpenSSL must be configured to use the FIPS provider by default.
+
+=== Use the correct version of the `netty-tcnative` library
+
+To achieve FIPS compliance, you must use the dynamically linked version of `netty-tcnative` alongside a FIPS-compatible installation of OpenSSL.
+
+. The dynamically linked library requires the Apache Portable Runtime Library also to be installed.
+To install it, use the operating system’s package manager.
++
+In Debian/Ubuntu this package is usually called `libapr1`.
++
+[source, console, subs="attributes"]
+.Install Apache Portable Runtime Library in Debian or Ubuntu
+----
+apt install -y libapr1
+----
++
+In RedHat Enterprise Linux, the package is usually called `apr`:
++
+[source, console, subs="attributes"]
+.Install Apache Portable Runtime Library in RedHat
+----
+dnf install -y apr
+----
++
+. Neo4j compatible JAR files can be found at:
+https://assets.neo4j.com/netty-tcnative/2.0.65.Final/simplified/netty-tcnative-2.0.65.Final-all.tar
+
+=== Locate the Neo4j `lib` directory.
+
+[NOTE]
+====
+The location of the `lib` directory is dependent on the installation and your operating system.
+Default file locations are documented in the xref:configuration/file-locations.adoc[Configuration -> Default file locations].
+====
+
+. Make sure there are no `netty-tcnative-boringssl` libraries present in the `lib` folder.
++
+----
+find <NEO4J_LIB> -name "netty-tcnative-boringssl*.jar" -delete
+----
++
+. Check which `netty-tcnative` libraries are available:
++
+----
+ls -l <NEO4J_LIB>/netty-tcnative
+----
++
+. Configure paths to the `netty-tcnnative` library using the Neo4j `lib` directory.
++
+----
+export LD_LIBRARY_PATH=/usr/local/openssl/lib64:/home/ec2-user/{neo4j-version-exact}/lib
+export PATH=/home/ec2-user/{neo4j-version-exact}/:$PATH
+----
+
+=== Generate SSL certificate and private key
+
+[IMPORTANT]
+====
+For FIPS compatibility, the private key must be secured with a password.
+====
+Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for more information.
+
+=== Configure _neo4j.conf_
+
+At last, you have to configure the _neo4j.conf_ file to use FIPS 140-2 approved ciphers.
+
+.Example Bolt SSL configuration
+[source, shell]
+----
+dbms.ssl.policy.bolt.enabled=true
+dbms.ssl.policy.bolt.base_directory=certificates/https
+dbms.ssl.policy.bolt.private_key=private.key
+dbms.ssl.policy.bolt.public_certificate=public.crt
+dbms.ssl.policy.bolt.client_auth=NONE
+dbms.ssl.policy.bolt.ciphers=TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_DSS_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_CBC_SHA
+----
+
+.Example HTTPS SSL configuration
+[source, shell]
+----
+dbms.ssl.policy.https.enabled=true
+dbms.ssl.policy.https.base_directory=certificates/https
+dbms.ssl.policy.https.private_key=private.key
+dbms.ssl.policy.https.public_certificate=public.crt
+dbms.ssl.policy.https.client_auth=NONE
+dbms.ssl.policy.https.ciphers=TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_DSS_WITH_AES_256_CBC_SHA,TLS_RS A_WITH_AES_128_CBC_SHA
+dbms.netty.ssl.provider=OPENSSL
+----
+
+
