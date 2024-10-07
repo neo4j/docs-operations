@@ -8,101 +8,263 @@
 The National Institute of Standards and Technology (NIST) developed the Federal Information Processing Standard (FIPS) Publication 140-2 as a security standard that sets forth requirements for cryptographic modules, including hardware, software, and/or firmware, for U.S. federal agencies.
 While FIPS 140 compliance is primarily required for federal agencies and their contractors, it also is used in the healthcare sector under regulations like the Health Insurance Portability and Accountability Act (HIPAA) to protect patient data.
 
-Neo4j 4.4 officially supports FIPS 140-2 compliance.
-
 This guide helps configure Neo4j to use TLS/SSL encryption in a FIPS-compliant way.
 It is supplementary to the xref:security/ssl-framework.adoc[SSL framework documentation], as many of the configuration processes and requirements are the same.
 
 
-[[fips-prerequisites]]
+[[ssl-fips-prerequisites]]
 == Prerequisites
 
 * Verify that the machine running Neo4j has FIPS-compatible hardware and operating system.
 Only xref:installation/requirements.adoc#deployment-requirements-software[Linux operating systems] are supported for Neo4j FIPS compatibility.
-* Deploy OpenSSL 3.0.8/3.0.9 in the FIPS mode.
+* Use Neo4j Enterprise 4.4.36 or later.
 * Install and configure a non-native authentication provider, for example LDAP or SSO.
 See xref:authentication-authorization/index.adoc[].
 
 
-[[fips-ssl-providers]]
+[[fips-ssl-provider]]
 == Enable FIPS SSL provider
 
-Set SSL policies on Bolt and HTTPS in the _neo4j.conf_ file.
-See xref:security/ssl-framework.adoc#ssl-configuration[SSL framework -> Configuration] for detailed instructions.
+The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider and Netty-supported OpenSSL derivatives.
+Specifically Netty's _Forked Tomcat Native_ library called https://github.com/netty/netty-tcnative[netty-tcnative].
 
-=== Set SSL provider to OpenSSL
+The `netty-tcnative` library is provided in several variants.
+However, to achieve FIPS compliance, you must use the dynamically linked version of `netty-tcnative` alongside a FIPS-compatible installation of OpenSSL.
 
-Instructions on how to build and install a FIPS-compatible OpenSSL are out of scope for this document.
-Installation steps can differ depending on operating system, and other security requirements you might have for OpenSSL.
+The dynamically linked library requires the following dependencies to be installedfootnote:[https://netty.io/wiki/forked-tomcat-native.html]:
 
-* For a list of FIPS certified OpenSSL versions, see link:https://openssl-library.org/source/[].
-* A FIPS provider must be installed into OpenSSL.
-* OpenSSL must be configured to use the FIPS provider by default.
+* Apache Portable Runtime Library
+* A FIPS certified version of OpenSSL, with a FIPS provider installed and set as default.
 
-=== Use the correct version of the `netty-tcnative` library
+Refer to https://netty.io/wiki/forked-tomcat-native.html[Forked Tomcat Native] for more information.
 
-To achieve FIPS compliance, you must use the dynamically linked version of `netty-tcnative` alongside a FIPS-compatible installation of OpenSSL.
 
-. The dynamically linked library requires the Apache Portable Runtime Library also to be installed.
-To install it, use the operating system’s package manager.
-+
-In Debian/Ubuntu this package is usually called `libapr1`.
-+
+[NOTE]
+====
+Netty provides a convenient pre-build, statically linked version of `netty-tcnative` using BoringSSL, but this is not FIPS certifiedfootnote:[https://boringssl.googlesource.com/boringssl/+/master/crypto/fipsmodule/FIPS.md].
+
+By using the dynamic `netty-tcnative` library variant combined with a FIPS certified OpenSSL installation, Neo4j's cryptographic operations are delegated by `netty-tcnative` to OpenSSL, transitively giving FIPS compatibility.
+====
+
+[[install-apr]]
+=== Install Apache portable runtime library
+
+To install https://apr.apache.org[Apache Portable Runtime Library], use the operating system's package manager.
+
+In Debian/Ubuntu this package is usually called `libapr1`
 [source, console, subs="attributes"]
 .Install Apache Portable Runtime Library in Debian or Ubuntu
 ----
 apt install -y libapr1
 ----
-+
+
 In RedHat Enterprise Linux, the package is usually called `apr`:
-+
+
 [source, console, subs="attributes"]
 .Install Apache Portable Runtime Library in RedHat
 ----
 dnf install -y apr
 ----
+
+[[install-openssl]]
+=== Install OpenSSL
+
+Instructions on how to build and install a FIPS-compatible OpenSSL are out of scope for this document. Installation steps can differ depending on operating system, and other security requirements you might have for OpenSSL.
+
+In general:
+
+* For a list of FIPS certified OpenSSL versions, see https://openssl-library.org/source/[].
+* A FIPS provider must be installed into OpenSSL.
+* OpenSSL must be configured to use the FIPS provider by default.
+
+
+[[install-netty-tcnative-lib]]
+=== Install `netty-tcnative` library
+
+
+// TODO
+
+// download files, but which files? have a table maybe?
+// put files in lib folder. Can recycle the 5x documentation.
+
+// from 4.4.36 neo4j has used 2.0.65.Final
+// before that it used 2.0.61.Final
+// this needs to be a table, but that doesn't make sense until we have to provide more than one version of netty tcnative
+
+. Locate the Neo4j `lib` directory.
 +
-. Neo4j compatible JAR files can be found at:
-https://assets.neo4j.com/netty-tcnative/2.0.65.Final/simplified/netty-tcnative-2.0.65.Final-all.tar
-
-=== Locate the Neo4j `lib` directory.
-
-[NOTE]
-====
-The location of the `lib` directory is dependent on the installation and your operating system.
-Default file locations are documented in the xref:configuration/file-locations.adoc[Configuration -> Default file locations].
-====
-
-. Make sure there are no `netty-tcnative-boringssl` libraries present in the `lib` folder.
+The location of the `lib` directory is different depending on the method used to install Neo4j.
+Check the xref:configuration/file-locations.adoc#neo4j-lib[file locations] documentation for the correct location.
 +
+This location will be referred to as _<NEO4J_LIB>_.
+. Make sure there are no `netty-tcnative-boringssl` libraries present in the _<NEO4J_LIB>_ folder.
++
+[source, console]
 ----
 find <NEO4J_LIB> -name "netty-tcnative-boringssl*.jar" -delete
 ----
 +
-. Check which `netty-tcnative` libraries are available:
+. Download netty-tcnative dynamic library.
 +
+The dynamic version of `netty-tcnative` library provided by link:https://netty.io/wiki/forked-tomcat-native.html[netty.io] is not compatible with OpenSSL 3.0.0 or later.
++
+To get around this, we have re-compiled `netty-tcnative` to make OpenSSL 3 compatible netty-tcnative JAR files for use with Neo4j.
+These can be downloaded from https://assets.neo4j.com/netty-tcnative/2.0.65.Final/simplified/netty-tcnative-2.0.65.Final-all.tar[]
++
+// This is commented out because we only have one compatible version of tcnative so far.
+// when we have more versions to be compatible with then it makes sense to use a table instead of a direct link.
+// However it looks a bit weird to use a table when we only have one row in the table.
+//
+// To download the correct `netty-tcnative` version for your Neo4j installation, check the table for a download link:
+// [options="header", cols="1,1,3"]
+// |===
+// | Neo4j version
+// | netty-tcnative version
+// | Direct link
+//
+// | 4.4.36
+// | 2.0.65.Final
+// | https://assets.neo4j.com/netty-tcnative/2.0.65.Final/simplified/netty-tcnative-2.0.65.Final-all.tar[]
+// |===
+// [TIP]
+// ====
+// If a Neo4j version is not listed, use the table entry for the next earliest Neo4j version listed.
+//
+// For example: for Neo4j 4.4.38 the next earliest version listed in the table is 4.4.36, so the required `netty-tcnative` version is `2.0.65.Final`.
+// ====
++
+There are Linux and Fedora Linux variants available in the tar, compiled for both x86_64 and ARM 64 architectures. Select the one matching the local machine's operating system and architecture.
++
+. Copy the downloaded `netty-tcnative` JAR file into _<NEO4J_LIB>_.
++
+. Verify the `netty-tcnative` dependencies are correctly installed using https://www.man7.org/linux/man-pages/man1/ldd.1.html[`ldd`]:
++
+[source, console]
+.Verify netty-tcnative dependencies are installed
 ----
-ls -l <NEO4J_LIB>/netty-tcnative
+unzip -d /tmp <NEO4J_LIB>/netty-tcnative-*-linux-$(arch).jar
+ldd /tmp/META-INF/native/libnetty_tcnative_linux_*.so
+rm -rf /tmp/META-INF
 ----
 +
-. Configure paths to the `netty-tcnnative` library using the Neo4j `lib` directory.
-+
+[source, console]
+.Verify Fedora variant of netty-tcnative dependencies are installed
 ----
-export LD_LIBRARY_PATH=/usr/local/openssl/lib64:/home/ec2-user/{neo4j-version-exact}/lib
-export PATH=/home/ec2-user/{neo4j-version-exact}/:$PATH
+unzip -d /tmp <NEO4J_LIB>/netty-tcnative-*-linux-$(arch)-fedora.jar
+ldd /tmp/META-INF/native/libnetty_tcnative_linux_$(arch).so
+rm -rf /tmp/META-INF
 ----
+The `ldd` command shows a list of library dependencies and where they are loaded from on the local machine.
+** If any dependencies are missing, they must be installed, or Neo4j will fail to run.
+** The `libssl.so` and `libcrypto.so` libraries listed must be the ones installed with OpenSSL in the previous steps.
 
-=== Generate SSL certificate and private key
+[NOTE]
+====
+Only copy *one* of the JAR files. Otherwise Neo4j will not be able to resolve dependencies at runtime.
+In case of this error, you will get a message like:
+[source]
+----
+"Failed to load any of the given libraries: [netty_tcnative_linux_x86_64, netty_tcnative_linux_x86_64_fedora, netty_tcnative_x86_64, netty_tcnative]".
+----
+====
+
+[[generate-ssl-cert-private-key]]
+== Generate SSL certificate and private key
+
+Neo4j SSL encryption requires a xref:security/ssl-framework.adoc#term-ssl-certificate[certificate] in the X.509 standard and a private key in PKCS #8 format, both encoded in PEM format.
 
 [IMPORTANT]
 ====
 For FIPS compatibility, the private key must be secured with a password.
 ====
+
 Refer to the xref:security/ssl-framework.adoc#ssl-certificates[SSL certificate and key instructions] for more information.
 
-=== Configure _neo4j.conf_
 
-At last, you have to configure the _neo4j.conf_ file to use FIPS 140-2 approved ciphers.
+[[configure-neo4j-ssl-encryption]]
+== Configure Neo4j to use SSL encryption
+
+SSL configuration is described in detail in xref:security/ssl-framework.adoc#ssl-configuration[SSL framework configuration].
+
+This section describes configuration that must be done *in addition to* standard non-FIPS compliant SSL configuration.
+
+[[bolt-ssl-fips]]
+=== Bolt
+
+. Set `xref:configuration/configuration-settings.adoc#config_dbms.netty.ssl.provider[dbms.netty.ssl.provider]=OPENSSL`
+. Set `xref:configuration/configuration-settings.adoc#config_server.bolt.tls_level[dbms.connector.bolt.tls_level]=REQUIRED`
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-bolt-config[Configure SSL over Bolt].
+. Set additional Bolt configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.bolt.trust_all=false
+dbms.ssl.policy.bolt.tls_level=REQUIRED
+dbms.ssl.policy.bolt.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.bolt.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
+
+
+[[https-ssl-fips]]
+=== HTTPS
+
+This section is only applicable if HTTPS is enabled.
+
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-https-config[Configure SSL over HTTPS].
++
+. Set additional HTTPS configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.https.trust_all=false
+dbms.ssl.policy.https.tls_level=REQUIRED
+dbms.ssl.policy.https.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.https.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.https.private_key_password` to dynamically read the password from an encrypted password file. The password must NOT be set in plain text.
+
+[[intra-cluster-encryption-ssl-fips]]
+=== Intra-cluster encryption
+
+For FIPS compatbility, intra-cluster encryption must be enabled if you are running a Neo4j cluster.
+
+. Follow instructions to xref:security/ssl-framework.adoc#ssl-cluster-config[configure SSL for intra-cluster communication].
+. Set additional cluster configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.cluster.enabled=true
+dbms.ssl.policy.cluster.tls_level=REQUIRED
+dbms.ssl.policy.cluster.client_auth=REQUIRED
+dbms.ssl.policy.cluster.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.cluster.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
+
+
+[[backup-ssl-fips]]
+=== Backup
+
+This section is applicable on instances or cluster members used for taking backups.
+
+. Follow instructions on how to xref:security/ssl-framework.adoc#ssl-backup-config[Configure SSL for backup communication].
+. Set additional backup configurations:
++
+[source, properties]
+----
+dbms.ssl.policy.backup.enabled=true
+dbms.ssl.policy.backup.client_auth=REQUIRED
+dbms.ssl.policy.backup.trust_all=false
+dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.backup.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
+----
+. Follow the instructions in xref:security/ssl-framework.adoc#ssl-config-private-key[SSL Framework -> Using encrypted private key] to configure `dbms.ssl.policy.backup.private_key_password` to dynamically read the password from an encrypted password file.
+The password must *not* be set in plain text.
+
+== Example SSL configurations
 
 .Example Bolt SSL configuration
 [source, shell]
@@ -112,19 +274,19 @@ dbms.ssl.policy.bolt.base_directory=certificates/https
 dbms.ssl.policy.bolt.private_key=private.key
 dbms.ssl.policy.bolt.public_certificate=public.crt
 dbms.ssl.policy.bolt.client_auth=NONE
-dbms.ssl.policy.bolt.ciphers=TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_DSS_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_CBC_SHA
+dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
 
 .Example HTTPS SSL configuration
 [source, shell]
 ----
+dbms.netty.ssl.provider=OPENSSL
 dbms.ssl.policy.https.enabled=true
 dbms.ssl.policy.https.base_directory=certificates/https
 dbms.ssl.policy.https.private_key=private.key
 dbms.ssl.policy.https.public_certificate=public.crt
 dbms.ssl.policy.https.client_auth=NONE
-dbms.ssl.policy.https.ciphers=TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_DSS_WITH_AES_256_CBC_SHA,TLS_RS A_WITH_AES_128_CBC_SHA
-dbms.netty.ssl.provider=OPENSSL
+dbms.ssl.policy.https.ciphers=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_AES_128_CCM_8_SHA256,TLS_AES_128_CCM_SHA256
 ----
 
 
