@@ -1151,6 +1151,8 @@ to using the `JsonTemplateLayout`:
 </RollingRandomAccessFile>
 ----
 
+==== JSON format log entries
+
 The `QueryLogJsonLayout.json` template mimics the 4.x layout and contains the following information:
 
 .JSON format log entries
@@ -1175,7 +1177,7 @@ The `QueryLogJsonLayout.json` template mimics the 4.x layout and contains the fo
 
 If the type of the log entry is `query`, these additional fields are available:
 
-.JSON format log entries
+.JSON format log entries for log type `query`
 [cols="1m,3a", options="header"]
 |===
 | Name
@@ -1239,6 +1241,10 @@ Included when xref:configuration/configuration-settings.adoc#config_db.logs.quer
 | Reason for failure.
 Included when applicable.
 
+| errorInfo
+| label:new[Introduced in 5.25] GQL error information as a JSON object.
+See <<gql-error-information, GQL error information>> for details on the contents of the `errorInfo` JSON object.
+
 | transactionId
 | The transaction ID of the running query.
 
@@ -1250,7 +1256,7 @@ Included when xref:configuration/configuration-settings.adoc#config_db.logs.quer
 
 If the type of the log entry is `transaction`, the following additional fields are available:
 
-.JSON format log entries
+.JSON format log entries for log type `transaction`
 [cols="1m,3a", options="header"]
 |===
 | Name
@@ -1272,3 +1278,53 @@ Either same as `authenticatedUser` or an impersonated user.
 | transactionId
 | ID of the transaction.
 |===
+
+[role=label--new-5.25]
+[[gql-error-information]]
+==== GQL error information
+
+The query log includes the GQL error information under the JSON object `errorInfo`.
+`errorInfo` can contain the following elements:
+
+* `GQLSTATUS` -- A 5-character long alpha-numeric code identifying the error.
+* `statusDescription` -- A message describing the error.
+* `classification` -- The type of error representing a division of client, transient, and database errors.
+* `position` -- The position (a JSON object containing a field for `column`, `offset`, and `line`) in the query where this error occurred.
+* `cause` -- A JSON object containing the `errorInfo` JSON object of the cause of the current `errorInfo` JSON object.
+
+The following are examples of the `errorInfo` JSON object:
+
+.`errorInfo` JSON object of a database error
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+...
+"errorInfo": {
+    "GQLSTATUS": "51N66",
+    "statusDescription": "error: system configuration or operation exception - resource exhaustion. Insufficient resources to complete the request.",
+    "cause": {
+      "GQLSTATUS": "51N55",
+      "statusDescription": "error: system configuration or operation exception - cannot create additional database. Failed to create the database `db10`. The limit of databases is reached. Either increase the limit using the config setting dbms.max_databases or drop a database.",
+      "classification": "DATABASE_ERROR"
+    },
+    "classification": "DATABASE_ERROR"
+  },
+...
+----
+
+.`errorInfo` JSON object of a client error
+[source%linenums,xml,options="nowrap",highlight=4]
+----
+...
+"errorInfo": {
+    "GQLSTATUS": "42N62",
+    "statusDescription": "error: syntax error or access rule violation - variable not defined. Variable `m` not defined.",
+    "position": {
+      "column": 18,
+      "offset": 17,
+      "line": 1
+    },
+    "classification": "CLIENT_ERROR"
+  },
+"query": "MATCH (n) RETURN m",
+...
+----
