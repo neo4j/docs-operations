@@ -5,10 +5,9 @@
 
 A database can become unavailable due to issues on different system levels.
 For example, a data center failover may lead to the loss of multiple servers, which may cause a set of databases to become unavailable.
-It is also possible for databases to become quarantined due to a critical failure in the system, which may lead to unavailability even without the loss of servers.
 
 This section contains a step-by-step guide on how to recover _unavailable databases_ that are incapable of serving writes, while still may be able to serve reads.
-However, if a database is not performing as expected for other reasons, this section cannot help.
+However, if a database is _unavailable_ because some members are in a quarantined state or if a database is not performing as expected for other reasons, this section cannot help.
 By following the steps outlined here, you can recover the unavailable databases and make them fully operational with minimal impact on the other databases in the cluster.
 
 [NOTE]
@@ -31,12 +30,18 @@ Consequently, in a disaster where multiple servers go down, some databases may k
 There are three main steps to recovering a cluster from a disaster.
 Completing each step, regardless of the disaster scenario, is recommended to ensure the cluster is fully operational.
 
+[NOTE]
+====
+Any potential quarantined databases need to be handled before executing this guide, see REF for more information.
+====
+
 . Ensure the `system` database is available in the cluster.
 The `system` database defines the configuration for the other databases; therefore, it is vital to ensure it is available before doing anything else.
 
-. After the `system` database's availability is verified, whether recovered or unaffected by the disaster, recover the lost servers to ensure the cluster's topology meets the requirements.
+. After the `system` database's availability is verified, whether recovered or unaffected by the disaster, recover the lost servers to ensure the cluster's topology meets the requirements
+This process starts the managing of databases by default.
 
-. After the `system` database is available and the cluster's topology is satisfied, you can manage the databases.
+. After the `system` database is available, the cluster's topology is satisfied and the databases has been managed, continue managing databases and verify that they are available.
 
 The steps are described in detail in the following sections.
 
@@ -67,6 +72,7 @@ The server may have to be considered indefinitely lost.
 If the response contain a writer, the `system` database is write available and does not need to be recovered, skip to step  xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
 ** Create a temporary user by running `CREATE USER 'temporaryUser' SET PASSWORD 'temporaryPassword'`.
 Check if the temporary user is created by running `SHOW USERS`. If it was created as expected, the `system` database is write available and does not need to be recovered, skip to step  xref:clustering/disaster-recovery.adoc#recover-servers[Recover servers].
+** Use rafted status check as described in REF.
 
 +
 . *Restore the `system` database.*
@@ -109,10 +115,13 @@ If *all* servers show health `AVAILABLE` and status `ENABLED` continue to xref:c
 . For each `UNAVAILABLE` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
 . For each `CORDONED` server, make sure a new unconstrained server has been added to the cluster to take its place, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] to add additional servers.
 If no servers were added in xref:clustering/disaster-recovery.adoc#restore-the-system-database[Restore the system database], the amount of servers that needs to be added is equal to the number of `CORDONED` servers.
-. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers. If all deallocations succedded, skip to step 6.
+[NOTE]
+====
+It is not strictly necessary to add new servers in this step. However, not adding new servers might require the topology for a database to be altered via ALTER DATABASE to make deallocations possible or in the RECREATE command to make it possible.
+====
+. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers. If all deallocations succeeded, skip to step 6.
 . Make sure deallocating the servers is possible by doing the following steps:
 .. Run `SHOW DATABASES`.
-.. Fix `QUARANTINED` databases.
 .. Try to start the offline databases allocated on any of the `CORDONED` servers by running `START DATABASE stopped-db WAIT`.
 +
 [NOTE]
@@ -137,7 +146,7 @@ Consider running SHOW SERVERS to determine what action is suitable to resolve th
 [[recover-databases]]
 === Verify recovery of databases
 
-Once the `system` database is verified available, and all servers are online, verify that all databases are in a desirable state.
+Once the `system` database is verified available, and all servers are online, manage and verify that all databases are in a desirable state.
 
 . Run `SHOW DATABASES`. If all databases are in desired states on all servers (`requestedStatus`=`currentStatus`), disaster recovery is complete.
 +
@@ -153,6 +162,7 @@ Deallocating databases can take an unbounded amount of time since it involves co
 Therefore, an allocation in STORE_COPY state should reach the requestedStatus given some time.
 ====
 
+. For any databases in
 . For any recreated databases in `STARTING` state with one of the following messages displayed in the message field:
 ** `Seeders ServerId1 and ServerId2 have different checksums for transaction TransactionId. All seeders must have the same checksum for the same append index.`
 ** `Seeders ServerId1 and ServerId2 have incompatible storeIds. All seeders must have compatible storeIds.`
