@@ -412,8 +412,51 @@ CALL dbms.cluster.showParallelDiscoveryState();
 +-------------------------------------------------------------+
 ----
 
+[[discovery-v1-to-v2-semi-automated-procedure]]
+=== Semi-automated procedure
+
+Another way to migrate from Discovery Service `V1` to `V2` is to use a semi-automated procedure, which simplifies the migration process
+It automates the approach described in the xref:clustering/setup/discovery.adoc#discovery-v1-to-v2-procedures[next section].
+
+. Make sure that server side routing is enabled as detailed in xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] section
+. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
+. Connect to any server using server-side routing
++
+[source,cypher]
+----
+./cypher-shell -a neo4j://localhost:7691 -d system
+----
+
+. Run the following procedure three times to move all members from `V1_ONLY` to `V2_ONLY`.
++
+[source,cypher]
+----
+CALL internal.dbms.cluster.moveToNextDiscoveryVersion();
+----
+After each call `internal.dbms.cluster.moveToNextDiscoveryVersion()` you need to make sure that `dbms.cluster.showParallelDiscoveryState()` display `Matching` in the `stateComparison` column.
+If they are not, wait and try again till matching.
+
+The output should display `Matching` in the `stateComparison` column.
+If they are not, wait and try again till matching.
+
+If the procedure fails, read the error message and resolve the issue manually.
+One possible reason for failure is that some members might have had inconsistent `dbms.cluster.discovery.version` settings initially.
+Refer to the next section for guidance on debugging and fixing issues.
+
+. To check that the migration was successful, you can execute `CALL dbms.cluster.showParallelDiscoveryState()` on all members of the cluster. You should see that V2_ONLY is the current version.
++
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
++-------------------------------------------------------------+
+----
+. In the last step, set the `dbms.cluster.discovery.version=V2_ONLY` for each member of the cluster, so that the version change is retained after a restart.
+
 [[discovery-v1-to-v2-procedures]]
-=== Using procedures
+=== Manual procedures
 
 // By using just procedures, the nice thing is that during the user's normal version upgrade, they can also add the new settings required for v2 discovery service.
 // Then, when they are ready to migrate to v2, they can use the procedures and then finally, set the version to 'V2' in the neo4j.conf at the very end - which can just sit there till the next restart
@@ -557,41 +600,6 @@ Therefore, when a server restarts, it starts right back with only v1 running.
 As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cluster.discovery.v2.endpoints` or `dbms.kubernetes.discovery.v2.service_port_name`
 are set as required, so that the servers start with v2 running on the next restart.
 ====
-
-[[discovery-v1-to-v2-semi-automated-procedure]]
-=== Semi-automated procedure
-
-Another way to migrate from Discovery Service `V1` to `V2` is to use a semi-automated procedure, which simplifies the migration process.
-It automates the approach described in the xref:clustering/setup/discovery.adoc#discovery-v1-to-v2-procedures[previous section].
-
-. Make sure that server side routing is enabled as detailed in xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] section
-. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
-. Connect to any server.
-+
-[source,cypher]
-----
-./cypher-shell -a neo4j://localhost:7691 -d system
-----
-
-. Run the following procedure three times to move all members from `V1_ONLY` to `V2_ONLY`. If the procedure fails, read the error message and resolve the issue manually.
-One possible reason for failure is that some members might have had inconsistent `dbms.cluster.discovery.version` settings initially.
-Refer to the previous section for guidance on debugging and fixing issues.
-+
-[source,cypher]
-----
-CALL internal.dbms.cluster.moveToNextDiscoveryVersion();
-----
-. To check that the migration was successful, you can execute `CALL dbms.cluster.showParallelDiscoveryState()` on all members of the cluster. You should see that V2_ONLY is the current version.
-+
-[queryresult]
-----
-+-------------------------------------------------------------+
-| mode      | stateComparison | v1ServerCount | v2ServerCount |
-+-------------------------------------------------------------+
-| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
-+-------------------------------------------------------------+
-----
-. In the last step, add `dbms.cluster.discovery.version=V2_ONLY` to the config file for each member of the cluster, so that the version change is retained after a restart.
 
 == Monitoring the progress and metrics
 
