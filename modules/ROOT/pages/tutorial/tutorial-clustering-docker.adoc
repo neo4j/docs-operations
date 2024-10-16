@@ -32,9 +32,58 @@ For more information, see the https://docs.docker.com/compose/install/[Install D
 
 *Procedure*
 
-. Create a configuration file `neo4j.conf` which will be shared across cluster members and make it readable and writable for the user (eg., `chmod 640 neo4j.conf`)
+. Create a configuration file _neo4j.conf_ which will be shared across cluster members and make it readable and writable for the user (eg., `chmod 640 neo4j.conf`)
 +
-====
+[.tabbed-example]
+=====
+[role=include-with-discovery-service-v2 label--new-5.23]
+======
+[source,shell,subs="attributes+, +macros"]
+----
+# Setting that specifies how much memory Neo4j is allowed to use for the page cache.
+server.memory.pagecache.size=100M
+
+# Setting that specifies the initial JVM heap size.
+server.memory.heap.initial_size=100M
+
+# The behavior of the discovery service is determined by the parameters `dbms.cluster.discovery.resolver_type`, `dbms.cluster.discovery.v2.endpoints`, and `dbms.cluster.discovery.version`.
+# The DNS strategy fetches the IP addresses of the cluster members using the DNS A records.
+dbms.cluster.discovery.resolver_type=DNS
+
+# The value of `dbms.cluster.discovery.version` must be set to `V2_ONLY` if you want to use the discovery service v2.
+# The discovery service v2 utilizes the port `6000`.
+dbms.cluster.discovery.version=V2_ONLY
+
+# The value of `dbms.cluster.discovery.v2.endpoints` should be set to a single domain name and the port of the discovery service.
+# The domain name returns an A record for every server in the cluster when a DNS lookup is performed.
+# Each A record returned by DNS should contain the IP address of the server in the cluster.
+# The configured server uses all the IP addresses from the A records to join or form a cluster.
+# The discovery port must be the same on all servers when using this configuration.
+dbms.cluster.discovery.v2.endpoints=neo4j-network:6000
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for discovery protocol messages from other members of the cluster.
+server.cluster.advertised_address=$(hostname -i)
+
+# Address (the public hostname/IP address of the machine)
+# and port setting that specifies where this instance advertises for Raft messages within the cluster.
+server.cluster.raft.advertised_address=$(hostname)
+
+# Enable server-side routing
+dbms.routing.enabled=true
+
+# Use server-side routing for neo4j:// protocol connections.
+dbms.routing.default_router=SERVER
+
+# The advertised address for the intra-cluster routing connector.
+server.routing.advertised_address=$(hostname)
+
+# Automatically enable servers, rather than needing to explicitly do so for Free servers                                                                                                                              
+initial.dbms.automatically_enable_free_servers=true
+----
+======
+[role=include-with-discovery-service-v1 label--deprecated-5.23]
+======
 [source,shell,subs="attributes+, +macros"]
 ----
 # Setting that specifies how much memory Neo4j is allowed to use for the page cache.
@@ -75,7 +124,9 @@ dbms.routing.default_router=SERVER
 # The advertised address for the intra-cluster routing connector.
 server.routing.advertised_address=$(hostname)
 ----
-====
+======
+=====
+
 . Prepare your _docker-compose.yml_ file using the following example.
 For more information, see the https://docs.docker.com/compose/compose-file/#service-configuration-reference[Docker Compose official Service configuration reference].
 +
@@ -272,10 +323,12 @@ Each container must have a network route to each of the others, the `+NEO4J_init
 The following environment variables are specific to the Neo4j cluster, and are available in the Neo4j Enterprise Edition:
 
 * `+NEO4J_initial_server_mode__constraint+`: the database mode, defaults to `NONE`, can be set to `PRIMARY` or `SECONDARY`.
-* `+NEO4J_dbms_cluster_discovery_endpoints+`: a comma-separated list of endpoints, which a server should contact to discover other cluster servers.
-* `+NEO4J_server_discovery_advertised_address+`: hostname/IP address and port to advertise for member discovery management communication.
-* `+NEO4J_server.cluster.advertised_address+`: hostname/IP address and port to advertise for transaction handling.
+* `+NEO4J_dbms_cluster_discovery_endpoints+`: a comma-separated list of endpoints, which a server should contact to discover other cluster servers. label:deprecated[Deprecated in 5.23]
+* `+NEO4J_dbms_cluster_discovery_v2_endpoints+`: a comma-separated list of endpoints, which a server should contact to discover other cluster servers. label:new[Introduced in 5.23]
+* `+NEO4J_server_discovery_advertised_address+`: hostname/IP address and port to advertise for member discovery management communication. label:deprecated[Deprecated in 5.23]
+* `+NEO4J_server.cluster.advertised_address+`: hostname/IP address and port to advertise for transaction handling and v2 discovery.
 * `+NEO4J_server.cluster.raft.advertised_address+`: hostname/IP address and port to advertise for cluster communication.
+* `+NEO4J_dbms_cluster_discovery_version+`: the discovery service version to use, defaults to `V1_ONLY`, can be set to `V1_OVER_V2`, `V2_OVER_V1`, or `V2_ONLY`. label:new[Introduced in 5.23]
 
 See xref:clustering/settings.adoc[] for more details of Neo4j cluster settings.
 
@@ -285,7 +338,55 @@ See xref:clustering/settings.adoc[] for more details of Neo4j cluster settings.
 Within a single Docker host, you can use the default ports for HTTP, HTTPS, and Bolt.
 For each container, these ports are mapped to a different set of ports on the Docker host.
 
-Example of a `docker run` command for deploying a cluster with 3 servers:
+Example of a `docker run` command for deploying a cluster with three servers:
+
+[.tabbed-example]
+=====
+[role=include-with-discovery-service-v2 label--new-5.23]
+======
+[source,shell,subs="attributes"]
+----
+docker network create --driver=bridge neo4j-cluster
+
+docker run --name=server1 --detach --network=neo4j-cluster \
+    --publish=7474:7474 --publish=7473:7473 --publish=7687:7687 \
+    --hostname=server1 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_version=V2_ONLY \
+    --env NEO4J_dbms_cluster_discovery_v2_endpoints=server1:6000,server2:6000,server3:6000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_server_bolt_advertised__address=localhost:7687 \
+    --env NEO4J_server_http_advertised__address=localhost:7474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=server2 --detach --network=neo4j-cluster \
+    --publish=8474:7474 --publish=8473:7473 --publish=8687:7687 \
+    --hostname=server2 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_version=V2_ONLY \
+    --env NEO4J_dbms_cluster_discovery_v2_endpoints=server1:6000,server2:6000,server3:6000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_server_bolt_advertised__address=localhost:8687 \
+    --env NEO4J_server_http_advertised__address=localhost:8474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+
+docker run --name=server3 --detach --network=neo4j-cluster \
+    --publish=9474:7474 --publish=9473:7473 --publish=9687:7687 \
+    --hostname=server3 \
+    --env NEO4J_initial_server_mode__constraint=PRIMARY \
+    --env NEO4J_dbms_cluster_discovery_version=V2_ONLY \
+    --env NEO4J_dbms_cluster_discovery_v2_endpoints=server1:6000,server2:6000,server3:6000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_server_bolt_advertised__address=localhost:9687 \
+    --env NEO4J_server_http_advertised__address=localhost:9474 \
+    --env NEO4J_AUTH=neo4j/mypassword \
+    neo4j:{neo4j-version-exact}-enterprise
+----
+======
+[role=include-with-discovery-service-v1 label--deprecated-5.23]
+======
 
 [source,shell,subs="attributes"]
 ----
@@ -324,10 +425,35 @@ docker run --name=server3 --detach --network=neo4j-cluster \
     --env NEO4J_AUTH=neo4j/mypassword \
     neo4j:{neo4j-version-exact}-enterprise
 ----
+======
+=====
+
 
 Additional servers can be added to the cluster in an ad-hoc fashion.
 
 Example of a `docker run` command for adding a fourth server with a role `SECONDARY` to the cluster:
+
+[.tabbed-example]
+=====
+[role=include-with-discovery-service-v2 label--new-5.23]
+======
+
+[source,shell,subs="attributes"]
+----
+docker run --name=read-server4 --detach --network=neo4j-cluster \
+    --publish=10474:7474 --publish=10473:7473 --publish=10687:7687 \
+    --hostname=read-server4 \
+    --env NEO4J_initial_server_mode__constraint=SECONDARY \
+    --env NEO4J_dbms_cluster_discovery_version=V2_ONLY \
+    --env NEO4J_dbms_cluster_discovery_v2_endpoints=server1:6000,server2:6000,server3:6000 \
+    --env NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
+    --env NEO4J_server_bolt_advertised__address=localhost:10687 \
+    --env NEO4J_server_http_advertised__address=localhost:10474 \
+    neo4j:{neo4j-version-exact}-enterprise
+----
+======
+[role=include-with-discovery-service-v1 label--deprecated-5.23]
+======
 
 [source,shell,subs="attributes"]
 ----
@@ -341,3 +467,6 @@ docker run --name=read-server4 --detach --network=neo4j-cluster \
     --env NEO4J_server_http_advertised__address=localhost:10474 \
     neo4j:{neo4j-version-exact}-enterprise
 ----
+
+======
+=====
