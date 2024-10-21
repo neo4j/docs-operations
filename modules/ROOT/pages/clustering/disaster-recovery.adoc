@@ -7,8 +7,8 @@ A database can become unavailable due to issues on different system levels.
 For example, a data center failover may lead to the loss of multiple servers, which may cause a set of databases to become unavailable.
 
 This section contains a step-by-step guide on how to recover *unavailable databases* that are incapable of serving writes, while possibly still being able to serve reads.
+The guide recovers the unavailable databases and make them fully operational, with minimal impact on the other databases in the cluster.
 However, if a database is not performing as expected for other reasons, this section cannot help.
-By following the steps outlined here, you can recover the unavailable databases and make them fully operational, with minimal impact on the other databases in the cluster.
 
 [CAUTION]
 ====
@@ -53,15 +53,22 @@ Verifying each state before continuing to the next step, regardless of the disas
 
 [NOTE]
 ====
-Before beginning this guide, start the Neo4j process on all servers that are _offline_.
-If a server is unable to start, inspect the logs and contact support personnel.
-The server may have to be considered indefinitely lost.
-====
-
 Disasters may sometimes affect the routing capabilities of the driver and may prevent the use of the `neo4j` scheme for routing.
 One way to remedy this is to connect directly to the server using `bolt` instead of `neo4j`.
 See xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] for more information on the `bolt` scheme.
+====
 
+=== Neo4j process started
+
+==== State
+====
+The Neo4j process is started on all servers which are not _lost_.
+====
+
+==== Path to correct state
+Start the Neo4j process on all servers that are _offline_.
+If a server is unable to start, inspect the logs and contact support personnel.
+The server may have to be considered indefinitely lost.
 
 [[restore-the-system-database]]
 === `System` database write availability
@@ -110,14 +117,14 @@ This causes downtime for all databases in the cluster until the processes are st
 . On each server, run `bin/neo4j-admin database info system` and compare the `lastCommittedTransaction` to find out which server has the most up-to-date copy of the `system` database.
 . On the most up-to-date server, run `bin/neo4j-admin database dump system --to-path=[path-to-dump]` to take a dump of the current `system` database and store it in an accessible location.
 . For every _lost_ server, add a new *unconstrained* one according to xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster].
-It is important that the new servers are unconstrained, or deallocating servers might be blocked even though enough servers were added.
+It is important that the new servers are unconstrained, or deallocating servers in the next step of this guide might be blocked, even though enough servers were added.
 +
 [NOTE]
 =====
 While recommended, it is not strictly necessary to add new servers in this step.
 There is also an option to change the `system` database mode (`server.cluster.system_database_mode`) on secondary allocations to make them primary allocations for the new `system` database.
 The amount of primary allocations needed is defined by `dbms.cluster.minimum_initial_system_primaries_count`, see the xref:configuration/configuration-settings.adoc#config_dbms.cluster.minimum_initial_system_primaries_count[Configuration settings] for more information.
-Not replacing servers can cause cluster overload when databases are moved from lost servers to available ones in the next step of this guide.
+Be aware that not replacing servers can cause cluster overload when databases are moved from lost servers to available ones in the next step of this guide.
 =====
 +
 . On each server, run `bin/neo4j-admin database load system --from-path=[path-to-dump] --overwrite-destination=true` to load the current `system` database dump.
@@ -136,8 +143,8 @@ All servers in the cluster's view are available and enabled.
 
 A lost server will still be in the `system` database's view of the cluster, but in an unavailable state.
 According to the view of the cluster, these lost servers are still hosting the databases they had before they became lost.
-Therefore, removing lost servers is not as easy as informing the `system` database that they are lost.
-It also includes moving requested allocations on the lost servers onto servers which are actually in the cluster, so that those databases' topologies are still satisfied.
+Therefore, informing the cluster of servers which are lost is not enough.
+The databases hosted on the lost servers also need to be moved onto servers which are actually in the cluster.
 
 ==== Example verification
 The cluster's view of servers can be seen by listing the servers, see xref:clustering/servers.adoc#_listing_servers[Listing servers] for more information.
@@ -150,7 +157,7 @@ SHOW SERVERS;
 
 ==== Path to correct state
 The following steps can be used to remove lost servers and add new ones to the cluster.
-They include moving any potential database allocations from lost servers to available servers in the cluster.
+That includes moving any potential database allocations from lost servers to available servers in the cluster.
 These steps might also recreate some databases, since a database which has lost a majority of its primary allocations cannot be moved from one server to another.
 
 .Guide
@@ -170,19 +177,8 @@ However, not adding new servers reduces the capacity of the cluster to handle wo
 Furthermore, it might require the topology for a database to be altered to make deallocating servers and recreating databases possible.
 =====
 
-// ? from here
-. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
-This will try to move all database allocations from this server to an available server in the cluster.
-Once a server is `DEALLOCATED`, all allocated user databases on this server has been moved successfully.
-+
-[NOTE]
-=====
-Remember, moving databases can take an unbounded amount of time since it involves copying the store to a new server.
-Therefore, an allocation with `currentStatus` = `DEALLOCATING` should reach the `requestedStatus` = `DEALLOCATED` given some time.
-=====
-. If any deallocations failed, make them possible by executing the following steps:
-.. Run `SHOW DATABASES`. If a database show `currentStatus`= `offline` this database has been stopped.
-.. For each stopped database that has at least one allocation on any of the `CORDONED` servers, start them by running `START DATABASE stopped-db WAIT`.
+. Run `SHOW DATABASES`. If a database show `currentStatus`= `offline` this database has been stopped.
+. For each stopped database that has at least one allocation on any of the `CORDONED` servers, start them by running `START DATABASE stopped-db WAIT`.
 This is necessary since stopped databases cannot be moved from one server to another.
 +
 [NOTE]
@@ -190,12 +186,12 @@ This is necessary since stopped databases cannot be moved from one server to ano
 A database can be set to `READ-ONLY` before it is started to avoid updates on a database that is desired to be stopped with the following command:
 `ALTER DATABASE database-name SET ACCESS READ ONLY`.
 =====
-.. On each server, run `CALL dbms.cluster.statusCheck([])` to check the write availability for all databases on this server, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
+. On each server, run `CALL dbms.cluster.statusCheck([])` to check the write availability for all databases on this server, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
 Depending on the environment, consider extending the timeout for this procedure.
 If any of the primary allocations for a database report `replicationSuccessful` = `TRUE`, this database is write available.
-
-.. For each database that is not write available, recreate it to move it from lost servers and regain write availability.
+. For each database that is not write available, recreate it to move it from lost servers and regain write availability.
 Go to xref:clustering/databases.adoc#recreate-databases[Recreate databases] for more information about recreate options.
+If any allocation has `currentStatus` = `QUARANTINED`, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed] or define seeding servers in the recreate procedure using xref:clustering/databases.adoc#specified-servers[Specified seeders] so that problematic allocations are excluded.
 Remember to make sure there are recent backups for the databases before recreating them, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
 +
 [NOTE]
@@ -203,11 +199,16 @@ Remember to make sure there are recent backups for the databases before recreati
 By using recreate with xref:clustering/databases.adoc#undefined-servers-backup[Undefined servers with fallback backup], also databases which have lost all allocation can be recreated.
 Otherwise, recreating with xref:clustering/databases.adoc#uri-seed[Backup as seed] must be used for that specific case.
 =====
-.. Return to step 3 to retry deallocating all servers.
-. For each deallocated server, run `DROP SERVER deallocated-server-id`.
-This safely removes the server from the cluster's view.
-
-// ? to here really
+. For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
+This will try to move all database allocations from this server to an available server in the cluster.
++
+[NOTE]
+=====
+This operation might fail if enough unconstrained servers were not added to the cluster to replace lost servers.
+Another reason is that some available servers are also `CORDONED`.
+=====
+. For each deallocating or deallocated server, run `DROP SERVER deallocated-server-id`.
+This removes the server from the cluster's view.
 ====
 
 
@@ -242,7 +243,7 @@ Therefore, the desired state has been verified when this is true for all databas
 CALL dbms.cluster.statusCheck([]);
 ----
 
-A stricter verification could be done to verify if all databases are in desired states on all servers.
+A stricter verification can be done to verify that all databases are in their desired states on all servers.
 For the stricter check, run `SHOW DATABASES` and verify that `requestedStatus` = `currentStatus` for all database allocations on all servers.
 
 ==== Path to correct state
@@ -255,6 +256,7 @@ Recreations might fail for different reasons, but one example is that the checks
 ====
 . Run `CALL dbms.cluster.statusCheck([])` on all servers to identify write unavailable databases, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
 . Recreate every database that is not write available and has not been recreated previously, see xref:clustering/databases.adoc#recreate-databases[Recreate databases] for more information.
+If any allocation has `currentStatus` = `QUARANTINED`, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed] or define seeding servers in the recreate procedure using xref:clustering/databases.adoc#specified-servers[Specified seeders] so that problematic allocations are excluded.
 Remember to make sure there are recent backups for the databases before recreating them, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
 . Run `SHOW DATABASES` and check any recreated databases which are not write available.
 Recreating a database will not complete if one of the following messages is displayed in the message field:
