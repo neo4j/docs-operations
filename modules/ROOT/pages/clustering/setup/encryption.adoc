@@ -1,5 +1,6 @@
 :description: This section describes how to secure the cluster communication between server instances.
 :page-aliases: clustering/intra-cluster-encryption.adoc
+
 [role=enterprise-edition]
 [[clustering-intra-cluster-encryption]]
 = Intra-cluster encryption
@@ -104,41 +105,62 @@ By default, cluster communication is unencrypted.
 To configure a cluster to encrypt its intra-cluster communication, set `dbms.ssl.policy.cluster.enabled` to `true`.
 
 An SSL policy utilizes the installed cryptographic objects and additionally allows parameters to be configured.
-Use the following parameters in the configuration:
+Use the parameters in one of the following configurations:
 
-.Example settings
-[options="header"]
-|===
-| Setting suffix   | Value     | Comment
-| `client_auth`    | `REQUIRE` | Setting this to `REQUIRE` effectively enables mutual authentication for servers.
-| `ciphers`        | `TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384` |
-A particular single strong cipher can be enforced and thus remove any doubt about which cipher gets negotiated and chosen.
-The selected cipher offers Perfect Forward Secrecy (PFS) which is generally desirable.
-It also uses Advanced Encryption Standard (AES) for symmetric encryption which has great support for acceleration in hardware and thus allows performance to generally be negligibly affected.
-| `tls_versions`   | `TLSv1.2` |
-With control of the entire cluster, the latest TLS standard can be enforced without any concern for backwards compatibility.
-It has no known security vulnerabilities and uses the most modern algorithms for key exchanges, etc.
-|===
+[.tabbed-example]
+=====
+[.include-with-one-TLS-version]
+======
 
-In the following example, an SSL policy is created and configured that is used in the example cluster.
-
-.Configure the cluster SSL policy
-====
-This example assumes that the directory structure is created, and certificate files are installed, as per the previous example.
+The following example assumes that an SSL policy is created and configured as per the <<clustering-intra-cluster-encryption-example-deployment, example deployment>> and uses the default TLSv1.2.
 
 Add the following content to the _neo4j.conf_ file:
 
 [source, properties]
 ----
 dbms.ssl.policy.cluster.enabled=true
-dbms.ssl.policy.cluster.tls_versions=TLSv1.2
-dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384
-dbms.ssl.policy.cluster.client_auth=REQUIRE
+dbms.ssl.policy.cluster.tls_versions=TLSv1.2 \ # <1>
+dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 \ # <2>
+dbms.ssl.policy.cluster.client_auth=REQUIRE # <3>
 ----
 
-Any user data communicated between instances is now secured.
-Note that an instance that is not correctly setup is not able to communicate with the others.
-====
+<1> With control of the entire cluster, the default TLS standard can be enforced without any concern for backwards compatibility.
+It has no known security vulnerabilities and uses the most modern algorithms for key exchanges, etc.
+<2> A particular single strong cipher can be enforced and thus remove any doubt about which cipher gets negotiated and chosen.
+The selected cipher offers Perfect Forward Secrecy (PFS) and uses the Advanced Encryption Standard (AES) for symmetric encryption.
+AES has great support for hardware acceleration and thus allows performance to be generally negligibly affected.
+<3> Setting the cluster client authentication to `REQUIRE` enables mutual authentication, meaning both ends of a channel must authenticate.
+
+
+======
+[role=include-with-two-TLS-versions label--new-5.24]
+======
+
+The following example assumes that an SSL policy is created and configured as per the <<clustering-intra-cluster-encryption-example-deployment, example deployment>> and uses both TLSv1.2 and TLSv1.3.
+
+Add the following content to the _neo4j.conf_ file:
+
+[source, properties]
+----
+dbms.ssl.policy.cluster.enabled=true
+dbms.ssl.policy.cluster.tls_versions=TLSv1.3,TLSv1.2 \ # <1>
+dbms.ssl.policy.cluster.ciphers=TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_DSS_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_CBC_SHA \ # <2>
+dbms.ssl.policy.cluster.client_auth=REQUIRE \# <3>
+----
+
+<1> With control of the entire cluster, the default TLS standard can be enforced without any concern for backwards compatibility.
+It has no known security vulnerabilities and uses the most modern algorithms for key exchanges, etc.
+<2> If you want to specify ciphers for both supported TLS versions, you must specify ciphers for each TLS version not to get more ciphers than expected.
+The selected ciphers offer Perfect Forward Secrecy (PFS) and use the Advanced Encryption Standard (AES) for symmetric encryption.
+AES has great support for hardware acceleration and thus allows performance to be generally negligibly affected.
+<3> Setting the cluster client authentication to `REQUIRE` enables mutual authentication, meaning both ends of a channel must authenticate.
+They have no known security vulnerabilities and use the most modern algorithms for key exchanges, etc.
+
+======
+=====
+
+Any user data communicated between servers is now secured.
+Note that a server that is not correctly setup is not able to communicate with the others.
 
 The policy must be configured on every server with the same settings.
 The actual cryptographic objects installed are mostly different since they do not share the same private keys and corresponding certificates.
