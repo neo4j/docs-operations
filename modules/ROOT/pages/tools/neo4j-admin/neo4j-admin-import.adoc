@@ -4,7 +4,10 @@
 
 :rfc-4180: https://tools.ietf.org/html/rfc4180
 
-`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. You should use this tool when:
+`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. +
+From Neo4j 5.25, Neo4j also provides support for the Parquet file format in a public beta version.
+
+You should use this tool when:
 
 * Import performance is important because you have a large amount of data (millions/billions of entities).
 * The database can be taken offline and you have direct access to one of the servers hosting your Neo4j DBMS.
@@ -78,20 +81,21 @@ See <<indexes-constraints-import, Provide indexes and constraints during import>
 
 The syntax for importing a set of CSV files is:
 
+[source, syntax, role="nocopy"]
 ----
 neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers[=true|false]]
                                  [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
                                  [--legacy-style-quoting[=true|false]] [--multiline-fields[=true|false]]
                                  [--normalize-types[=true|false]] [--overwrite-destination[=true|false]]
                                  [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships[=true|false]]
-                                 [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings
-                                 [=true|false]] [--additional-config=<file>] [--array-delimiter=<char>]
-                                 [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
-                                 [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
-                                 [--input-encoding=<character-set>] [--max-off-heap-memory=<size>] [--quote=<char>]
+                                 [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
+                                 [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>]
+                                 [--delimiter=<char>] [--format=<format>] [--high-parallel-io=on|off|auto]
+                                 [--id-type=string|integer|actual] [--input-encoding=<character-set>]
+                                 [--input-type=csv|parquet] [--max-off-heap-memory=<size>] [--quote=<char>]
                                  [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>] [--threads=<num>]
-                                 --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>[:<label>]...=]
-                                 <files>...]... [--relationships=[<type>=]<files>...]... <database>
+                                 --nodes=[<label>[: <label>]...=]<files>... [--nodes=[<label>[:<label>]...=]<files>...]...
+                                 [--relationships=[<type>=]<files>...]... <database>
 ----
 
 === Description
@@ -123,6 +127,29 @@ For more information, please contact Neo4j Professional Services.
 
 === Options
 
+[role=label--beta]
+.Parquet file support
+[NOTE]
+====
+Starting with Neo4j 5.25, Neo4j provides support for the Parquet file format in a public beta version.
+The additional parameter `--input-type [csv|parquet]` is introduced to explicitly tell the importer to use either CSV or Parquet.
+Its value defaults to CSV if it is not defined.
+
+Most of the parameters that can be used to configure the import are also valid for the Parquet format.
+The following parameters are not supported (see <<full-import-options-table, `neo4j-admin database import full` options>> table for more details):
+
+- `--auto-skip-subsequent-headers`
+- `--delimiter`
+- `--ignore-extra-columns`
+- `--input-encoding`
+- `--multiline-fields`
+- `--quote`
+- `--trim-strings`
+
+The xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-examples[examples] for CSV can also be used with Parquet.
+====
+
+[[full-import-options-table]]
 .`neo4j-admin database import full` options
 [options="header", cols="5m,10a,2m"]
 |===
@@ -213,6 +240,10 @@ Possible values are:
 |--input-encoding=<character-set>
 |Character set that input data is encoded in.
 |UTF-8
+
+|--input-type[=csv\|parquet]
+|label:beta[] File type to import from. Can be csv or parquet. Defaults to csv.
+|csv
 
 |--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
@@ -336,7 +367,6 @@ performance, this value should not be greater than the number of available proce
 |Enable verbose output.
 |
 |===
-
 
 [NOTE]
 .Heap size for the import
@@ -576,21 +606,17 @@ It is highly recommended to back up your database before running the incremental
 [[import-tool-incremental-syntax]]
 === Syntax
 
-[source, shell, role=noplay]
+The syntax for importing a set of CSV files incrementally is:
+
+[source, syntax, role="nocopy"]
 ----
-neo4j-admin database import incremental [-h] [--expand-commands] --force [--verbose] [--auto-skip-subsequent-headers
-                                        [=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
-                                        [=true|false]] [--legacy-style-quoting[=true|false]] [--multiline-fields
-                                        [=true|false]] [--normalize-types[=true|false]] [--skip-bad-entries-logging
-                                        [=true|false]] [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes
-                                        [=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
-                                        [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>]
-                                        [--delimiter=<char>] [--high-parallel-io=on|off|auto]
-                                        [--id-type=string|integer|actual] [--input-encoding=<character-set>]
-                                        [--max-off-heap-memory=<size>] [--quote=<char>] [--read-buffer-size=<size>]
-                                        [--report-file=<path>] [--schema=<path>] [--stage=all|prepare|build|merge]
-                                        [--threads=<num>] --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>
-                                        [:<label>]...=]<files>...]... [--relationships=[<type>=]<files>...]... <database>
+neo4j-admin database import incremental [-h] [--expand-commands] --force [--verbose] [--auto-skip-subsequent-headers[=true|false]]
+                                        [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
+                                        [--legacy-style-quoting[=true|false]] [--multiline-fields[=true|false]] [--normalize-types[=true|false]] [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships[=true|false]]
+                                        [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
+                                        [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                        [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual] [--input-encoding=<character-set>]
+                                        [--input-type=csv|parquet] [--max-off-heap-memory=<size>] [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>] [--stage=all|prepare|build|merge] [--threads=<num>] --nodes=[<label>[: <label>]...=]<files>... [--nodes=[<label>[:<label>]...=]<files>...]... [--relationships=[<type>=]<files>...]... <database>
 ----
 
 === Description
@@ -641,6 +667,29 @@ If the database into which you import does not exist prior to importing, you mus
 
 === Options
 
+[role=label--beta]
+.Parquet file support
+[NOTE]
+====
+Starting with Neo4j 5.25, Neo4j provides support for the Parquet file format in a public beta version.
+The additional parameter `--input-type [csv|parquet]` is introduced to explicitly tell the importer to use either CSV or Parquet.
+Its value defaults to CSV if it is not defined.
+
+Most of the parameters that can be used to configure the import are also valid for the Parquet format.
+The following parameters are not supported (see <<incremental-import-options-table, `neo4j-admin database import incremental` options>> table for more details):
+
+ - `--auto-skip-subsequent-headers`
+ - `--delimiter`
+ - `--ignore-extra-columns`
+ - `--input-encoding`
+ - `--multiline-fields`
+ - `--quote`
+ - `--trim-strings`
+
+The xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-examples[examples] for CSV can also be used with Parquet.
+====
+
+[[incremental-import-options-table]]
 .`neo4j-admin database import incremental` options
 [options="header", cols="5m,10a,2m"]
 |===
@@ -729,6 +778,10 @@ Possible values are:
 |--input-encoding=<character-set>
 |Character set that input data is encoded in.
 |UTF-8
+
+|--input-type[=csv\|parquet]
+|label:beta[] File type to import from. Can be csv or parquet. Defaults to csv.
+|csv
 
 |--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
