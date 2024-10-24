@@ -438,26 +438,12 @@ The seed can be either a backup or a dump from an existing database.
 The sources of seeds are called _seed providers_.
 
 The mechanism is pluggable, allowing new sources of seeds to be supported (see link:https://www.neo4j.com/docs/java-reference/current/extending-neo4j/project-setup/#extending-neo4j-plugin-seed-provider[Java Reference -> Implement custom seed providers] for more information).
-The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server and Amazon S3.
+The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server, Amazon S3, Google Cloud Storage (from Neo4j 5.25), and Azure Cloud Storage (from Neo4j 5.25).
 
 [NOTE]
 ====
-S3 is supported by default, but the other providers require configuration of xref:configuration/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
-Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity and thus, `aws cli` is not required.
+Amazon S3, Google Cloud Storage, and Azure Cloud Storage are supported by default, but the other providers require configuration of xref:configuration/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
 ====
-
-The `URLConnectionSeedProvider` supports the following:
-
-** file:
-** ftp:
-** http:
-** https:
-** URIs
-
-Accordingly, the `S3SeedProviders` supports:
-
-** S3:
-** URIs
 
 The URI of the seed is specified when the `CREATE DATABASE` command is issued:
 
@@ -481,7 +467,26 @@ neo4j@neo4j> SHOW DATABASES;
 
 To determine the cause of the problem, it is recommended to look at the `debug.log`.
 
-Certain seed providers, such as S3, may require additional configuration.
+==== Seed providers
+
+The `URLConnectionSeedProvider` supports the following:
+
+** `file:`
+** `ftp:`
+** `http:`
+** `https:`
+
+The `S3SeedProvider` supports:
+
+** `s3:`
+
+[NOTE]
+====
+Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity.
+Therefore, if you use `S3SeedProvider`,`aws cli` is not required but can be used with the `CloudSeedProvider`.
+====
+
+The `S3SeedProvider` requires additional configuration.
 This is specified with the `seedConfig` option.
 This option expects a comma-separated list of configurations.
 Each configuration value is specified as a name followed by `=` and the value, as such:
@@ -491,25 +496,68 @@ Each configuration value is specified as a name followed by `=` and the value, a
 CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup.backup', seedConfig: 'region=eu-west-1' }
 ----
 
-The available configuration options are:
-
-* `file:`
-* `ftp:`
-* `http:`
-* `https:`
-* `s3:` - use this to specify the path to your S3 bucket.
-For example, `seedURI: 's3:/myBucket/myBackup.backup'`
-* `region:` - use this together with `s3:` to set the AWS region that hosts the S3 bucket.
-For example, `seedConfig: 'region=eu-west-1'`.
-
-Some seed providers may also want to pass credentials into the provider.
+`S3SeedProvider` also requires passing in credentials.
 These are specified with the `seedCredentials` option.
 Seed credentials are securely passed from the Cypher command to each server hosting the database.
 For this to work, Neo4j on each server in the cluster must be configured with identical keystores.
 This is identical to the configuration required by remote aliases, see xref:database-administration/aliases/remote-database-alias-configuration.adoc#remote-alias-config-DBMS_admin-A[Configuration of DBMS with remote database alias].
-If this configuration is not performed, the `seedCredential` option fails.
+If this configuration is not performed, the `seedCredentials` option fails.
 
-For example, in the case of `S3SeedProvider`(the default provider), `seedCredentials: [accessKey];[secretKey]` where `accessKey` and `secretKey` are provided by AWS.
+[source, cypher, role="noplay"]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup.backup', seedConfig: 'region=eu-west-1', seedCredentials: [accessKey];[secretKey] }
+----
+Where `accessKey` and `secretKey` are provided by AWS.
+
+The `CloudSeedProvider` supports:
+
+** `s3:`
+** `gs:`
+** `azb:`
+
+[.tabbed-example]
+=====
+[role=include-with-AWS-S3 label--new-5.25]
+======
+
+include::partial$/aws-s3-overrides.adoc[]
+
+include::partial$/aws-s3-credentials.adoc[]
+
+. Create database from `myBackup.backup`. 
++
+[source,shell, role="nocopy"]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup.backup' }
+----
+
+======
+[role=include-with-Google-cloud-storage label--new-5.25]
+======
+
+include::partial$/gcs-credentials.adoc[]
+
+. Create database from `myBackup.backup`. 
++
+[source,shell]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'gs:/myBucket/myBackup.backup' }
+----
+======
+[role=include-with-Azure-cloud-storage label--new-5.25]
+======
+
+include::partial$/azb-credentials.adoc[]
+
+. Create database from `myBackup.backup`. 
++
+[source,shell]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'azb://myStorageAccount/myContainer/myBackup.backup' }
+----
+======
+=====
+
 
 ==== Seed provider reference
 
@@ -535,9 +583,17 @@ For example, in the case of `S3SeedProvider`(the default provider), `seedCredent
 | `URLConnectionSeedProvider`
 | `\https://myhttp.com/backups/backup1.backup`
 
-| `S3:`
-| `S3SeedProvider`
+| `s3:`
+| `S3SeedProvider`, `CloudSeedProvider`
 | `s3://mybucket/backups/backup1.backup`
+
+| `gs:`
+| `CloudSeedProvider`
+| `gs://mybucket/backups/backup1.backup`
+
+| `azb:`
+| `CloudSeedProvider`
+| `azb://mystorageaccount.blob/backupscontainer/backup1.backup`
 |===
 
 [[cluster-allow-deny-db]]
