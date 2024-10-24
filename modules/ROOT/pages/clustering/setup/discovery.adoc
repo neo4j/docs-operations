@@ -200,7 +200,7 @@ From Neo4j 5.23, you can move from the current discovery service v1 to the new v
 The v1 and v2 discovery services are designed to be able to run in parallel.
 They are completely independent of each other, thus allowing you to keep the cluster functioning while switching over from v1 to v2.
 
-There are three ways to move from the current discovery service v1 to the new version v2 depending on the environment and the requirements of the cluster.
+There are four ways to move from the current discovery service v1 to the new version v2 depending on the environment and the requirements of the cluster.
 
 === Preparation
 
@@ -222,6 +222,287 @@ For more information, see <<clustering-discovery-dns>>.
 * If `dbms.cluster.discovery.resolver_type=K8S`, set `dbms.kubernetes.discovery.v2.service_port_name` to the name of the service port used in the Kubernetes service definition for the cluster port.
 It is important that both `dbms.kubernetes.service_port_name` and `dbms.kubernetes.discovery.v2.service_port_name` are set during the operation.
 For more information, see <<clustering-discovery-k8s>>.
+
+[[discovery-v1-to-v2-semi-automated-procedure]]
+=== Procedure for moving an entire cluster
+
+The first way to migrate from discovery service v1 to v2 is to use a semi-automated procedure, which simplifies the migration process.
+It automates the approach described in the xref:clustering/setup/discovery.adoc#discovery-v1-to-v2-procedures[next section].
+
+. Make sure that server side routing is enabled as detailed in xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] section
+. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
++
+As an example, for those using the list resolver, the settings for all the servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
+----
++
+. In Cypher Shell, connect to the `system` database of any server:
++
+[source, shell, role=nocopy noplay]
+----
+./cypher-shell -a bolt://localhost:7681 -d system
+----
+. Run the procedure:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+The output indicates mode `V1_ONLY`, i.e., only `V1` is running on this server.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V1_ONLY" | "N/A"           | "3"           | "N/A"         |
++-------------------------------------------------------------+
+----
+. Run the following procedure to turn on `V2` in the background for all servers, but keep `V1` running in the foreground.
+If the procedure fails, read the error message and resolve the issue manually.
+One possible reason for failure is that some servers might have had inconsistent xref:configuration/configuration-settings.adoc#config_dbms.cluster.discovery.version[`dbms.cluster.discovery.version`] settings initially.
++
+[source,cypher]
+----
+CALL dbms.cluster.moveToNextDiscoveryVersion();
+----
+. Check the state again:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+Now the returned mode for this server must be `V1_OVER_V2` and the `stateComparison` must show that the states are matching.
+If they are not, wait and try again till matching.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
+. Once again, run the following procedure to turn on `V1` in the background for all servers, but keep `V2` running in the foreground.
++
+[source,cypher]
+----
+CALL dbms.cluster.moveToNextDiscoveryVersion();
+----
+. Check that transition to `V2_OVER_V1` was successful:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+Now the returned mode for this server must be `V2_OVER_V1` and the `stateComparison` must show that the states are matching.
+If they are not, wait and try again till matching.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V2_OVER_V1" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
+. Finally, turn off `V1` by running the following procedure:
++
+[source,cypher]
+----
+CALL dbms.cluster.moveToNextDiscoveryVersion();
+----
+. Check that transition to `V2_ONLY` was successful:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+Note that `stateComparison` is `N/A` because you do not have `V1` to compare states anymore.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
++-------------------------------------------------------------+
+----
++
+.Important
+[IMPORTANT]
+====
+Remember to update the _neo4j.conf_ files for all the servers.
+The switching using procedures does not persist anything to disk.
+Therefore, when a server restarts, it starts right back with only v1 running.
+As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cluster.discovery.v2.endpoints` or `dbms.kubernetes.discovery.v2.service_port_name`
+are set as required, so that the servers start with v2 running on the next restart.
+====
+
+[[discovery-v1-to-v2-procedures]]
+=== Per server procedure
+
+// By using just procedures, the nice thing is that during the user's normal version upgrade, they can also add the new settings required for v2 discovery service.
+// Then, when they are ready to migrate to v2, they can use the procedures and then finally, set the version to 'V2' in the neo4j.conf at the very end - which can just sit there till the next restart
+// so no lighthouse-specific server restarts are required if all is done correctly.
+//Note that the settings detailed above must first be set and the servers restarted to allow the settings to take effect.
+
+[IMPORTANT]
+====
+If the semi-automated procedure fails, or you need to change individual servers to resolve an issue, this approach will let you do so.
+====
+
+. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
++
+As an example, for those using the list resolver, the settings for all the servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
+----
++
+. In Cypher Shell, connect to the `system` database of server01 using `bolt://`.
+It is important to connect via `bolt://` because otherwise the procedure might be routed and executed not on the intended server.
++
+[source, shell, role=nocopy noplay]
+----
+./cypher-shell -a bolt://localhost:7681 -d system
+----
+
+. Run the procedure:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+The output indicates mode `V1_ONLY`, i.e., only v1 is running on this server.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V1_ONLY" | "N/A"           | "3"           | "N/A"         |
++-------------------------------------------------------------+
+----
+
+. Run the following procedure to turn on v2 in the background, but keep v1 running in the foreground:
++
+[source,cypher]
+----
+CALL dbms.cluster.switchDiscoveryServiceVersion("V1_OVER_V2");
+----
+
+. Check the state again:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+Now the returned mode for this server must be `V1_OVER_V2` and the `stateComparison` must show that the states are not matching yet.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------------------------------------------------+
+| mode         | stateComparison                                        | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------------------------------------------------+
+| "V1_OVER_V2" | "States are not matching after PT1M9.518S: (score:18)" | "3"           | "1"           |
++-------------------------------------------------------------------------------------------------------+
+----
++
+The score is a measure of how different the states are.
+`serverCounts` displays how many servers can be found by v1 and v2 of the discovery service, respectively.
+The score is 0 when the states are matching.
+When some members are running just one of the discovery services (v1 or v2) and other members run both, the score stays permanently high.
+This is no reason for worry.
+
+
+. To fulfill this convergence, in different terminals, connect to server02 and server03 via `bolt://` and repeat steps 3 and 4 on both of them.
+
+. Check the state on all servers again.
+It should show that the states are `Matching`.
+Both `serverCounts` should be 3.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
+
+. On all three servers, run:
++
+[source,cypher]
+----
+CALL dbms.cluster.switchDiscoveryServiceVersion("V2_OVER_V1");
+----
++
+At this point, v2 is the service that is running the cluster, with v1 running in the background.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V2_OVER_V1" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
+
+
+. Finally, turn off v1 by running the following procedure on all three servers:
++
+[source,cypher]
+----
+CALL dbms.cluster.switchDiscoveryServiceVersion("V2_ONLY");
+----
+
+.  Verify that `CALL dbms.cluster.showParallelDiscoveryState();` now shows `V2_ONLY` running.
+Note that `stateComparison` is `N/A` because you do not have v1 to compare states anymore.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
++-------------------------------------------------------------+
+----
++
+.Important
+[IMPORTANT]
+====
+Remember to update the _neo4j.conf_ files for all the servers.
+The switching using procedures does not persist anything to disk.
+Therefore, when a server restarts, it starts right back with only v1 running.
+As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cluster.discovery.v2.endpoints` or `dbms.kubernetes.discovery.v2.service_port_name`
+are set as required, so that the servers start with v2 running on the next restart.
+====
 
 [[discovery-v1-to-v2-in-place]]
 === In-place rolling
@@ -411,154 +692,6 @@ CALL dbms.cluster.showParallelDiscoveryState();
 | "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
 +-------------------------------------------------------------+
 ----
-
-[[discovery-v1-to-v2-procedures]]
-=== Using procedures
-
-// By using just procedures, the nice thing is that during the user's normal version upgrade, they can also add the new settings required for v2 discovery service.
-// Then, when they are ready to migrate to v2, they can use the procedures and then finally, set the version to 'V2' in the neo4j.conf at the very end - which can just sit there till the next restart
-// so no lighthouse-specific server restarts are required if all is done correctly.
-//Note that the settings detailed above must first be set and the servers restarted to allow the settings to take effect.
-
-. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
-+
-As an example, for those using the list resolver, the settings for all the servers should include:
-+
-[source, parameters]
-----
-dbms.cluster.discovery.resolver_type=LIST
-
-dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
-dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
-----
-+
-. In Cypher Shell, connect to the `system` database of server01 using `bolt://`.
-It is important to connect via `bolt://` because otherwise the procedure might be routed and executed not on the intended server.
-+
-[source, shell, role=nocopy noplay]
-----
-./cypher-shell -a bolt://localhost:7681 -d system
-----
-
-. Run the procedure:
-+
-[source,cypher]
-----
-CALL dbms.cluster.showParallelDiscoveryState();
-----
-+
-The output indicates mode `V1_ONLY`, i.e., only v1 is running on this server.
-+
-.Expected result
-[queryresult]
-----
-+-------------------------------------------------------------+
-| mode      | stateComparison | v1ServerCount | v2ServerCount |
-+-------------------------------------------------------------+
-| "V1_ONLY" | "N/A"           | "3"           | "N/A"         |
-+-------------------------------------------------------------+
-----
-
-. Run the following procedure to turn on v2 in the background, but keep v1 running in the foreground:
-+
-[source,cypher]
-----
-CALL dbms.cluster.switchDiscoveryServiceVersion("V1_OVER_V2");
-----
-
-. Check the state again:
-+
-[source,cypher]
-----
-CALL dbms.cluster.showParallelDiscoveryState();
-----
-+
-Now the returned mode for this server must be `V1_OVER_V2` and the `stateComparison` must show that the states are not matching yet.
-+
-.Expected result
-[queryresult]
-----
-+-------------------------------------------------------------------------------------------------------+
-| mode         | stateComparison                                        | v1ServerCount | v2ServerCount |
-+-------------------------------------------------------------------------------------------------------+
-| "V1_OVER_V2" | "States are not matching after PT1M9.518S: (score:18)" | "3"           | "1"           |
-+-------------------------------------------------------------------------------------------------------+
-----
-+
-The score is a measure of how different the states are.
-`serverCounts` displays how many servers can be found by v1 and v2 of the discovery service, respectively.
-The score is 0 when the states are matching.
-When some members are running just one of the discovery services (v1 or v2) and other members run both, the score stays permanently high.
-This is no reason for worry.
-
-
-. To fulfill this convergence, in different terminals, connect to server02 and server03 via `bolt://` and repeat steps 3 and 4 on both of them.
-
-. Check the state on all servers again.
-It should show that the states are `Matching`.
-Both `serverCounts` should be 3.
-+
-.Expected result
-[queryresult]
-----
-+----------------------------------------------------------------+
-| mode         | stateComparison | v1ServerCount | v2ServerCount |
-+----------------------------------------------------------------+
-| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
-+----------------------------------------------------------------+
-----
-
-. On all three servers, run:
-+
-[source,cypher]
-----
-CALL dbms.cluster.switchDiscoveryServiceVersion("V2_OVER_V1");
-----
-+
-At this point, v2 is the service that is running the cluster, with v1 running in the background.
-+
-.Expected result
-[queryresult]
-----
-+----------------------------------------------------------------+
-| mode         | stateComparison | v1ServerCount | v2ServerCount |
-+----------------------------------------------------------------+
-| "V2_OVER_V1" | "Matching"      | "3"           | "3"           |
-+----------------------------------------------------------------+
-----
-
-
-. Finally, turn off v1 by running the following procedure on all three servers:
-+
-[source,cypher]
-----
-CALL dbms.cluster.switchDiscoveryServiceVersion("V2_ONLY");
-----
-
-.  Verify that `CALL dbms.cluster.showParallelDiscoveryState();` now shows `V2_ONLY` running.
-Note that `stateComparison` is `N/A` because you do not have v1 to compare states anymore.
-+
-.Expected result
-[queryresult]
-----
-+-------------------------------------------------------------+
-| mode      | stateComparison | v1ServerCount | v2ServerCount |
-+-------------------------------------------------------------+
-| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
-+-------------------------------------------------------------+
-----
-+
-.Important
-[IMPORTANT]
-====
-Remember to update the _neo4j.conf_ files for all the servers.
-The switching using procedures does not persist anything to disk.
-Therefore, when a server restarts, it starts right back with only v1 running.
-As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cluster.discovery.v2.endpoints` or `dbms.kubernetes.discovery.v2.service_port_name`
-are set as required, so that the servers start with v2 running on the next restart.
-====
-
-
 
 == Monitoring the progress and metrics
 
