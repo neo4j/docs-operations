@@ -4,7 +4,10 @@
 
 :rfc-4180: https://tools.ietf.org/html/rfc4180
 
-`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. You should use this tool when:
+`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. +
+Starting with version 5.26, Neo4j also provides support for the Parquet file format.
+
+You should use this tool when:
 
 * Import performance is important because you have a large amount of data (millions/billions of entities).
 * The database can be taken offline and you have direct access to one of the servers hosting your Neo4j DBMS.
@@ -78,6 +81,7 @@ See <<indexes-constraints-import, Provide indexes and constraints during import>
 
 The syntax for importing a set of CSV files is:
 
+[source, syntax, role="nocopy"]
 ----
 neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers[=true|false]]
                                  [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
@@ -124,6 +128,12 @@ For more information, please contact Neo4j Professional Services.
 
 === Options
 
+Starting from Neo4j 5.26, the importer also supports the Parquet file format.
+An additional parameter `--input-type=csv|parquet` has been introduced to explicitly specify whether to use CSV or Parquet for the importer.
+If not defined, the default value will be CSV.
+The xref:tools/neo4j-admin/neo4j-admin-import.adoc#import-tool-examples[examples] for CSV can also be used with Parquet.
+
+[[full-import-options-table]]
 .`neo4j-admin database import full` options
 [options="header", cols="5m,10a,2m"]
 |===
@@ -150,7 +160,7 @@ For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
 Unicode character ID can be used if prepended by `\`.
 |;
 
-| --auto-skip-subsequent-headers[=true\|false]
+| --auto-skip-subsequent-headers[=true\|false]footnote:ingnoredByParquet1[Ignored by Parquet import.]
 |Automatically skip accidental header lines in subsequent files in file groups with more than one file.
 |false
 
@@ -158,7 +168,7 @@ Unicode character ID can be used if prepended by `\`.
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
 |1000
 
-|--delimiter=<char>
+|--delimiter=<char>footnote:ingnoredByParquet1[]
 |Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
@@ -207,13 +217,17 @@ Possible values are:
 |Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
 |false
 
-|--ignore-extra-columns[=true\|false]
+|--ignore-extra-columns[=true\|false]footnote:ingnoredByParquet1[]
 |If unspecified columns should be ignored during the import.
 |false
 
-|--input-encoding=<character-set>
+|--input-encoding=<character-set>footnote:ingnoredByParquet1[]
 |Character set that input data is encoded in.
 |UTF-8
+
+|--input-type=csv\|parquet
+|label:new[Introduced in 5.26] File type to import from. Can be csv or parquet. Defaults to csv.
+|csv
 
 |--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
@@ -226,11 +240,11 @@ Values can be plain numbers, such as `10000000`, or `20G` for 20 gigabytes.
 It can also be specified as a percentage of the available memory, for example `70%`.
 |90%
 
-|--multiline-fields=true\|false\|<path>[,<path>]
+|--multiline-fields=true\|false\|<path>[,<path>]footnote:ingnoredByParquet1[]
 |label:changed[Changed in 5.26] In v1, whether or not fields from an input source can span multiple lines, i.e. contain newline characters. Setting `--multiline-fields=true` can severely degrade the performance of the importer. Therefore, use it with care, especially with large imports. In v2, this option will specify the list of files that contain multiline fields. Files can also be specified using regular expressions.
 |null
 
-|--multiline-fields-format=v1\|v2
+|--multiline-fields-format=v1\|v2footnote:ingnoredByParquet1[]
 |label:new[Introduced in 5.26] Controls the parsing of input source that can span multiple lines, i.e. contain newline characters. When set to v1, the value for `--multiline-fields` can only be true or false. When set to v2, the value for `--multiline-fields` should be the list of files that contain multiline fields.
 |null
 
@@ -255,7 +269,7 @@ For an example, see <<import-tool-multiple-input-files-regex-example>>.
 |Delete any existing database files prior to the import.
 |false
 
-|--quote=<char>
+|--quote=<char>footnote:ingnoredByParquet1[]
 |Character to treat as quotation character for values in CSV data.
 
 Quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them, for example `""` would be interpreted as a literal `"`.
@@ -330,7 +344,7 @@ If enabled all those relationships will be found but at the cost of lower perfor
 performance, this value should not be greater than the number of available processors.
 |20
 
-|--trim-strings[=true\|false]
+|--trim-strings[=true\|false]footnote:ingnoredByParquet1[]
 |Whether or not strings should be trimmed for whitespaces.
 |false
 
@@ -338,7 +352,6 @@ performance, this value should not be greater than the number of available proce
 |Enable verbose output.
 |
 |===
-
 
 [NOTE]
 .Heap size for the import
@@ -435,7 +448,7 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 [[indexes-constraints-import]]
 ==== Provide indexes and constraints during import
 
-Starting with Neo4j 5.24, you can use the `--schema` option that allows Cypher commands to be provided to create indexes/constraints during the initial import process.
+Starting from Neo4j 5.24, you can use the `--schema` option that allows Cypher commands to be provided to create indexes/constraints during the initial import process.
 It currently only works for the block format and full import.
 
 You should have a Cypher script containing only `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
@@ -578,7 +591,9 @@ It is highly recommended to back up your database before running the incremental
 [[import-tool-incremental-syntax]]
 === Syntax
 
-[source, shell, role=noplay]
+The syntax for importing a set of CSV files incrementally is:
+
+[source, syntax, role="nocopy"]
 ----
 neo4j-admin database import incremental [-h] [--expand-commands] --force [--verbose] [--auto-skip-subsequent-headers
                                         [=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
@@ -645,6 +660,7 @@ If the database into which you import does not exist prior to importing, you mus
 
 === Options
 
+[[incremental-import-options-table]]
 .`neo4j-admin database import incremental` options
 [options="header", cols="5m,10a,2m"]
 |===
@@ -671,7 +687,7 @@ For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
 Unicode character ID can be used if prepended by `\`.
 |;
 
-| --auto-skip-subsequent-headers[=true\|false]
+| --auto-skip-subsequent-headers[=true\|false]footnote:ingnoredByParquet2[Ignored by Parquet import.]
 |Automatically skip accidental header lines in subsequent files in file groups with more than one file.
 |false
 
@@ -679,7 +695,7 @@ Unicode character ID can be used if prepended by `\`.
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
 |1000
 
-|--delimiter=<char>
+|--delimiter=<char>footnote:ingnoredByParquet2[]
 |Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
 
 ====
@@ -726,13 +742,17 @@ Possible values are:
 |Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
 |false
 
-|--ignore-extra-columns[=true\|false]
+|--ignore-extra-columns[=true\|false]footnote:ingnoredByParquet2[]
 |If unspecified columns should be ignored during the import.
 |false
 
-|--input-encoding=<character-set>
+|--input-encoding=<character-set>footnote:ingnoredByParquet2[]
 |Character set that input data is encoded in.
 |UTF-8
+
+|--input-type=csv\|parquet
+|label:new[Introduced in 5.26]File type to import from. Can be csv or parquet. Defaults to csv.
+|csv
 
 |--legacy-style-quoting[=true\|false]
 |Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
@@ -745,11 +765,11 @@ Values can be plain numbers, such as `10000000`, or `20G` for 20 gigabytes.
 It can also be specified as a percentage of the available memory, for example `70%`.
 |90%
 
-|--multiline-fields=true\|false\|<path>[,<path>]
+|--multiline-fields=true\|false\|<path>[,<path>]footnote:ingnoredByParquet2[]
 |label:changed[Changed in 5.26] In v1, whether or not fields from an input source can span multiple lines, i.e. contain newline characters. Setting `--multiline-fields=true` can severely degrade the performance of the importer. Therefore, use it with care, especially with large imports. In v2, this option will specify the list of files that contain multiline fields. Files can also be specified using regular expressions.
 |null
 
-|--multiline-fields-format=v1\|v2
+|--multiline-fields-format=v1\|v2footnote:ingnoredByParquet2[]
 |label:new[Introduced in 5.26] Controls the parsing of input source that can span multiple lines, i.e. contain newline characters. When set to v1, the value for `--multiline-fields` can only be true or false. When set to v2, the value for `--multiline-fields` should be the list of files that contain multiline fields.
 |null
 
@@ -770,7 +790,7 @@ For an example, see <<import-tool-multiple-input-files-regex-example>>.
 |When `true`, non-array property values are converted to their equivalent Cypher types. For example, all integer values will be converted to 64-bit long integers.
 | true
 
-|--quote=<char>
+|--quote=<char>footnote:ingnoredByParquet2[]
 |Character to treat as quotation character for values in CSV data.
 
 Quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them, for example `""` would be interpreted as a literal `"`.
@@ -812,7 +832,7 @@ If you need to debug the import, it might be useful to collect the stack trace.
 This is done by using the `--verbose` option.
 |import.report
 
-|--schema=<path> footnote:[The `--schema` option is available in this version but not yet supported. It will be functional in a future release.]
+|--schema=<path>footnote:[The `--schema` option is available in this version but not yet supported. It will be functional in a future release.]
 |label:new[Introduced in 5.24] Path to the file containing the Cypher commands for creating indexes and constraints during data import.
 |
 
@@ -854,7 +874,7 @@ If enabled all those relationships will be found but at the cost of lower perfor
 performance, this value should not be greater than the number of available processors.
 |20
 
-|--trim-strings[=true\|false]
+|--trim-strings[=true\|false]footnote:ingnoredByParquet2[]
 |Whether or not strings should be trimmed for whitespaces.
 |false
 
