@@ -4,42 +4,44 @@
 [[monitoring-replication]]
 = Monitor replication status
 
-Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_statusCheck[`dbms.cluster.statusCheck()`] procedure, which can be used to monitor the ability to replicate in clustered databases. 
-In most cases this means a clustered database is write available.
+Neo4j 5.24 introduces the xref:reference/procedures.adoc#procedure_dbms_cluster_statusCheck[`dbms.cluster.statusCheck()`] procedure to monitor the ability to replicate in clustered databases.
+
 The procedure identifies which members of a clustered database are up-to-date and can participate in successful replication.
 Therefore, it is useful in determining the fault tolerance of a clustered database.
 Additionally, you can use the procedure to identify the leader of a clustered database within the cluster.
 
 [NOTE]
 ====
-The member on which the procedure is called replicates a dummy transaction in the same cluster as the real transactions, and verifies that it can be replicated and applied.
-
-Since the status check doesn't replicate an actual transaction, it's not guaranteed that the database is write available even though the status check reports that it can replicate.
-Apart from replication there are other stops in the write path that can potentially block a transaction from being applied, e.g. issues in the database.
-However, it tells that the cluster is healthy and in most cases that means that the database is write available.
+The procedure replicates a dummy transaction within the cluster and verifies that it can be replicated and applied.
+Since the status check does not replicate an actual transaction, it does not guarantee write availability, as other factors in the write path (e.g., database issues) may block transactions.
+However, a healthy status typically indicates write availability in most cases.
 ====
 
 [[cluster-status-check]]
 == Cluster status check
 
-*Syntax:*
+[procedure-status-check-syntax]
+=== Syntax
+
 [source, shell]
 ----
 CALL dbms.cluster.statusCheck(databases :: LIST<STRING>, timeoutMilliseconds = null :: INTEGER)
 ----
 
-*Arguments:*
+[status-check-input-arguments]
+=== Input arguments
 
 [options="header", cols="m,a,a"]
 |===
 | Name                | Type         | Description
 | databases           | List<String> | Databases for which the status check should run.
-Providing an empty list runs the status check for all *clustered* databases on that server, i.e. it won't run on singles or secondaries.
+Providing an empty list runs the status check for all *clustered* databases on that server, i.e. it does not run on singles or secondaries.
 | timeoutMilliseconds | Integer | How long to allow for replication, before returning it was unsuccessful.
 Default value is 1000 milliseconds. 
 |===
 
-*Returns:*
+[status-check-return-arguments]
+=== Return arguments
 
 The procedure returns a row for all primary members of all the requested databases where each row consists of:
 
@@ -60,42 +62,37 @@ If the members report different leaders, the one with the highest term should be
 An example of an error is that one or more of the requested databases do not exist on the requester.
 |===
 
-=== Possible values of `replicationSuccessful`
+[replication-successful-values]
+==== Possible values of `replicationSuccessful`
+
 * `TRUE` -- if this server managed to replicate the dummy transaction to a majority of cluster members within the given timeout.
 * `FALSE` -- if it failed to replicate within the timeout.
 The value is the same column-wise.
 A failed replication can either indicate a real issue in the cluster (e.g., no leader) or that this server is too far behind in applying updates and can't replicate.
 
-=== Possible values of `memberStatus`
+[member-status-values]
+==== Possible values of `memberStatus`
+
 * `APPLYING` means that the member can replicate and is actively applying transactions.
-* `REPLICATING` means that the member can participate in replicating, but can't apply.
+* `REPLICATING` means that the member can participate in replicating but cannot apply.
 This state is uncommon, but may happen while waiting for the database to start and accept transactions.
 * `UNAVAILABLE` means that the member is either too far behind the leader or unreachable.
+They are unhealthy and cannot add to the fault-tolerance.
 
-=== Possible values of `requester`
+[requester-values]
+==== Possible values of `requester`
+
 * `TRUE` -- for the server on which the procedure is run.
 * `FALSE` -- on the remaining servers.
 
 In general, you can use the `replicationSuccessful` field to determine overall write-availability, whereas the `memberStatus` field can be checked in order to see whether the database is fault-tolerant or not.
 
-[NOTE]
-====
-Members that are `REPLICATING` are good from a data safety point of view.
-They can participate in replication and keep the data durably until application.
-They are also up-to-date and therefore eligible leaders.
-So they add to the fault-tolerance.
-
-Members that are `APPLYING` have all the qualities of `REPLICATING` members, so they too add to the fault-tolerance.
-But they are also applying to the database, which is a requirement for writing transactions and reading with bookmarks in a timely manner.
-
-Lastly, `UNAVAILABLE` members are either too far behind or unreachable.
-They are unhealthy and cannot add to the fault-tolerance.
-====
 
 [[status-check-example]]
 == Example
 
 === Running the status check
+
 When running the cluster status check against a server, expect similar output to the following:
 
 [source,queryresults,role=noplay]
