@@ -1,0 +1,147 @@
+[role=label--new-5.24]
+[role=enterprise-edition not-on-aura]
+[[access-control-privileges-immutable]]
+= Immutable privileges and roles
+:description: This section explains how to use Cypher to manage immutable privileges and roles.
+
+[NOTE]
+====
+Immutable roles are newly introduced in Neo4j 5.24. Immutable privileges have been available since Neo4j 5.0.
+====
+
+[[access-control-privileges-immutable-admin]]
+== How to administer immutable privileges and roles
+
+Unlike for regular privileges and roles, immutable privileges and roles cannot be administered by users with xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-privilege-management[PRIVILEGE MANAGEMENT] and xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-role-management[ROLE MANAGEMENT] privileges. Instead, they can only be administered when auth is disabled -- that is, when the configuration setting <<config_dbms.security.auth_enabled,`dbms.security.auth_enabled`>> is set to `false`.
+
+[CAUTION]
+It is intended that administering immutable privileges and roles is an extraordinarily rare scenario and one which should be undertaken with extreme caution (i.e. when the dbms has been isolated by some other means and unauthorized access can be reliably prevented). It is considered to be the kind of action which may be performed once during the commissioning phase of a database.
+
+When the configuration setting <<config_dbms.security.auth_enabled,`dbms.security.auth_enabled`>> is set to `false`, immutable privileges and roles can be administered in a similar way to regular privileges and roles, using the `IMMUTABLE` keyword.
+
+Once the dbms is safely isolated from external connections, follow these steps to administer immutable privileges and roles:
+
+. Change the config setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] to `false`.
+. Restart the DBMS.
+. Create or remove immutable privileges and roles in the same way as regular privileges and roles but with the addition of the `IMMUTABLE` keyword
+(see xref:authentication-authorization/privileges-and-roles-immutable.adoc#access-control-privileges-immutable-usecase[here] for examples).
+. Change the config setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] back to `true`.
+. Restart the DBMS.
+
+Privileges and roles created in this way will now appear to all users as an immutable part of the DBMS.
+The only way to subsequently change or remove them it would be to repeat the process of setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] to `false`.
+
+
+[[access-control-privileges-immutable-usecase]]
+== When to use immutable privileges and roles
+
+Immutable privileges and roles are useful for restricting the actions of users who can themselves xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-privilege-management[administer privileges] and xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-role-management[roles].
+
+=== Immutable privileges
+
+You may want to prevent all users from performing Database Management, even the `admin` user (who are themselves able to add or remove privileges).
+To do so, it would not be adequate to run:
+
+[source, cypher]
+----
+DENY DATABASE MANAGEMENT ON DBMS TO PUBLIC
+----
+
+This is because the `admin` user could subsequently runs this:
+
+[source, cypher]
+----
+REVOKE DENY DATABASE MANAGEMENT ON DBMS FROM PUBLIC
+----
+
+They would then effectively regain Database Management privileges.
+
+Instead, you could use an immutable privilege.
+
+.Create an immutable privilege
+======
+
+[source, cypher, role=test-skip]
+----
+DENY IMMUTABLE DATABASE MANAGEMENT ON DBMS TO PUBLIC
+----
+[source, cypher, role=noplay]
+----
+SHOW PRIVILEGES WHERE IMMUTABLE
+----
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m,m,m,m"]
+|===
+|access
+|action
+|resource
+|graph
+|segment
+|role
+|immutable
+
+|"DENIED"
+|"database_management"
+|"database"
+|"*"
+|"database"
+|"PUBLIC"
+|true
+
+7+a|Rows: 1
+|===
+
+======
+
+=== Immutable roles
+
+Immutable _privileges_ are useful when wanting to attach a permanent privilege to the `PUBLIC` role, which will apply to all users (because the `PUBLIC` role applies to all users).
+
+If you want permanent privileges, but with more control over which users they apply to, then you need to use immutable roles in conjunction with immutable privileges.
+
+For example you have a user called `alice` who also has `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges, but you want to prevent them from dropping any databases (and you want to prevent them from being able to simple remove this restriction using their `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges).
+
+.Create an immutable role
+======
+
+Create an immutable role to hold the immutable privileges
+[source, cypher, role=noplay]
+----
+CREATE IMMUTABLE ROLE restrictedAdmin
+----
+Immutably deny the `DROP DATABASE` privilege.
+[source, cypher, role=noplay]
+----
+DENY IMMUTABLE DROP DATABASE ON DBMS TO restrictedAdmin
+----
+Grant the restrictedAdmin role to alice to prevent her dropping databases.
+[source, cypher, role=noplay]
+----
+GRANT restrictedAdmin TO alice
+----
+Now (despite having `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges) alice will not be able do any of the following:
+[source, cypher, role=noplay]
+----
+DROP DATABASE foo
+----
+[source, cypher, role=noplay]
+----
+REVOKE ROLE restrictedAdmin FROM alice
+----
+[source, cypher, role=noplay]
+----
+DROP ROLE restrictedAdmin
+----
+[source, cypher, role=noplay]
+----
+REVOKE DENY DROP DATABASE ON DBMS FROM restrictedAdmin
+----
+======
+
+[NOTE]
+====
+Only immutable privileges (e.g. `DENY IMMUTABLE DROP DATABASE` in the example above) can be assigned to immutable roles. This is to make sure that the role and all of its privileges is explicitly and completely immutable.
+====
+
+
+
