@@ -82,13 +82,12 @@ The `system` database contains the view of the cluster.
 This includes which servers and databases are present, where they live and how they are configured.
 During a disaster, the view of the cluster might need to change to reflect a new reality, for example by removing lost servers.
 Databases might also need to be recreated to regain write availability.
-Because both of these steps are executed by writing to the `system` database, this is a vital first step during disaster recovery.
+Because both of these steps are executed by modifying the `system` database, making the `system` database write available is a vital first step during disaster recovery.
 
 ==== Example verification
 The `system` database's write availability can be verified by using the xref:clustering/monitoring/status-check.adoc#monitoring-replication[Status check] procedure.
 The procedure should be called on all remaining primary allocations of the `system` database, in order to provide the correct view.
-The status check procedure writes a dummy transaction, and therefore the correctness of the procedure depends on the given timeout.
-The default timeout is 1 second, but depending on the network latency in the environment it might need to be extended.
+The default timeout for the procedure is 1 second, but depending on the network latency in the environment it might need to be extended to produce an accurate result.
 If any of the primary `system` allocations report `replicationSuccessful` = `TRUE`, the `system` database is write available.
 Therefore, the desired state has been verified.
 
@@ -96,6 +95,12 @@ Therefore, the desired state has been verified.
 ----
 CALL dbms.cluster.statusCheck(["system"]);
 ----
+
+[NOTE]
+=====
+The write availability of a database configured to have a single primary cannot be checked with the status check, instead check that the primary is allocated on an available server and that it has `currentStatus` = `STARTED`.
+The procedure will still produce an accurate result if all but one primary have been lost during a disaster.
+=====
 
 ==== Path to correct state
 The following steps can be used to regain write availability for the `system` database if it has been lost.
@@ -142,9 +147,9 @@ All servers in the cluster's view are available and enabled.
 ====
 
 A lost server will still be in the `system` database's view of the cluster, but in an unavailable state.
-According to the view of the cluster, these lost servers are still hosting the databases they had before they became lost.
+Furthermore, according to the view of the cluster, these lost servers are still hosting the databases they had before they became lost.
 Therefore, informing the cluster of servers which are lost is not enough.
-The databases hosted on the lost servers also need to be moved onto servers which are actually in the cluster.
+The databases hosted on lost servers also need to be moved onto available servers in the cluster, before the lost servers can be removed.
 
 ==== Example verification
 The cluster's view of servers can be seen by listing the servers, see xref:clustering/servers.adoc#_listing_servers[Listing servers] for more information.
@@ -157,7 +162,7 @@ SHOW SERVERS;
 
 ==== Path to correct state
 The following steps can be used to remove lost servers and add new ones to the cluster.
-That includes moving any potential database allocations from lost servers to available servers in the cluster.
+That includes moving any potential database allocations from lost servers to available servers.
 These steps might also recreate some databases, since a database which has lost a majority of its primary allocations cannot be moved from one server to another.
 
 .Guide
@@ -168,7 +173,6 @@ This prevents new database allocations from being moved to this server.
 . For each `CORDONED` server, make sure a new *unconstrained* server has been added to the cluster to take its place, see xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] for more information.
 If servers were added in the 'System database write availability' step of this guide, additional servers might not be needed here.
 It is important that the new servers are unconstrained, or deallocating servers might be blocked even though enough servers were added.
-
 +
 [NOTE]
 =====
@@ -177,32 +181,38 @@ However, not adding new servers reduces the capacity of the cluster to handle wo
 Furthermore, it might require the topology for a database to be altered to make deallocating servers and recreating databases possible.
 =====
 
-. Run `SHOW DATABASES`. If a database show `currentStatus`= `offline` this database has been stopped.
-. For each stopped database, start them by running `START DATABASE stopped-db WAIT`.
-// Is it a problem that it might not have started yet here? Should I write a line about making sure it is started before checking the write availability?
-// Cannot use wait here, because we will hang on lost members that are stopped. Should poll for started state on all non-lost members, but there are some situation where we will not be able to start. So how long should they wait here?
+. For each stopped database (`currentStatus`= `offline`), start them by running `START DATABASE stopped-db`.
 This is necessary since stopped databases cannot be moved from one server to another.
-// And since status check doesn't work otherwise.
+Verify that they are in `currentStatus` = `started` on all servers which are not lost before moving to the next step, otherwise they might be recreated unnecessarily.
+If a database fails to start, leave it to be recreated in the next step of this guide.
 +
 [NOTE]
 =====
 A database can be set to `READ-ONLY` before it is started to avoid updates on a database that is desired to be stopped with the following command:
 `ALTER DATABASE database-name SET ACCESS READ ONLY`.
 =====
-. On each server, run `CALL dbms.cluster.statusCheck([])` to check the write availability for all databases on this server, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
-Depending on the environment, consider extending the timeout for this procedure.
+
+. On each server, run `CALL dbms.cluster.statusCheck([])` to check the write availability for all databases running in primary mode on this server, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
+Depending on the network latency in the environment, consider extending the timeout for this procedure to produce an accurate result.
 If any of the primary allocations for a database report `replicationSuccessful` = `TRUE`, this database is write available.
-. For each database that is not write available, recreate it to move it from lost servers and regain write availability.
-Go to xref:clustering/databases.adoc#recreate-databases[Recreate databases] for more information about recreate options.
-If any allocation has `currentStatus` = `QUARANTINED`, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed] or define seeding servers in the recreate procedure using xref:clustering/databases.adoc#specified-servers[Specified seeders] so that problematic allocations are excluded.
-Remember to make sure there are recent backups for the databases before recreating them, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
-// What if a quarantined database had the desire to be stopped? Check quarantine before stopped?
 +
 [NOTE]
 =====
-By using recreate with xref:clustering/databases.adoc#undefined-servers-backup[Undefined servers with fallback backup], also databases which have lost all allocation can be recreated.
-Otherwise, recreating with xref:clustering/databases.adoc#uri-seed[Backup as seed] must be used for that specific case.
+The write availability of a database configured to have a single primary cannot be checked with the status check, instead check that the primary is allocated on an available server and that it has `currentStatus` = `STARTED`.
+The procedure will still produce an accurate result if all but one primary have been lost during a disaster.
 =====
+
+. For each database that is not write available, recreate it to move it from lost servers and regain write availability.
+Go to xref:clustering/databases.adoc#recreate-databases[Recreate databases] for more information about recreate options.
+Remember to make sure there are recent backups for the databases before recreating them, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
+If any database has `currentStatus` = `QUARANTINED` on an available server, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed].
++
+[NOTE]
+=====
+By using recreate with xref:clustering/databases.adoc#undefined-servers-backup[Undefined servers with fallback backup], the store will be replaced by the most up-to-date copy according to the cluster's view without manual intervention.
+Furthermore, this option will automatically recreate the database based on a backup if no available allocation can be found.
+=====
+
 . For each `CORDONED` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
 This will try to move all database allocations from this server to an available server in the cluster.
 +
@@ -211,6 +221,7 @@ This will try to move all database allocations from this server to an available 
 This operation might fail if enough unconstrained servers were not added to the cluster to replace lost servers.
 Another reason is that some available servers are also `CORDONED`.
 =====
+
 . For each deallocating or deallocated server, run `DROP SERVER deallocated-server-id`.
 This removes the server from the cluster's view.
 ====
@@ -221,31 +232,37 @@ This removes the server from the cluster's view.
 
 ==== State
 ====
-All databases are write available.
+All databases which are desired to be started are write available.
 ====
 
 Once this state is verified, disaster recovery is complete.
 However, remember that previously stopped databases might have been started during this process.
-If they are still desired to be in stopped state, run `START DATABASE started-db WAIT`.
+If they are still desired to be in stopped state, run `STOP DATABASE started-db WAIT`.
 
-[NOTE]
+[CAUTION]
 ====
-Remember, recreating a database can take an unbounded amount of time since it may involve copying the store to a new server, as described in xref:clustering/databases.adoc#recreate-databases[Recreate databases].
-Therefore, an allocation with `currentStatus` = `STARTING` might reach the `requestedStatus` given some time.
+Remember, recreating a database takes an unbounded amount of time since it may involve copying the store to a new server, as described in xref:clustering/databases.adoc#recreate-databases[Recreate databases].
+Therefore, an allocation with `currentStatus` = `STARTING` will probably reach the `requestedStatus` given some time.
 ====
 
+[[example-verification]]
 ==== Example verification
 All databases' write availability can be verified by using the xref:clustering/monitoring/status-check.adoc#monitoring-replication[Status check] procedure.
 The procedure should be called on all servers in the cluster, in order to provide the correct view.
-The status check procedure writes a dummy transaction, and therefore the correctness of the procedure depends on the given timeout.
-The default timeout is 1 second, but depending on the network latency in the environment it might need to be extended.
+The default timeout for the procedure is 1 second, but depending on the network latency in the environment it might need to be extended to produce an accurate result.
 If any of the primary allocations for a database report `replicationSuccessful` = `TRUE`, this database is write available.
-Therefore, the desired state has been verified when this is true for all databases.
+Therefore, the desired state has been verified when this is true for all *started* databases.
 
 [source, shell]
 ----
 CALL dbms.cluster.statusCheck([]);
 ----
+
+[NOTE]
+=====
+The write availability of a database configured to have a single primary cannot be checked with the status check, instead check that the primary is allocated on an available server and that it has `currentStatus` = `STARTED`.
+The procedure will still produce an accurate result if all but one primary have been lost during a disaster.
+=====
 
 A stricter verification can be done to verify that all databases are in their desired states on all servers.
 For the stricter check, run `SHOW DATABASES` and verify that `requestedStatus` = `currentStatus` for all database allocations on all servers.
@@ -258,15 +275,22 @@ Recreations might fail for different reasons, but one example is that the checks
 .Guide
 [%collapsible]
 ====
-. Run `CALL dbms.cluster.statusCheck([])` on all servers to identify write unavailable databases, see xref:clustering/monitoring/status-check.adoc#monitoring-replication[Monitoring replication] for more information.
+. Identify all write unavailable databases that are desired to be `STARTED` by running `CALL dbms.cluster.statusCheck([])` as described in the xref:clustering/disaster-recovery.adoc#example-verification[Example verification] part of this disaster recovery step.
 . Recreate every database that is not write available and has not been recreated previously, see xref:clustering/databases.adoc#recreate-databases[Recreate databases] for more information.
-If any allocation has `currentStatus` = `QUARANTINED`, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed] or define seeding servers in the recreate procedure using xref:clustering/databases.adoc#specified-servers[Specified seeders] so that problematic allocations are excluded.
 Remember to make sure there are recent backups for the databases before recreating them, see xref:backup-restore/online-backup.adoc[Online backup] for more information.
+If any database has `currentStatus` = `QUARANTINED` on an available server, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed].
++
+[NOTE]
+=====
+By using recreate with xref:clustering/databases.adoc#undefined-servers-backup[Undefined servers with fallback backup], the store will be replaced by the most up-to-date copy according to the cluster's view without manual intervention.
+Furthermore, this option will automatically recreate the database based on a backup if no available allocation can be found.
+=====
+
 . Run `SHOW DATABASES` and check any recreated databases which are not write available.
 Recreating a database will not complete if one of the following messages is displayed in the message field:
 ** `Seeders ServerId1 and ServerId2 have different checksums for transaction TransactionId. All seeders must have the same checksum for the same append index.`
 ** `Seeders ServerId1 and ServerId2 have incompatible storeIds. All seeders must have compatible storeIds.`
 ** `No store found on any of the seeders ServerId1, ServerId2...`
-. For each database which will not complete recreation, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed] or define seeding servers in the recreate procedure using xref:clustering/databases.adoc#specified-servers[Specified seeders] so that problematic allocations are excluded.
+. For each database which will not complete recreation, recreate them from backup using xref:clustering/databases.adoc#uri-seed[Backup as seed].
 
 ====
