@@ -16,25 +16,12 @@ See xref:clustering/setup/analytics-cluster.adoc[] for more information on analy
 
 .Move from a single `system` database to a cluster with three `system` primaries
 
-[.tabbed-example]
-=====
-[role=include-with-Discovery-service-v2 label--new-5.23]
-======
-
 In this example, a standalone server named `server01` is running and two additional servers, `server02` and `server03`, are to be added to form a cluster.
 The two additional servers are configured according to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] and are _not_ running.
 Neo4j Enterprise Edition is installed on all three servers.
 
 Start by stopping the standalone server.
 Once it is stopped, edit the xref:configuration/file-locations.adoc[_neo4j.conf_] file to include the discovery endpoints of itself and the servers that will form the cluster.
-
-Starting with Neo4j 5.23, it is recommended to use v2 of the discovery service.
-For more details on discovery services, see xref:clustering/setup/discovery.adoc[].
-
-To use the discovery service v2:
-
-* You have to set the configuration of `dbms.cluster.discovery.version` to `V2_ONLY`.
-* Instead of `dbms.cluster.discovery.endpoints`, use `dbms.cluster.discovery.v2.endpoints`.
 
 The example below uses `dbms.cluster.discovery.resolver_type=LIST`.
 
@@ -43,8 +30,7 @@ The example below uses `dbms.cluster.discovery.resolver_type=LIST`.
 ----
 server.default_listen_address=0.0.0.0
 server.default_advertised_address=server01.example.com
-dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
-dbms.cluster.discovery.version=V2_ONLY
+dbms.cluster.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
 initial.dbms.default_primaries_count=3
 ----
 (The xref:configuration/file-locations.adoc[_neo4j.conf_] file looks identical except for the `server.default_advertised_address` on all three servers. Please refer to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] for more information.)
@@ -89,68 +75,3 @@ On `server01` (the previously standalone server) verify that all user databases 
 The last step is to enable the `Free` servers using `ENABLE SERVER` (see xref:clustering/servers.adoc[] for more information on server states).
 
 Once all servers are enabled, you can scale up user databases using xref:clustering/databases.adoc#alter-topology[`ALTER DATABASE`], if desired.
-======
-[role=include-with-Discovery-service-v1 label--deprecated-5.23]
-======
-
-In this example, a standalone server named `server01` is running and two additional servers, `server02` and `server03`, are to be added to form a cluster.
-The two additional servers are configured according to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] and are _not_ running.
-Neo4j Enterprise Edition is installed on all three servers.
-
-Start by stopping the standalone server and once it is stopped, edit the xref:configuration/file-locations.adoc[_neo4j.conf_] file to include the discovery endpoints of itself and the servers that will form the cluster.
-
-._neo4j.conf_ on server01.example.com:
-[source, properties]
-----
-server.default_listen_address=0.0.0.0
-server.default_advertised_address=server01.example.com
-dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
-initial.dbms.default_primaries_count=3
-----
-(The xref:configuration/file-locations.adoc[_neo4j.conf_] file looks identical except for the `server.default_advertised_address` on all three servers. Please refer to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers] for more information.)
-
-On `server01` (the standalone server) dump the `system` database using the `neo4j-admin database dump` command.
-
-[source, shell, role="nocopy"]
-----
-bin/neo4j-admin database dump system --to-path=/full/path/to/dumps/
-----
-See xref:backup-restore/offline-backup.adoc[] for more information on the dump command.
-
-Use the `neo4j-admin database load` command to load the `system` database dump from `server01` to `server02` and `server03`.
-
-[source,shell, role="nocopy"]
-----
-bin/neo4j-admin database load --from-path=/full-path/data/dumps system
-----
-See xref:backup-restore/restore-dump.adoc[] for more information on the load command.
-
-Once the `system` database has been loaded on `server02` and `server03`, start all servers.
-The newly added servers should be in the `Free` state (`server02` and `server03`) and this can be verified using `SHOW SERVERS`.
-
-[source, cypher, role=noplay]
-----
-SHOW SERVERS;
-----
-
-[queryresult]
-----
-+-----------------------------------------------------------------------------------------------------------+
-| name                                   | address         | state     | health      | hosting              |
-+-----------------------------------------------------------------------------------------------------------+
-| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"]  |
-| "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Free"    | "Available" | ["system"]           |
-| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Free"    | "Available" | ["system"]           |
-+-----------------------------------------------------------------------------------------------------------+
-----
-
-On `server01` (the previously standalone server) verify that all user databases are still running using `SHOW DATABASES`.
-
-The last step is to enable the `Free` servers using `ENABLE SERVER` (see xref:clustering/servers.adoc[] for more information on server states).
-
-Once all servers are enabled, you can scale up user databases using xref:clustering/databases.adoc#alter-topology[`ALTER DATABASE`], if desired.
-
-======
-=====
-
-
