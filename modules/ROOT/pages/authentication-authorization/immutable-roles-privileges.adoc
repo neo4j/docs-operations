@@ -1,0 +1,146 @@
+[role=enterprise-edition not-on-aura]
+[[immutable-roles-and-privileges]]
+= Immutable roles and privileges
+:description: This section explains how to use Cypher to manage immutable roles and privileges.
+
+[NOTE]
+====
+Immutable roles are available starting with Neo4j 5.26.
+====
+
+Immutable privileges and roles are useful for restricting the actions of users who can themselves administer  xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-role-management[roles] xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-privilege-management[privileges].
+
+
+[CAUTION]
+====
+Immutable privileges and roles should only be used in situations where changes are rare.
+They are intentionally difficult to modify, so changes should be undertaken with caution (e.g., when the DBMS has been isolated by some other means and unauthorized access can be reliably prevented).
+Typically, this type of modification should only be made once during the commissioning phase of a DBMS.
+====
+
+[[administer-immutable-roles-and-privileges]]
+== Administer immutable roles and privileges
+
+After the DBMS is safely isolated from external connections, follow these steps to administer immutable roles and privileges:
+
+. Change the config setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] to `false`.
+. Restart the DBMS.
+. Create or remove immutable privileges and roles in the same way as regular privileges and roles but with the addition of the `IMMUTABLE` keyword.
+See <<immutable-roles-privileges-examples, Examples>>.
+. Change the config setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] back to `true`.
+. Restart the DBMS.
+
+Privileges and roles created in this way can now appear to all users as an immutable part of the DBMS.
+If you want to change or remove them, you must repeat the process of setting xref:configuration/configuration-settings.adoc#config_dbms.security.auth_enabled[`dbms.security.auth_enabled`] to `false`.
+
+[[immutable-roles-privileges-examples]]
+== Examples
+
+The following examples demonstrate how to use Cypher to manage immutable roles and privileges.
+
+=== Restricting the actions of users who can manage privileges
+
+To prevent all users, including the `admin` user, from performing *database management*, follow these steps:
+
+. Ensure that you have completed steps 1 an 2 from <<administer-immutable-roles-and-privileges>>.
+. Run the following command to deny the `IMMUTABLE DATABASE MANAGEMENT` privilege to the `PUBLIC` role:
++
+[source, cypher, role=test-skip]
+----
+DENY IMMUTABLE DATABASE MANAGEMENT ON DBMS TO PUBLIC
+----
+
+. Verify that the `IMMUTABLE` keyword has been added to the privilege:
++
+[source, cypher, role=noplay]
+----
+SHOW PRIVILEGES WHERE IMMUTABLE
+----
++
+.Result
+[options="header,footer", width="100%", cols="1m,2m,1m,1m,1m,1m,1m"]
+|===
+|access
+|action
+|resource
+|graph
+|segment
+|role
+|immutable
+
+|"DENIED"
+|"database_management"
+|"database"
+|"*"
+|"database"
+|"PUBLIC"
+|true
+
+7+a|Rows: 2
+|===
++
+The result shows that all users are restricted from adding or removing privileges, including the `admin` user.
+. Ensure you have completed steps 4 and 5 from <<administer-immutable-roles-and-privileges>>.
+
+=== Restricting the actions of users who can manage roles and privileges
+
+If you want permanent privileges but with more control over which users they apply to, you need to use immutable roles with immutable privileges.
+For example, you have a user called `alice` who has `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges.
+To prevent `alice` from dropping any databases and from being able to remove this restriction using their `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges, follow these steps:
+
+. Ensure that you have completed steps 1 an 2 from <<administer-immutable-roles-and-privileges>>.
+. Create an immutable role to hold the immutable privileges:
++
+[source, cypher, role=noplay]
+----
+CREATE IMMUTABLE ROLE restrictedAdmin
+----
+
+. Immutably deny the `DROP DATABASE` privilege:
++
+[source, cypher, role=noplay]
+----
+DENY IMMUTABLE DROP DATABASE ON DBMS TO restrictedAdmin
+----
+
+. Grant the restrictedAdmin role to `alice` to prevent her dropping databases:
++
+[source, cypher, role=noplay]
+----
+GRANT restrictedAdmin TO alice
+----
++
+. Ensure you have completed steps 4 and 5 from <<administer-immutable-roles-and-privileges>>.
++
+Now, despite having `ROLE MANAGEMENT` and `PRIVILEGE MANAGEMENT` privileges, `alice` will not be able do any of the following:
++
+.Drop databases:
+[source, cypher, role=noplay]
+----
+DROP DATABASE foo
+----
++
+.Remove the restrictedAdmin role from `alice`
+[source, cypher, role=noplay]
+----
+REVOKE ROLE restrictedAdmin FROM alice
+----
++
+.Remove the `DROP DATABASE` privilege from the restrictedAdmin role
+[source, cypher, role=noplay]
+----
+DROP ROLE restrictedAdmin
+----
++
+.Remove `DENY DROP DATABASE` from the restrictedAdmin role
+[source, cypher, role=noplay]
+----
+REVOKE DENY DROP DATABASE ON DBMS FROM restrictedAdmin
+----
+
+[NOTE]
+====
+Only immutable privileges (e.g. `DENY IMMUTABLE DROP DATABASE` in the example above) can be assigned to immutable roles.
+This is to make sure that the role and all of its privileges is explicitly and completely immutable.
+====
+
