@@ -202,7 +202,7 @@ From Neo4j 5.23, you can move from the current discovery service v1 to the new v
 The v1 and v2 discovery services are designed to be able to run in parallel.
 They are completely independent of each other, thus allowing you to keep the cluster functioning while switching over from v1 to v2.
 
-There are three ways to move from the current discovery service v1 to the new version v2 depending on the environment and the requirements of the cluster.
+There are four ways to move from the current discovery service v1 to the new version v2 depending on the environment and the requirements of the cluster.
 
 === Preparation
 
@@ -225,15 +225,14 @@ For more information, see <<clustering-discovery-dns>>.
 It is important that both `dbms.kubernetes.service_port_name` and `dbms.kubernetes.discovery.v2.service_port_name` are set during the operation.
 For more information, see <<clustering-discovery-k8s>>.
 
-[[discovery-v1-to-v2-in-place]]
-=== In-place rolling
+[[discovery-v1-to-v2-semi-automated-procedure]]
+=== Procedure for moving an entire cluster
 
-[IMPORTANT]
-====
-In-place rolling reduces fault tolerance temporarily because you are restarting a running server.
-To keep fault-tolerance, you can introduce a fourth server temporarily.
-====
-. For all the servers, ensure that new settings are added to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
+The first way to migrate from discovery service v1 to v2 is to use a semi-automated procedure, which simplifies the migration process.
+It automates the approach described in the xref:clustering/setup/discovery.adoc#discovery-v1-to-v2-procedures[next section].
+
+. Make sure that server side routing is enabled as detailed in xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] section
+. For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
 +
 As an example, for those using the list resolver, the settings for all the servers should include:
 +
@@ -244,25 +243,48 @@ dbms.cluster.discovery.resolver_type=LIST
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
 ----
-. Restart server01 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
 +
-image:discovery-service/in-place-1-v1-over-v2.png[]
-. Run `SHOW SERVERS` and ensure that all three members are alive.
-. Then repeat steps 2 and 3 for server02 and server03.
-Ensure that they are set to `dbms.cluster.discovery.version=V1_OVER_V2`.
-Restart them sequentially, not in parallel.
+. In Cypher Shell, connect to the `system` database of any server:
 +
-image:discovery-service/in-place-23-v1-over-v2.png[]
-
-. Using `bolt://`, connect to the system database of servers 1, 2, 3, and run the following procedure.
-This can be done using via `./cypher-shell -a bolt://localhost:7681 -d system` for example.
+[source, shell, role=nocopy noplay]
+----
+./cypher-shell -a bolt://localhost:7681 -d system
+----
+. Run the procedure:
 +
 [source,cypher]
 ----
 CALL dbms.cluster.showParallelDiscoveryState();
 ----
 +
-They should display "Matching" in the `stateComparison` column.
+The output indicates mode `V1_ONLY`, i.e., only `V1` is running on this server.
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V1_ONLY" | "N/A"           | "3"           | "N/A"         |
++-------------------------------------------------------------+
+----
+. Run the following procedure to turn on `V2` in the background for all servers, but keep `V1` running in the foreground.
+If the procedure fails, read the error message and resolve the issue manually.
+One possible reason for failure is that some servers might have had inconsistent xref:configuration/configuration-settings.adoc#config_dbms.cluster.discovery.version[`dbms.cluster.discovery.version`] settings initially.
++
+[source,cypher]
+----
+CALL dbms.cluster.moveToNextDiscoveryVersion();
+----
+. Check the state again:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+Now the returned mode for this server must be `V1_OVER_V2` and the `stateComparison` must show that the states are matching.
+If they are not, wait and try again till matching.
 +
 .Expected result
 [queryresult]
@@ -273,97 +295,20 @@ They should display "Matching" in the `stateComparison` column.
 | "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
 +----------------------------------------------------------------+
 ----
+. Once again, run the following procedure to turn on `V1` in the background for all servers, but keep `V2` running in the foreground.
 +
-If they are not, wait and try again.
-+
-. Restart server01 again with the new setting `dbms.cluster.discovery.version=V2_OVER_V1`.
-+
-image:discovery-service/in-place-1-v2-over-v1.png[]
-+
-. Run `SHOW SERVERS` and ensure that all three members are alive.
-. Then repeat steps 6 and 7 for servers 2 and 3.
-Ensure that they are set to `dbms.cluster.discovery.version=V2_OVER_V1`.
-Restart them sequentially, not in parallel.
-+
-image:discovery-service/in-place-23-v2-over-v1.png[]
-
-. Similar to step 5, verify that `stateComparison` shows `Matching`.
-
-. Repeat steps 6, 7, 8, 9, restarting servers 1, 2, and 3 sequentially, with the new setting `dbms.cluster.discovery.version=V2_ONLY`
-image:discovery-service/in-place-123-v2-only.png[]
-. Verify that `CALL dbms.cluster.showParallelDiscoveryState()` now shows `V2_ONLY` running.
-Note that `stateComparison` is `N/A` because you do not have v1 to compare states anymore.
-
-[[discovery-v1-to-v2-new-server]]
-=== New server rolling
-The new server rolling requires three running servers and three new servers.
-
-. Start up the three new servers with the setting `dbms.cluster.discovery.version=V1_OVER_V2`.
-+
-image:discovery-service/v1_over_v2.png[]
-+
-The new servers should have settings which are updated as detailed in the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
-The discovery addresses should include addresses of the new members, and the previous members.
-+
-As an example, for those using the list resolver, the settings for the new servers should include:
-+
-[source, parameters]
+[source,cypher]
 ----
-dbms.cluster.discovery.resolver_type=LIST
-dbms.cluster.discovery.version=V1_OVER_V2
-
-dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000,server06.example.com:5000
-dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
+CALL dbms.cluster.moveToNextDiscoveryVersion();
 ----
-+
-. Using `bolt://`, connect to the system database of servers 4, 5, 6, and run the following procedure.
-This can be done using via `./cypher-shell -a bolt://localhost:7685 -d system` for example.
+. Check that transition to `V2_OVER_V1` was successful:
 +
 [source,cypher]
 ----
 CALL dbms.cluster.showParallelDiscoveryState();
 ----
 +
-The expected result should display `v2ServerCount` as 3.
-`stateComparison` is not expected to match at this stage because the original servers are not visible to the V2 discovery service.
-+
-.Expected result
-[queryresult]
-----
- +---------------------------------------------------------------------------------------------------------+
- | mode         | stateComparison                                          | v1ServerCount | v2ServerCount |
- +---------------------------------------------------------------------------------------------------------+
- | "V1_OVER_V2" | "States are not matching after PT55M36.693S: (score:29)" | "6"           | "3"           |
- +---------------------------------------------------------------------------------------------------------+
-----
-+
-. Deallocate, drop, and shut down servers 1, 2, 3. 
-+
-. Start up servers 7, 8, 9, this time with the setting `dbms.cluster.discovery.version=V2_OVER_V1`.
-+
-image:discovery-service/v2_over_v1.png[]
-+
-The discovery addresses in the settings should include addresses of the new members, and the previous members.
-+
-As an example, for those using the list resolver, the settings for the new servers should include:
-+
-[source, parameters]
-----
-dbms.cluster.discovery.resolver_type=LIST
-dbms.cluster.discovery.version=V2_OVER_V1
-
-dbms.cluster.discovery.endpoints=server04.example.com:5000,server05.example.com:5000,server06.example.com:5000,server07.example.com:5000,server08.example.com:5000,server09.example.com:5000
-dbms.cluster.discovery.v2.endpoints=server04.example.com:6000,server05.example.com:6000,server06.example.com:6000,server07.example.com:6000,server08.example.com:6000,server09.example.com:6000
-----
-+
-. Using `bolt://`, connect to the system database of servers 7, 8, 9 and run the following procedure:
-+
-[source,cypher]
-----
-CALL dbms.cluster.showParallelDiscoveryState();
-----
-+
-The output should display `Matching` in the `stateComparison` column.
+Now the returned mode for this server must be `V2_OVER_V1` and the `stateComparison` must show that the states are matching.
 If they are not, wait and try again till matching.
 +
 .Expected result
@@ -372,37 +317,23 @@ If they are not, wait and try again till matching.
 +----------------------------------------------------------------+
 | mode         | stateComparison | v1ServerCount | v2ServerCount |
 +----------------------------------------------------------------+
-| "V2_OVER_V1" | "Matching"      | "6"           | "6"           |
+| "V2_OVER_V1" | "Matching"      | "3"           | "3"           |
 +----------------------------------------------------------------+
 ----
+. Finally, turn off `V1` by running the following procedure:
 +
-. Deallocate, drop, and shut down servers 4, 5, and 6.
-+
-. Start up servers 10, 11, 12, this time with the setting `dbms.cluster.discovery.version=V2_ONLY`.
-+
-image:discovery-service/v2_only.png[]
-+
-The discovery addresses in the settings should include addresses of the new members, and the previous members.
-Note that only the v2 settings are required.
-+
-As an example, for those using the list resolver, the settings for the new servers should include:
-+
-[source, parameters]
+[source,cypher]
 ----
-dbms.cluster.discovery.resolver_type=LIST
-dbms.cluster.discovery.version=V2_ONLY
-
-dbms.cluster.discovery.v2.endpoints=server07.example.com:6000,server08.example.com:6000,server09.example.com:6000,server10.example.com:6000,server11.example.com:6000,server12.example.com:6000
+CALL dbms.cluster.moveToNextDiscoveryVersion();
 ----
-+
-. Deallocate, drop, and shut down servers 7, 8, 9.
-+
-. Finally, using `bolt://`, connect to the system database of servers 10, 11, 12, and run the following procedure to check the version of the discovery service:
+. Check that transition to `V2_ONLY` was successful:
 +
 [source,cypher]
 ----
 CALL dbms.cluster.showParallelDiscoveryState();
 ----
++
+Note that `stateComparison` is `N/A` because you do not have `V1` to compare states anymore.
 +
 .Expected result
 [queryresult]
@@ -413,14 +344,29 @@ CALL dbms.cluster.showParallelDiscoveryState();
 | "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
 +-------------------------------------------------------------+
 ----
++
+.Important
+[IMPORTANT]
+====
+Remember to update the _neo4j.conf_ files for all the servers.
+The switching using procedures does not persist anything to disk.
+Therefore, when a server restarts, it starts right back with only v1 running.
+As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cluster.discovery.v2.endpoints` or `dbms.kubernetes.discovery.v2.service_port_name`
+are set as required, so that the servers start with v2 running on the next restart.
+====
 
 [[discovery-v1-to-v2-procedures]]
-=== Using procedures
+=== Per server procedure
 
 // By using just procedures, the nice thing is that during the user's normal version upgrade, they can also add the new settings required for v2 discovery service.
 // Then, when they are ready to migrate to v2, they can use the procedures and then finally, set the version to 'V2' in the neo4j.conf at the very end - which can just sit there till the next restart
 // so no lighthouse-specific server restarts are required if all is done correctly.
 //Note that the settings detailed above must first be set and the servers restarted to allow the settings to take effect.
+
+[IMPORTANT]
+====
+If the semi-automated procedure fails, or you need to change individual servers to resolve an issue, this approach will let you do so.
+====
 
 . For all the servers, ensure that new settings are updated to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
 +
@@ -560,7 +506,194 @@ As such, ensure that `dbms.cluster.discovery.version=V2_ONLY`, and that `dbms.cl
 are set as required, so that the servers start with v2 running on the next restart.
 ====
 
+[[discovery-v1-to-v2-in-place]]
+=== In-place rolling
 
+[IMPORTANT]
+====
+In-place rolling reduces fault tolerance temporarily because you are restarting a running server.
+To keep fault-tolerance, you can introduce a fourth server temporarily.
+====
+. For all the servers, ensure that new settings are added to the configuration as detailed the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
++
+As an example, for those using the list resolver, the settings for all the servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000
+----
+. Restart server01 with the new setting `dbms.cluster.discovery.version=V1_OVER_V2`.
++
+image:discovery-service/in-place-1-v1-over-v2.png[]
+. Run `SHOW SERVERS` and ensure that all three members are alive.
+. Then repeat steps 2 and 3 for server02 and server03.
+Ensure that they are set to `dbms.cluster.discovery.version=V1_OVER_V2`.
+Restart them sequentially, not in parallel.
++
+image:discovery-service/in-place-23-v1-over-v2.png[]
+
+. Using `bolt://`, connect to the system database of servers 1, 2, 3, and run the following procedure.
+This can be done using via `./cypher-shell -a bolt://localhost:7681 -d system` for example.
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+They should display "Matching" in the `stateComparison` column.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V1_OVER_V2" | "Matching"      | "3"           | "3"           |
++----------------------------------------------------------------+
+----
++
+If they are not, wait and try again.
++
+. Restart server01 again with the new setting `dbms.cluster.discovery.version=V2_OVER_V1`.
++
+image:discovery-service/in-place-1-v2-over-v1.png[]
++
+. Run `SHOW SERVERS` and ensure that all three members are alive.
+. Then repeat steps 6 and 7 for servers 2 and 3.
+Ensure that they are set to `dbms.cluster.discovery.version=V2_OVER_V1`.
+Restart them sequentially, not in parallel.
++
+image:discovery-service/in-place-23-v2-over-v1.png[]
+
+. Similar to step 5, verify that `stateComparison` shows `Matching`.
+
+. Repeat steps 6, 7, 8, 9, restarting servers 1, 2, and 3 sequentially, with the new setting `dbms.cluster.discovery.version=V2_ONLY`
+image:discovery-service/in-place-123-v2-only.png[]
+. Verify that `CALL dbms.cluster.showParallelDiscoveryState()` now shows `V2_ONLY` running.
+Note that `stateComparison` is `N/A` because you do not have v1 to compare states anymore.
+
+[[discovery-v1-to-v2-new-server]]
+=== New server rolling
+The new server rolling requires three running servers and three new servers.
+
+. Start up the three new servers with the setting `dbms.cluster.discovery.version=V1_OVER_V2`.
++
+image:discovery-service/v1_over_v2.png[]
++
+The new servers should have settings which are updated as detailed in the xref:clustering/setup/discovery.adoc#_preparation[Preparation] section.
+The discovery addresses should include addresses of the new members, and the previous members.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V1_OVER_V2
+
+dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000,server06.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
+----
++
+. Using `bolt://`, connect to the system database of servers 4, 5, 6, and run the following procedure.
+This can be done using via `./cypher-shell -a bolt://localhost:7685 -d system` for example.
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+The expected result should display `v2ServerCount` as 3.
+`stateComparison` is not expected to match at this stage because the original servers are not visible to the V2 discovery service.
++
+.Expected result
+[queryresult]
+----
+ +---------------------------------------------------------------------------------------------------------+
+ | mode         | stateComparison                                          | v1ServerCount | v2ServerCount |
+ +---------------------------------------------------------------------------------------------------------+
+ | "V1_OVER_V2" | "States are not matching after PT55M36.693S: (score:29)" | "6"           | "3"           |
+ +---------------------------------------------------------------------------------------------------------+
+----
++
+. Deallocate, drop, and shut down servers 1, 2, 3.
++
+. Start up servers 7, 8, 9, this time with the setting `dbms.cluster.discovery.version=V2_OVER_V1`.
++
+image:discovery-service/v2_over_v1.png[]
++
+The discovery addresses in the settings should include addresses of the new members, and the previous members.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_OVER_V1
+
+dbms.cluster.discovery.endpoints=server04.example.com:5000,server05.example.com:5000,server06.example.com:5000,server07.example.com:5000,server08.example.com:5000,server09.example.com:5000
+dbms.cluster.discovery.v2.endpoints=server04.example.com:6000,server05.example.com:6000,server06.example.com:6000,server07.example.com:6000,server08.example.com:6000,server09.example.com:6000
+----
++
+. Using `bolt://`, connect to the system database of servers 7, 8, 9 and run the following procedure:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+The output should display `Matching` in the `stateComparison` column.
+If they are not, wait and try again till matching.
++
+.Expected result
+[queryresult]
+----
++----------------------------------------------------------------+
+| mode         | stateComparison | v1ServerCount | v2ServerCount |
++----------------------------------------------------------------+
+| "V2_OVER_V1" | "Matching"      | "6"           | "6"           |
++----------------------------------------------------------------+
+----
++
+. Deallocate, drop, and shut down servers 4, 5, and 6.
++
+. Start up servers 10, 11, 12, this time with the setting `dbms.cluster.discovery.version=V2_ONLY`.
++
+image:discovery-service/v2_only.png[]
++
+The discovery addresses in the settings should include addresses of the new members, and the previous members.
+Note that only the v2 settings are required.
++
+As an example, for those using the list resolver, the settings for the new servers should include:
++
+[source, parameters]
+----
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.version=V2_ONLY
+
+dbms.cluster.discovery.v2.endpoints=server07.example.com:6000,server08.example.com:6000,server09.example.com:6000,server10.example.com:6000,server11.example.com:6000,server12.example.com:6000
+----
++
+. Deallocate, drop, and shut down servers 7, 8, 9.
++
+. Finally, using `bolt://`, connect to the system database of servers 10, 11, 12, and run the following procedure to check the version of the discovery service:
++
+[source,cypher]
+----
+CALL dbms.cluster.showParallelDiscoveryState();
+----
++
+.Expected result
+[queryresult]
+----
++-------------------------------------------------------------+
+| mode      | stateComparison | v1ServerCount | v2ServerCount |
++-------------------------------------------------------------+
+| "V2_ONLY" | "N/A"           | "N/A"         | "3"           |
++-------------------------------------------------------------+
+----
 
 == Monitoring the progress and metrics
 
