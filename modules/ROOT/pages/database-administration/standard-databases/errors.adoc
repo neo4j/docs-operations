@@ -160,74 +160,49 @@ It produces a database dump that can be further examined and potentially repaire
 [[quarantine]]
 == Quarantined databases
 
-There are two ways to get a database into a `quarantined` state:
-
-* By using the xref:procedures.adoc#procedure_dbms_quarantineDatabase[`dbms.quarantineDatabase`] procedure locally to isolate a specific database.
-The procedure must be executed on the instance whose copy of the database you want to quarantine.
-A reason for that can be, for example, when a database is unable to start on a given instance due to a file system permissions issue with the volume where the database is located or when a recently started database begins to log errors.
-The quarantine state renders the database inaccessible on that instance and prevents its state from being changed, for example, with the `START DATABASE` command.
-+
-[NOTE]
-====
-If running in a cluster, database management commands such as `START DATABASE foo` will still take effect on the instances which have *not* quarantined `foo`.
-====
-
-* When a database encounters a severe error during its normal run, which prevents it from a further operation, Neo4j stops that database and brings it into a `quarantined` state.
+When a database encounters a severe error during its normal run, which prevents it from a further operation, Neo4j stops that database and brings it into a `quarantined` state.
 Meaning, it is not possible to restart it with a simple `START DATABASE` command.
-You have to execute `CALL dbms.quarantineDatabase(databaseName, false)` on the instance with the failing database in order to lift the quarantine.
+You have to execute `CALL dbms.unquarantineDatabase(server, databaseName, operation)` in order to lift the quarantine, specifying as `server` the instance with the failing database.
 
 After lifting the quarantine, the instance will automatically try to bring the database to the desired state.
 
-[NOTE]
-====
-It is recommended to run the quarantine procedure over the `bolt://` protocol rather than `neo4j://`, which may route requests to unexpected instances.
-====
-
 *Syntax:*
 
-`CALL dbms.quarantineDatabase(databaseName,setStatus,reason)`
+`CALL dbms.unquarantineDatabase(server, databaseName, operation)`
 
 *Arguments:*
 
 [options="header"]
 |===
 | Name           | Type    | Description
+| `server`       | String  | The identifier of the server where the quarantine for database will be lifted.
 | `databaseName` | String  | The name of the database that will be put into or removed from quarantine.
-| `setStatus`    | Boolean | `true` for placing the database into quarantine; `false` for lifting the quarantine.
-| `reason`       | String  | (Optional) The reason for placing the database in quarantine.
-|===
-
-*Returns:*
-
-[options="header"]
-|===
-| Name           | Type   | Description
-| `databaseName` | String | The name of the database.
-| `quarantined`  | String | Actual state.
-| `result`       | String | Result of the last operation.
-The result contains the user, the time, and the reason for the quarantine.
+| `operation`    | String  | Optional operation to apply while lifting the quarantine.
 |===
 
 [NOTE]
 ====
-The `dbms.quarantineDatabase` procedure replaces xref:procedures.adoc#procedure_dbms_cluster_quarantinedatabase[`dbms.cluster.quarantineDatabase`], which has been deprecated in Neo4j 4.3 and will be removed with the next major version.
+The possible values for the optional operation are:
+
+* `keepStateKeepStore` -- do nothing; leave store and cluster state as they are.
+* `replaceStateKeepStore` -- join as a new member, clearing the current cluster state but keeping the store.
+* `replaceStateReplaceStore` -- join as a new member, clearing both the current cluster state and the store.
+
+If you choose to clear the current cluster state, the server will try to join as a new member,
+but this joining can succeed if and only if there is a majority of old members "letting" the new members in.
+Let's assume our cluster has a topology with three primaries.
+If there is only one server in `QUARANTINED` mode, then it is safe to choose `replaceStateKeepStore` or `replaceStateReplaceStore`.
+If there are two servers in `QUARANTINED` mode, then you should not use concurrently `replaceStateKeepStore` or `replaceStateReplaceStore` for both servers because there would be no majority to let them in.
 ====
 
-.Quarantine a database
-[source, cypher]
-----
-neo4j@system> CALL dbms.quarantineDatabase("foo",true);
-----
-[queryresult]
-----
-+--------------------------------------------------------------------------------------+
-| databaseName | quarantined | result                                                  |
-+--------------------------------------------------------------------------------------+
-| "foo"        | TRUE        | "By neo4j at 2020-10-15T15:10:41.348Z: No reason given" |
-+--------------------------------------------------------------------------------------+
+*Returns:*
 
-3 row available after 100 ms, consumed after another 6 ms
-----
+The procedure doesn't return any value.
+
+[NOTE]
+====
+The `dbms.unquarantineDatabase` procedure replaces xref:procedures.adoc#procedure_dbms_quarantineDatabase[`dbms.quarantineDatabase`], which has been deprecated in Neo4j 5.26.
+====
 
 .Check if a database is quarantined
 [source, cypher]
@@ -251,7 +226,7 @@ neo4j@system> SHOW DATABASE foo;
 ====
 A `quarantined` state is persisted for user databases.
 This means that if a database is quarantined, it will remain so even if that Neo4j instance is restarted.
-You can remove it only by running the xref:procedures.adoc#procedure_dbms_quarantineDatabase[`dbms.quarantineDatabase`] procedure on the instance where the quarantined database is located, passing `false` for the `setStatus` parameter.
+You can remove it only by running the xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`dbms.unquarantineDatabase`] procedure.
 
 The one exception to this rule is for the built-in `system` database.
 Any quarantine for that database is removed automatically after instance restart.
