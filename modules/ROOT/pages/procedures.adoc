@@ -639,19 +639,19 @@ It will still run with the `Admin` privilege, but that should be considered depr
 | *Syntax* 3+m| dbms.cluster.statusCheck(databases, timeoutMilliseconds) :: (database, serverId, serverName, address, replicationSuccessful, memberStatus, recognisedLeader, recognisedLeaderTerm, requester, error)
 | *Description* 3+a| Performs a rafted status check.
 .3+| *Input arguments* | *Name* | *Type* | *Description*
-| `databases` | `LIST<STRING>` | databases :: LIST<STRING>
-| `timeoutMilliseconds` | `INTEGER` | timeoutMilliseconds = null :: INTEGER
+| `databases` | `LIST<STRING>` | Databases for which the status check should run. Providing an empty list runs the status check for all clustered databases on that server, i.e. it does not run on singles or secondaries.
+| `timeoutMilliseconds` | `INTEGER` | Specifies the maximum wait time for replication before marking it unsuccessful. Default value is 1000 milliseconds.
 .11+| *Return arguments* | *Name* | *Type* | *Description*
-| `database` | `STRING` | database :: STRING
-| `serverId` | `STRING` | serverId :: STRING
-| `serverName` | `STRING` | serverName :: STRING
-| `address` | `STRING` | address :: STRING
-| `replicationSuccessful` | `BOOLEAN` | replicationSuccessful :: BOOLEAN
-| `memberStatus` | `STRING` | memberStatus :: STRING
-| `recognisedLeader` | `STRING` | recognisedLeader :: STRING
-| `recognisedLeaderTerm` | `INTEGER` | recognisedLeaderTerm :: INTEGER
-| `requester` | `BOOLEAN` | requester :: BOOLEAN
-| `error` | `STRING` | error :: STRING
+| `database` | `STRING` | The database for which a status check entry was replicated.
+| `serverId` | `STRING` | The UUID of the server, which did or did not participate in a successful replication of the status check entry.
+| `serverName` | `STRING` | The friendly name of the server, or its UUID if no name is set.
+| `address` | `STRING` | The address of the Bolt port for the server.
+| `replicationSuccessful` | `BOOLEAN` | Indicates if the server (on which the procedure is run) can replicate a transaction.
+| `memberStatus` | `STRING` | The status of each primary member.
+| `recognisedLeader` | `STRING` | The server id of the perceived leader of each primary member.
+| `recognisedLeaderTerm` | `INTEGER` | The term of the perceived leader of each primary member. If the members report different leaders, the one with the highest term should be trusted.
+| `requester` | `BOOLEAN` | Whether a server is the requester or not.
+| `error` | `STRING` | Contains any error message if present. An example of an error is that one or more of the requested databases do not exist on the requester.
 | *Mode* 3+| DBMS
 |===
 
@@ -1059,7 +1059,7 @@ For more information, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-ver
 | *Mode* 3+| WRITE
 |===
 
-[role=label--enterprise-edition label--admin-only]
+[role=label--enterprise-edition label--admin-only label--deprecated-2025.01]
 [[procedure_dbms_quarantineDatabase]]
 === dbms.quarantineDatabase()
 
@@ -1078,6 +1078,43 @@ For more information, see the link:{neo4j-docs-base-uri}/cypher-manual/{page-ver
 | `result` | `STRING` | Details about the outcome of the procedure.
 | *Mode* 3+| DBMS
 |===
+
+[NOTE]
+====
+It is recommended to use <<procedure_dbms_unquarantineDatabase,`dbms.unquarantineDatabase()`>> over `dbms.quarantineDatabase()` due to its improvements and new features (see the `operation` option ).
+// The deprecated `dbms.quarantineDatabase()` procedure is available in Cypher 5, but not in Cypher 25.
+====
+
+[role=label--enterprise-edition label--admin-only label--new-2025.01]
+[[procedure_dbms_unquarantineDatabase]]
+=== dbms.unquarantineDatabase()
+
+
+.Details
+|===
+| *Syntax* 3+m| dbms.unquarantineDatabase(server, databaseName, operation) :: ()
+| *Description* 3+a| Lift quarantine from a database on a given server.
+.4+| *Input arguments* | *Name* | *Type* | *Description*
+| `server` | `STRING` | The identifier of the server where the quarantine for database will be lifted.
+| `database` | `STRING` | The name of the database for the quarantine will be lifted.
+| `operation` | `STRING` | Optional operation to apply while lifting the quarantine.
+| *Mode* 3+| DBMS
+|===
+
+[NOTE]
+====
+The possible values for the optional operation are:
+
+* `keepStateKeepStore` -- do nothing; leave store and cluster state as they are.
+* `replaceStateKeepStore` -- join as a new member, clearing the current cluster state but keeping the store.
+* `replaceStateReplaceStore` -- join as a new member, clearing both the current cluster state and the store.
+
+If you choose to clear the current cluster state, the server will try to join as a new member,
+but this joining can succeed if and only if there is a majority of old members "letting" the new members in.
+Let's assume our cluster has a topology with three primaries.
+If there is only one server in `QUARANTINED` mode, then it is safe to choose `replaceStateKeepStore` or `replaceStateReplaceStore`.
+If there are two servers in `QUARANTINED` mode, then you should not use concurrently `replaceStateKeepStore` or `replaceStateReplaceStore` for both servers because there would be no majority to let them in.
+====
 
 [role=label--admin-only label--deprecated-5.9]
 [[procedure_dbms_upgrade]]
@@ -1949,7 +1986,8 @@ Replaced by xref:clustering/server-syntax.adoc#server-management-syntax[`ENABLE 
 | xref:procedures.adoc#procedure_dbms_quarantineDatabase[`dbms.quarantineDatabase()`] label:admin-only[]
 |
 | {check-mark}
-| label:deprecated[Deprecated in 2025.01] label:available[Available in Cypher 5] label:removed[Removed in Cypher 25]
+| label:deprecated[Deprecated in 2025.01] label:available[Available in Cypher 5] label:removed[Removed in Cypher 25] +
+Replaced by xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`dbms.unquarantineDatabase()`]
 
 |===
 
