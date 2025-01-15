@@ -7,10 +7,11 @@ You can install Neo4j on Debian, and Debian-based distributions like Ubuntu, usi
 [[debian-prerequisites]]
 == Java prerequisites
 
-Neo4j {neo4j-version} requires the Java 17 runtime.
-Java 17 is not included in Ubuntu 16.04 LTS and will have to be set up manually before installing or upgrading to Neo4j {neo4j-version}, as described below.
-Debian 11 and Ubuntu 18.04 onwards already have the OpenJDK Java 17 package available through `apt`.
-From version 5.14 onwards, Neo4j also supports JDK 21.
+Neo4j {neo4j-version} requires the Java 21 runtime.
+
+=== OpenJDK Java 21
+Most of our supported Linux distributions have OpenJDK Java 21 available by default.
+Consequently, no extra setup is required if you are using OpenJDK Java, the correct Java dependency will be installed by the package manager when installing Neo4j.
 
 [[debian-prerequisites-notopenjdk]]
 === Oracle JDK, Zulu JDK, or Corretto JDK
@@ -18,32 +19,16 @@ From version 5.14 onwards, Neo4j also supports JDK 21.
 If you wish to use a non-default JDK, it must be installed before starting the Neo4j installation.
 Otherwise, your package manager will install the default Java distribution for your operating system, usually OpenJDK.
 
-Download and installation instructions can be found on the manufacturer's website:
+Java download and installation instructions can be found on the manufacturer's website:
 
 * https://www.oracle.com/java/technologies/downloads/[Oracle JDK]
 * https://www.azul.com/downloads/?package=jdk[Zulu JDK]
 * https://aws.amazon.com/corretto[Amazon Corretto JDK]
 
-
-[[ubuntu-java17]]
-=== OpenJDK 17 on Ubuntu 16.04
-
-Add the official OpenJDK package repository to `apt`:
-
-[source, shell]
-----
-sudo add-apt-repository -y ppa:openjdk-r/ppa
-sudo apt-get update
-----
-
-You are now ready to install Neo4j, which will install Java 17 automatically if it is not already installed.
-See xref:installation/linux/debian.adoc#multiple-java-versions[Dealing with multiple installed Java versions] to make sure you can start Neo4j after installation.
-
-
 [[multiple-java-versions]]
 === Dealing with multiple installed Java versions
 
-You must configure your default Java version to point to Java 17, or Neo4j {neo4j-version-exact} will be unable to start.
+You must configure your default Java version to point to Java 21, or Neo4j {neo4j-version-exact} will be unable to start.
 Do so with the `update-java-alternatives` command.
 
 . List all your installed versions of Java with `update-java-alternatives --list`.
@@ -52,27 +37,20 @@ Your results may vary, but this is an example of the output:
 +
 [queryresult]
 ----
+java-1.21.0-openjdk-amd64 2111 /usr/lib/jvm/java-1.21.0-openjdk-amd64
 java-1.17.0-openjdk-amd64 1711 /usr/lib/jvm/java-1.17.0-openjdk-amd64
-java-1.11.0-openjdk-amd64 1071 /usr/lib/jvm/java-1.11.0-openjdk-amd64
 ----
 
-. Identify your Java 17 version:
+. Identify your Java 21 version from the list of installed javas. In this case, it is `java-1.21.0-openjdk-amd64`.
+
+. Set java 21 as the default by replacing `<java21name>` with its name:
 +
 [source, shell]
 ----
-java -version
-----
-+
-In this case, it is `java-1.17.0-openjdk-amd64`.
-
-. Set it as the default by replacing `<java17name>` with its name:
-+
-[source, shell]
-----
-sudo update-java-alternatives --jre --set <java17name>
+sudo update-java-alternatives --jre --set <java21name>
 ----
 
-. Confirm which version of Java is the default using `java -version` again.
+. Confirm which version of Java is the default using `java -version`.
 
 [[debian-installation]]
 == Installation
@@ -83,7 +61,7 @@ sudo update-java-alternatives --jre --set <java17name>
 
 The Debian package is available from https://debian.neo4j.com.
 
-. To use the repository for generally available versions of Neo4j, run:
+. To add the Neo4j repository to the package manager, run the following as a sudo user:
 +
 [source, shell]
 ----
@@ -92,18 +70,6 @@ echo 'deb [signed-by=/etc/apt/keyrings/neotechnology.gpg] https://debian.neo4j.c
 sudo apt-get update
 ----
 +
-To avoid the risk of the `apt` package manager accidentally forcing a database upgrade, different major and minor releases of Neo4j are also available separately inside the repository.
-To install Neo4j this way, specify the major and minor version required, in place of `latest`.
-+
-The following method for production or business-critical installations is recommended:
-+
-[source, shell, subs="attributes"]
-----
-wget -O - https://debian.neo4j.com/neotechnology.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/neotechnology.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/neotechnology.gpg] https://debian.neo4j.com stable {neo4j-version}' | sudo tee -a /etc/apt/sources.list.d/neo4j.list
-sudo apt-get update
-----
-
 . Once the repository has been added to `apt`, you can verify which Neo4j versions are available by running:
 +
 [source, shell]
@@ -166,44 +132,6 @@ If you require non-interactive installation of Neo4j Enterprise Edition, you can
 ----
 echo "neo4j-enterprise neo4j/accept-license select Accept commercial license" | sudo debconf-set-selections
 ----
-
-[[debian-install-newer-java]]
-=== Verify the Java version
-
-On newer Debian or Ubuntu operating systems, Java 19 is available by default, and `apt` may install OpenJDK 19, *even if you have Java 17 installed*.
-
-If this happens, Neo4j will return the following warning on start:
-[output]
-----
-WARNING! You are using an unsupported Java runtime.
-* Please use Oracle(R) Java(TM) 17, OpenJDK(TM) 17 to run Neo4j.
-* Please see https://neo4j.com/docs/ for Neo4j installation instructions.
-----
-
-To fix this, you can install Java 17 manually and then either uninstall OpenJDK 19 or set Java 17 as the default.
-
-. Run the following command to install OpenJDK 17 manually:
-+
-[source, shell, subs="attributes"]
-----
-sudo apt install openjdk-17-jre
-----
-+
-For other distributions of Java 17, see
-xref:installation/linux/debian.adoc#debian-prerequisites-notopenjdk[Java prerequisites].
-
-. Choose one of the following options to set it as the default:
-+
-* Uninstall OpenJDK 19:
-+
-[source, shell, subs="attributes"]
-----
-sudo apt remove openjdk-19-jre-headless
-----
-
-* If you want to keep OpenJDK 19 installed, set Java 17 as default by following the instructions in
-xref:installation/linux/debian.adoc#multiple-java-versions[Dealing with multiple installed Java versions].
-
 
 [[debian-offline-installation]]
 == Offline installation
