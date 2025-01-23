@@ -289,21 +289,39 @@ You need to create the persistent volume and persistent volume claim before inst
 For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
-==== Configure the _backup-values.yaml_ file for using MinIO
+==== Configure S3-compatible storage endpoints
 
-_This feature is available from Neo4j 5.14._
+The backup system supports any S3-compatible storage service.
+You can configure both TLS and non-TLS endpoints using the following parameters in your _backup-values.yaml_ file:
 
-MinIO is an AWS S3-compatible object storage API.
-You can specify the `minioEndpoint` parameter in the _backup-values.yaml_ file to push your backups to your MinIO bucket.
-This endpoint must be a s3 API endpoint or else the backup Helm chart will fail.
-Only non-TLS/SSL endpoints are supported.
-For example:
+[source, yaml]
+----
+backup:
+  # Specify your S3-compatible endpoint (e.g., https://s3.amazonaws.com or your custom endpoint)
+  s3Endpoint: "https://s3.custom-provider.com"
 
-[source, yaml, role='noheader']
+  # Enable TLS for secure connections (default: false)
+  s3EndpointTLS: true
+
+  # Optional: Provide a base64-encoded CA certificate for custom certificate authorities
+  s3CACert: "base64_encoded_ca_cert_data"
+
+  # Optional: Skip TLS verification (not recommended for production)
+  s3SkipVerify: false
+----
+
+The following are examples of how to configure the backup system for different S3-compatible storage providers:
+
+[.tabbed-example]
+=====
+[.include-with-S3-standard-endpoint]
+======
+.AWS S3 standard endpoint
+[source, yaml]
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "5.14.0"
+  imageTag: "5.26.0"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -311,8 +329,9 @@ neo4j:
 
 backup:
   bucketName: "my-bucket"
-  databaseAdminServiceName:  "standalone-admin"
-  minioEndpoint: "http://demo.minio.svc.cluster.local:9000"
+  databaseAdminServiceName: "standalone-admin"
+  s3Endpoint: "https://s3.amazonaws.com"
+  s3EndpointTLS: true
   database: "neo4j,system"
   cloudProvider: "aws"
   secretName: "awscreds"
@@ -321,12 +340,52 @@ backup:
 consistencyCheck:
   enabled: true
 ----
+======
+[.include-with-S3-custom-endpoint]
+======
+
+.Custom S3-compatible provider with self-signed certificate
+[source, yaml]
+----
+backup:
+  bucketName: "my-bucket"
+  s3Endpoint: "https://custom-s3.example.com"
+  s3EndpointTLS: true
+  s3CACert: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0t..."  # Base64-encoded CA cert
+  cloudProvider: "aws"
+  secretName: "awscreds"
+  secretKeyName: "credentials"
+----
+======
+[.include-with-legacy-MinIO-support]
+======
+[role=label--new-5.14 label--deprecated-5.26]
+.Legacy MinIO support
+[source, yaml]
+----
+backup:
+  bucketName: "my-bucket"
+  databaseAdminServiceName: "standalone-admin"
+  minioEndpoint: "http://minio.example.com:9000"  # Deprecated: Use s3Endpoint instead
+  database: "neo4j,system"
+  cloudProvider: "aws"
+  secretName: "awscreds"
+  secretKeyName: "credentials"
+----
+======
+=====
+
+[IMPORTANT]
+====
+* The `s3EndpointTLS` parameter must be set to `true` when using HTTPS endpoints.
+* When using custom CA certificates, provide them base64-encoded in the `s3CACert` parameter.
+* The `s3SkipVerify` parameter should only be used in development environments.
+* Legacy MinIO support through the `minioEndpoint` parameter is deprecated - use `s3Endpoint` instead.
+====
 
 [role=label--new-5.16]
 [[kubernetes-neo4j-backup-on-prem]]
 == Prepare to back up a database(s) to on-premises storage
-
-_This feature is available from Neo4j 5.16._
 
 You can perform a backup of a Neo4j database(s) to on-premises storage using the _neo4j/neo4j-admin_ Helm chart.
 When configuring the _backup-values.yaml_ file, keep the “cloudProvider” field empty and provide a persistent volume in the `tempVolume` section to ensure the backup files are persistent if the pod is deleted.
