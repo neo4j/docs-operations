@@ -28,7 +28,8 @@ For more information, see <<copy-estimating-iops, Estimating the processing time
 [source,role=noheader]
 ----
 neo4j-admin database copy [-h] [--copy-schema] [--expand-commands] [--force] [--verbose] [--compact-node-store[=true|false]]
-                             [--additional-config=<file>] [--from-pagecache=<size>] [--temp-path=<path>] [--to-format=<format>]
+                             [--additional-config=<file>] [--from-pagecache, --max-off-heap-memory=<size>]
+                             [--temp-path=<path>] [--to-format=<format>]
                              [--to-path-schema=<path>] [--copy-only-node-properties=<label.property>[,<label.property>...]]...
                              [--copy-only-nodes-with-labels=<label>[,<label>...]]... [--copy-only-relationship-properties=<relationship.
                              property>[,<relationship.property>...]]... [--copy-only-relationships-with-types=<type>[,<type>...]]...
@@ -123,13 +124,6 @@ The indexes will be built the first time the database is started.
 |Force the command to run even if the integrity of the database cannot be verified.
 |
 
-|--from-pagecache=<size>
-|The size of the page cache to use for reading.
-[TIP]
-You can use the `--from-pagecache` option to speed up the copy operation by specifying how much cache to allocate when reading the source.
-The `--from-pagecache` should be assigned whatever memory you can spare since Neo4j does random reads from the source.
-|8m
-
 |--from-path-data=<path>
 |Path to the databases directory, containing the database directory to source from.
 It can be used to target databases outside of the installation.
@@ -154,6 +148,12 @@ Cannot be combined with `--copy-only-nodes-with-labels`.
 relationship types will not be included in the copy.
 Cannot be combined with `--copy-only-relationships-with-types`.
 |
+
+|--from-pagecache, --max-off-heap-memory=<size>
+|label:new[Introduced in 2025.01] Maximum memory that neo4j-admin can use for various data structures and caching to improve performance.
+Values can be plain numbers, such as 10000000, or 20G for 20 gigabytes.
+It can also be specified as a percentage of the available memory, for example 70%.
+|90%
 
 |--skip-labels=<label>[,<label>...]
 |A comma-separated list of labels to ignore.
@@ -209,6 +209,18 @@ If you go from `high_limit` to `standard` or `aligned`, there is no validation t
 The block format is the default format for all newly-created databases as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified.
 For more information on the block format, see xref:database-internals/store-formats.adoc[Store formats].
 ====
+
+[NOTE]
+====
+Neo4j 2025.01 introduces a dual-named option `--from-pagecache, --max-off-heap-memory=<size>`, which enhances the functionality of the `--from-pagecache=<size>` option.
+
+The new option determines the maximum amount of off-heap memory available during the copy process for reading and writing, instead of specifying how much cache to allocate when reading the source.
+
+For details, see <<off-heap-memory-control,Improving the performance>>.
+
+Note that the `--from-pagecache` option may be removed in future versions.
+====
+
 
 [[copy-database-examples]]
 == Examples
@@ -269,8 +281,6 @@ CREATE DATABASE database-copy
 ----
 SHOW DATABASES
 ----
-
-. (For versions before Neo4j 5.20) If your original database has a schema defined, change your active database to the copied database and recreate the schema using the schema commands saved in the file _<database-name>-schema.cypher_.
 
 === Filtering data while copying a database
 
@@ -341,8 +351,6 @@ This is the newly created version of the database.
 START DATABASE neo4j
 ----
 
-. (For versions before Neo4j 5.20) If your original database has a schema defined, recreate the schema using the schema commands saved in the file _<database-name>-schema.cypher_.
-
 [TIP]
 ====
 For a detailed example of how to reclaim unused space, see xref:performance/space-reuse.adoc#space-reuse-reclaim-space[Reclaim unused space].
@@ -367,3 +375,29 @@ Therefore, with an additional 144 GB of both read and write, the best-case scena
 
 Finally, it is also important to consider that in almost all Cloud environments, the published IOPS value may not be the same as the actual value, or be able to continuously maintain the maximum possible IOPS.
 The real processing time for this example _could_ be well above that estimation of 3 hours.
+
+[[off-heap-memory-control]]
+=== Improving the performance
+
+You can improve the performance of the copy process by specifying the memory limit.
+Neo4j 2025.01 introduces an option `--from-pagecache, --max-off-heap-memory=<size>` to replace the old `--from-pagecache=<size>` option.
+
+The new option controls how much off-heap memory the copy process may use in addition to the heap size the JVM is given.
+Values can be plain numbers, such as 10000000, or 20G for 20 gigabytes.
+It can also be specified as a percentage of the available memory, for example 70%.
+
+Starting from 2025.01, to configure the off-heap memory value, you can use either the old name `--from-pagecache=<size>` or the new one `--max-off-heap-memory=<size>`.
+
+
+.Using `--from-pagecache=<size>`
+[source, shell]
+----
+bin/neo4j-admin database copy neo4j copy --from-pagecache=95%
+----
+
+.Using `--max-off-heap-memory=<size>`
+[source, shell]
+----
+bin/neo4j-admin database copy neo4j copy --max-off-heap-memory=95%
+----
+

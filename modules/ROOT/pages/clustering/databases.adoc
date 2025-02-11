@@ -19,7 +19,7 @@ To create a database `foo` with 3 servers hosting the database in primary mode a
 ----
 CREATE DATABASE foo TOPOLOGY 3 PRIMARIES 2 SECONDARIES
 ----
-Alternatively, you can use link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/parameters[parameters] to provide the number of primaries and secondaries:
+Alternatively, you can use link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/parameters[parameters] to provide the number of primaries and secondaries:
 
 .Parameters
 [source,javascript, indent=0]
@@ -67,7 +67,7 @@ To change the topology of the database `foo` from the previous example, the comm
 ----
 ALTER DATABASE foo SET TOPOLOGY 2 PRIMARIES 1 SECONDARY
 ----
-Alternatively, you can use link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/syntax/parameters[parameters] to provide the number of primaries and secondaries:
+Alternatively, you can use link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/parameters[parameters] to provide the number of primaries and secondaries:
 
 .Parameters
 [source,javascript, indent=0]
@@ -117,15 +117,6 @@ If the `ALTER DATABASE` command decreases the number of allocations of a databas
 ALTER DATABASE nonExisting IF EXISTS SET TOPOLOGY 1 PRIMARY 0 SECONDARY
 ----
 
-[role="statsonlyqueryresult"]
-0 rows
-// This part can be added back once it has been implemented.
-// The allocation approach can be specified with the setting `initial.dbms.database_allocator`.
-// The available options are:
-//
-// * `EQUAL_NUMBERS`
-// * `OPTIMAL_DISC_USAGE`
-// * `ALL`
 
 [[alter-access]]
 === Alter database access
@@ -463,7 +454,7 @@ SHOW DATABASE foo;
 === Seed from URI
 
 This method seeds all servers with an identical seed from an external source, specified by the URI.
-The seed can either be a full backup, a differential backup (xref:clustering/databases.adoc#cloud-seed-provider[`CloudSeedProvider`] or a dump from an existing database.
+The seed can either be a full backup, a differential backup (see xref:clustering/databases.adoc#cloud-seed-provider[`CloudSeedProvider`]), or a dump from an existing database.
 The sources of seeds are called _seed providers_.
 
 The mechanism is pluggable, allowing new sources of seeds to be supported (see link:https://www.neo4j.com/docs/java-reference/current/extending-neo4j/project-setup/#extending-neo4j-plugin-seed-provider[Java Reference -> Implement custom seed providers] for more information).
@@ -514,10 +505,12 @@ The `FileSeedProvider`  supports:
 
 The `URLConnectionSeedProvider` supports the following:
 
-** `file:` label:deprecated[Deprecated in 5.26]
 ** `ftp:`
 ** `http:`
 ** `https:`
+
+Starting from Neo4j 2025.01, the `URLConnectionSeedProvider` does not support `file`.
+// This is true for both Cypher 5 and Cypher 25.
 
 [[cloud-seed-provider]]
 ==== CloudSeedProvider
@@ -574,8 +567,38 @@ CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'azb://myStorageAcco
 ======
 =====
 
+Starting from Neo4j 2025.01, the `CloudSeedProvider` supports seeding up to a specific date or transaction ID using the `seedRestoreUntil` option.
+
+[role=label--new-2025.01]
+===== Seed up to a specific date
+
+To seed up to a specific date, you need to pass the differential backup, which contains the data up to that date.
+
+
+[source,shell]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup.backup', seedRestoreUntil: datetime("2019-06-01T18:40:32.142+0100") }
+----
+
+This will seed the database with transactions committed before the provided timestamp.
+
+[role=label--new-2025.01]
+===== Seed up to a specific transaction ID
+
+To seed up to a specific transaction ID, you need to pass the differential backup that contains the data up to that transaction ID.
+
+[source,shell]
+----
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBackup.backup', seedRestoreUntil: 123 }
+----
+
+This will seed the database with transactions up to, but not including transaction 123.
+
+[role=label--deprecated]
 [[s3-seed-provider]]
 ==== S3SeedProvider
+
+// When Cypher 25 is released, we have to label this section 'Cypher 5' as this functionality is only available in Cypher 5.
 
 The `S3SeedProvider` supports:
 
@@ -584,7 +607,7 @@ The `S3SeedProvider` supports:
 
 [NOTE]
 ====
-Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity.
+Neo4j comes bundled with necessary libraries for AWS S3 connectivity.
 Therefore, if you use `S3SeedProvider`,`aws cli` is not required but can be used with the `CloudSeedProvider`.
 ====
 
@@ -611,7 +634,6 @@ CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3:/myBucket/myBack
 ----
 Where `accessKey` and `secretKey` are provided by AWS.
 
-
 ==== Seed provider reference
 
 [cols="1,2,2",options="header"]
@@ -621,8 +643,7 @@ Where `accessKey` and `secretKey` are provided by AWS.
 | URI example
 
 | `file:`
-| `URLConnectionSeedProvider` label:deprecated[Deprecated in 5.26], +
-`FileSeedProvider`
+| `FileSeedProvider`
 | `file:/tmp/backup1.backup`
 
 | `ftp:`
