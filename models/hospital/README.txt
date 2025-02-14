@@ -1,3 +1,10 @@
+==============================================================================================================================================
+THIS EXAMPLE IS USED IN THE DOCUMENTATION ONLY AS A REFERENCE AND AS BASIS FOR THE ACCESS CONTROL TUTORIAL (see xref:tutorial/access-control.adoc).
+IT IS NOT INTENDED TO BE USED NEITHER IN PRODUCTION NOR FOR ANY OTHER PURPOSES.
+==============================================================================================================================================
+
+
+
 Hospital Database With Security
 ===============================
 
