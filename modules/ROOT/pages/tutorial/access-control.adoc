@@ -82,12 +82,19 @@ To create the database, start by creating the nodes and relationships that repre
 The following steps assume that you have installed Neo4j Enterprise edition and it is running.
 For details, see xref:installation/index.adoc[].
 
-. Using Cypher Shell, create the `healthcare` database:
+. Log into Cypher Shell:
 +
 [source, shell]
 ----
 cypher-shell -u neo4j -p my-password
 ----
+. Change the active database to `system`:
++
+[source]
+----
+:use system;
+----
+. Create the `healthcare` database:
 +
 [source, cypher]
 ----
@@ -1042,7 +1049,7 @@ For this reason, they are all assigned the `editor` role.
 
 Tina, the IT administrator who installs and manages the database, needs to be assigned the `admin` role.
 
-Here is how to grant roles to the users:
+Here is how to grant roles to the users (from the `system` database):
 
 [source, cypher]
 ----
@@ -1062,7 +1069,8 @@ In many real-world scenarios though, it would be preferable to establish some ac
 For example, you may want to limit the researcher's access to the patients' personal information or restrict the receptionist from writing new labels on the database.
 While these restrictions could be coded into the application layer, it is possible and *more secure* to enforce fine-grained restrictions directly within the Neo4j security model by creating custom roles and assigning specific privileges to them.
 
-Since new custom roles will be created, it is important to first revoke the current roles from the users assigned to them:
+Since new custom roles will be created, it is important to first revoke the current roles from the users assigned to them.
+Run the following command against the `system` database:
 
 [source, cypher]
 ----
@@ -1099,23 +1107,10 @@ User manager::
 This user should have similar access as the IT administrator, but with more restrictions.
 To achieve that, a new role can be created from scratch and only specific administrative capabilities can be assigned to it.
 
-// .Creating custom roles
-// ====
-// [source, cypher]
-// ----
-// CREATE ROLE doctor;
-// CREATE ROLE receptionist;
-// CREATE ROLE nurse;
-// CREATE ROLE researcherB;
-// CREATE ROLE researcherW;
-// CREATE ROLE disableDiagnoses;
-// CREATE ROLE itadmin AS COPY OF admin;
-// CREATE ROLE userManager;
-// ----
-// ====
-
 Before creating the new roles and assigning them to Alice, Bob, Daniel, Charlie, and Tina, it is important to define the privileges each role should have.
 Since all users need `ACCESS` privilege to the `healthcare` database, this can be set through the `PUBLIC` role instead of all the individual roles:
+
+Run the following command against the `system` database:
 
 [source, cypher]
 ----
@@ -1193,14 +1188,15 @@ ready to start consuming query after 27 ms, results consumed after another 2 ms
 Privileges that were granted or denied earlier can be revoked using xref:authentication-authorization/manage-privileges.adoc#access-control-revoke-privileges[the `REVOKE` command].
 ====
 
-To provide the IT administrator `tina` these privileges, they must be assigned the new role `itadmin`:
+To provide the IT administrator `tina` these privileges, they must be assigned the new role `itadmin`.
+Run the following command against the `system` database:
 
 [source, cypher, role=systemcmd]
 ----
-neo4j@system> GRANT ROLE itadmin TO tina;
+GRANT ROLE itadmin TO tina;
 ----
 
-To demonstrate that Tina is not able to see the patients' `SSN`, you can login to `healthcare` as `tina` and run the following query:
+To demonstrate that Tina is not able to see the patients' `SSN`, you can log into Cypher Shell as `tina` and run the following query against the `healthcare` database:
 
 [source, cypher]
 ----
@@ -1263,7 +1259,8 @@ You can grant the role `researcher` the ability to find all nodes and read all p
 This way, the researcher is unable to see patients' information such as `name`, `SSN`, and `address`.
 This approach has a problem though: if more properties are added to the `Patient` nodes _after_ the restrictions were assigned to the `researcher` role, these new properties will automatically be visible to the researcher -- a possibly undesirable outcome.
 +
-To avoid that, you can rather deny _specific_ privileges:
+To avoid that, you can rather deny _specific_ privileges by running the following commands against the `system` database.
+You must be logged in as a user with the `admin` role to be able to execute these commands:
 +
 [source, cypher, role=systemdb]
 ----
@@ -1360,7 +1357,7 @@ SHOW USER charlie PRIVILEGES AS COMMANDS;
 ready to start consuming query after 23 ms, results consumed after another 1 ms
 ----
 +
-Now when logs into the `healthcare` database and tries to run a command similar to the one previously used by the `itadmin`, Charlie will see different results:
+Now when Charlie logs into Cypher Shell and tries to execute the following command against the `healthcare` database, even though the command is similar to the one previously used by the `itadmin`, they will see different results:
 +
 [source, cypher]
 ----
@@ -1433,7 +1430,8 @@ Privileges that were granted or denied earlier can be revoked using xref:authent
 ==== Privileges of `doctor`
 
 Doctors should be given the ability to read and write almost everything, except the patients' `address` property, for instance.
-This role can be built from scratch by assigning full read and write access, and then specifically denying access to the `address` property:
+This role can be built from scratch by assigning full read and write access, and then specifically denying access to the `address` property.
+Switch to the `system` database and run the following commands:
 
 [source, cypher]
 ----
@@ -1452,7 +1450,7 @@ To allow the doctor Alice to have these privileges, grant the user `alice` this 
 GRANT ROLE doctor TO alice;
 ----
 
-To demonstrate that Alice is not able to see patient addresses, log in as `alice` to `healthcare` and run the following query:
+To demonstrate that Alice is not able to see patient addresses, log in as `alice` and run the following query against the `healthcare` database:
 
 [source, cypher]
 ----
@@ -1585,7 +1583,8 @@ The latter would be more precise and can be achieved by running, as an administr
 
 Receptionists should only be able to manage patient information.
 They are not allowed to find or read any other parts of the graph.
-In addition, they should be able to create and delete patients, but not any other nodes:
+In addition, they should be able to create and delete patients, but not any other nodes.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemdb]
 ----
@@ -1744,7 +1743,8 @@ Cannot delete node<65>, because it still has relationships. To delete this node,
 ----
 
 The reason why this query fails is that, while Bob can find the `(:Patient)` node, he does not have sufficient traverse rights to find nor delete the outgoing relationships from it.
-Either they need to ask Tina the `itadmin` for help for this task, or more privileges can be added to the `receptionist` role:
+Either they need to ask Tina the `itadmin` for help for this task, or more privileges can be added to the `receptionist` role.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemcmd]
 ----
