@@ -18,7 +18,7 @@ For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/upg
 [[create-neo4j-database]]
 == Create databases
 
-You can create a database using the Cypher command `CREATE DATABASE`.
+You can create a database using the Cypher command `CREATE DATABASE`. The initial contents of the database will depend on the state of the server and the options provided to the command. When no additional options are provided, `CREATE DATABASE` will attempt to mount any pre-existing store files in place (e.g. as the result of restoring a backup). If no pre-existing store files are available, an empty database will be created.
 
 [NOTE]
 ====
@@ -63,6 +63,11 @@ CREATE OR REPLACE DATABASE name
 
 [[manage-databases-create-database-options]]
 === Options
+
+[.tabbed-example]
+=====
+[.include-with-cypher5]
+======
 
 The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
 
@@ -128,7 +133,57 @@ Starting from Neo4j 2025.01, you can use `existingData`, `seedURI`, `seedConfig`
 The `existingDataSeedInstance` and `existingDataSeedServer` are still not supported with the `CREATE OR REPLACE DATABASE` command.
 More details about seeding options can be found in xref::clustering/databases.adoc#cluster-seed[Seed a cluster].
 ====
+======
+[.include-with-cypher25]
+======
+The `CREATE DATABASE [OR REPLACE]` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
 
+[options="header"]
+|===
+
+| Key | Value | Description
+
+|`existingDataSeedServer`
+| ID of the cluster server
+|
+Defines which server is used for seeding the data of the created database.
+The server ID can be found in the `serverId` column after running `SHOW SERVERS`.
+Replaced by `existingDataSeedServer`.
+
+| `seedURI`
+| URI to a backup or a dump from an existing database.
+|
+Defines an identical seed from an external source which will be used to seed all servers.
+
+| `seedConfig`
+| Comma-separated list of configuration values.
+|
+For more information see xref::clustering/databases.adoc#cluster-seed-uri[Seed from URI].
+
+| `txLogEnrichment`
+| `FULL` \| `DIFF` \| `OFF`
+|
+Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
+
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/current/get-started/self-managed/#set-enrichment-mode/[Change Data Capture Manual -> Enable CDC on self-managed instances -> Set the enrichment mode].
+
+| `storeFormat`
+| `aligned` \| `standard` \| `high_limit` \| `block`
+|
+Defines the store format if the database created is new.
+`high_limit` and `standard` formats are deprecated from 5.23.
+For more information on store formats, see xref::database-internals/store-formats.adoc[Store formats].
+
+If the store is seeded with `seedURI` or `existingDataSeedServer`, or if the command is used to mount pre-existing store files already present on the disk, they will retain their current store format without any modifications.
+
+| `existingData` label:deprecated[Deprecated]
+| `use`
+|
+Included for backward compatibility only, has no effect and will be removed in a future version
+
+|===
+======
+=====
 
 === Examples
 
@@ -164,6 +219,10 @@ SHOW DATABASES YIELD name
 
 ==== Create a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
 
+[.tabbed-example]
+=====
+[.include-with-cypher5]
+======
 Sub-clause `WAIT` allows you to specify a time limit in which the command must complete and return.
 
 [source, cypher]
@@ -183,7 +242,34 @@ CREATE DATABASE slow WAIT 5 SECONDS
 
 The `success` column provides an aggregate status of whether or not the command is considered successful.
 Thus, every row has the same value, determined on a successful completion without a timeout.
+======
+[.include-with-cypher25]
+======
+Sub-clause `WAIT` allows you to specify a time limit in which the command must complete and return.
 
+[source, cypher]
+----
+CREATE DATABASE slow WAIT 5 SECONDS
+----
+
+.Result
+[role="queryresult"]
+----
+info: Server `ServerId{b55c6551}` at address `server1:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+
+info: Server `ServerId{a9e7e8f1}` at address `server2:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+
+info: Server `ServerId{0f7cb48e}` at address `server3:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+----
+
+The command will return a notification for each server in the cluster to indicate the status of that command
+on that server. In this case all three cluster members have returned `Neo.ClientNotification.Cluster.ServerCaughtUp`
+which indicates that the server has applied the command successfully and is up to date.
+======
+=====
 
 ==== Create databases with `IF NOT EXISTS` or `OR REPLACE`
 
