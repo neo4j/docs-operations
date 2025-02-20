@@ -83,23 +83,35 @@ To create the database, start by creating the nodes and relationships that repre
 The following steps assume that you have installed Neo4j Enterprise edition and it is running.
 For details, see xref:installation/index.adoc[].
 
-. Log into Cypher Shell:
+. Using Cypher Shell, log into the `system` database and the `neo4j` user:
 +
 [source, shell]
 ----
-cypher-shell -u neo4j -p my-password
-----
-. Change the active database to `system`:
-+
-[source]
-----
-:use system;
+cypher-shell -u neo4j -p my-password -d system
 ----
 . Create the `healthcare` database:
 +
 [source, cypher]
 ----
 CREATE DATABASE healthcare;
+----
+. Set the `healthcare` database as the default database:
++
+[source, cypher]
+----
+CALL dbms.setDefaultDatabase("healthcare");
+----
++
+[result]
+----
++----------------------------------------------------------------------+
+| result                                                               |
++----------------------------------------------------------------------+
+| "Old default database unset. New default database set to healthcare" |
++----------------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 9 ms, results consumed after another 4 ms
 ----
 
 == Import data into the `healthcare` database
@@ -1158,10 +1170,8 @@ SHOW ROLE itadmin PRIVILEGES AS COMMANDS;
 | command                                                                 |
 +-------------------------------------------------------------------------+
 | "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO `itadmin`" |
-| "DENY CREATE ON GRAPH `neo4j` RELATIONSHIP DIAGNOSIS TO `itadmin`"      |
 | "DENY PRIVILEGE MANAGEMENT ON DBMS TO `itadmin`"                        |
 | "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO `itadmin`"       |
-| "DENY READ {ssn} ON GRAPH `neo4j` NODE Patient TO `itadmin`"            |
 | "DENY ROLE MANAGEMENT ON DBMS TO `itadmin`"                             |
 | "GRANT ACCESS ON DATABASE * TO `itadmin`"                               |
 | "GRANT ALL DBMS PRIVILEGES ON DBMS TO `itadmin`"                        |
@@ -1178,9 +1188,8 @@ SHOW ROLE itadmin PRIVILEGES AS COMMANDS;
 | "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `itadmin`"           |
 | "GRANT WRITE ON GRAPH * TO `itadmin`"                                   |
 +-------------------------------------------------------------------------+
-
-20 rows
-ready to start consuming query after 27 ms, results consumed after another 2 ms
+18 rows
+ready to start consuming query after 29 ms, results consumed after another 1 ms
 ----
 ====
 
@@ -1347,7 +1356,6 @@ SHOW USER charlie PRIVILEGES AS COMMANDS;
 | "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO $role"         |
 | "DENY TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role"                      |
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"                           |
 | "GRANT ACCESS ON HOME DATABASE TO $role"                              |
 | "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                           |
 | "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                          |
@@ -1356,8 +1364,8 @@ SHOW USER charlie PRIVILEGES AS COMMANDS;
 | "GRANT MATCH {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"       |
 +-----------------------------------------------------------------------+
 
-12 rows
-ready to start consuming query after 23 ms, results consumed after another 1 ms
+11 rows
+ready to start consuming query after 17 ms, results consumed after another 2 ms
 ----
 +
 Now when Charlie logs into Cypher Shell and tries to execute the following command against the `healthcare` database, even though the command is similar to the one previously used by the `itadmin`, they will see different results:
@@ -1745,7 +1753,8 @@ DETACH DELETE n;
 Cannot delete node<65>, because it still has relationships. To delete this node, you must first delete its relationships.
 ----
 
-The reason why this query fails is that, while Bob can find the `(:Patient)` node, he does not have sufficient traverse rights to find nor delete the outgoing relationships from it.
+The reason why this query fails is that, while Bob can find the `(:Patient)` node, he does not have sufficient traverse rights to find nor the rights to delete the outgoing relationships from it.
+
 Either they need to ask Tina the `itadmin` for help for this task, or more privileges can be added to the `receptionist` role.
 Switch to the `system` database and run the following commands:
 
@@ -1792,7 +1801,6 @@ SHOW USER daniel PRIVILEGES AS COMMANDS;
 | "DENY READ {address} ON GRAPH `healthcare` NODE Patient TO $role"         |
 | "DENY SET PROPERTY {address} ON GRAPH `healthcare` NODE Patient TO $role" |
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role"                          |
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"                               |
 | "GRANT ACCESS ON HOME DATABASE TO $role"                                  |
 | "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"                |
 | "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"                |
@@ -1814,8 +1822,8 @@ SHOW USER daniel PRIVILEGES AS COMMANDS;
 | "GRANT WRITE ON GRAPH `healthcare` TO $role"                              |
 +---------------------------------------------------------------------------+
 
-23 rows
-ready to start consuming query after 8 ms, results consumed after another 1 ms
+22 rows
+ready to start consuming query after 10 ms, results consumed after another 1 ms
 ----
 
 [NOTE]
@@ -1978,7 +1986,6 @@ SHOW USER daniel PRIVILEGES AS COMMANDS;
 +---------------------------------------------------------------------+
 | "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role"                    |
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"                         |
 | "GRANT ACCESS ON HOME DATABASE TO $role"                            |
 | "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                         |
 | "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                        |
@@ -1990,8 +1997,8 @@ SHOW USER daniel PRIVILEGES AS COMMANDS;
 | "GRANT WRITE ON GRAPH `healthcare` TO $role"                        |
 +---------------------------------------------------------------------+
 
-12 rows
-ready to start consuming query after 2 ms, results consumed after another 1 ms
+11 rows
+ready to start consuming query after 4 ms, results consumed after another 1 ms
 ----
 
 Daniel can still see the address fields, and can even perform the diagnosis investigation that the `doctor` can perform:
@@ -2102,7 +2109,6 @@ SHOW USER tina PRIVILEGES AS COMMANDS;
 | command                                          |
 +--------------------------------------------------+
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role" |
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"      |
 | "GRANT ACCESS ON HOME DATABASE TO $role"         |
 | "GRANT EXECUTE FUNCTION * ON DBMS TO $role"      |
 | "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"     |
@@ -2112,8 +2118,8 @@ SHOW USER tina PRIVILEGES AS COMMANDS;
 | "GRANT USER MANAGEMENT ON DBMS TO $role"         |
 +--------------------------------------------------+
 
-9 rows
-ready to start consuming query after 16 ms, results consumed after another 1 ms
+8 rows
+ready to start consuming query after 24 ms, results consumed after another 1 ms
 ----
 
 [NOTE]
@@ -2136,14 +2142,13 @@ SHOW USER sally PRIVILEGES AS COMMANDS;
 [queryresult]
 ----
 0 rows
-ready to start consuming query after 19 ms, results consumed after another 0 ms
+ready to start consuming query after 45 ms, results consumed after another 0 ms
 0 rows
 ready to start consuming query after 4 ms, results consumed after another 0 ms
 +------------------------------------------------------------------------+
 | command                                                                |
 +------------------------------------------------------------------------+
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role"                       |
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"                            |
 | "GRANT ACCESS ON HOME DATABASE TO $role"                               |
 | "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"             |
 | "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"             |
@@ -2160,6 +2165,6 @@ ready to start consuming query after 4 ms, results consumed after another 0 ms
 | "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP HAS TO $role"       |
 +------------------------------------------------------------------------+
 
-16 rows
-ready to start consuming query after 4 ms, results consumed after another 1 ms
+15 rows
+ready to start consuming query after 3 ms, results consumed after another 0 ms
 ----
