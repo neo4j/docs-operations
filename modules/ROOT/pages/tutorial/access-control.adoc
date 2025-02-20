@@ -1,14 +1,14 @@
 [role=enterprise-edition]
 [[auth-access-control]]
-= Fine-grained access control (example)
-:description: Describes an example that illustrates various aspects of security and fine-grained access control.
+= Fine-grained access control
+:description: This tutorial walks you trough a healthcare use case, demonstrating various aspects of security and fine-grained access control.
 
 When creating a database, administrators may want to establish which users can access certain information.
 
 As described in xref:authentication-authorization/built-in-roles.adoc#auth-built-in-roles[Built-in roles and privileges], Neo4j already offers preset roles configured to specific permissions (i.e. read, edit, or write).
 While these built-in roles cover many common daily scenarios, it is also possible to create custom roles for specific needs.
 
-This page contains an example that illustrates various aspects of security and fine-grained access control.
+This tutorial walks you through a healthcare use case that illustrates various aspects of security and fine-grained access control.
 
 [[auth-access-control-use-case]]
 == Healthcare use case
@@ -76,18 +76,950 @@ This same database would be used by a number of different users, each with diffe
 * *Researchers* who need to perform statistical analysis of medical data.
 * *IT administrators* who need to manage the database, to create and assign users for example.
 
+To create the database, start by creating the nodes and relationships that represent the entities described above.
+
+== Create the `healthcare` database
+
+The following steps assume that you have installed Neo4j Enterprise edition and it is running.
+For details, see xref:installation/index.adoc[].
+
+. Using Cypher Shell, log into the `system` database as the `neo4j` user:
++
+[source, shell]
+----
+cypher-shell -u neo4j -p my-password -d system
+----
+. Create the `healthcare` database:
++
+[source, cypher]
+----
+CREATE DATABASE healthcare;
+----
+. Set the `healthcare` database as the default database:
++
+[source, cypher]
+----
+CALL dbms.setDefaultDatabase("healthcare");
+----
++
+[result]
+----
++----------------------------------------------------------------------+
+| result                                                               |
++----------------------------------------------------------------------+
+| "Old default database unset. New default database set to healthcare" |
++----------------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 9 ms, results consumed after another 4 ms
+----
+
+== Import data into the `healthcare` database
+
+Create the nodes and relationships that represent the entities described above in section <<auth-access-control-use-case, Healthcare use case>>.
+
+. Switch to the `healthcare` database:
++
+[source]
+----
+:use healthcare;
+----
+. Create some data for symptoms:
++
+[source, cypher]
+----
+WITH ['Itchy','Scratchy','Sore','Swollen','Red','Inflamed','Angry','Sad','Pale','Dizzy'] AS symptoms
+             UNWIND symptoms AS symptom
+             MERGE (s:Symptom {name:symptom})
+             ON CREATE SET s.description = 'Looks ' + toLower(symptom)
+             RETURN s.name, s.description;
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
++-------------------------------+
+| s.name     | s.description    |
++-------------------------------+
+| "Itchy"    | "Looks itchy"    |
+| "Scratchy" | "Looks scratchy" |
+| "Sore"     | "Looks sore"     |
+| "Swollen"  | "Looks swollen"  |
+| "Red"      | "Looks red"      |
+| "Inflamed" | "Looks inflamed" |
+| "Angry"    | "Looks angry"    |
+| "Sad"      | "Looks sad"      |
+| "Pale"     | "Looks pale"     |
+| "Dizzy"    | "Looks dizzy"    |
++-------------------------------+
+
+10 rows
+ready to start consuming query after 53 ms, results consumed after another 24 ms
+Added 10 nodes, Set 20 properties, Added 10 labels
+----
+====
+. Create some data for diseases:
++
+[source, cypher]
+----
+WITH
+  ['Argitis','Whatitis','Otheritis','Someitis','Placeboitis','Yellowitis'] AS diseases,
+  ['Chronic','Acute'] AS severity
+UNWIND diseases AS disease
+UNWIND severity as sev
+MERGE (d:Disease {name:sev+' '+disease})
+ON CREATE SET d.description = sev + ' ' + toLower(disease)
+RETURN d.name, d.description;
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
++-----------------------------------------------+
+| d.name                | d.description         |
++-----------------------------------------------+
+| "Chronic Argitis"     | "Chronic argitis"     |
+| "Acute Argitis"       | "Acute argitis"       |
+| "Chronic Whatitis"    | "Chronic whatitis"    |
+| "Acute Whatitis"      | "Acute whatitis"      |
+| "Chronic Otheritis"   | "Chronic otheritis"   |
+| "Acute Otheritis"     | "Acute otheritis"     |
+| "Chronic Someitis"    | "Chronic someitis"    |
+| "Acute Someitis"      | "Acute someitis"      |
+| "Chronic Placeboitis" | "Chronic placeboitis" |
+| "Acute Placeboitis"   | "Acute placeboitis"   |
+| "Chronic Yellowitis"  | "Chronic yellowitis"  |
+| "Acute Yellowitis"    | "Acute yellowitis"    |
++-----------------------------------------------+
+
+12 rows
+ready to start consuming query after 56 ms, results consumed after another 7 ms
+Added 12 nodes, Set 24 properties, Added 12 labels
+----
+====
+. Create relationships between symptoms and diseases:
++
+[source, cypher]
+----
+MATCH (s:Symptom) WITH collect(s) as symptoms
+WITH symptoms, size(symptoms) / 2 as maxsym
+MATCH (d:Disease)
+UNWIND range(0,maxsym) as symi
+WITH d, symi, symptoms, toInteger(size(symptoms) * rand()) as si, rand()/2 + 0.5 AS prob
+WITH d, symptoms[si] AS s, prob
+MERGE (s)-[o:OF]->(d)
+ON CREATE SET o.probability = prob
+RETURN d.name, o.probability, s.name;
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
++---------------------------------------------------------+
+| d.name                | o.probability      | s.name     |
++---------------------------------------------------------+
+| "Chronic Argitis"     | 0.5488344602870381 | "Scratchy" |
+| "Chronic Argitis"     | 0.660404649462915  | "Itchy"    |
+| "Chronic Argitis"     | 0.6905998399032373 | "Angry"    |
+| "Chronic Argitis"     | 0.660404649462915  | "Itchy"    |
+| "Chronic Argitis"     | 0.8740581222813869 | "Red"      |
+| "Chronic Argitis"     | 0.7456909803542418 | "Sore"     |
+| "Acute Argitis"       | 0.607200508350778  | "Pale"     |
+| "Acute Argitis"       | 0.5772236253537283 | "Red"      |
+| "Acute Argitis"       | 0.7268375663608245 | "Inflamed" |
+| "Acute Argitis"       | 0.847011132303783  | "Itchy"    |
+| "Acute Argitis"       | 0.8025327549974599 | "Sore"     |
+| "Acute Argitis"       | 0.5772236253537283 | "Red"      |
+| "Chronic Whatitis"    | 0.9185112224896539 | "Sore"     |
+| "Chronic Whatitis"    | 0.8220811592705012 | "Dizzy"    |
+| "Chronic Whatitis"    | 0.8220811592705012 | "Dizzy"    |
+| "Chronic Whatitis"    | 0.9947532896439784 | "Scratchy" |
+| "Chronic Whatitis"    | 0.5479749642339755 | "Red"      |
+| "Chronic Whatitis"    | 0.9466973516593605 | "Inflamed" |
+| "Acute Whatitis"      | 0.7217509679510017 | "Inflamed" |
+| "Acute Whatitis"      | 0.7217509679510017 | "Inflamed" |
+| "Acute Whatitis"      | 0.7073350047270233 | "Scratchy" |
+| "Acute Whatitis"      | 0.7217509679510017 | "Inflamed" |
+| "Acute Whatitis"      | 0.6800748332507602 | "Red"      |
+| "Acute Whatitis"      | 0.6953854679660172 | "Itchy"    |
+| "Chronic Otheritis"   | 0.5570795327063996 | "Scratchy" |
+| "Chronic Otheritis"   | 0.7615506655612736 | "Swollen"  |
+| "Chronic Otheritis"   | 0.7147549568270981 | "Angry"    |
+| "Chronic Otheritis"   | 0.9309059023795485 | "Red"      |
+| "Chronic Otheritis"   | 0.8339105187862091 | "Dizzy"    |
+| "Chronic Otheritis"   | 0.7147549568270981 | "Angry"    |
+| "Acute Otheritis"     | 0.7449502448640619 | "Red"      |
+| "Acute Otheritis"     | 0.6635390850482914 | "Sad"      |
+| "Acute Otheritis"     | 0.6488764428922569 | "Itchy"    |
+| "Acute Otheritis"     | 0.7642990617862074 | "Pale"     |
+| "Acute Otheritis"     | 0.5532690807468361 | "Scratchy" |
+| "Acute Otheritis"     | 0.8062425062999423 | "Inflamed" |
+| "Chronic Someitis"    | 0.580678012588533  | "Sore"     |
+| "Chronic Someitis"    | 0.9569035040624002 | "Red"      |
+| "Chronic Someitis"    | 0.9328323008783481 | "Inflamed" |
+| "Chronic Someitis"    | 0.9569035040624002 | "Red"      |
+| "Chronic Someitis"    | 0.5492540886308123 | "Pale"     |
+| "Chronic Someitis"    | 0.9204301026117075 | "Swollen"  |
+| "Acute Someitis"      | 0.9969140989164824 | "Itchy"    |
+| "Acute Someitis"      | 0.8756876989165112 | "Swollen"  |
+| "Acute Someitis"      | 0.9969140989164824 | "Itchy"    |
+| "Acute Someitis"      | 0.6258855371986936 | "Red"      |
+| "Acute Someitis"      | 0.9928922186427123 | "Angry"    |
+| "Acute Someitis"      | 0.6258855371986936 | "Red"      |
+| "Chronic Placeboitis" | 0.9837947935707738 | "Itchy"    |
+| "Chronic Placeboitis" | 0.7795050137703664 | "Inflamed" |
+| "Chronic Placeboitis" | 0.680595344835278  | "Sad"      |
+| "Chronic Placeboitis" | 0.8383237671521345 | "Scratchy" |
+| "Chronic Placeboitis" | 0.7054054618102132 | "Swollen"  |
+| "Chronic Placeboitis" | 0.7795050137703664 | "Inflamed" |
+| "Acute Placeboitis"   | 0.768802727874529  | "Dizzy"    |
+| "Acute Placeboitis"   | 0.6645530219645431 | "Scratchy" |
+| "Acute Placeboitis"   | 0.9192262998770437 | "Pale"     |
+| "Acute Placeboitis"   | 0.7321327463249545 | "Itchy"    |
+| "Acute Placeboitis"   | 0.5768920173860386 | "Sad"      |
+| "Acute Placeboitis"   | 0.5467367430608921 | "Sore"     |
+| "Chronic Yellowitis"  | 0.657149882924074  | "Dizzy"    |
+| "Chronic Yellowitis"  | 0.5274096280530778 | "Swollen"  |
+| "Chronic Yellowitis"  | 0.657149882924074  | "Dizzy"    |
+| "Chronic Yellowitis"  | 0.9011165844619397 | "Scratchy" |
+| "Chronic Yellowitis"  | 0.5274096280530778 | "Swollen"  |
+| "Chronic Yellowitis"  | 0.7267736062002124 | "Sore"     |
+| "Acute Yellowitis"    | 0.7764355480097833 | "Swollen"  |
+| "Acute Yellowitis"    | 0.9776709262803641 | "Inflamed" |
+| "Acute Yellowitis"    | 0.6495454012653183 | "Red"      |
+| "Acute Yellowitis"    | 0.7764355480097833 | "Swollen"  |
+| "Acute Yellowitis"    | 0.7395280933743617 | "Dizzy"    |
+| "Acute Yellowitis"    | 0.6068906083054821 | "Itchy"    |
++---------------------------------------------------------+
+
+72 rows
+ready to start consuming query after 339 ms, results consumed after another 28 ms
+Created 59 relationships, Set 59 properties
+----
+====
+
+. Ensure that the as yet non-existent types can be used:
++
+[source, cypher, role=noplay]
+----
+CALL db.createRelationshipType('DIAGNOSIS');
+CALL db.createProperty('by');
+CALL db.createProperty('date');
+CALL db.createProperty('description');
+CALL db.createProperty('created_at');
+CALL db.createProperty('updated_at');
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
+0 rows
+ready to start consuming query after 22 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 17 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 7 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 7 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 8 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 7 ms, results consumed after another 0 ms
+----
+====
+. Create some data for patients:
++
+[source, cypher]
+----
+WITH
+  ['Jack','Mary','Sally','Mark','Joe','Jane','Bob','Ally'] AS firstnames,
+  ['Anderson','Jackson','Svensson','Smith','Stone'] AS surnames,
+  ['mymail.com','example.com','other.org','net.net'] AS domains
+UNWIND range(0,100) AS uid
+WITH 1234567+uid AS ssn,
+  firstnames[uid%size(firstnames)] AS firstname,
+  surnames[uid%size(surnames)] AS surname,
+  domains[uid%size(domains)] AS domain
+WITH ssn, firstname, surname,
+  tolower(firstname + '.' + surname + '@' + domain) AS email,
+  toInteger(1500000000000 * rand()) AS ts
+MERGE (p:Patient {ssn:ssn})
+ON CREATE SET p.name = firstname + ' ' + surname,
+  p.email = email,
+  p.address = '1 secret way, downtown',
+  p.dateOfBirth = date(datetime({epochmillis:ts}))
+RETURN count(p);
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
++----------+
+| count(p) |
++----------+
+| 101      |
++----------+
+
+1 row
+ready to start consuming query after 49 ms, results consumed after another 38 ms
+Added 101 nodes, Set 505 properties, Added 101 labels
+----
+====
+. Create relationships between patients and symptoms:
++
+[source, cypher]
+----
+MATCH (s:Symptom) WITH collect(s) as symptoms
+WITH symptoms, size(symptoms) / 2 as maxsym, 1500000000000 AS base, 75477004177 AS diff
+MATCH (p:Patient)
+UNWIND range(0,maxsym) as symi
+WITH p, symi, symptoms, toInteger(size(symptoms) * rand()) as si, rand()/2 + 0.5 AS prob, base + toInteger(diff * rand()) AS ts
+WITH p, symptoms[si] AS s, prob, ts
+MERGE (p)-[h:HAS]->(s)
+ON CREATE SET h.date = date(datetime({epochmillis:ts}))
+RETURN p.name, p.dateOfBirth, h.date, s.name;
+----
++
+.Result
+[%collapsible]
+====
+[queryresult]
+----
++------------------------------------------------------------+
+| p.name           | p.dateOfBirth | h.date     | s.name     |
++------------------------------------------------------------+
+| "Jack Anderson"  | 1981-01-10    | 2019-03-03 | "Angry"    |
+| "Jack Anderson"  | 1981-01-10    | 2018-05-05 | "Sad"      |
+| "Jack Anderson"  | 1981-01-10    | 2018-06-05 | "Sore"     |
+| "Jack Anderson"  | 1981-01-10    | 2017-11-17 | "Itchy"    |
+| "Jack Anderson"  | 1981-01-10    | 2017-10-02 | "Dizzy"    |
+| "Jack Anderson"  | 1981-01-10    | 2019-11-01 | "Red"      |
+| "Mary Jackson"   | 1983-05-24    | 2018-03-30 | "Scratchy" |
+| "Mary Jackson"   | 1983-05-24    | 2018-03-08 | "Pale"     |
+| "Mary Jackson"   | 1983-05-24    | 2019-05-03 | "Dizzy"    |
+| "Mary Jackson"   | 1983-05-24    | 2019-08-16 | "Red"      |
+| "Mary Jackson"   | 1983-05-24    | 2018-07-07 | "Inflamed" |
+| "Mary Jackson"   | 1983-05-24    | 2018-07-07 | "Inflamed" |
+| "Sally Svensson" | 2011-04-03    | 2018-02-12 | "Sore"     |
+| "Sally Svensson" | 2011-04-03    | 2019-07-23 | "Pale"     |
+| "Sally Svensson" | 2011-04-03    | 2019-04-17 | "Sad"      |
+| "Sally Svensson" | 2011-04-03    | 2017-09-25 | "Red"      |
+| "Sally Svensson" | 2011-04-03    | 2017-08-14 | "Swollen"  |
+| "Sally Svensson" | 2011-04-03    | 2017-08-14 | "Swollen"  |
+| "Mark Smith"     | 1998-08-26    | 2018-08-25 | "Inflamed" |
+| "Mark Smith"     | 1998-08-26    | 2018-08-25 | "Inflamed" |
+| "Mark Smith"     | 1998-08-26    | 2018-05-14 | "Itchy"    |
+| "Mark Smith"     | 1998-08-26    | 2019-07-02 | "Dizzy"    |
+| "Mark Smith"     | 1998-08-26    | 2018-02-27 | "Sad"      |
+| "Mark Smith"     | 1998-08-26    | 2018-10-07 | "Swollen"  |
+| "Joe Stone"      | 1972-10-20    | 2019-05-16 | "Red"      |
+| "Joe Stone"      | 1972-10-20    | 2018-08-31 | "Inflamed" |
+| "Joe Stone"      | 1972-10-20    | 2018-08-31 | "Inflamed" |
+| "Joe Stone"      | 1972-10-20    | 2017-07-21 | "Sore"     |
+| "Joe Stone"      | 1972-10-20    | 2018-08-31 | "Inflamed" |
+| "Joe Stone"      | 1972-10-20    | 2017-10-21 | "Itchy"    |
+| "Jane Anderson"  | 2001-10-18    | 2018-07-04 | "Scratchy" |
+| "Jane Anderson"  | 2001-10-18    | 2019-02-09 | "Dizzy"    |
+| "Jane Anderson"  | 2001-10-18    | 2018-05-03 | "Pale"     |
+| "Jane Anderson"  | 2001-10-18    | 2019-08-13 | "Angry"    |
+| "Jane Anderson"  | 2001-10-18    | 2018-05-03 | "Pale"     |
+| "Jane Anderson"  | 2001-10-18    | 2019-11-12 | "Swollen"  |
+| "Bob Jackson"    | 1997-08-20    | 2019-05-03 | "Sad"      |
+| "Bob Jackson"    | 1997-08-20    | 2019-03-14 | "Red"      |
+| "Bob Jackson"    | 1997-08-20    | 2019-03-01 | "Angry"    |
+| "Bob Jackson"    | 1997-08-20    | 2018-03-10 | "Sore"     |
+| "Bob Jackson"    | 1997-08-20    | 2018-03-10 | "Sore"     |
+| "Bob Jackson"    | 1997-08-20    | 2019-05-03 | "Sad"      |
+| "Ally Svensson"  | 2008-05-25    | 2019-06-06 | "Sore"     |
+| "Ally Svensson"  | 2008-05-25    | 2019-11-04 | "Sad"      |
+| "Ally Svensson"  | 2008-05-25    | 2018-10-04 | "Scratchy" |
+| "Ally Svensson"  | 2008-05-25    | 2017-11-28 | "Inflamed" |
+| "Ally Svensson"  | 2008-05-25    | 2018-10-29 | "Itchy"    |
+| "Ally Svensson"  | 2008-05-25    | 2019-08-08 | "Angry"    |
+| "Jack Smith"     | 1974-07-02    | 2018-01-15 | "Itchy"    |
+| "Jack Smith"     | 1974-07-02    | 2019-02-12 | "Angry"    |
+| "Jack Smith"     | 1974-07-02    | 2017-10-16 | "Dizzy"    |
+| "Jack Smith"     | 1974-07-02    | 2018-01-03 | "Red"      |
+| "Jack Smith"     | 1974-07-02    | 2018-01-15 | "Itchy"    |
+| "Jack Smith"     | 1974-07-02    | 2017-11-14 | "Pale"     |
+| "Mary Stone"     | 1983-09-27    | 2018-01-14 | "Dizzy"    |
+| "Mary Stone"     | 1983-09-27    | 2019-03-24 | "Swollen"  |
+| "Mary Stone"     | 1983-09-27    | 2018-04-07 | "Angry"    |
+| "Mary Stone"     | 1983-09-27    | 2019-03-24 | "Swollen"  |
+| "Mary Stone"     | 1983-09-27    | 2018-01-14 | "Dizzy"    |
+| "Mary Stone"     | 1983-09-27    | 2017-11-27 | "Sore"     |
+| "Sally Anderson" | 2009-12-14    | 2019-08-21 | "Swollen"  |
+| "Sally Anderson" | 2009-12-14    | 2018-02-23 | "Sore"     |
+| "Sally Anderson" | 2009-12-14    | 2018-06-05 | "Scratchy" |
+| "Sally Anderson" | 2009-12-14    | 2018-02-23 | "Sore"     |
+| "Sally Anderson" | 2009-12-14    | 2017-08-20 | "Pale"     |
+| "Sally Anderson" | 2009-12-14    | 2019-05-25 | "Itchy"    |
+| "Mark Jackson"   | 1970-11-29    | 2018-09-27 | "Sore"     |
+| "Mark Jackson"   | 1970-11-29    | 2017-12-27 | "Angry"    |
+| "Mark Jackson"   | 1970-11-29    | 2017-12-26 | "Swollen"  |
+| "Mark Jackson"   | 1970-11-29    | 2018-09-27 | "Sore"     |
+| "Mark Jackson"   | 1970-11-29    | 2018-02-01 | "Inflamed" |
+| "Mark Jackson"   | 1970-11-29    | 2018-12-19 | "Pale"     |
+| "Joe Svensson"   | 1972-02-12    | 2017-07-27 | "Sad"      |
+| "Joe Svensson"   | 1972-02-12    | 2019-07-27 | "Itchy"    |
+| "Joe Svensson"   | 1972-02-12    | 2019-06-20 | "Sore"     |
+| "Joe Svensson"   | 1972-02-12    | 2019-11-09 | "Inflamed" |
+| "Joe Svensson"   | 1972-02-12    | 2019-07-27 | "Itchy"    |
+| "Joe Svensson"   | 1972-02-12    | 2019-07-27 | "Itchy"    |
+| "Jane Smith"     | 2013-04-09    | 2018-12-13 | "Swollen"  |
+| "Jane Smith"     | 2013-04-09    | 2018-12-13 | "Swollen"  |
+| "Jane Smith"     | 2013-04-09    | 2019-03-13 | "Red"      |
+| "Jane Smith"     | 2013-04-09    | 2019-01-25 | "Dizzy"    |
+| "Jane Smith"     | 2013-04-09    | 2017-07-25 | "Angry"    |
+| "Jane Smith"     | 2013-04-09    | 2018-04-11 | "Inflamed" |
+| "Bob Stone"      | 2012-04-11    | 2018-09-04 | "Inflamed" |
+| "Bob Stone"      | 2012-04-11    | 2017-08-07 | "Red"      |
+| "Bob Stone"      | 2012-04-11    | 2019-07-11 | "Swollen"  |
+| "Bob Stone"      | 2012-04-11    | 2019-07-11 | "Swollen"  |
+| "Bob Stone"      | 2012-04-11    | 2019-07-14 | "Sore"     |
+| "Bob Stone"      | 2012-04-11    | 2017-11-18 | "Itchy"    |
+| "Ally Anderson"  | 2000-05-24    | 2018-11-27 | "Itchy"    |
+| "Ally Anderson"  | 2000-05-24    | 2018-02-10 | "Pale"     |
+| "Ally Anderson"  | 2000-05-24    | 2017-07-25 | "Red"      |
+| "Ally Anderson"  | 2000-05-24    | 2018-03-19 | "Sad"      |
+| "Ally Anderson"  | 2000-05-24    | 2017-07-25 | "Red"      |
+| "Ally Anderson"  | 2000-05-24    | 2017-07-25 | "Red"      |
+| "Jack Jackson"   | 1988-03-13    | 2018-06-29 | "Sad"      |
+| "Jack Jackson"   | 1988-03-13    | 2019-06-25 | "Sore"     |
+| "Jack Jackson"   | 1988-03-13    | 2019-05-27 | "Inflamed" |
+| "Jack Jackson"   | 1988-03-13    | 2018-07-09 | "Angry"    |
+| "Jack Jackson"   | 1988-03-13    | 2018-04-23 | "Pale"     |
+| "Jack Jackson"   | 1988-03-13    | 2019-05-15 | "Dizzy"    |
+| "Mary Svensson"  | 2008-01-19    | 2018-03-16 | "Dizzy"    |
+| "Mary Svensson"  | 2008-01-19    | 2018-04-14 | "Red"      |
+| "Mary Svensson"  | 2008-01-19    | 2018-10-25 | "Pale"     |
+| "Mary Svensson"  | 2008-01-19    | 2019-07-15 | "Swollen"  |
+| "Mary Svensson"  | 2008-01-19    | 2019-07-15 | "Swollen"  |
+| "Mary Svensson"  | 2008-01-19    | 2018-04-14 | "Red"      |
+| "Sally Smith"    | 1977-03-20    | 2019-02-23 | "Dizzy"    |
+| "Sally Smith"    | 1977-03-20    | 2017-11-28 | "Red"      |
+| "Sally Smith"    | 1977-03-20    | 2018-06-23 | "Scratchy" |
+| "Sally Smith"    | 1977-03-20    | 2017-10-28 | "Sad"      |
+| "Sally Smith"    | 1977-03-20    | 2017-11-28 | "Red"      |
+| "Sally Smith"    | 1977-03-20    | 2018-10-05 | "Inflamed" |
+| "Mark Stone"     | 1986-06-15    | 2019-11-24 | "Pale"     |
+| "Mark Stone"     | 1986-06-15    | 2018-07-30 | "Itchy"    |
+| "Mark Stone"     | 1986-06-15    | 2018-07-30 | "Itchy"    |
+| "Mark Stone"     | 1986-06-15    | 2017-09-10 | "Dizzy"    |
+| "Mark Stone"     | 1986-06-15    | 2018-07-18 | "Red"      |
+| "Mark Stone"     | 1986-06-15    | 2019-08-15 | "Sore"     |
+| "Joe Anderson"   | 1980-09-06    | 2019-06-19 | "Dizzy"    |
+| "Joe Anderson"   | 1980-09-06    | 2017-11-28 | "Red"      |
+| "Joe Anderson"   | 1980-09-06    | 2019-08-12 | "Scratchy" |
+| "Joe Anderson"   | 1980-09-06    | 2019-08-12 | "Scratchy" |
+| "Joe Anderson"   | 1980-09-06    | 2019-06-19 | "Dizzy"    |
+| "Joe Anderson"   | 1980-09-06    | 2017-07-16 | "Inflamed" |
+| "Jane Jackson"   | 2016-02-20    | 2018-04-03 | "Swollen"  |
+| "Jane Jackson"   | 2016-02-20    | 2018-02-21 | "Pale"     |
+| "Jane Jackson"   | 2016-02-20    | 2018-07-17 | "Angry"    |
+| "Jane Jackson"   | 2016-02-20    | 2018-01-22 | "Sore"     |
+| "Jane Jackson"   | 2016-02-20    | 2018-01-22 | "Sore"     |
+| "Jane Jackson"   | 2016-02-20    | 2017-09-28 | "Dizzy"    |
+| "Bob Svensson"   | 1983-08-04    | 2019-02-02 | "Pale"     |
+| "Bob Svensson"   | 1983-08-04    | 2018-12-01 | "Dizzy"    |
+| "Bob Svensson"   | 1983-08-04    | 2019-08-07 | "Sad"      |
+| "Bob Svensson"   | 1983-08-04    | 2018-11-18 | "Swollen"  |
+| "Bob Svensson"   | 1983-08-04    | 2018-12-25 | "Scratchy" |
+| "Bob Svensson"   | 1983-08-04    | 2018-04-09 | "Inflamed" |
+| "Ally Smith"     | 2012-03-01    | 2018-03-28 | "Inflamed" |
+| "Ally Smith"     | 2012-03-01    | 2018-03-28 | "Inflamed" |
+| "Ally Smith"     | 2012-03-01    | 2018-06-09 | "Scratchy" |
+| "Ally Smith"     | 2012-03-01    | 2019-01-25 | "Angry"    |
+| "Ally Smith"     | 2012-03-01    | 2018-09-06 | "Pale"     |
+| "Ally Smith"     | 2012-03-01    | 2018-12-04 | "Dizzy"    |
+| "Jack Stone"     | 2009-11-08    | 2019-01-18 | "Pale"     |
+| "Jack Stone"     | 2009-11-08    | 2018-03-29 | "Angry"    |
+| "Jack Stone"     | 2009-11-08    | 2019-10-22 | "Inflamed" |
+| "Jack Stone"     | 2009-11-08    | 2019-01-18 | "Pale"     |
+| "Jack Stone"     | 2009-11-08    | 2017-12-09 | "Itchy"    |
+| "Jack Stone"     | 2009-11-08    | 2018-10-27 | "Red"      |
+| "Mary Anderson"  | 1991-11-25    | 2018-01-02 | "Angry"    |
+| "Mary Anderson"  | 1991-11-25    | 2018-01-02 | "Angry"    |
+| "Mary Anderson"  | 1991-11-25    | 2017-11-01 | "Inflamed" |
+| "Mary Anderson"  | 1991-11-25    | 2017-12-16 | "Sore"     |
+| "Mary Anderson"  | 1991-11-25    | 2018-01-02 | "Angry"    |
+| "Mary Anderson"  | 1991-11-25    | 2018-03-22 | "Red"      |
+| "Sally Jackson"  | 2008-11-09    | 2019-07-02 | "Inflamed" |
+| "Sally Jackson"  | 2008-11-09    | 2018-02-24 | "Red"      |
+| "Sally Jackson"  | 2008-11-09    | 2019-08-07 | "Swollen"  |
+| "Sally Jackson"  | 2008-11-09    | 2019-04-05 | "Sore"     |
+| "Sally Jackson"  | 2008-11-09    | 2019-07-02 | "Inflamed" |
+| "Sally Jackson"  | 2008-11-09    | 2019-02-23 | "Scratchy" |
+| "Mark Svensson"  | 1979-06-22    | 2019-08-09 | "Itchy"    |
+| "Mark Svensson"  | 1979-06-22    | 2019-05-11 | "Swollen"  |
+| "Mark Svensson"  | 1979-06-22    | 2018-08-11 | "Inflamed" |
+| "Mark Svensson"  | 1979-06-22    | 2019-08-09 | "Itchy"    |
+| "Mark Svensson"  | 1979-06-22    | 2017-10-11 | "Sad"      |
+| "Mark Svensson"  | 1979-06-22    | 2019-09-22 | "Scratchy" |
+| "Joe Smith"      | 2008-07-03    | 2017-08-24 | "Sore"     |
+| "Joe Smith"      | 2008-07-03    | 2018-12-03 | "Red"      |
+| "Joe Smith"      | 2008-07-03    | 2018-12-03 | "Red"      |
+| "Joe Smith"      | 2008-07-03    | 2018-08-20 | "Inflamed" |
+| "Joe Smith"      | 2008-07-03    | 2018-12-03 | "Red"      |
+| "Joe Smith"      | 2008-07-03    | 2019-04-17 | "Angry"    |
+| "Jane Stone"     | 1977-11-25    | 2018-03-19 | "Scratchy" |
+| "Jane Stone"     | 1977-11-25    | 2017-08-18 | "Dizzy"    |
+| "Jane Stone"     | 1977-11-25    | 2017-12-09 | "Red"      |
+| "Jane Stone"     | 1977-11-25    | 2018-06-14 | "Swollen"  |
+| "Jane Stone"     | 1977-11-25    | 2018-08-22 | "Pale"     |
+| "Jane Stone"     | 1977-11-25    | 2018-08-22 | "Pale"     |
+| "Bob Anderson"   | 1970-04-27    | 2019-10-17 | "Scratchy" |
+| "Bob Anderson"   | 1970-04-27    | 2018-06-16 | "Red"      |
+| "Bob Anderson"   | 1970-04-27    | 2017-11-07 | "Itchy"    |
+| "Bob Anderson"   | 1970-04-27    | 2018-12-11 | "Pale"     |
+| "Bob Anderson"   | 1970-04-27    | 2017-11-07 | "Itchy"    |
+| "Bob Anderson"   | 1970-04-27    | 2019-02-26 | "Swollen"  |
+| "Ally Jackson"   | 1982-01-12    | 2019-06-15 | "Sad"      |
+| "Ally Jackson"   | 1982-01-12    | 2018-01-12 | "Sore"     |
+| "Ally Jackson"   | 1982-01-12    | 2019-06-15 | "Sad"      |
+| "Ally Jackson"   | 1982-01-12    | 2018-01-12 | "Sore"     |
+| "Ally Jackson"   | 1982-01-12    | 2018-04-19 | "Itchy"    |
+| "Ally Jackson"   | 1982-01-12    | 2019-04-06 | "Red"      |
+| "Jack Svensson"  | 2012-08-22    | 2017-12-10 | "Scratchy" |
+| "Jack Svensson"  | 2012-08-22    | 2018-08-25 | "Pale"     |
+| "Jack Svensson"  | 2012-08-22    | 2017-12-10 | "Scratchy" |
+| "Jack Svensson"  | 2012-08-22    | 2018-12-07 | "Swollen"  |
+| "Jack Svensson"  | 2012-08-22    | 2018-08-25 | "Pale"     |
+| "Jack Svensson"  | 2012-08-22    | 2018-04-30 | "Red"      |
+| "Mary Smith"     | 2002-11-27    | 2018-07-26 | "Red"      |
+| "Mary Smith"     | 2002-11-27    | 2018-04-09 | "Dizzy"    |
+| "Mary Smith"     | 2002-11-27    | 2018-08-08 | "Pale"     |
+| "Mary Smith"     | 2002-11-27    | 2018-08-28 | "Sore"     |
+| "Mary Smith"     | 2002-11-27    | 2018-07-26 | "Red"      |
+| "Mary Smith"     | 2002-11-27    | 2019-09-16 | "Itchy"    |
+| "Sally Stone"    | 2001-04-25    | 2018-02-13 | "Sore"     |
+| "Sally Stone"    | 2001-04-25    | 2019-05-03 | "Itchy"    |
+| "Sally Stone"    | 2001-04-25    | 2019-09-25 | "Dizzy"    |
+| "Sally Stone"    | 2001-04-25    | 2018-05-10 | "Inflamed" |
+| "Sally Stone"    | 2001-04-25    | 2019-09-03 | "Scratchy" |
+| "Sally Stone"    | 2001-04-25    | 2018-05-10 | "Inflamed" |
+| "Mark Anderson"  | 2007-06-19    | 2019-04-22 | "Angry"    |
+| "Mark Anderson"  | 2007-06-19    | 2018-09-23 | "Scratchy" |
+| "Mark Anderson"  | 2007-06-19    | 2019-03-10 | "Pale"     |
+| "Mark Anderson"  | 2007-06-19    | 2019-03-10 | "Pale"     |
+| "Mark Anderson"  | 2007-06-19    | 2018-09-23 | "Scratchy" |
+| "Mark Anderson"  | 2007-06-19    | 2017-11-16 | "Sad"      |
+| "Joe Jackson"    | 1991-10-12    | 2018-06-27 | "Red"      |
+| "Joe Jackson"    | 1991-10-12    | 2018-10-26 | "Pale"     |
+| "Joe Jackson"    | 1991-10-12    | 2018-10-30 | "Sore"     |
+| "Joe Jackson"    | 1991-10-12    | 2018-10-30 | "Sore"     |
+| "Joe Jackson"    | 1991-10-12    | 2018-10-26 | "Pale"     |
+| "Joe Jackson"    | 1991-10-12    | 2019-01-06 | "Swollen"  |
+| "Jane Svensson"  | 1982-07-02    | 2019-11-29 | "Red"      |
+| "Jane Svensson"  | 1982-07-02    | 2017-12-07 | "Angry"    |
+| "Jane Svensson"  | 1982-07-02    | 2019-04-05 | "Swollen"  |
+| "Jane Svensson"  | 1982-07-02    | 2019-04-05 | "Swollen"  |
+| "Jane Svensson"  | 1982-07-02    | 2018-12-10 | "Sad"      |
+| "Jane Svensson"  | 1982-07-02    | 2019-11-09 | "Inflamed" |
+| "Bob Smith"      | 1981-10-29    | 2018-07-21 | "Sad"      |
+| "Bob Smith"      | 1981-10-29    | 2019-09-15 | "Itchy"    |
+| "Bob Smith"      | 1981-10-29    | 2019-04-18 | "Scratchy" |
+| "Bob Smith"      | 1981-10-29    | 2019-05-12 | "Swollen"  |
+| "Bob Smith"      | 1981-10-29    | 2018-07-21 | "Sad"      |
+| "Bob Smith"      | 1981-10-29    | 2019-02-04 | "Pale"     |
+| "Ally Stone"     | 1980-12-13    | 2018-08-02 | "Red"      |
+| "Ally Stone"     | 1980-12-13    | 2017-09-04 | "Dizzy"    |
+| "Ally Stone"     | 1980-12-13    | 2017-09-04 | "Dizzy"    |
+| "Ally Stone"     | 1980-12-13    | 2017-09-13 | "Pale"     |
+| "Ally Stone"     | 1980-12-13    | 2018-01-21 | "Sad"      |
+| "Ally Stone"     | 1980-12-13    | 2017-09-04 | "Dizzy"    |
+| "Jack Anderson"  | 1998-11-09    | 2019-01-22 | "Swollen"  |
+| "Jack Anderson"  | 1998-11-09    | 2019-07-14 | "Red"      |
+| "Jack Anderson"  | 1998-11-09    | 2019-05-21 | "Inflamed" |
+| "Jack Anderson"  | 1998-11-09    | 2019-05-21 | "Inflamed" |
+| "Jack Anderson"  | 1998-11-09    | 2019-06-18 | "Itchy"    |
+| "Jack Anderson"  | 1998-11-09    | 2019-01-22 | "Swollen"  |
+| "Mary Jackson"   | 1974-09-25    | 2018-12-10 | "Itchy"    |
+| "Mary Jackson"   | 1974-09-25    | 2017-10-13 | "Swollen"  |
+| "Mary Jackson"   | 1974-09-25    | 2018-02-26 | "Red"      |
+| "Mary Jackson"   | 1974-09-25    | 2018-01-25 | "Sad"      |
+| "Mary Jackson"   | 1974-09-25    | 2017-08-05 | "Inflamed" |
+| "Mary Jackson"   | 1974-09-25    | 2018-09-22 | "Scratchy" |
+| "Sally Svensson" | 1987-06-05    | 2018-06-23 | "Red"      |
+| "Sally Svensson" | 1987-06-05    | 2017-12-31 | "Sad"      |
+| "Sally Svensson" | 1987-06-05    | 2017-12-25 | "Sore"     |
+| "Sally Svensson" | 1987-06-05    | 2018-08-10 | "Dizzy"    |
+| "Sally Svensson" | 1987-06-05    | 2017-12-31 | "Sad"      |
+| "Sally Svensson" | 1987-06-05    | 2019-10-31 | "Angry"    |
+| "Mark Smith"     | 1991-08-30    | 2019-07-28 | "Swollen"  |
+| "Mark Smith"     | 1991-08-30    | 2019-01-14 | "Itchy"    |
+| "Mark Smith"     | 1991-08-30    | 2018-11-09 | "Sad"      |
+| "Mark Smith"     | 1991-08-30    | 2019-07-28 | "Swollen"  |
+| "Mark Smith"     | 1991-08-30    | 2019-06-09 | "Red"      |
+| "Mark Smith"     | 1991-08-30    | 2017-10-09 | "Scratchy" |
+| "Joe Stone"      | 1999-08-23    | 2017-09-15 | "Itchy"    |
+| "Joe Stone"      | 1999-08-23    | 2019-08-12 | "Dizzy"    |
+| "Joe Stone"      | 1999-08-23    | 2018-12-06 | "Sore"     |
+| "Joe Stone"      | 1999-08-23    | 2018-06-04 | "Swollen"  |
+| "Joe Stone"      | 1999-08-23    | 2019-11-14 | "Inflamed" |
+| "Joe Stone"      | 1999-08-23    | 2019-05-19 | "Scratchy" |
+| "Jane Anderson"  | 1988-07-16    | 2019-08-15 | "Red"      |
+| "Jane Anderson"  | 1988-07-16    | 2018-09-26 | "Sore"     |
+| "Jane Anderson"  | 1988-07-16    | 2018-10-22 | "Pale"     |
+| "Jane Anderson"  | 1988-07-16    | 2018-03-20 | "Inflamed" |
+| "Jane Anderson"  | 1988-07-16    | 2019-05-13 | "Dizzy"    |
+| "Jane Anderson"  | 1988-07-16    | 2019-05-13 | "Dizzy"    |
+| "Bob Jackson"    | 1974-09-23    | 2019-01-07 | "Sore"     |
+| "Bob Jackson"    | 1974-09-23    | 2017-10-13 | "Scratchy" |
+| "Bob Jackson"    | 1974-09-23    | 2019-07-20 | "Swollen"  |
+| "Bob Jackson"    | 1974-09-23    | 2017-11-23 | "Red"      |
+| "Bob Jackson"    | 1974-09-23    | 2019-04-07 | "Sad"      |
+| "Bob Jackson"    | 1974-09-23    | 2019-08-23 | "Itchy"    |
+| "Ally Svensson"  | 2006-11-13    | 2018-07-22 | "Pale"     |
+| "Ally Svensson"  | 2006-11-13    | 2018-10-13 | "Itchy"    |
+| "Ally Svensson"  | 2006-11-13    | 2017-10-07 | "Sad"      |
+| "Ally Svensson"  | 2006-11-13    | 2018-10-13 | "Itchy"    |
+| "Ally Svensson"  | 2006-11-13    | 2018-06-20 | "Dizzy"    |
+| "Ally Svensson"  | 2006-11-13    | 2019-10-08 | "Scratchy" |
+| "Jack Smith"     | 2017-05-17    | 2018-03-20 | "Red"      |
+| "Jack Smith"     | 2017-05-17    | 2019-01-13 | "Swollen"  |
+| "Jack Smith"     | 2017-05-17    | 2018-08-06 | "Itchy"    |
+| "Jack Smith"     | 2017-05-17    | 2018-07-18 | "Scratchy" |
+| "Jack Smith"     | 2017-05-17    | 2018-06-10 | "Sore"     |
+| "Jack Smith"     | 2017-05-17    | 2018-03-20 | "Red"      |
+| "Mary Stone"     | 2011-06-20    | 2019-02-07 | "Pale"     |
+| "Mary Stone"     | 2011-06-20    | 2018-12-07 | "Itchy"    |
+| "Mary Stone"     | 2011-06-20    | 2019-09-17 | "Scratchy" |
+| "Mary Stone"     | 2011-06-20    | 2017-08-02 | "Sore"     |
+| "Mary Stone"     | 2011-06-20    | 2019-09-17 | "Scratchy" |
+| "Mary Stone"     | 2011-06-20    | 2019-02-07 | "Pale"     |
+| "Sally Anderson" | 1970-12-02    | 2018-10-20 | "Swollen"  |
+| "Sally Anderson" | 1970-12-02    | 2019-02-05 | "Scratchy" |
+| "Sally Anderson" | 1970-12-02    | 2019-11-12 | "Pale"     |
+| "Sally Anderson" | 1970-12-02    | 2018-03-21 | "Angry"    |
+| "Sally Anderson" | 1970-12-02    | 2019-07-21 | "Inflamed" |
+| "Sally Anderson" | 1970-12-02    | 2019-07-21 | "Inflamed" |
+| "Mark Jackson"   | 2003-07-09    | 2018-12-20 | "Sore"     |
+| "Mark Jackson"   | 2003-07-09    | 2018-04-13 | "Itchy"    |
+| "Mark Jackson"   | 2003-07-09    | 2018-11-08 | "Inflamed" |
+| "Mark Jackson"   | 2003-07-09    | 2019-09-17 | "Swollen"  |
+| "Mark Jackson"   | 2003-07-09    | 2018-04-11 | "Dizzy"    |
+| "Mark Jackson"   | 2003-07-09    | 2018-12-20 | "Sore"     |
+| "Joe Svensson"   | 2000-03-07    | 2019-01-31 | "Angry"    |
+| "Joe Svensson"   | 2000-03-07    | 2018-03-29 | "Sore"     |
+| "Joe Svensson"   | 2000-03-07    | 2019-10-26 | "Pale"     |
+| "Joe Svensson"   | 2000-03-07    | 2019-01-31 | "Angry"    |
+| "Joe Svensson"   | 2000-03-07    | 2018-01-01 | "Scratchy" |
+| "Joe Svensson"   | 2000-03-07    | 2018-03-29 | "Sore"     |
+| "Jane Smith"     | 2012-05-14    | 2019-03-18 | "Pale"     |
+| "Jane Smith"     | 2012-05-14    | 2018-08-15 | "Swollen"  |
+| "Jane Smith"     | 2012-05-14    | 2018-01-16 | "Sore"     |
+| "Jane Smith"     | 2012-05-14    | 2018-03-14 | "Scratchy" |
+| "Jane Smith"     | 2012-05-14    | 2018-05-23 | "Inflamed" |
+| "Jane Smith"     | 2012-05-14    | 2019-07-06 | "Red"      |
+| "Bob Stone"      | 2011-06-07    | 2018-03-12 | "Itchy"    |
+| "Bob Stone"      | 2011-06-07    | 2018-05-20 | "Sad"      |
+| "Bob Stone"      | 2011-06-07    | 2017-08-12 | "Red"      |
+| "Bob Stone"      | 2011-06-07    | 2018-01-13 | "Swollen"  |
+| "Bob Stone"      | 2011-06-07    | 2019-01-13 | "Angry"    |
+| "Bob Stone"      | 2011-06-07    | 2018-03-12 | "Itchy"    |
+| "Ally Anderson"  | 1972-05-20    | 2018-09-27 | "Pale"     |
+| "Ally Anderson"  | 1972-05-20    | 2017-08-11 | "Inflamed" |
+| "Ally Anderson"  | 1972-05-20    | 2017-08-23 | "Sad"      |
+| "Ally Anderson"  | 1972-05-20    | 2019-06-09 | "Dizzy"    |
+| "Ally Anderson"  | 1972-05-20    | 2018-10-08 | "Scratchy" |
+| "Ally Anderson"  | 1972-05-20    | 2018-06-13 | "Swollen"  |
+| "Jack Jackson"   | 1985-09-11    | 2019-01-06 | "Red"      |
+| "Jack Jackson"   | 1985-09-11    | 2018-02-05 | "Sore"     |
+| "Jack Jackson"   | 1985-09-11    | 2018-09-10 | "Scratchy" |
+| "Jack Jackson"   | 1985-09-11    | 2019-10-17 | "Dizzy"    |
+| "Jack Jackson"   | 1985-09-11    | 2018-07-07 | "Angry"    |
+| "Jack Jackson"   | 1985-09-11    | 2018-02-05 | "Sore"     |
+| "Mary Svensson"  | 1987-09-18    | 2018-08-06 | "Red"      |
+| "Mary Svensson"  | 1987-09-18    | 2018-03-03 | "Scratchy" |
+| "Mary Svensson"  | 1987-09-18    | 2018-10-13 | "Sad"      |
+| "Mary Svensson"  | 1987-09-18    | 2019-02-03 | "Sore"     |
+| "Mary Svensson"  | 1987-09-18    | 2018-08-06 | "Red"      |
+| "Mary Svensson"  | 1987-09-18    | 2018-08-06 | "Red"      |
+| "Sally Smith"    | 2005-07-05    | 2018-05-26 | "Dizzy"    |
+| "Sally Smith"    | 2005-07-05    | 2018-11-02 | "Sad"      |
+| "Sally Smith"    | 2005-07-05    | 2018-05-26 | "Dizzy"    |
+| "Sally Smith"    | 2005-07-05    | 2017-10-26 | "Inflamed" |
+| "Sally Smith"    | 2005-07-05    | 2018-07-24 | "Angry"    |
+| "Sally Smith"    | 2005-07-05    | 2018-05-26 | "Dizzy"    |
+| "Mark Stone"     | 2011-01-01    | 2019-01-24 | "Red"      |
+| "Mark Stone"     | 2011-01-01    | 2018-02-26 | "Scratchy" |
+| "Mark Stone"     | 2011-01-01    | 2018-11-11 | "Swollen"  |
+| "Mark Stone"     | 2011-01-01    | 2017-12-16 | "Sore"     |
+| "Mark Stone"     | 2011-01-01    | 2018-02-26 | "Scratchy" |
+| "Mark Stone"     | 2011-01-01    | 2019-09-13 | "Sad"      |
+| "Joe Anderson"   | 1981-12-16    | 2017-11-29 | "Pale"     |
+| "Joe Anderson"   | 1981-12-16    | 2018-12-13 | "Dizzy"    |
+| "Joe Anderson"   | 1981-12-16    | 2018-06-05 | "Swollen"  |
+| "Joe Anderson"   | 1981-12-16    | 2018-09-27 | "Sad"      |
+| "Joe Anderson"   | 1981-12-16    | 2017-09-12 | "Inflamed" |
+| "Joe Anderson"   | 1981-12-16    | 2019-10-10 | "Sore"     |
+| "Jane Jackson"   | 1989-10-16    | 2019-04-22 | "Dizzy"    |
+| "Jane Jackson"   | 1989-10-16    | 2019-04-30 | "Swollen"  |
+| "Jane Jackson"   | 1989-10-16    | 2018-04-19 | "Red"      |
+| "Jane Jackson"   | 1989-10-16    | 2018-09-28 | "Inflamed" |
+| "Jane Jackson"   | 1989-10-16    | 2019-07-19 | "Scratchy" |
+| "Jane Jackson"   | 1989-10-16    | 2018-05-19 | "Sad"      |
+| "Bob Svensson"   | 2003-05-06    | 2019-11-05 | "Sore"     |
+| "Bob Svensson"   | 2003-05-06    | 2018-08-09 | "Scratchy" |
+| "Bob Svensson"   | 2003-05-06    | 2018-11-22 | "Inflamed" |
+| "Bob Svensson"   | 2003-05-06    | 2018-02-14 | "Angry"    |
+| "Bob Svensson"   | 2003-05-06    | 2018-11-22 | "Inflamed" |
+| "Bob Svensson"   | 2003-05-06    | 2018-02-25 | "Itchy"    |
+| "Ally Smith"     | 1979-08-06    | 2019-10-25 | "Pale"     |
+| "Ally Smith"     | 1979-08-06    | 2019-11-25 | "Sore"     |
+| "Ally Smith"     | 1979-08-06    | 2019-10-19 | "Dizzy"    |
+| "Ally Smith"     | 1979-08-06    | 2018-01-06 | "Sad"      |
+| "Ally Smith"     | 1979-08-06    | 2019-03-12 | "Red"      |
+| "Ally Smith"     | 1979-08-06    | 2019-05-25 | "Itchy"    |
+| "Jack Stone"     | 2003-12-08    | 2019-04-29 | "Swollen"  |
+| "Jack Stone"     | 2003-12-08    | 2018-09-02 | "Scratchy" |
+| "Jack Stone"     | 2003-12-08    | 2019-07-06 | "Itchy"    |
+| "Jack Stone"     | 2003-12-08    | 2019-07-06 | "Itchy"    |
+| "Jack Stone"     | 2003-12-08    | 2018-04-16 | "Pale"     |
+| "Jack Stone"     | 2003-12-08    | 2018-02-10 | "Sore"     |
+| "Mary Anderson"  | 1974-07-22    | 2018-06-08 | "Dizzy"    |
+| "Mary Anderson"  | 1974-07-22    | 2018-06-08 | "Dizzy"    |
+| "Mary Anderson"  | 1974-07-22    | 2019-12-02 | "Pale"     |
+| "Mary Anderson"  | 1974-07-22    | 2018-09-08 | "Angry"    |
+| "Mary Anderson"  | 1974-07-22    | 2018-07-05 | "Swollen"  |
+| "Mary Anderson"  | 1974-07-22    | 2018-03-08 | "Itchy"    |
+| "Sally Jackson"  | 1994-02-20    | 2019-07-19 | "Dizzy"    |
+| "Sally Jackson"  | 1994-02-20    | 2019-06-29 | "Pale"     |
+| "Sally Jackson"  | 1994-02-20    | 2019-06-14 | "Angry"    |
+| "Sally Jackson"  | 1994-02-20    | 2018-07-27 | "Red"      |
+| "Sally Jackson"  | 1994-02-20    | 2019-01-21 | "Sad"      |
+| "Sally Jackson"  | 1994-02-20    | 2018-10-25 | "Swollen"  |
+| "Mark Svensson"  | 1985-09-07    | 2018-01-06 | "Inflamed" |
+| "Mark Svensson"  | 1985-09-07    | 2018-01-06 | "Inflamed" |
+| "Mark Svensson"  | 1985-09-07    | 2019-04-04 | "Red"      |
+| "Mark Svensson"  | 1985-09-07    | 2018-04-02 | "Angry"    |
+| "Mark Svensson"  | 1985-09-07    | 2018-11-12 | "Itchy"    |
+| "Mark Svensson"  | 1985-09-07    | 2018-11-12 | "Itchy"    |
+| "Joe Smith"      | 1980-06-17    | 2018-10-23 | "Sore"     |
+| "Joe Smith"      | 1980-06-17    | 2018-03-19 | "Angry"    |
+| "Joe Smith"      | 1980-06-17    | 2018-03-19 | "Angry"    |
+| "Joe Smith"      | 1980-06-17    | 2019-02-12 | "Itchy"    |
+| "Joe Smith"      | 1980-06-17    | 2019-02-12 | "Itchy"    |
+| "Joe Smith"      | 1980-06-17    | 2019-09-17 | "Pale"     |
+| "Jane Stone"     | 2015-11-26    | 2019-04-27 | "Scratchy" |
+| "Jane Stone"     | 2015-11-26    | 2017-09-21 | "Itchy"    |
+| "Jane Stone"     | 2015-11-26    | 2017-07-18 | "Inflamed" |
+| "Jane Stone"     | 2015-11-26    | 2018-04-05 | "Pale"     |
+| "Jane Stone"     | 2015-11-26    | 2017-07-18 | "Inflamed" |
+| "Jane Stone"     | 2015-11-26    | 2019-01-12 | "Swollen"  |
+| "Bob Anderson"   | 2007-02-06    | 2018-08-16 | "Itchy"    |
+| "Bob Anderson"   | 2007-02-06    | 2019-08-23 | "Inflamed" |
+| "Bob Anderson"   | 2007-02-06    | 2018-08-31 | "Dizzy"    |
+| "Bob Anderson"   | 2007-02-06    | 2019-01-16 | "Sore"     |
+| "Bob Anderson"   | 2007-02-06    | 2018-08-31 | "Dizzy"    |
+| "Bob Anderson"   | 2007-02-06    | 2018-02-14 | "Angry"    |
+| "Ally Jackson"   | 1997-12-29    | 2018-03-10 | "Pale"     |
+| "Ally Jackson"   | 1997-12-29    | 2019-11-21 | "Red"      |
+| "Ally Jackson"   | 1997-12-29    | 2018-03-10 | "Pale"     |
+| "Ally Jackson"   | 1997-12-29    | 2019-11-21 | "Red"      |
+| "Ally Jackson"   | 1997-12-29    | 2018-09-20 | "Dizzy"    |
+| "Ally Jackson"   | 1997-12-29    | 2018-03-12 | "Itchy"    |
+| "Jack Svensson"  | 1974-04-26    | 2018-07-04 | "Sore"     |
+| "Jack Svensson"  | 1974-04-26    | 2019-06-15 | "Angry"    |
+| "Jack Svensson"  | 1974-04-26    | 2019-09-04 | "Inflamed" |
+| "Jack Svensson"  | 1974-04-26    | 2017-08-12 | "Swollen"  |
+| "Jack Svensson"  | 1974-04-26    | 2018-07-04 | "Sore"     |
+| "Jack Svensson"  | 1974-04-26    | 2019-11-06 | "Itchy"    |
+| "Mary Smith"     | 2007-06-30    | 2018-06-13 | "Sad"      |
+| "Mary Smith"     | 2007-06-30    | 2019-06-21 | "Itchy"    |
+| "Mary Smith"     | 2007-06-30    | 2019-02-04 | "Dizzy"    |
+| "Mary Smith"     | 2007-06-30    | 2018-03-15 | "Angry"    |
+| "Mary Smith"     | 2007-06-30    | 2018-03-15 | "Angry"    |
+| "Mary Smith"     | 2007-06-30    | 2018-12-07 | "Sore"     |
+| "Sally Stone"    | 1999-06-21    | 2018-01-05 | "Sore"     |
+| "Sally Stone"    | 1999-06-21    | 2018-02-19 | "Angry"    |
+| "Sally Stone"    | 1999-06-21    | 2018-01-05 | "Sore"     |
+| "Sally Stone"    | 1999-06-21    | 2018-01-05 | "Sore"     |
+| "Sally Stone"    | 1999-06-21    | 2018-04-08 | "Scratchy" |
+| "Sally Stone"    | 1999-06-21    | 2018-01-18 | "Dizzy"    |
+| "Mark Anderson"  | 1995-09-26    | 2018-03-04 | "Scratchy" |
+| "Mark Anderson"  | 1995-09-26    | 2018-10-14 | "Sad"      |
+| "Mark Anderson"  | 1995-09-26    | 2019-05-16 | "Pale"     |
+| "Mark Anderson"  | 1995-09-26    | 2017-12-09 | "Swollen"  |
+| "Mark Anderson"  | 1995-09-26    | 2019-04-17 | "Inflamed" |
+| "Mark Anderson"  | 1995-09-26    | 2019-05-16 | "Pale"     |
+| "Joe Jackson"    | 1973-06-05    | 2019-01-03 | "Scratchy" |
+| "Joe Jackson"    | 1973-06-05    | 2018-08-29 | "Itchy"    |
+| "Joe Jackson"    | 1973-06-05    | 2019-07-06 | "Angry"    |
+| "Joe Jackson"    | 1973-06-05    | 2018-08-29 | "Itchy"    |
+| "Joe Jackson"    | 1973-06-05    | 2018-04-21 | "Dizzy"    |
+| "Joe Jackson"    | 1973-06-05    | 2018-06-21 | "Sore"     |
+| "Jane Svensson"  | 1970-05-24    | 2018-05-03 | "Sore"     |
+| "Jane Svensson"  | 1970-05-24    | 2019-02-12 | "Inflamed" |
+| "Jane Svensson"  | 1970-05-24    | 2018-04-18 | "Angry"    |
+| "Jane Svensson"  | 1970-05-24    | 2019-04-12 | "Swollen"  |
+| "Jane Svensson"  | 1970-05-24    | 2018-12-08 | "Red"      |
+| "Jane Svensson"  | 1970-05-24    | 2017-11-17 | "Itchy"    |
+| "Bob Smith"      | 2014-07-07    | 2018-04-05 | "Dizzy"    |
+| "Bob Smith"      | 2014-07-07    | 2018-01-21 | "Red"      |
+| "Bob Smith"      | 2014-07-07    | 2018-04-05 | "Dizzy"    |
+| "Bob Smith"      | 2014-07-07    | 2018-04-05 | "Dizzy"    |
+| "Bob Smith"      | 2014-07-07    | 2018-02-04 | "Sad"      |
+| "Bob Smith"      | 2014-07-07    | 2019-05-01 | "Pale"     |
+| "Ally Stone"     | 1994-08-11    | 2017-10-17 | "Inflamed" |
+| "Ally Stone"     | 1994-08-11    | 2017-08-20 | "Red"      |
+| "Ally Stone"     | 1994-08-11    | 2017-10-17 | "Inflamed" |
+| "Ally Stone"     | 1994-08-11    | 2019-03-15 | "Angry"    |
+| "Ally Stone"     | 1994-08-11    | 2019-03-15 | "Angry"    |
+| "Ally Stone"     | 1994-08-11    | 2018-08-26 | "Swollen"  |
+| "Jack Anderson"  | 1994-08-22    | 2017-09-25 | "Inflamed" |
+| "Jack Anderson"  | 1994-08-22    | 2019-10-18 | "Sad"      |
+| "Jack Anderson"  | 1994-08-22    | 2018-11-12 | "Swollen"  |
+| "Jack Anderson"  | 1994-08-22    | 2019-10-18 | "Sad"      |
+| "Jack Anderson"  | 1994-08-22    | 2018-11-12 | "Swollen"  |
+| "Jack Anderson"  | 1994-08-22    | 2018-09-29 | "Sore"     |
+| "Mary Jackson"   | 1993-02-17    | 2017-07-18 | "Scratchy" |
+| "Mary Jackson"   | 1993-02-17    | 2019-09-15 | "Red"      |
+| "Mary Jackson"   | 1993-02-17    | 2018-05-28 | "Itchy"    |
+| "Mary Jackson"   | 1993-02-17    | 2018-05-28 | "Itchy"    |
+| "Mary Jackson"   | 1993-02-17    | 2018-09-28 | "Inflamed" |
+| "Mary Jackson"   | 1993-02-17    | 2017-08-19 | "Sad"      |
+| "Sally Svensson" | 2015-04-19    | 2017-11-15 | "Sad"      |
+| "Sally Svensson" | 2015-04-19    | 2018-07-30 | "Sore"     |
+| "Sally Svensson" | 2015-04-19    | 2017-11-15 | "Sad"      |
+| "Sally Svensson" | 2015-04-19    | 2018-10-05 | "Pale"     |
+| "Sally Svensson" | 2015-04-19    | 2019-06-14 | "Dizzy"    |
+| "Sally Svensson" | 2015-04-19    | 2018-03-09 | "Scratchy" |
+| "Mark Smith"     | 2012-08-01    | 2018-09-27 | "Swollen"  |
+| "Mark Smith"     | 2012-08-01    | 2018-06-25 | "Angry"    |
+| "Mark Smith"     | 2012-08-01    | 2019-01-08 | "Sore"     |
+| "Mark Smith"     | 2012-08-01    | 2018-09-20 | "Pale"     |
+| "Mark Smith"     | 2012-08-01    | 2019-09-30 | "Scratchy" |
+| "Mark Smith"     | 2012-08-01    | 2018-09-20 | "Pale"     |
+| "Joe Stone"      | 2003-12-31    | 2018-01-29 | "Sore"     |
+| "Joe Stone"      | 2003-12-31    | 2017-10-01 | "Angry"    |
+| "Joe Stone"      | 2003-12-31    | 2019-07-16 | "Scratchy" |
+| "Joe Stone"      | 2003-12-31    | 2018-03-03 | "Red"      |
+| "Joe Stone"      | 2003-12-31    | 2017-10-14 | "Dizzy"    |
+| "Joe Stone"      | 2003-12-31    | 2017-08-18 | "Pale"     |
+| "Jane Anderson"  | 2010-06-04    | 2019-12-02 | "Sore"     |
+| "Jane Anderson"  | 2010-06-04    | 2018-03-24 | "Scratchy" |
+| "Jane Anderson"  | 2010-06-04    | 2018-07-20 | "Sad"      |
+| "Jane Anderson"  | 2010-06-04    | 2019-06-17 | "Swollen"  |
+| "Jane Anderson"  | 2010-06-04    | 2018-12-21 | "Red"      |
+| "Jane Anderson"  | 2010-06-04    | 2019-12-02 | "Sore"     |
+| "Bob Jackson"    | 1979-11-07    | 2018-05-03 | "Sore"     |
+| "Bob Jackson"    | 1979-11-07    | 2018-04-20 | "Angry"    |
+| "Bob Jackson"    | 1979-11-07    | 2018-05-10 | "Pale"     |
+| "Bob Jackson"    | 1979-11-07    | 2018-02-09 | "Swollen"  |
+| "Bob Jackson"    | 1979-11-07    | 2019-10-14 | "Scratchy" |
+| "Bob Jackson"    | 1979-11-07    | 2018-04-23 | "Dizzy"    |
+| "Ally Svensson"  | 2004-12-14    | 2019-03-13 | "Scratchy" |
+| "Ally Svensson"  | 2004-12-14    | 2019-03-13 | "Scratchy" |
+| "Ally Svensson"  | 2004-12-14    | 2018-02-22 | "Inflamed" |
+| "Ally Svensson"  | 2004-12-14    | 2018-05-16 | "Dizzy"    |
+| "Ally Svensson"  | 2004-12-14    | 2018-07-09 | "Pale"     |
+| "Ally Svensson"  | 2004-12-14    | 2019-04-30 | "Itchy"    |
+| "Jack Smith"     | 2010-09-23    | 2018-11-27 | "Angry"    |
+| "Jack Smith"     | 2010-09-23    | 2018-04-18 | "Pale"     |
+| "Jack Smith"     | 2010-09-23    | 2019-03-05 | "Itchy"    |
+| "Jack Smith"     | 2010-09-23    | 2018-09-29 | "Sore"     |
+| "Jack Smith"     | 2010-09-23    | 2019-02-08 | "Red"      |
+| "Jack Smith"     | 2010-09-23    | 2019-02-22 | "Sad"      |
+| "Mary Stone"     | 2009-07-14    | 2017-11-22 | "Pale"     |
+| "Mary Stone"     | 2009-07-14    | 2018-09-21 | "Scratchy" |
+| "Mary Stone"     | 2009-07-14    | 2018-09-30 | "Angry"    |
+| "Mary Stone"     | 2009-07-14    | 2019-06-17 | "Itchy"    |
+| "Mary Stone"     | 2009-07-14    | 2017-11-22 | "Pale"     |
+| "Mary Stone"     | 2009-07-14    | 2019-08-14 | "Sore"     |
+| "Sally Anderson" | 1972-01-23    | 2017-09-13 | "Dizzy"    |
+| "Sally Anderson" | 1972-01-23    | 2018-09-09 | "Itchy"    |
+| "Sally Anderson" | 1972-01-23    | 2018-06-23 | "Sad"      |
+| "Sally Anderson" | 1972-01-23    | 2018-06-23 | "Sad"      |
+| "Sally Anderson" | 1972-01-23    | 2019-12-03 | "Sore"     |
+| "Sally Anderson" | 1972-01-23    | 2019-12-03 | "Sore"     |
+| "Mark Jackson"   | 2006-12-17    | 2018-08-02 | "Scratchy" |
+| "Mark Jackson"   | 2006-12-17    | 2018-01-28 | "Sore"     |
+| "Mark Jackson"   | 2006-12-17    | 2018-08-02 | "Scratchy" |
+| "Mark Jackson"   | 2006-12-17    | 2018-05-26 | "Itchy"    |
+| "Mark Jackson"   | 2006-12-17    | 2017-11-27 | "Sad"      |
+| "Mark Jackson"   | 2006-12-17    | 2017-07-17 | "Red"      |
+| "Joe Svensson"   | 2001-01-14    | 2019-02-20 | "Dizzy"    |
+| "Joe Svensson"   | 2001-01-14    | 2018-07-12 | "Angry"    |
+| "Joe Svensson"   | 2001-01-14    | 2018-08-08 | "Itchy"    |
+| "Joe Svensson"   | 2001-01-14    | 2018-03-30 | "Pale"     |
+| "Joe Svensson"   | 2001-01-14    | 2019-02-20 | "Dizzy"    |
+| "Joe Svensson"   | 2001-01-14    | 2018-03-30 | "Pale"     |
+| "Jane Smith"     | 1992-03-12    | 2017-10-07 | "Dizzy"    |
+| "Jane Smith"     | 1992-03-12    | 2019-03-07 | "Inflamed" |
+| "Jane Smith"     | 1992-03-12    | 2019-05-30 | "Red"      |
+| "Jane Smith"     | 1992-03-12    | 2017-07-15 | "Pale"     |
+| "Jane Smith"     | 1992-03-12    | 2019-04-14 | "Sore"     |
+| "Jane Smith"     | 1992-03-12    | 2019-09-30 | "Angry"    |
+| "Bob Stone"      | 2015-09-07    | 2018-09-11 | "Sore"     |
+| "Bob Stone"      | 2015-09-07    | 2018-03-19 | "Dizzy"    |
+| "Bob Stone"      | 2015-09-07    | 2019-01-01 | "Scratchy" |
+| "Bob Stone"      | 2015-09-07    | 2019-01-01 | "Scratchy" |
+| "Bob Stone"      | 2015-09-07    | 2017-12-27 | "Sad"      |
+| "Bob Stone"      | 2015-09-07    | 2019-01-01 | "Scratchy" |
+| "Ally Anderson"  | 1978-12-20    | 2018-08-20 | "Inflamed" |
+| "Ally Anderson"  | 1978-12-20    | 2018-03-23 | "Sad"      |
+| "Ally Anderson"  | 1978-12-20    | 2017-09-05 | "Itchy"    |
+| "Ally Anderson"  | 1978-12-20    | 2018-01-07 | "Angry"    |
+| "Ally Anderson"  | 1978-12-20    | 2018-02-08 | "Pale"     |
+| "Ally Anderson"  | 1978-12-20    | 2018-02-08 | "Pale"     |
+| "Jack Jackson"   | 1975-06-08    | 2018-10-10 | "Red"      |
+| "Jack Jackson"   | 1975-06-08    | 2019-09-16 | "Pale"     |
+| "Jack Jackson"   | 1975-06-08    | 2019-09-16 | "Pale"     |
+| "Jack Jackson"   | 1975-06-08    | 2019-09-16 | "Pale"     |
+| "Jack Jackson"   | 1975-06-08    | 2019-01-06 | "Angry"    |
+| "Jack Jackson"   | 1975-06-08    | 2018-02-21 | "Scratchy" |
+| "Mary Svensson"  | 2002-01-09    | 2018-09-24 | "Pale"     |
+| "Mary Svensson"  | 2002-01-09    | 2018-03-03 | "Itchy"    |
+| "Mary Svensson"  | 2002-01-09    | 2017-12-29 | "Swollen"  |
+| "Mary Svensson"  | 2002-01-09    | 2019-11-01 | "Sad"      |
+| "Mary Svensson"  | 2002-01-09    | 2018-03-03 | "Itchy"    |
+| "Mary Svensson"  | 2002-01-09    | 2018-03-03 | "Itchy"    |
+| "Sally Smith"    | 1973-12-03    | 2018-01-06 | "Itchy"    |
+| "Sally Smith"    | 1973-12-03    | 2018-01-06 | "Itchy"    |
+| "Sally Smith"    | 1973-12-03    | 2019-02-13 | "Dizzy"    |
+| "Sally Smith"    | 1973-12-03    | 2019-10-21 | "Pale"     |
+| "Sally Smith"    | 1973-12-03    | 2017-10-26 | "Scratchy" |
+| "Sally Smith"    | 1973-12-03    | 2017-12-21 | "Red"      |
+| "Mark Stone"     | 1988-06-07    | 2018-06-07 | "Swollen"  |
+| "Mark Stone"     | 1988-06-07    | 2019-09-06 | "Scratchy" |
+| "Mark Stone"     | 1988-06-07    | 2018-08-09 | "Itchy"    |
+| "Mark Stone"     | 1988-06-07    | 2019-09-06 | "Scratchy" |
+| "Mark Stone"     | 1988-06-07    | 2019-06-12 | "Dizzy"    |
+| "Mark Stone"     | 1988-06-07    | 2019-09-06 | "Scratchy" |
+| "Joe Anderson"   | 2010-10-05    | 2018-01-05 | "Pale"     |
+| "Joe Anderson"   | 2010-10-05    | 2017-12-26 | "Scratchy" |
+| "Joe Anderson"   | 2010-10-05    | 2018-01-05 | "Pale"     |
+| "Joe Anderson"   | 2010-10-05    | 2019-04-11 | "Inflamed" |
+| "Joe Anderson"   | 2010-10-05    | 2019-01-02 | "Sore"     |
+| "Joe Anderson"   | 2010-10-05    | 2019-02-28 | "Dizzy"    |
++------------------------------------------------------------+
+
+606 rows
+ready to start consuming query after 91 ms, results consumed after another 60 ms
+Created 491 relationships, Set 491 properties
+----
+====
 
 [[auth-access-control-security]]
-== Security
+== Manage authorization and access control
 
 Unlike applications which often require users to be modeled within the application itself, databases provide user management resources such as roles and privileges.
 This allows users to be created entirely within the database security model, a strategy that allows the separation of access to the data and the data itself.
 For more information, see xref:authentication-authorization/index.adoc[Authentication and authorization].
 
-The following examples show two different approaches to using Neo4j security features to support the _healthcare_ database application.
-The first approach uses xref:authentication-authorization/built-in-roles.adoc#auth-built-in-roles[Built-in roles and privileges], whereas the second uses more advanced resources with fine-grained privileges for <<auth-access-control-using-privileges, sub-graph access control>>.
-
-In this example, consider five users of the _healthcare_ database:
+In this tutorial, consider five users of the _healthcare_ database:
 
 * Alice, the doctor.
 * Daniel, the nurse.
@@ -95,23 +1027,23 @@ In this example, consider five users of the _healthcare_ database:
 * Charlie, the researcher.
 * Tina, the IT administrator.
 
-These users can be created using the `CREATE USER` command (from the `system` database):
+You can create these users by using the `CREATE USER` command (from the `system` database):
 
 [source, cypher]
 ----
-CREATE USER charlie SET PASSWORD $secretpassword1 CHANGE NOT REQUIRED;
-CREATE USER alice SET PASSWORD $secretpassword2 CHANGE NOT REQUIRED;
-CREATE USER daniel SET PASSWORD $secretpassword3 CHANGE NOT REQUIRED;
-CREATE USER bob SET PASSWORD $secretpassword4 CHANGE NOT REQUIRED;
-CREATE USER tina SET PASSWORD $secretpassword5 CHANGE NOT REQUIRED;
+CREATE USER charlie SET PASSWORD 'secretpassword1' CHANGE NOT REQUIRED;
+CREATE USER alice SET PASSWORD 'secretpassword2' CHANGE NOT REQUIRED;
+CREATE USER daniel SET PASSWORD 'secretpassword3' CHANGE NOT REQUIRED;
+CREATE USER bob SET PASSWORD 'secretpassword4' CHANGE NOT REQUIRED;
+CREATE USER tina SET PASSWORD 'secretpassword5' CHANGE NOT REQUIRED;
 ----
 
 At this point, the users cannot interact with the database, so these capabilities need to be granted by using roles.
-There are two different ways of doing this, either by using the built-in roles or through more fine-grained access control using privileges and custom roles.
+There are two different ways of doing this either by using xref:authentication-authorization/built-in-roles.adoc#auth-built-in-roles[built-in roles and privileges] or by using more advanced resources with fine-grained privileges for <<auth-access-control-using-privileges, sub-graph access control>>.
 
 
 [[auth-access-control-using-built-in-roles]]
-== Access control using built-in roles
+=== Access control using built-in roles
 
 Neo4j comes with built-in roles that cover a number of common needs:
 
@@ -130,7 +1062,7 @@ For this reason, they are all assigned the `editor` role.
 
 Tina, the IT administrator who installs and manages the database, needs to be assigned the `admin` role.
 
-Here is how to grant roles to the users:
+Here is how to grant roles to the users (from the `system` database):
 
 [source, cypher]
 ----
@@ -142,7 +1074,7 @@ GRANT ROLE admin TO tina;
 ----
 
 [[auth-access-control-using-privileges]]
-== Sub-graph access control using privileges
+=== Sub-graph access control using privileges
 
 A limitation of the previously described approach is that it does allow all users to see all the data on the database.
 In many real-world scenarios though, it would be preferable to establish some access restrictions.
@@ -150,7 +1082,8 @@ In many real-world scenarios though, it would be preferable to establish some ac
 For example, you may want to limit the researcher's access to the patients' personal information or restrict the receptionist from writing new labels on the database.
 While these restrictions could be coded into the application layer, it is possible and *more secure* to enforce fine-grained restrictions directly within the Neo4j security model by creating custom roles and assigning specific privileges to them.
 
-Since new custom roles will be created, it is important to first revoke the current roles from the users assigned to them:
+Since new custom roles will be created, it is important to first revoke the current roles from the users assigned to them.
+Run the following command against the `system` database:
 
 [source, cypher]
 ----
@@ -187,30 +1120,17 @@ User manager::
 This user should have similar access as the IT administrator, but with more restrictions.
 To achieve that, a new role can be created from scratch and only specific administrative capabilities can be assigned to it.
 
-// .Creating custom roles
-// ====
-// [source, cypher]
-// ----
-// CREATE ROLE doctor;
-// CREATE ROLE receptionist;
-// CREATE ROLE nurse;
-// CREATE ROLE researcherB;
-// CREATE ROLE researcherW;
-// CREATE ROLE disableDiagnoses;
-// CREATE ROLE itadmin AS COPY OF admin;
-// CREATE ROLE userManager;
-// ----
-// ====
-
 Before creating the new roles and assigning them to Alice, Bob, Daniel, Charlie, and Tina, it is important to define the privileges each role should have.
 Since all users need `ACCESS` privilege to the `healthcare` database, this can be set through the `PUBLIC` role instead of all the individual roles:
+
+Run the following command against the `system` database:
 
 [source, cypher]
 ----
 GRANT ACCESS ON DATABASE healthcare TO PUBLIC;
 ----
 
-=== Privileges of `itadmin`
+==== Privileges of `itadmin`
 
 This role can be created as a copy of the built-in `admin` role:
 
@@ -240,42 +1160,53 @@ The complete set of privileges available to users assigned the `itadmin` role ca
 ----
 SHOW ROLE itadmin PRIVILEGES AS COMMANDS;
 ----
+
+.Result
+[%collapsible]
+====
+[queryresult]
 ----
 +-------------------------------------------------------------------------+
 | command                                                                 |
 +-------------------------------------------------------------------------+
+| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO `itadmin`" |
+| "DENY PRIVILEGE MANAGEMENT ON DBMS TO `itadmin`"                        |
+| "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO `itadmin`"       |
+| "DENY ROLE MANAGEMENT ON DBMS TO `itadmin`"                             |
 | "GRANT ACCESS ON DATABASE * TO `itadmin`"                               |
+| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `itadmin`"                        |
+| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `itadmin`"                |
+| "GRANT INDEX MANAGEMENT ON DATABASE * TO `itadmin`"                     |
+| "GRANT LOAD ON ALL DATA TO `itadmin`"                                   |
 | "GRANT MATCH {*} ON GRAPH * NODE * TO `itadmin`"                        |
 | "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `itadmin`"                |
-| "GRANT WRITE ON GRAPH * TO `itadmin`"                                   |
-| "GRANT INDEX MANAGEMENT ON DATABASE * TO `itadmin`"                     |
-| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `itadmin`"                |
 | "GRANT NAME MANAGEMENT ON DATABASE * TO `itadmin`"                      |
+| "GRANT SHOW CONSTRAINT ON DATABASE * TO `itadmin`"                      |
+| "GRANT SHOW INDEX ON DATABASE * TO `itadmin`"                           |
 | "GRANT START ON DATABASE * TO `itadmin`"                                |
 | "GRANT STOP ON DATABASE * TO `itadmin`"                                 |
 | "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `itadmin`"           |
-| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `itadmin`"                        |
-| "GRANT LOAD ON ALL DATA TO `itadmin`"                                   |
-| "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO `itadmin`"       |
-| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO `itadmin`" |
-| "DENY ROLE MANAGEMENT ON DBMS TO `itadmin`"                             |
-| "DENY PRIVILEGE MANAGEMENT ON DBMS TO `itadmin`"                        |
+| "GRANT WRITE ON GRAPH * TO `itadmin`"                                   |
 +-------------------------------------------------------------------------+
+18 rows
+ready to start consuming query after 29 ms, results consumed after another 1 ms
 ----
+====
 
 [NOTE]
 ====
 Privileges that were granted or denied earlier can be revoked using xref:authentication-authorization/manage-privileges.adoc#access-control-revoke-privileges[the `REVOKE` command].
 ====
 
-To provide the IT administrator `tina` these privileges, they must be assigned the new role `itadmin`:
+To provide the IT administrator `tina` these privileges, they must be assigned the new role `itadmin`.
+Run the following command against the `system` database:
 
 [source, cypher, role=systemcmd]
 ----
-neo4j@system> GRANT ROLE itadmin TO tina;
+GRANT ROLE itadmin TO tina;
 ----
 
-To demonstrate that Tina is not able to see the patients' `SSN`, you can login to `healthcare` as `tina` and run the following query:
+To demonstrate that Tina is not able to see the patients' `SSN`, you can log into Cypher Shell as `tina` and run the following query against the `healthcare` database:
 
 [source, cypher]
 ----
@@ -283,19 +1214,23 @@ MATCH (n:Patient)
  WHERE n.dateOfBirth < date('1972-06-12')
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
-
+.Result
+[queryresult]
 ----
-+--------------------------------------------------------------------+
-| n.name          | n.ssn | n.address                | n.dateOfBirth |
-+--------------------------------------------------------------------+
-| "Mary Stone"    | NULL  | "1 secret way, downtown" | 1970-01-15    |
-| "Ally Anderson" | NULL  | "1 secret way, downtown" | 1970-08-20    |
-| "Sally Stone"   | NULL  | "1 secret way, downtown" | 1970-03-12    |
-| "Jane Stone"    | NULL  | "1 secret way, downtown" | 1970-07-21    |
-| "Ally Svensson" | NULL  | "1 secret way, downtown" | 1971-08-15    |
-| "Jane Svensson" | NULL  | "1 secret way, downtown" | 1972-05-12    |
-| "Ally Svensson" | NULL  | "1 secret way, downtown" | 1971-07-30    |
-+--------------------------------------------------------------------+
++---------------------------------------------------------------------+
+| n.name           | n.ssn | n.address                | n.dateOfBirth |
++---------------------------------------------------------------------+
+| "Mark Jackson"   | NULL  | "1 secret way, downtown" | 1970-11-29    |
+| "Joe Svensson"   | NULL  | "1 secret way, downtown" | 1972-02-12    |
+| "Bob Anderson"   | NULL  | "1 secret way, downtown" | 1970-04-27    |
+| "Sally Anderson" | NULL  | "1 secret way, downtown" | 1970-12-02    |
+| "Ally Anderson"  | NULL  | "1 secret way, downtown" | 1972-05-20    |
+| "Jane Svensson"  | NULL  | "1 secret way, downtown" | 1970-05-24    |
+| "Sally Anderson" | NULL  | "1 secret way, downtown" | 1972-01-23    |
++---------------------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 49 ms, results consumed after another 2 ms
 ----
 
 The results make it seem as if these nodes do not even have an `SSN` field.
@@ -309,9 +1244,10 @@ MATCH (n:Patient), (d:Disease)
 CREATE (n)-[:DIAGNOSIS]->(d);
 ----
 
-[role=erroronlyqueryresult]
+.Result
+[queryresult]
 ----
-Create relationship with type 'DIAGNOSIS' is not allowed for user 'tina' with roles [PUBLIC, itadmin].
+Create relationship with type 'DIAGNOSIS' on database 'healthcare' is not allowed for user 'tina' with roles [PUBLIC, itadmin].
 ----
 
 [NOTE]
@@ -320,7 +1256,7 @@ Restrictions to reading data do not result in errors, they only make it appear a
 However, restrictions on updating the graph do output an appropriate error when the user attempts to perform an action they are not allowed to.
 ====
 
-=== Privileges of `researcher`
+==== Privileges of `researcher`
 
 The researcher Charlie was previously a read-only user.
 To assign them the desired permissions, you can do something similar to what was done with the `itadmin` role, this time copying and modifying the `reader` role.
@@ -333,7 +1269,8 @@ You can grant the role `researcher` the ability to find all nodes and read all p
 This way, the researcher is unable to see patients' information such as `name`, `SSN`, and `address`.
 This approach has a problem though: if more properties are added to the `Patient` nodes _after_ the restrictions were assigned to the `researcher` role, these new properties will automatically be visible to the researcher -- a possibly undesirable outcome.
 +
-To avoid that, you can rather deny _specific_ privileges:
+To avoid that, you can rather deny _specific_ privileges by running the following commands against the `system` database.
+You must be logged in as a user with the `admin` role to be able to execute these commands:
 +
 [source, cypher, role=systemdb]
 ----
@@ -359,8 +1296,10 @@ DENY TRAVERSE
 +
 Another alternative is to only provide specific access to the properties the researcher is allowed to see.
 This way, the addition of new properties (for instance, to a `Patient` node) does not automatically make them visible to users assigned with this role.
-In case you wish to make them visible though, you need to explicitly grant read access:
-
+In case you wish to make them visible though, you need to explicitly grant read access.
+Run the following commands against the `system` database.
+You must be logged in as a user with the `admin` role to be able to execute these commands:
++
 [source, cypher]
 ----
 // Create the role first
@@ -391,64 +1330,75 @@ GRANT READ {dateOfBirth}
     NODES Patient
     TO researcherW;
 ----
-
++
 In order to test that the researcher Charlie now has the specified privileges, assign them the `researcherB` role (with specifically denied privileges):
-
++
 [source, cypher, role=systemcmd]
 ----
 GRANT ROLE researcherB TO charlie;
 ----
-
++
 You can also use a version of the `SHOW PRIVILEGES` command to see Charlie's access rights, which are a combination of those assigned to the `researcherB` and `PUBLIC` roles:
-
++
 [source, cypher, role=systemcmd]
 ----
-neo4j@system> SHOW USER charlie PRIVILEGES AS COMMANDS;
+SHOW USER charlie PRIVILEGES AS COMMANDS;
 ----
++
+.Result
+[queryresult]
 ----
 +-----------------------------------------------------------------------+
 | command                                                               |
 +-----------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                              |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                      |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                          |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                           |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE * TO $role"               |
-| "GRANT MATCH {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"       |
-| "GRANT LOAD ON ALL DATA TO $role"                                     |
-| "DENY TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
 | "DENY READ {address} ON GRAPH `healthcare` NODE Patient TO $role"     |
 | "DENY READ {name} ON GRAPH `healthcare` NODE Patient TO $role"        |
 | "DENY READ {ssn} ON GRAPH `healthcare` NODE Patient TO $role"         |
+| "DENY TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
+| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                      |
+| "GRANT ACCESS ON HOME DATABASE TO $role"                              |
+| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                           |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                          |
+| "GRANT LOAD ON ALL DATA TO $role"                                     |
+| "GRANT MATCH {*} ON GRAPH `healthcare` NODE * TO $role"               |
+| "GRANT MATCH {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"       |
 +-----------------------------------------------------------------------+
+
+11 rows
+ready to start consuming query after 17 ms, results consumed after another 2 ms
 ----
-
-Now when Charlie logs into the `healthcare` database and tries to run a command similar to the one previously used by the `itadmin`, they will see different results:
-
++
+Now when Charlie logs into Cypher Shell and tries to execute the following command against the `healthcare` database, even though the command is similar to the one previously used by the `itadmin`, they will see different results:
++
 [source, cypher]
 ----
 MATCH (n:Patient)
  WHERE n.dateOfBirth < date('1972-06-12')
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
-
++
+.Result
+[queryresult]
 ----
 +--------------------------------------------+
 | n.name | n.ssn | n.address | n.dateOfBirth |
 +--------------------------------------------+
-| NULL   | NULL  | NULL      | 1971-05-31    |
-| NULL   | NULL  | NULL      | 1971-04-17    |
-| NULL   | NULL  | NULL      | 1971-12-27    |
-| NULL   | NULL  | NULL      | 1970-02-13    |
-| NULL   | NULL  | NULL      | 1971-02-04    |
-| NULL   | NULL  | NULL      | 1971-05-10    |
-| NULL   | NULL  | NULL      | 1971-02-21    |
+| NULL   | NULL  | NULL      | 1970-11-29    |
+| NULL   | NULL  | NULL      | 1972-02-12    |
+| NULL   | NULL  | NULL      | 1970-04-27    |
+| NULL   | NULL  | NULL      | 1970-12-02    |
+| NULL   | NULL  | NULL      | 1972-05-20    |
+| NULL   | NULL  | NULL      | 1970-05-24    |
+| NULL   | NULL  | NULL      | 1972-01-23    |
 +--------------------------------------------+
-----
 
+7 rows
+ready to start consuming query after 5 ms, results consumed after another 4 ms
+----
++
 Only the date of birth is available, so that the researcher Charlie may perform statistical analysis, for example.
 Another query Charlie could try is to find the ten diseases a patient younger than 25 is most likely to be diagnosed with, listed by probability:
-
++
 [source, cypher]
 ----
 WITH datetime() - duration({years:25}) AS timeLimit
@@ -458,35 +1408,41 @@ MATCH (n)-[h:HAS]->(s:Symptom)-[o:OF]->(d:Disease)
 WITH d.name AS disease, o.probability AS prob
 RETURN disease, sum(prob) AS score ORDER BY score DESC LIMIT 10;
 ----
-
++
+.Result
+[queryresult]
 ----
 +-------------------------------------------+
 | disease               | score             |
 +-------------------------------------------+
-| "Acute Argitis"       | 95.05395287286318 |
-| "Chronic Someitis"    | 88.7220337139605  |
-| "Chronic Placeboitis" | 88.43609533058974 |
-| "Acute Whatitis"      | 83.23493746472457 |
-| "Acute Otheritis"     | 82.46129768949129 |
-| "Chronic Otheritis"   | 82.03650063794025 |
-| "Acute Placeboitis"   | 77.34207326583929 |
-| "Acute Yellowitis"    | 76.34519967465832 |
-| "Chronic Whatitis"    | 73.73968070128234 |
-| "Chronic Yellowitis"  | 71.58791287376775 |
+| "Acute Placeboitis"   | 98.08269474672981 |
+| "Chronic Whatitis"    | 92.7601237335886  |
+| "Acute Otheritis"     | 87.61578906815608 |
+| "Chronic Someitis"    | 81.68350008637253 |
+| "Chronic Placeboitis" | 81.18800771016768 |
+| "Acute Argitis"       | 80.94323685188083 |
+| "Chronic Argitis"     | 80.06685163653665 |
+| "Chronic Otheritis"   | 76.06538667789484 |
+| "Acute Yellowitis"    | 70.74589062185173 |
+| "Acute Someitis"      | 70.3238679154795  |
 +-------------------------------------------+
+
+10 rows
+ready to start consuming query after 171 ms, results consumed after another 23 ms
 ----
-
++
 If the `researcherB` role is revoked to Charlie, but `researcherW` is granted, when re-running these queries, the same results will be obtained.
-
++
 [NOTE]
 ====
 Privileges that were granted or denied earlier can be revoked using xref:authentication-authorization/manage-privileges.adoc#access-control-revoke-privileges[the `REVOKE` command].
 ====
 
-=== Privileges of `doctor`
+==== Privileges of `doctor`
 
 Doctors should be given the ability to read and write almost everything, except the patients' `address` property, for instance.
-This role can be built from scratch by assigning full read and write access, and then specifically denying access to the `address` property:
+This role can be built from scratch by assigning full read and write access, and then specifically denying access to the `address` property.
+Switch to the `system` database and run the following commands:
 
 [source, cypher]
 ----
@@ -498,14 +1454,14 @@ DENY READ {address} ON GRAPH healthcare NODES Patient TO doctor;
 DENY SET PROPERTY {address} ON GRAPH healthcare NODES Patient TO doctor;
 ----
 
-To allow the doctor Alice to have these privileges, grant them this new role:
+To allow the doctor Alice to have these privileges, grant the user `alice` this new role:
 
 [source, cypher]
 ----
-neo4j@system> GRANT ROLE doctor TO alice;
+GRANT ROLE doctor TO alice;
 ----
 
-To demonstrate that Alice is not able to see patient addresses, log in as `alice` to `healthcare` and run the following query:
+To demonstrate that Alice is not able to see patient addresses, log in as `alice` and run the following query against the `healthcare` database:
 
 [source, cypher]
 ----
@@ -514,18 +1470,23 @@ MATCH (n:Patient)
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
 
+.Result
+[queryresult]
 ----
-+-------------------------------------------------------+
-| n.name          | n.ssn   | n.address | n.dateOfBirth |
-+-------------------------------------------------------+
-| "Jack Anderson" | 1234647 | NULL      | 1970-07-23    |
-| "Joe Svensson"  | 1234659 | NULL      | 1972-06-07    |
-| "Mary Jackson"  | 1234568 | NULL      | 1971-10-19    |
-| "Jack Jackson"  | 1234583 | NULL      | 1971-05-04    |
-| "Ally Smith"    | 1234590 | NULL      | 1971-12-07    |
-| "Ally Stone"    | 1234606 | NULL      | 1970-03-29    |
-| "Mark Smith"    | 1234610 | NULL      | 1971-03-30    |
-+-------------------------------------------------------+
++--------------------------------------------------------+
+| n.name           | n.ssn   | n.address | n.dateOfBirth |
++--------------------------------------------------------+
+| "Mark Jackson"   | 1234578 | NULL      | 1970-11-29    |
+| "Joe Svensson"   | 1234579 | NULL      | 1972-02-12    |
+| "Bob Anderson"   | 1234597 | NULL      | 1970-04-27    |
+| "Sally Anderson" | 1234617 | NULL      | 1970-12-02    |
+| "Ally Anderson"  | 1234622 | NULL      | 1972-05-20    |
+| "Jane Svensson"  | 1234644 | NULL      | 1970-05-24    |
+| "Sally Anderson" | 1234657 | NULL      | 1972-01-23    |
++--------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 5 ms, results consumed after another 3 ms
 ----
 
 As a result, the doctor has the expected privileges, including being able to see the patients' `SSN`, but not their address.
@@ -538,14 +1499,19 @@ MATCH (n) WITH labels(n) AS labels
 RETURN labels, count(*);
 ----
 
+.Result
+[queryresult]
 ----
 +------------------------+
 | labels      | count(*) |
 +------------------------+
-| ["Patient"] | 101      |
 | ["Symptom"] | 10       |
 | ["Disease"] | 12       |
+| ["Patient"] | 101      |
 +------------------------+
+
+3 rows
+ready to start consuming query after 29 ms, results consumed after another 1 ms
 ----
 
 In addition, the doctor can traverse the graph, finding symptoms and diseases connected to patients:
@@ -560,22 +1526,28 @@ RETURN n.name, d.name, count(s) AS score ORDER BY score DESC;
 The resulting table shows which are the most likely diagnoses based on symptoms.
 The doctor can use this table to facilitate further questioning and testing of the patient in order to decide on the final diagnosis.
 
+.Result
+[queryresult]
 ----
 +--------------------------------------------------+
 | n.name           | d.name                | score |
 +--------------------------------------------------+
-| "Sally Anderson" | "Chronic Otheritis"   | 4     |
-| "Sally Anderson" | "Chronic Yellowitis"  | 3     |
-| "Sally Anderson" | "Chronic Placeboitis" | 3     |
-| "Sally Anderson" | "Acute Whatitis"      | 2     |
-| "Sally Anderson" | "Acute Yellowitis"    | 2     |
-| "Sally Anderson" | "Chronic Someitis"    | 2     |
+| "Sally Anderson" | "Acute Placeboitis"   | 4     |
 | "Sally Anderson" | "Chronic Argitis"     | 2     |
+| "Sally Anderson" | "Acute Argitis"       | 2     |
+| "Sally Anderson" | "Acute Otheritis"     | 2     |
+| "Sally Anderson" | "Chronic Placeboitis" | 2     |
+| "Sally Anderson" | "Acute Yellowitis"    | 2     |
 | "Sally Anderson" | "Chronic Whatitis"    | 2     |
+| "Sally Anderson" | "Chronic Yellowitis"  | 2     |
+| "Sally Anderson" | "Acute Whatitis"      | 1     |
 | "Sally Anderson" | "Acute Someitis"      | 1     |
-| "Sally Anderson" | "Acute Argitis"       | 1     |
-| "Sally Anderson" | "Acute Otheritis"     | 1     |
+| "Sally Anderson" | "Chronic Someitis"    | 1     |
+| "Sally Anderson" | "Chronic Otheritis"   | 1     |
 +--------------------------------------------------+
+
+12 rows
+ready to start consuming query after 48 ms, results consumed after another 2 ms
 ----
 
 Once the doctor has investigated further, they would be able to decide on the diagnosis and save that result to the database:
@@ -596,12 +1568,18 @@ RETURN p.name, d.name, i.by, i.date, duration.between(i.created_at, i.updated_at
 
 This allows the doctor to record their diagnosis as well as take note of previous diagnoses:
 
+.Result
+[queryresult]
 ----
-+----------------------------------------------------------------------------------------+
-| p.name           | d.name                | i.by    | i.date     | updated              |
-+----------------------------------------------------------------------------------------+
-| "Sally Anderson" | "Chronic Placeboitis" | "Alice" | 2020-05-29 | P0M0DT213.076000000S |
-+----------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------+
+| p.name           | d.name                | i.by    | i.date     | updated |
++---------------------------------------------------------------------------+
+| "Sally Anderson" | "Chronic Placeboitis" | "Alice" | 2025-02-14 | PT0S    |
++---------------------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 73 ms, results consumed after another 6 ms
+Created 1 relationships, Set 4 properties
 ----
 
 [NOTE]
@@ -612,11 +1590,12 @@ It can be fixed by either granting the doctor `NAME MANAGEMENT` privileges or by
 The latter would be more precise and can be achieved by running, as an administrator, the procedures `db.createRelationshipType` and `db.createProperty` with appropriate arguments.
 ====
 
-=== Privileges of `receptionist`
+==== Privileges of `receptionist`
 
 Receptionists should only be able to manage patient information.
 They are not allowed to find or read any other parts of the graph.
-In addition, they should be able to create and delete patients, but not any other nodes:
+In addition, they should be able to create and delete patients, but not any other nodes.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemdb]
 ----
@@ -635,10 +1614,10 @@ With that in mind, grant the receptionist Bob their new `receptionist` role:
 
 [source, cypher]
 ----
-neo4j@system> GRANT ROLE receptionist TO bob;
+GRANT ROLE receptionist TO bob;
 ----
 
-With these privileges, if Bob tries to read the entire database, they will still only see the patients:
+With these privileges, if Bob tries to read the entire database, he will still only see the patients:
 
 [source, cypher]
 ----
@@ -646,12 +1625,17 @@ MATCH (n) WITH labels(n) AS labels
 RETURN labels, count(*);
 ----
 
+.Result
+[queryresult]
 ----
 +------------------------+
 | labels      | count(*) |
 +------------------------+
 | ["Patient"] | 101      |
 +------------------------+
+
+1 row
+ready to start consuming query after 2 ms, results consumed after another 3 ms
 ----
 
 However, Bob is able to see all fields of the patients' records:
@@ -663,20 +1647,23 @@ MATCH (n:Patient)
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
 
+.Result
+[queryresult]
 ----
-+----------------------------------------------------------------------+
-| n.name          | n.ssn   | n.address                | n.dateOfBirth |
-+----------------------------------------------------------------------+
-| "Mark Stone"    | 1234666 | "1 secret way, downtown" | 1970-08-04    |
-| "Sally Jackson" | 1234633 | "1 secret way, downtown" | 1970-10-21    |
-| "Bob Stone"     | 1234581 | "1 secret way, downtown" | 1972-02-16    |
-| "Ally Anderson" | 1234582 | "1 secret way, downtown" | 1970-05-13    |
-| "Mark Svensson" | 1234594 | "1 secret way, downtown" | 1970-01-16    |
-| "Bob Anderson"  | 1234597 | "1 secret way, downtown" | 1970-09-23    |
-| "Jack Svensson" | 1234599 | "1 secret way, downtown" | 1971-02-13    |
-| "Mark Jackson"  | 1234618 | "1 secret way, downtown" | 1970-03-28    |
-| "Jack Jackson"  | 1234623 | "1 secret way, downtown" | 1971-04-02    |
-+----------------------------------------------------------------------+
++-----------------------------------------------------------------------+
+| n.name           | n.ssn   | n.address                | n.dateOfBirth |
++-----------------------------------------------------------------------+
+| "Mark Jackson"   | 1234578 | "1 secret way, downtown" | 1970-11-29    |
+| "Joe Svensson"   | 1234579 | "1 secret way, downtown" | 1972-02-12    |
+| "Bob Anderson"   | 1234597 | "1 secret way, downtown" | 1970-04-27    |
+| "Sally Anderson" | 1234617 | "1 secret way, downtown" | 1970-12-02    |
+| "Ally Anderson"  | 1234622 | "1 secret way, downtown" | 1972-05-20    |
+| "Jane Svensson"  | 1234644 | "1 secret way, downtown" | 1970-05-24    |
+| "Sally Anderson" | 1234657 | "1 secret way, downtown" | 1972-01-23    |
++-----------------------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 2 ms, results consumed after another 1 ms
 ----
 
 [[detach-delete-restricted-user]]
@@ -696,12 +1683,18 @@ CREATE (n:Patient {
 RETURN n.name, n.dateOfBirth;
 ----
 
+.Result
+[queryresult]
 ----
 +-----------------------------------+
 | n.name            | n.dateOfBirth |
 +-----------------------------------+
 | "Another Patient" | 2001-01-20    |
 +-----------------------------------+
+
+1 row
+ready to start consuming query after 36 ms, results consumed after another 1 ms
+Added 1 nodes, Set 5 properties, Added 1 labels
 ----
 
 The receptionist is able to modify any patient record:
@@ -714,12 +1707,18 @@ SET n.address = '2 streets down, uptown'
 RETURN n.name, n.dateOfBirth, n.address;
 ----
 
+.Result
+[queryresult]
 ----
 +--------------------------------------------------------------+
 | n.name            | n.dateOfBirth | n.address                |
 +--------------------------------------------------------------+
 | "Another Patient" | 2001-01-20    | "2 streets down, uptown" |
 +--------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 22 ms, results consumed after another 3 ms
+Set 1 properties
 ----
 
 The receptionist is also able to delete this recently created patient because it is not connected to any other records:
@@ -731,6 +1730,14 @@ MATCH (n:Patient)
 DETACH DELETE n;
 ----
 
+.Result
+[queryresult]
+----
+0 rows
+ready to start consuming query after 17 ms, results consumed after another 0 ms
+Deleted 1 nodes
+----
+
 However, if the receptionist attempts to delete a patient that has existing diagnoses, this will fail:
 
 [source, cypher]
@@ -740,13 +1747,16 @@ MATCH (n:Patient)
 DETACH DELETE n;
 ----
 
-[role=erroronlyqueryresult]
+.Result
+[queryresult]
 ----
-org.neo4j.graphdb.ConstraintViolationException: Cannot delete node<42>, because it still has relationships. To delete this node, you must first delete its relationships.
+Cannot delete node<65>, because it still has relationships. To delete this node, you must first delete its relationships.
 ----
 
-The reason why this query fails is that, while Bob can find the `(:Patient)` node, they do not have sufficient traverse rights to find nor delete the outgoing relationships from it.
-Either they need to ask Tina the `itadmin` for help for this task, or more privileges can be added to the `receptionist` role:
+The reason why this query fails is that, while Bob can find the `(:Patient)` node, he does not have sufficient traverse rights to find nor the rights to delete the outgoing relationships from it.
+
+Either they need to ask Tina the `itadmin` for help for this task, or more privileges can be added to the `receptionist` role.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemcmd]
 ----
@@ -760,18 +1770,19 @@ GRANT DELETE ON GRAPH healthcare RELATIONSHIPS HAS, DIAGNOSIS TO receptionist;
 Privileges that were granted or denied earlier can be revoked using xref:authentication-authorization/manage-privileges.adoc#access-control-revoke-privileges[the `REVOKE` command].
 ====
 
-=== Privileges of `nurse`
+==== Privileges of `nurse`
 
 Nurses should have the capabilities of both doctors and receptionists, but assigning them both the `doctor` and `receptionist` roles might not have the expected effect.
 If those two roles were created with `GRANT` privileges only, combining them would be simply cumulative.
 But if the `doctor` role contains some `DENY` privileges, these always overrule `GRANT`.
 This means that the nurse will still have the same restrictions as a doctor, which is not what is intended here.
 
-To demonstrate this, you can assign the `doctor` role to the nurse Daniel:
+To demonstrate this, you can assign the `doctor` role to the nurse Daniel.
+Switch to the `system` database and run the following commands:
 
 [source, cypher]
 ----
-neo4j@system> GRANT ROLE doctor, receptionist TO daniel;
+GRANT ROLE doctor, receptionist TO daniel;
 ----
 
 Daniel should now have a combined set of privileges:
@@ -780,27 +1791,39 @@ Daniel should now have a combined set of privileges:
 ----
 SHOW USER daniel PRIVILEGES AS COMMANDS;
 ----
+
+.Result
+[queryresult]
 ----
 +---------------------------------------------------------------------------+
 | command                                                                   |
 +---------------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                                  |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                          |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                              |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                               |
-| "GRANT LOAD ON ALL DATA TO $role"                                         |
-| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"                    |
-| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
-| "GRANT READ {*} ON GRAPH `healthcare` NODE * TO $role"                    |
-| "GRANT READ {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"             |
-| "GRANT WRITE ON GRAPH `healthcare` TO $role"                              |
-| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role"      |
-| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"                |
-| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"                |
 | "DENY READ {address} ON GRAPH `healthcare` NODE Patient TO $role"         |
 | "DENY SET PROPERTY {address} ON GRAPH `healthcare` NODE Patient TO $role" |
+| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                          |
+| "GRANT ACCESS ON HOME DATABASE TO $role"                                  |
+| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"                |
+| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"                |
+| "GRANT DELETE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role"      |
+| "GRANT DELETE ON GRAPH `healthcare` RELATIONSHIP HAS TO $role"            |
+| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                               |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                              |
+| "GRANT LOAD ON ALL DATA TO $role"                                         |
+| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"             |
+| "GRANT READ {*} ON GRAPH `healthcare` NODE * TO $role"                    |
+| "GRANT READ {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
+| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role"      |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"                    |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE Disease TO $role"              |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE Symptom TO $role"              |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"            |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role"    |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP HAS TO $role"          |
+| "GRANT WRITE ON GRAPH `healthcare` TO $role"                              |
 +---------------------------------------------------------------------------+
+
+22 rows
+ready to start consuming query after 10 ms, results consumed after another 1 ms
 ----
 
 [NOTE]
@@ -809,7 +1832,7 @@ Privileges that were granted or denied earlier can be revoked using xref:authent
 ====
 
 Now the intention is that a nurse can perform the actions of a receptionist, which means they should be able to read and write the `address` field of the `Patient` nodes.
-To do so, the nurse can run the following query:
+Log in as `daniel` and run the following query against the `healthcare` database:
 
 [source, cypher]
 ----
@@ -818,20 +1841,23 @@ MATCH (n:Patient)
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
 
-Which returns these results:
-
+.Result
+[queryresult]
 ----
-+-------------------------------------------------------+
-| n.name          | n.ssn   | n.address | n.dateOfBirth |
-+-------------------------------------------------------+
-| "Jane Anderson" | 1234572 | NULL      | 1971-05-26    |
-| "Mark Stone"    | 1234586 | NULL      | 1972-06-07    |
-| "Joe Smith"     | 1234595 | NULL      | 1970-12-28    |
-| "Joe Jackson"   | 1234603 | NULL      | 1970-08-31    |
-| "Jane Jackson"  | 1234628 | NULL      | 1972-01-31    |
-| "Mary Anderson" | 1234632 | NULL      | 1971-01-07    |
-| "Jack Svensson" | 1234639 | NULL      | 1970-01-06    |
-+-------------------------------------------------------+
++--------------------------------------------------------+
+| n.name           | n.ssn   | n.address | n.dateOfBirth |
++--------------------------------------------------------+
+| "Mark Jackson"   | 1234578 | NULL      | 1970-11-29    |
+| "Joe Svensson"   | 1234579 | NULL      | 1972-02-12    |
+| "Bob Anderson"   | 1234597 | NULL      | 1970-04-27    |
+| "Sally Anderson" | 1234617 | NULL      | 1970-12-02    |
+| "Ally Anderson"  | 1234622 | NULL      | 1972-05-20    |
+| "Jane Svensson"  | 1234644 | NULL      | 1970-05-24    |
+| "Sally Anderson" | 1234657 | NULL      | 1972-01-23    |
++--------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 4 ms, results consumed after another 2 ms
 ----
 
 As expected, the `address` field is invisible to the nurse.
@@ -844,11 +1870,12 @@ To correct that, you can:
 * Redefine the `nurse` role with the actual intended behavior.
 
 The second option is simpler if you consider that the nurse is essentially the doctor without the `address` restrictions.
-In this case, you need to create a `nurse` role from scratch:
+In this case, you need to create a `nurse` role from scratch.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemdb]
 ----
-CREATE ROLE nurse
+CREATE ROLE nurse;
 GRANT TRAVERSE ON GRAPH healthcare TO nurse;
 GRANT READ {*} ON GRAPH healthcare TO nurse;
 GRANT WRITE ON GRAPH healthcare TO nurse;
@@ -863,7 +1890,7 @@ REVOKE ROLE receptionist FROM daniel;
 GRANT ROLE nurse TO daniel;
 ----
 
-This time, when the nurse Daniel takes another look at the patient records, they will see the `address` fields:
+This time, when the nurse Daniel logs in and runs the following query against the `healthcare` database, they will see the `address` fields:
 
 [source, cypher]
 ----
@@ -871,18 +1898,24 @@ MATCH (n:Patient)
  WHERE n.dateOfBirth < date('1972-06-12')
 RETURN n.name, n.ssn, n.address, n.dateOfBirth;
 ----
+
+.Result
+[queryresult]
 ----
-+----------------------------------------------------------------------+
-| n.name          | n.ssn   | n.address                | n.dateOfBirth |
-+----------------------------------------------------------------------+
-| "Jane Anderson" | 1234572 | "1 secret way, downtown" | 1971-05-26    |
-| "Mark Stone"    | 1234586 | "1 secret way, downtown" | 1972-06-07    |
-| "Joe Smith"     | 1234595 | "1 secret way, downtown" | 1970-12-28    |
-| "Joe Jackson"   | 1234603 | "1 secret way, downtown" | 1970-08-31    |
-| "Jane Jackson"  | 1234628 | "1 secret way, downtown" | 1972-01-31    |
-| "Mary Anderson" | 1234632 | "1 secret way, downtown" | 1971-01-07    |
-| "Jack Svensson" | 1234639 | "1 secret way, downtown" | 1970-01-06    |
-+----------------------------------------------------------------------+
++-----------------------------------------------------------------------+
+| n.name           | n.ssn   | n.address                | n.dateOfBirth |
++-----------------------------------------------------------------------+
+| "Mark Jackson"   | 1234578 | "1 secret way, downtown" | 1970-11-29    |
+| "Joe Svensson"   | 1234579 | "1 secret way, downtown" | 1972-02-12    |
+| "Bob Anderson"   | 1234597 | "1 secret way, downtown" | 1970-04-27    |
+| "Sally Anderson" | 1234617 | "1 secret way, downtown" | 1970-12-02    |
+| "Ally Anderson"  | 1234622 | "1 secret way, downtown" | 1972-05-20    |
+| "Jane Svensson"  | 1234644 | "1 secret way, downtown" | 1970-05-24    |
+| "Sally Anderson" | 1234657 | "1 secret way, downtown" | 1972-01-23    |
++-----------------------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 4 ms, results consumed after another 2 ms
 ----
 
 The other main action that the `nurse` role should be able to perform is the primary `doctor` action of saving a diagnosis to the database:
@@ -898,24 +1931,32 @@ MERGE (p)-[i:DIAGNOSIS {by: 'Daniel'}]->(d)
   ON CREATE SET i.date = today
 RETURN p.name, d.name, i.by, i.date;
 ----
+
+.Result
+[queryresult]
 ----
 +------------------------------------------------------------------+
 | p.name           | d.name                | i.by     | i.date     |
 +------------------------------------------------------------------+
-| "Sally Anderson" | "Chronic Placeboitis" | "Daniel" | 2020-05-29 |
+| "Sally Anderson" | "Chronic Placeboitis" | "Daniel" | 2025-02-14 |
 +------------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 49 ms, results consumed after another 2 ms
+Created 1 relationships, Set 2 properties
 ----
 
 Performing this action, otherwise reserved for the `doctor` role, involves more responsibility for the `nurse`.
 There might be nurses that should not be entrusted with this option, which is why you can divide the `nurse` role into _senior_ and _junior_ nurses, for example.
 Currently, Daniel is a senior nurse.
 
-=== Privileges of _junior_ `nurse`
+==== Privileges of _junior_ `nurse`
 
 Previously, creating the `nurse` role by combining the `doctor` and `receptionist` roles led to an undesired scenario as the `DENIED` privileges of the `doctor` role overrode the `GRANTED` privileges of the `receptionist`.
 In that case, the objective was to enhance the permissions of the _senior_ nurse, but when it comes to the _junior_ nurse, they should be able to perform the same actions as the _senior_, except adding diagnoses to the database.
 
-To achieve this, you can create a special role that contains specifically only the additional restrictions:
+To achieve this, you can create a special role that contains specifically only the additional restrictions.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemdb]
 ----
@@ -934,24 +1975,30 @@ If you check what privileges Daniel has now, it is the combination of the two ro
 
 [source, cypher, role=systemdb]
 ----
-neo4j@system> SHOW USER daniel PRIVILEGES AS COMMANDS;
+SHOW USER daniel PRIVILEGES AS COMMANDS;
 ----
+
+.Result
+[queryresult]
 ----
 +---------------------------------------------------------------------+
 | command                                                             |
 +---------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                            |
+| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role"                    |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                        |
+| "GRANT ACCESS ON HOME DATABASE TO $role"                            |
 | "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                         |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                        |
 | "GRANT LOAD ON ALL DATA TO $role"                                   |
-| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"              |
-| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"      |
 | "GRANT READ {*} ON GRAPH `healthcare` NODE * TO $role"              |
 | "GRANT READ {*} ON GRAPH `healthcare` RELATIONSHIP * TO $role"      |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE * TO $role"              |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP * TO $role"      |
 | "GRANT WRITE ON GRAPH `healthcare` TO $role"                        |
-| "DENY CREATE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
 +---------------------------------------------------------------------+
+
+11 rows
+ready to start consuming query after 4 ms, results consumed after another 1 ms
 ----
 
 Daniel can still see the address fields, and can even perform the diagnosis investigation that the `doctor` can perform:
@@ -962,23 +2009,29 @@ MATCH (n:Patient)-[:HAS]->(s:Symptom)-[:OF]->(d:Disease)
 WHERE n.ssn = 1234650
 RETURN n.ssn, n.name, d.name, count(s) AS score ORDER BY score DESC;
 ----
+
+.Result
+[queryresult]
 ----
 +--------------------------------------------------------+
 | n.ssn   | n.name       | d.name                | score |
 +--------------------------------------------------------+
-| 1234650 | "Mark Smith" | "Chronic Whatitis"    | 3     |
+| 1234650 | "Mark Smith" | "Chronic Argitis"     | 3     |
+| 1234650 | "Mark Smith" | "Chronic Otheritis"   | 3     |
+| 1234650 | "Mark Smith" | "Acute Placeboitis"   | 3     |
+| 1234650 | "Mark Smith" | "Chronic Yellowitis"  | 3     |
 | 1234650 | "Mark Smith" | "Chronic Someitis"    | 3     |
-| 1234650 | "Mark Smith" | "Acute Someitis"      | 2     |
-| 1234650 | "Mark Smith" | "Chronic Otheritis"   | 2     |
-| 1234650 | "Mark Smith" | "Chronic Yellowitis"  | 2     |
-| 1234650 | "Mark Smith" | "Chronic Placeboitis" | 2     |
+| 1234650 | "Mark Smith" | "Chronic Whatitis"    | 2     |
 | 1234650 | "Mark Smith" | "Acute Otheritis"     | 2     |
-| 1234650 | "Mark Smith" | "Chronic Argitis"     | 2     |
-| 1234650 | "Mark Smith" | "Acute Placeboitis"   | 2     |
-| 1234650 | "Mark Smith" | "Acute Yellowitis"    | 1     |
-| 1234650 | "Mark Smith" | "Acute Argitis"       | 1     |
+| 1234650 | "Mark Smith" | "Chronic Placeboitis" | 2     |
+| 1234650 | "Mark Smith" | "Acute Argitis"       | 2     |
+| 1234650 | "Mark Smith" | "Acute Someitis"      | 2     |
 | 1234650 | "Mark Smith" | "Acute Whatitis"      | 1     |
+| 1234650 | "Mark Smith" | "Acute Yellowitis"    | 1     |
 +--------------------------------------------------------+
+
+12 rows
+ready to start consuming query after 50 ms, results consumed after another 1 ms
 ----
 
 But when they try to save a diagnosis to the database, they will be denied that action:
@@ -994,9 +2047,14 @@ MERGE (p)-[i:DIAGNOSIS {by: 'Daniel'}]->(d)
   ON CREATE SET i.date = today
 RETURN p.name, d.name, i.by, i.date;
 ----
-[role=erroronlyqueryresult]
+
+.Result
+[queryresult]
 ----
-Create relationship with type 'DIAGNOSIS' is not allowed for user 'daniel' with roles [PUBLIC, disableDiagnoses, nurse].
++---------------------------------+
+| p.name | d.name | i.by | i.date |
++---------------------------------+
+Create relationship with type 'DIAGNOSIS' on database 'healthcare' is not allowed for user 'daniel' with roles [PUBLIC, disableDiagnoses, nurse].
 ----
 
 To promote Daniel back to senior nurse, revoke the role that introduced the restriction:
@@ -1006,13 +2064,14 @@ To promote Daniel back to senior nurse, revoke the role that introduced the rest
 REVOKE ROLE disableDiagnoses FROM daniel;
 ----
 
-=== Building a custom administrator role
+==== Building a custom administrator role
 
 The `itadmin` role was originally created by copying the built-in `admin` role and adding restrictions.
 However, there might be cases in which having `DENY`s can be less convenient than only having `GRANT`s.
 Instead, you can build the administrator role from the ground up.
 
-The IT administrator Tina is able to create new users and assign them to the product roles as an `itadmin`, but you can create a more restricted role called `userManager` and grant it only the appropriate privileges:
+The IT administrator Tina is able to create new users and assign them to the product roles as an `itadmin`, but you can create a more restricted role called `userManager` and grant it only the appropriate privileges.
+Switch to the `system` database and run the following commands:
 
 [source, cypher, role=systemdb]
 ----
@@ -1026,8 +2085,8 @@ Test the new behavior by revoking the `itadmin` role from Tina and grant them th
 
 [source, cypher, role=systemdb]
 ----
-REVOKE ROLE itadmin FROM tina
-GRANT ROLE userManager TO tina
+REVOKE ROLE itadmin FROM tina;
+GRANT ROLE userManager TO tina;
 ----
 
 These are the privileges granted to `userManager`:
@@ -1040,22 +2099,27 @@ Listing Tina's new privileges should now show a much shorter list than when they
 
 [source, cypher, role=systemdb]
 ----
-neo4j@system> SHOW USER tina PRIVILEGES AS COMMANDS;
+SHOW USER tina PRIVILEGES AS COMMANDS;
 ----
 
+.Result
+[queryresult]
 ----
 +--------------------------------------------------+
 | command                                          |
 +--------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"         |
 | "GRANT ACCESS ON DATABASE `healthcare` TO $role" |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"     |
+| "GRANT ACCESS ON HOME DATABASE TO $role"         |
 | "GRANT EXECUTE FUNCTION * ON DBMS TO $role"      |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"     |
 | "GRANT LOAD ON ALL DATA TO $role"                |
 | "GRANT ROLE MANAGEMENT ON DBMS TO $role"         |
-| "GRANT USER MANAGEMENT ON DBMS TO $role"         |
 | "GRANT SHOW PRIVILEGE ON DBMS TO $role"          |
+| "GRANT USER MANAGEMENT ON DBMS TO $role"         |
 +--------------------------------------------------+
+
+8 rows
+ready to start consuming query after 24 ms, results consumed after another 1 ms
 ----
 
 [NOTE]
@@ -1065,7 +2129,7 @@ How much power this role should have would depend on the requirements of the sys
 Refer to the section xref:authentication-authorization/built-in-roles.adoc[The `admin` role] for a complete list of privileges to consider.
 ====
 
-Now Tina should be able to create new users and assign them to roles:
+Now Tina should be able to create new users and assign them to roles (from the `system` database):
 
 [source, cypher, role=systemdb]
 ----
@@ -1074,18 +2138,33 @@ GRANT ROLE receptionist TO sally;
 SHOW USER sally PRIVILEGES AS COMMANDS;
 ----
 
+.Result
+[queryresult]
 ----
-+----------------------------------------------------------------------+
-| command                                                              |
-+----------------------------------------------------------------------+
-| "GRANT ACCESS ON HOME DATABASE TO $role"                             |
-| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                     |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                         |
-| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                          |
-| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"        |
-| "GRANT LOAD ON ALL DATA TO $role"                                    |
-| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role" |
-| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"           |
-| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"           |
-+----------------------------------------------------------------------+
+0 rows
+ready to start consuming query after 45 ms, results consumed after another 0 ms
+0 rows
+ready to start consuming query after 4 ms, results consumed after another 0 ms
++------------------------------------------------------------------------+
+| command                                                                |
++------------------------------------------------------------------------+
+| "GRANT ACCESS ON DATABASE `healthcare` TO $role"                       |
+| "GRANT ACCESS ON HOME DATABASE TO $role"                               |
+| "GRANT CREATE ON GRAPH `healthcare` NODE Patient TO $role"             |
+| "GRANT DELETE ON GRAPH `healthcare` NODE Patient TO $role"             |
+| "GRANT DELETE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role"   |
+| "GRANT DELETE ON GRAPH `healthcare` RELATIONSHIP HAS TO $role"         |
+| "GRANT EXECUTE FUNCTION * ON DBMS TO $role"                            |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"                           |
+| "GRANT LOAD ON ALL DATA TO $role"                                      |
+| "GRANT MATCH {*} ON GRAPH `healthcare` NODE Patient TO $role"          |
+| "GRANT SET PROPERTY {*} ON GRAPH `healthcare` NODE Patient TO $role"   |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE Disease TO $role"           |
+| "GRANT TRAVERSE ON GRAPH `healthcare` NODE Symptom TO $role"           |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP DIAGNOSIS TO $role" |
+| "GRANT TRAVERSE ON GRAPH `healthcare` RELATIONSHIP HAS TO $role"       |
++------------------------------------------------------------------------+
+
+15 rows
+ready to start consuming query after 3 ms, results consumed after another 0 ms
 ----
