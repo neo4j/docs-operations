@@ -68,7 +68,7 @@ These are some things you need to keep in mind when creating your input files:
 Indexes and constraints are not created during the import.
 Instead, you have to add these afterward (see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes-for-full-text-search[Cypher Manual -> Indexes]).
 
-You can use the `--schema` option to create indexes and contraints during the import process.
+You can use the `--schema` option to create and populate indexes and constraints during the import process.
 The option is available in the Enterprise Edition and works only for the block format.
 See <<indexes-constraints-import, Provide indexes and constraints during import>> for more information.
 ====
@@ -444,41 +444,6 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 --relationships import/roles_header.csv,import/roles.csv
 ----
 
-[role=label--enterprise-edition]
-[[indexes-constraints-import]]
-==== Provide indexes and constraints during import
-
-You can use the `--schema` option to create indexes/constraints during the initial import process.
-It currently only works for the block format and full import.
-
-You should have a Cypher script containing only `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
-This file uses ';' as the separator.
-
-For example:
-
-[source, cypher, role=nocopy]
-----
-CREATE INDEX PersonNameIndex FOR (i:Person) ON (i.name);
-CREATE CONSTRAINT PersonAgeConstraint FOR (c:Person) REQUIRE c.age IS :: INTEGER
-----
-
-List of supported indexes and constraints that can be created by the import tool:
-
-* RANGE
-* LOOKUP
-* POINT
-* TEXT
-* FULL-TEXT
-* VECTOR
-
-For example:
-
-[source, shell, role=noplay]
-----
-bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
-----
-
-
 [[import-tool-multiple-input-files-regex-example]]
 ==== Import data from CSV files using regular expression
 
@@ -838,7 +803,7 @@ If you need to debug the import, it might be useful to collect the stack trace.
 This is done by using the `--verbose` option.
 |import.report
 
-|--schema=<path>footnote:[The `--schema` option is available in this version but not yet supported. It will be functional in a future release.]
+|--schema=<path> label:new[Available from 2025.02]
 |Path to the file containing the Cypher commands for creating indexes and constraints during data import.
 |
 
@@ -1570,6 +1535,54 @@ bin/neo4j-admin database import --nodes import/movies-header.csv,import/movies.c
 ----
 ====
 
+[role=label--enterprise-edition]
+[[indexes-constraints-import]]
+== Provide indexes and constraints during import
+
+You can use the `--schema` option to create and populate indexes/constraints during the import process.
+It works for the block format and both full and incremental import.
+For incremental import, this functionality is available from 2025.02.
+
+You should have a Cypher script containing only `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
+This file uses ';' as the separator.
+
+For example:
+
+[source, cypher, role=nocopy]
+----
+CREATE INDEX PersonNameIndex FOR (i:Person) ON (i.name);
+CREATE CONSTRAINT PersonAgeConstraint FOR (c:Person) REQUIRE c.age IS :: INTEGER
+----
+
+List of supported indexes and constraints that can be created by the import tool:
+
+* RANGE
+* LOOKUP
+* POINT
+* TEXT
+* FULL-TEXT
+* VECTOR
+
+For example:
+
+.Create indexes and constraints during full import
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
+----
+
+.Create indexes and constraints during incremental import
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import incremental --stage=all --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
+----
+
+[NOTE]
+====
+You must stop your database, if you want to perform the incremental import within one command.
+If you cannot afford a full downtime of your database, split the operation into several stages.
+For details, see <<incremental-import-stages>>.
+====
 
 [role=label--enterprise-edition]
 [[import-tool-resume]]
