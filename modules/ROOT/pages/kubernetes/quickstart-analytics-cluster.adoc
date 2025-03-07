@@ -176,5 +176,73 @@ helm install lb neo4j/neo4j-load-balancer --set neo4j.name="analytics-cluster"
 . When deployed, copy the `EXTERNAL_IP` of the LoadBalancer service.
 For more information, see xref:kubernetes/quickstart-cluster/access-outside-k8s.adoc[Access the Neo4j cluster from outside Kubernetes].
 . In a web browser, open the Neo4j Browser at _http://EXTERNAL_IP:7474/browser_ and log in using the password you have configured in your values YAML files.
-. Run the `SHOW SERVERS` command to verify that the cluster is deployed and running.
-. Run the `SHOW DATABASES` command to verify that the standalone server is of type `primary` and the GDS servers are of type `secondary`.
+. Verify that the cluster is deployed and running:
++
+[source, cypher]
+----
+SHOW SERVERS;
+----
++
+[queryresult]
+----
++------------------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                  | state     | health      | hosting                    |
++------------------------------------------------------------------------------------------------------------------------------------------+
+| "16cd6e9c-aa5a-4737-8ed5-e0df36ce52d3" | "gds2.default.svc.cluster.local:7687"    | "Free"    | "Available" | ["system"]                 |
+| "bafbe254-a8a2-498d-9b60-6b3fd0124045" | "primary.default.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]		     |
+| "f1478d5d-1718-4430-a9b6-26fe9695ca30" | "gds1.default.svc.cluster.local:7687"    | "Free"    | "Available" | ["system"]                 |
++------------------------------------------------------------------------------------------------------------------------------------------+
+----
+The output shows that the secondary servers are in state `free` and host only the `system` database.
+
+== Enable the secondary servers to support analytic queries
+
+To support analytic queries on the secondary servers, you need to enable them and change the `neo4j` database topology to include them.
+
+. In Neo4j Browser, enable the secondary servers to support analytic queries:
++
+[source, cypher]
+----
+ENABLE SERVER "f1478d5d-1718-4430-a9b6-26fe9695ca30";
+ENABLE SERVER "16cd6e9c-aa5a-4737-8ed5-e0df36ce52d3";
+----
+. Alter the database topology to include the secondary servers:
++
+[source, cypher]
+----
+ALTER DATABASE neo4j SET TOPOLOGY 1 PRIMARY 2 SECONDARY;
+----
+. Check the status of the `neo4j` database to confirm the change:
++
+[source, cypher]
+----
+SHOW DATABASE neo4j;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name    | type       | aliases | access       | address                                  | role        | writer | requestedStatus | currentStatus | statusMessage | default | home | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "neo4j" | "standard" | []      | "read-write" | "primary.default.svc.cluster.local:7687" | "primary"   | TRUE   | "online"        | "online"      | ""            | TRUE    | TRUE | []           |
+| "neo4j" | "standard" | []      | "read-write" | "gds1.default.svc.cluster.local:7687"    | "secondary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE | []           |
+| "neo4j" | "standard" | []      | "read-write" | "gds2.default.svc.cluster.local:7687"    | "secondary" | FALSE  | "online"        | "online"      | ""            | TRUE    | TRUE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+. Check the status of all servers:
++
+[source, cypher]
+----
+SHOW SERVERS;
+----
++
+[queryresult]
+----
++------------------------------------------------------------------------------------------------------------------------------------------+
+| name                                   | address                                  | state     | health      | hosting                    |
++------------------------------------------------------------------------------------------------------------------------------------------+
+| "16cd6e9c-aa5a-4737-8ed5-e0df36ce52d3" | "gds2.default.svc.cluster.local:7687"    | "Enabled" | "Available" | ["neo4j", "system"]        |
+| "bafbe254-a8a2-498d-9b60-6b3fd0124045" | "primary.default.svc.cluster.local:7687" | "Enabled" | "Available" | ["neo4j", "system"]        |
+| "f1478d5d-1718-4430-a9b6-26fe9695ca30" | "gds1.default.svc.cluster.local:7687"    | "Enabled" | "Available" | ["neo4j", "system"]        |
++------------------------------------------------------------------------------------------------------------------------------------------+
+----
