@@ -1430,7 +1430,6 @@ The `id` property of the nodes in the `persons` group will be stored as `long` t
 == Applying changes to data via CSV files
 
 You can use CSV files to update existing nodes, relationships, labels, or properties during incremental import.
-To be able to do that, each entity in the dataset must be associated with a unique ID.
 
 [NOTE]
 ====
@@ -1451,7 +1450,7 @@ The following actions are supported:
 Deleting a node also deletes its relationships (`DETACH DELETE`).
 
 
-.Using actions in CSV files to update data
+.Using actions in CSV files to update nodes
 [source, cypher, role="nocopy"]
 ----
 :ACTION,personId:ID,name,:LABEL
@@ -1459,6 +1458,32 @@ CREATE,1,"Keanu Reeves",Actor
 UPDATE,2,"Laurence Fishburne",Actor
 DELETE,4
 ----
+
+Nodes are identified by their unique property value for the key/label combination that the header specifies.
+
+.Using actions in CSV files to update relationships
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:END_ID,:TYPE,role
+CREATE,1,2,ACTED_IN,"Neo"
+UPDATE,1,2,ACTED_IN,"Morpheus"
+DELETE,1,3,ACTED_IN
+----
+
+Relationships are identified non-uniquely by their start and end node IDs, and their type.
+
+To further narrow down selection you can tag a property column as an identifier to help out in selecting relationships uniquely (or at least more uniquely).
+
+.Using actions in CSV files to update relationships with identifier properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:TYPE,:END_ID,p1{identifier:true},name,p4
+U,1,KNOWS,2,abc,"Keanu Reeves","Hello Morpheus"
+U,1,KNOWS,2,def,"Laurence Fishburne","Hello Neo"
+----
+
+The data in the `p1` column for these relationships acts "more uniquely" selecting relationships, if multiple of `1,KNOWS,2` exist.
+Identifier properties will match the selected relationships and as such not be set on the relationships (they already have it).
 
 === Update existing labels
 
@@ -1480,7 +1505,6 @@ person3,Actor,Person,"Carrie-Anne Moss",53
 ----
 
 In this case, all labels in the second column are added and all the labels in the third column are removed (if they exist).
-The nodes are identified by their `:ID`.
 
 === Remove existing properties
 
@@ -1495,7 +1519,7 @@ For example:
 person1,Actor,55,New York
 ----
 
-Properties `age` and `hometown` are removed from the node with the `:ID` `person1`.
+Properties `age` and `hometown` are removed from the node with the `:ID` `person1` and label `Actor`.
 
 .Remove relationships' properties
 [source, cypher, role="nocopy"]
