@@ -53,7 +53,8 @@ DRIVER {
   connection_pool_idle_test: duration({minutes: 2}),
   connection_pool_max_size: 10,
   logging_level: 'info'
-};
+}
+DEFAULT LANGUAGE CYPHER 25;
 ----
 ////
 
@@ -105,6 +106,11 @@ If a user has not been granted the `ACCESS` privilege to the target database and
 The driver options for connection to the remote database or `null` if the target database is local.
 List of xref::database-administration/aliases/manage-aliases-standard-databases.adoc#alias-management-create-remote-database-alias-driver-settings[driver settings] allowed for remote database aliases.
 | MAP
+
+| defaultLanguage
+|
+The default language for non-constituent remote database aliases or `null` if it is a constituent or local database alias.
+| STRING
 
 | properties
 | Any properties set on the database alias.
@@ -169,13 +175,13 @@ SHOW ALIASES FOR DATABASE YIELD *
 .Result
 [role="queryresult"]
 ----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name              | composite | database  | location | url                       | user    | driver                                                                                                                                                                                                         | properties                |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "films"           | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
-| "motion pictures" | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {namecontainsspace: TRUE} |
-| "movie scripts"   | NULL      | "scripts" | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | {}                        |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name              | composite | database  | location | url                       | user    | driver                                                                                                                                                                                                         | defaultLanguage | properties                |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "films"           | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | NULL            | {}                        |
+| "motion pictures" | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | NULL            | {namecontainsspace: TRUE} |
+| "movie scripts"   | NULL      | "scripts" | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | "CYPHER 25"     | {}                        |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 === Show `count` of aliases for a database
@@ -359,8 +365,7 @@ A database alias can target a remote database by providing an URL and the creden
 See xref:database-administration/aliases/remote-database-alias-configuration.adoc[] for the necessary configurations.
 
 Since remote database aliases target databases that are not in this DBMS, they do not fetch the default language from their target like the local database aliases.
-Instead, remote database aliases are assigned the default language given by xref:configuration/configuration-settings.adoc#config_db.query.default_language[`db.query.default_language`] on creation.
-There is currently no command to set it explicitly nor change it on existing remote database aliases.
+Instead, remote database aliases can be given a default language on creation, or they are assigned the default language given by xref:configuration/configuration-settings.adoc#config_db.query.default_language[`db.query.default_language`].
 
 As with local database aliases, creating remote database aliases allows `IF NOT EXISTS` and `OR REPLACE` clauses.
 Both check for any remote or local database aliases.
@@ -445,6 +450,37 @@ SHOW ALIAS `remote-with-driver-settings` FOR DATABASE YIELD *
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+==== Set default language for remote database aliases
+The default language for the remote database alias can be set using the `DEFAULT LANGUAGE` clause of `CREATE ALIAS` and `ALTER ALIAS` commands.
+For example, the following query creates a remote database alias with the default language `CYPHER 25`:
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `remote-with-default-language` FOR DATABASE `northwind-graph-2020`
+AT "neo4j+s://location:7687"
+USER alice
+PASSWORD 'example_secret'
+DEFAULT LANGUAGE CYPHER 25
+----
+
+When a database alias targeting a remote database has been created, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+
+.Query
+[source, cypher]
+----
+SHOW ALIAS `remote-with-default-language` FOR DATABASE YIELD name, defaultLanguage
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------+
+| name                           | defaultLanguage |
++--------------------------------------------------+
+| "remote-with-default-language" | "CYPHER 25"     |
++--------------------------------------------------+
+----
 
 ==== Set properties for remote database aliases
 
@@ -482,7 +518,7 @@ SHOW ALIAS `remote-northwind-2021` FOR DATABASE YIELD name, properties
 == Alter database aliases
 
 
-Database aliases can be altered using `ALTER ALIAS` to change its database target, properties, URL, user credentials, or driver settings.
+Database aliases can be altered using `ALTER ALIAS` to change its database target, properties, URL, user credentials, default language, or driver settings.
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
 Only the clauses used will be altered.
 
@@ -564,6 +600,17 @@ Example of altering a remote database alias to remove all custom driver settings
 ----
 ALTER ALIAS `movie scripts` SET DATABASE
 DRIVER {}
+----
+
+=== Alter default language for remote database aliases
+
+Example of altering a remote database alias default language.
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `remote-with-default-language` SET DATABASE
+DEFAULT LANGUAGE CYPHER 5
 ----
 
 === Alter properties for local and remote database aliases
