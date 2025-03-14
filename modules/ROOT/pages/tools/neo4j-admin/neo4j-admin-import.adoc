@@ -607,12 +607,15 @@ For more information, see <<import-tool-header-format>>.
 ====
 * New relationships between existing or new nodes.
 
-The incremental import command cannot be used to:
+Starting from 2025.01, the incremental import command can also be used for:
 
-* Add new properties to existing nodes or relationships.
-* Update or delete properties in nodes or relationships.
-* Update or delete labels in nodes.
-* Delete existing nodes and relationships.
+* Adding new properties to existing nodes or relationships.
+* Updating or deleting properties in nodes or relationships.
+* Updating or deleting labels in nodes.
+* Deleting existing nodes and relationships.
+
+This is supported only by `block` format.
+See <<#_applying_changes_to_data_via_csv_files>> for more information.
 
 === Parameters
 
@@ -1409,6 +1412,124 @@ neo4j_home$ --nodes persons.csv --nodes games.csv --id-type string
 The `id` property of the nodes in the `persons` group will be stored as `long` type, while the `id` property of the nodes in the `games` group will be stored as `string` type, as the global `id-type` is a string.
 ====
 
+[role=label--new-2025.01.0]
+== Applying changes to data via CSV files
+
+You can use CSV files to update existing nodes, relationships, labels, or properties during incremental import.
+
+[NOTE]
+====
+This feature is supported only by `block` format.
+====
+
+=== Set an explicit action for each row
+
+You can set an explicit action for each row in the CSV file by using the `:ACTION` keyword in the header file.
+If no action is specified, the import tool works as in full import mode, creating new data.
+
+The following actions are supported:
+
+* `empty` = `CREATE` (default)
+* `C`, `CREATE` - Creates new nodes and relationships, with or without properties, as well as labels.
+* `U`, `UPDATE` - Updates existing nodes, relationships, labels, and properties.
+* `D`, `DELETE` - Deletes existing nodes or relationships.
+Deleting a node also deletes its relationships (`DETACH DELETE`).
+
+
+.Using actions in CSV files to update nodes
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),name,:LABEL
+CREATE,person1,"Keanu Reeves",Actor
+UPDATE,person2,"Laurence Fishburne",Actor
+DELETE,person4,, 
+----
+
+Nodes are identified by their unique property value for the key/label combination that the header specifies.
+
+.Using actions in CSV files to update relationships
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:END_ID,:TYPE,role
+CREATE,person1,movie1,ACTED_IN,"Neo"
+UPDATE,person2,movie1,ACTED_IN,"Morpheus"
+DELETE,person3,movie1,ACTED_IN
+----
+
+Relationships are identified non-uniquely by their start and end node IDs, and their type.
+
+To further narrow down selection you can tag a property column as an identifier to help out in selecting relationships uniquely (or at least more uniquely).
+
+.Using actions in CSV files to update relationships with identifier properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:TYPE,:END_ID,p1{identifier:true},name,p4
+U,person1,KNOWS,person2,abc,"Keanu Reeves","Hello Morpheus"
+U,person2,KNOWS,person1,def,"Laurence Fishburne","Hello Neo"
+----
+
+The data in the `p1` column for these relationships helps select relationships "more uniquely" if a multiple of `1,KNOWS,2` exists.
+There can also be multiple identifier properties defined in the header. 
+Identifier properties match the selected relationships and will not be set on the relationships that already have them.
+
+=== Update existing labels
+
+You can add or remove one or more labels from an existing node by prepending the clause `LABEL` in the header with a `+` (default) or `-`:
+
+* `:+LABEL` - Add one or more labels to an existing node.
+* `:-LABEL` - Remove one or more labels (if they exist) from an existing node.
+
+
+For example, a file could have the following format:
+
+[source, csv]
+----
+uid:ID(label:Person),:+LABEL,:-LABEL,name,age
+person1,Actor,Producer,"Keanu Reeves",55
+person2,Actor;Director,,"Laurence Fishburne",60
+----
+
+In this case, all labels in the second column are added and all the labels in the third column are removed (if they exist).
+
+=== Remove existing properties
+
+You can remove properties from existing nodes or relationships by a `:-PROPERTY` column in the header.
+In the contents of this field you can add zero or more property names to remove from the entity.
+For example:
+
+.Remove nodes' properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),:-PROPERTY
+U,person1,age;hometown
+----
+
+Properties `age` and `hometown` are removed from the node with the `uid:ID` `person1`.
+
+.Remove relationships' properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:END_ID,:TYPE,:-PROPERTY
+U,person1,movie1,ACTED_IN,role;description
+----
+
+Properties `role` and `description` are removed from the relationship with the `:START_ID` `person1`, `:END_ID` `movie1`, and `:TYPE` `ACTED_IN`.
+
+.Using actions in CSV files to update labels and properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),:LABEL,:-LABEL,:-PROPERTY,name,height:int
+U,person1,Actor,Producer,age;hometown,Henry",185
+----
+
+One CSV entry can specify all types of updates to one entity at the same time.
+In this example, the node `person1` is updated with:
+
+* added `Actor` label
+* removed `Producer` label
+* removed `age` and `hometown` properties
+* set `name="Henry"` property
+* set `height=185` property
 
 == Importing data that spans multiple lines
 
