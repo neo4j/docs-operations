@@ -47,32 +47,48 @@ Thus, changing the username claim from `sub` is not recommended.
 
 == Okta
 
+The following examples show how to configure Okta for authentication and authorization using access tokens and ID tokens.
+For more information, see the https://developer.okta.com/docs/guides/customize-tokens-groups-claim/main/[Okta official documentation].
+
 === Access token
 
 This example shows how to configure Okta for authentication and authorization using access tokens.
 
+==== Configure the client
+
+. From the right-hand side of the Okta dashboard, navigate to *Applications* and click *Create App Integration*.
+. Select *OIDC - OpenID Connect* for Sign-in method and *Single-Page Application* for Application type.
+. Click *Next*.
 . Configure the client with the appropriate redirect URI.
-You can skip the group assignments in this step:
-+
-image::sso-configuration-tutorials/oidc-okta-client-creation.png[title="Okta OIDC client creation"]
-+
-image::sso-configuration-tutorials/oidc-okta-client-config-a.png[title="Okta OIDC client configuration"]
+.. Add a name for the app integration.
+.. Add the *Sign-in redirect URIs*, for example, `http://localhost:7474/browser/?idp_id=okta&auth_flow_step=redirect_uri`.
+This URI will accept returned token responses after successful authentication.
+. Add the *Sign-out redirect URIs*, for example, `http://localhost:7474/browser/`.
+. In the *Assignments* section, select *Skip group assignment* for now.
+. Click *Save*.
+. Take note of the Client ID.
+You will need it later when configuring the Okta parameters and the Well-known OpenID Connect endpoint in the _neo4j.conf_ file:
 
-. Take note of the Client ID and the Okta domain.
-You will need them later when configuring the Okta parameters and the Well-known OpenID Connect endpoint in the _neo4j.conf_ file:
-+
-image::sso-configuration-tutorials/oidc-okta-client-config-b.png[title="Okta OIDC client configuration"]
+==== Assign Okta groups to the application
 
-. Create groups in Okta, assign users to them (the user can be added to a group either on user creation or editing the group), and map them in the `neo4j.conf` to native groups:
-+
-image::sso-configuration-tutorials/oidc-okta-server-groups.png[title="Okta OIDC server groups"]
+. From the right-hand side of the Okta dashboard, navigate to *Dashboard -> Directory -> Groups*, and click *Add Group*.
+. Add a name for the group, for example, `engineers`, and click *Save*.
+. Click the group you just created and then click *Assign people*.
+. Add users to the group.
+Users can be added to a group either on user creation or by editing the group.
+. Assign the group to an application.
+.. Click *Applications* and then *Assign Applications*.
+.. Select the application you created earlier and click *Assign*.
 
-. Configure the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in access tokens:
-+
-image::sso-configuration-tutorials/oidc-okta-authz-server.png[title="Okta OIDC authorization server"]
-+
-image::sso-configuration-tutorials/oidc-okta-server-claims.png[title="Okta OIDC server claims"]
-+
+==== Configure the default authorization server
+
+. From the right-hand side of the Okta dashboard, navigate to *Security -> API*.
+. Click the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in access tokens:
+.. On the *Claims* tab, click *Add Claim*.
+.. Add a claim with the name `groups` and the value `Groups`, and click *Create*.
+
+==== Configure Neo4j
+
 . Configure Neo4j to use Okta authentication by configuring the following settings in the _neo4j.conf_ file:
 +
 [source, properties]
@@ -103,8 +119,14 @@ image::sso-configuration-tutorials/oidc-okta-successful-login.png[title="Okta OI
 
 This example shows how to configure Okta for authentication and authorization using ID tokens.
 
-. Follow the first two steps from the instructions for xref:#_access_token[Access token].
-
+. Follow the same steps as for the access token configuration to configure the client and assign Okta groups to the application.
+. Configure the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in ID tokens:
+.. On the *Claims* tab, click *Add Claim*.
+.. Add a claim with the name `groups`.
+.. From the *Include in token type* dropdown, select *ID Token*.
+.. From the *Value type* dropdown, select *Groups*.
+.. From the Filter dropdown, select *Matches regex* and the value `.*`.
+.. Click *Create*.
 . Create the claims as indicated:
 +
 image::sso-configuration-tutorials/okta-claims.svg[title="Okta claim creation panel"]
@@ -115,7 +137,7 @@ In the case of access tokens, a default sub is already provided automatically.
 However, for ID tokens, the name you give to your claim needs to be also indicated in the configuration `dbms.security.oidc.okta.claims.username=userid`.
 ====
 +
-. Configure the default authorization server (the one that shows api://default as audience) as indicated:
+. Configure the default authorization server (the one that shows _api://default as audience_) as indicated:
 +
 [source, properties]
 ----
@@ -155,6 +177,16 @@ See xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-provide
 
 
 == Microsoft Entra ID (formerly Azure Active Directory)
+
+=== Register the application
+
+. Log in to the https://portal.azure.com/#home[Azure portal].
+. Navigate to *Microsoft Entra ID > Overview*.
+. From the *Add* dropdown menu, select *App registration* and fill in the following information to create your SSO application:
++
+image::sso-configuration-tutorials/oidc-azure-client-creation.png[title="Entra OIDC client creation"]
+The redirect URI `http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri` is the URI that will accept returned token responses after successful authentication.
+. Click *Register*.
 
 === Access token
 
@@ -210,17 +242,6 @@ The audience parameter for access tokens is typically set with `api://` at the f
 === ID token
 
 This example shows how to configure Entra ID for authentication and authorization using ID tokens.
-
-==== Register the application
-
-. Log in to the https://portal.azure.com/#home[Azure portal].
-. Navigate to *Microsoft Entra ID > Overview*.
-. From the *Add* dropdown menu, select *App registration* and fill in the following information to create your SSO application:
-+
-image::sso-configuration-tutorials/oidc-azure-client-creation.png[title="Entra OIDC client creation"]
-The redirect URI `http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri` is the URI that will accept returned token responses after successful authentication.
-. Click *Register*.
-
 
 ==== Configure Neo4j
 . After the successful app creation, on the app's *Overview* page, find the Application (client) ID value. Use it to configure the following properties in the _neo4j.conf_ file.
