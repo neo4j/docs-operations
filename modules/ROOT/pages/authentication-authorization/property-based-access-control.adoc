@@ -1,4 +1,4 @@
-:description: How to use Cypher to manage property-based access control on graphs.
+:description: How to use Cypher to manage property-based access control on a graph.
 
 ////
 [source, cypher, role=test-setup]
@@ -8,27 +8,11 @@ CREATE ROLE regularUsers;
 ////
 
 :page-role: enterprise-edition aura-db-business-critical aura-db-dedicated
+
 [[property-based-access-control]]
 = Property-based access control
 
-It is possible to create read privileges that are based on properties of nodes.
-Each property-based privilege can only be restricted by a single property.
-To specify the property/value conditions of the read privilege the `pattern` syntax described below is used,
-for more information about read privilege syntax see xref:authentication-authorization/privileges-reads.adoc[read privilege] page.
-
-Adding property-based access control may lead to a significant performance overhead in certain scenarios.
-See xref:authentication-authorization/limitations.adoc#property-based-access-control-limitations[Limitations] for more detailed information.
-To reduce the performance impact, it is recommended to use the Block Storage format as it is better optimized for the kind of read required for the resolution of property-based privileges.
-
-Some of the factors that can worsen the impact on performance when having property rules are:
-
-* The number of properties on the nodes concerned (more properties = greater performance impact)
-* The number of property-based privileges (more property-based privileges = greater performance impact).
-* The type of the privilege: `TRAVERSE` property-based privileges have a greater performance impact than `READ` property-based privileges.
-* The type of storage medium in operation. The performance impact of property-based privileges will be considerably amplified by accessing disc storage.
-
-For performance-critical scenarios, it is recommended to design privileges based on labels.
-For more information, see xref:authentication-authorization/privileges-reads.adoc[Read privileges].
+In Neo4j, you can grant read privileges based on properties of nodes.
 
 [IMPORTANT]
 ====
@@ -36,90 +20,141 @@ When using property-based access control, ensure the property used for the rule 
 Users who can change this property can affect the granted property-based privileges.
 ====
 
-Pattern syntax:
+
+== Syntax
+
+For information about read privileges and syntax, see xref:authentication-authorization/privileges-reads.adoc[Read privileges].
+
+To specify the property/value conditions of the read privilege, you can use the following `pattern` syntax:
+
 [source, syntax, role="noheader"]
 ----
 ([var][:label["|" ...]] "{" property: value "}")
 | (var[:label["|" ...]]) WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
 | (var[:label["|" ...]] WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } )
 ----
-[NOTE]
-====
-For more details about the syntax descriptions, see xref:database-administration/syntax.adoc[Cypher syntax for administration commands].
-====
-[NOTE]
-====
-The role does not need to have `READ` privilege for the property used by the property-based privilege.
-====
-You can use this pattern syntax for defining read privileges as follows:
+
+
+== Performance considerations
+
+Adding property-based access control may lead to a significant performance overhead in certain scenarios.
+See xref:authentication-authorization/limitations.adoc#property-based-access-control-limitations[Limitations] for more detailed information.
+
+When having property rules, the following factors can worsen the impact on performance:
+
+* The number of properties on the nodes concerned (more properties = greater performance impact).
+* The number of property-based privileges (more property-based privileges = greater performance impact).
+* The type of the privilege: `TRAVERSE` property-based privileges have greater performance impact than `READ` property-based privileges.
+* The type of storage medium in operation. The impact of the property-based privileges on performance is considerably amplified by accessing disc storage.
+
+To reduce the performance impact, it is recommended to use the `block` storage format as it is better optimized for the kind of read required for the resolution of property-based privileges.
+
+For performance-critical scenarios, it is recommended to design privileges based on labels.
+
+
+== Examples
+
+You can use the following syntax for defining a property-based privilege:
 
 [source, syntax, role="noheader"]
 ----
-GRANT ... ON GRAPH ... FOR pattern TO ...
+GRANT privilege-name ON GRAPH graph-name FOR pattern TO role-name
 ----
 
+[NOTE]
+====
+The user role does not need to have `READ` privilege for the property used by the property-based privilege.
+====
 
-.Granting permission to `READ` the `address` property on `Email` or `Website` nodes with domain `exampledomain.com` to role `regularUsers`:
+=== Grant a property-based privilege on a specific property using its value
+
+The following code shows how to grant permission to `READ` the `address` property on `Email` or `Website` nodes with domain `exampledomain.com` to role `regularUsers`.
+
 [source, syntax, role="noheader"]
 ----
 GRANT READ { address } ON GRAPH * FOR (n:Email|Website) WHERE n.domain = 'exampledomain.com' TO regularUsers
 ----
+
 Alternatively, you can use the following syntax:
+
 [source, syntax, role="noheader"]
 ----
 GRANT READ { address } ON GRAPH * FOR (:Email|Website {domain: 'exampledomain.com'}) TO regularUsers
 ----
 
 
-.Granting permission to `TRAVERSE` nodes with label `Email` where property `classification` is `NULL` to role `regularUsers`:
+=== Grant a property-based privilege using `NULL`
+
+If you want to grant permission to `TRAVERSE` nodes with label `Email` where property `classification` is `NULL` to role `regularUsers`, use the following command:
+
 [source, syntax, role="noheader"]
 ----
 GRANT TRAVERSE ON GRAPH * FOR (n:Email) WHERE n.classification IS NULL TO regularUsers
 ----
 
-.Denying permission to `READ` and `TRAVERSE` nodes where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`:
+=== Deny a property-based privilege using a comparison operator
+
+To deny permission to `READ` and `TRAVERSE` nodes where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`, use the code below:
+
 [source, syntax, role="noheader"]
 ----
 DENY MATCH {*} ON GRAPH * FOR (n) WHERE n.classification <> 'UNCLASSIFIED' TO regularUsers
 ----
 
-.Granting permission to `READ` all properties on nodes where the property `securityLevel` is higher than `3` to role `regularUsers`:
+=== Grant a property-based privilege on all properties using a property value
+
+Imagine you need to grant permission to `READ` all properties on nodes where the property `securityLevel` is higher than `3` to role `regularUsers`.
+The following example shows how to do that.
+
 [source, syntax, role="noheader"]
 ----
 GRANT READ {*} ON GRAPH * FOR (n) WHERE n.securityLevel > 3 TO regularUsers
 ----
+
 [NOTE]
 ====
 The role `regularUsers` does not need to have `READ` privilege for the property `securityLevel` used by the property-based privilege.
 ====
 
-.Denying permission to `READ` all properties on nodes where the property `classification` is not included in the list of `[UNCLASSIFIED, PUBLIC]`
+=== Deny a property-based privilege using a list of values
+
+The following code shows how to deny permission to `READ` all properties on nodes where the property `classification` is not included in the list of `[UNCLASSIFIED, PUBLIC]`.
+
 [source, syntax, role="noheader"]
 ----
 DENY READ {*} ON GRAPH * FOR (n) WHERE NOT n.classification IN ['UNCLASSIFIED', 'PUBLIC'] TO regularUsers
 ----
 
-.Granting permission to `READ` all properties on nodes where the property `createdAt` is later than the current date to role `regularUsers`:
+// The last two examples were added in 5.26.
+
+=== Grant a property-based privilege using temporal value
+
+Granting permission to `READ` all properties on nodes where the property `createdAt` is later than the current date
+
 [source, syntax, role="noheader"]
 ----
 GRANT READ {*} ON GRAPH * FOR (n) WHERE n.createdAt > date() TO regularUsers
 ----
+
 [NOTE]
 ====
 The `date()` function is evaluated, and the value used to evaluate the privilege is the date when the property-based privilege is created.
 Keep this in mind when designing your property rules, and use the `SHOW PRIVILEGES AS COMMANDS` command to check the stored value.
 This is essential when revoking property-based privileges containing evaluated function values like `date()`.
 ====
+
 [NOTE]
 ====
 Not all temporal values are comparable, see link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/operators/#cypher-ordering[Cypher Manual -> Syntax -> Operators -> Ordering and comparison of values].
 ====
 
-.Show the privilege created by the command in the previous example as a revoke command:
+Show the privilege created by the command in the previous example as a revoke command
+
 [source, syntax, role="noheader"]
 ----
 SHOW ROLE regularUsers PRIVILEGES AS REVOKE COMMANDS
 ----
+
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
@@ -127,3 +162,4 @@ SHOW ROLE regularUsers PRIVILEGES AS REVOKE COMMANDS
 |"REVOKE GRANT READ {*} ON GRAPH * FOR (n) WHERE n.createdAt > date('2024-10-25') FROM `regularUsers`"
 a|Rows: 1
 |===
+
