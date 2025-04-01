@@ -1,0 +1,215 @@
+:description: This chapter describes the `report` command of Neo4j Admin.
+:page-aliases: tools/neo4j-admin-report.adoc
+[[neo4j-admin-report]]
+= Generate a report about the system
+
+//Check Mark
+:check-mark: icon:check[]
+
+The `neo4j-admin server report` command collects information about the Neo4j deployment and saves it to an archive (ZIP/TAR) for remote assessments.
+
+== Syntax
+
+The `neo4j-admin server report` command has the following syntax:
+
+[source,role=noheader]
+----
+neo4j-admin server report [-h]
+                          [--expand-commands] [--list] [--verbose]
+                          [--ignore-disk-space-check[=true|false]]
+                          [--additional-config=<file>] [--database=<database>]
+                          [--to-path=<path>] [<classifier>...] [COMMAND]
+----
+
+=== Description
+
+The command collects information about the system and packages everything in an archive.
+If you specify `all`, everything is included.
+You can also finetune the selection by passing classifiers to the tool, e.g `logs tx threads`.
+
+The Neo4j Admin report tool allows you to choose the databases for which you want to include database-specific information.
+You can generate a report covering all databases in the DBMS, a specific database, or databases that match a specified pattern.
+For example, if you run the command `neo4j-admin server report --database=ne*`, a report will be generated for all databases that start with "ne".
+If not specified, the tool generates a report for all databases in the DBMS.
+
+[NOTE]
+====
+The `--database` option determines from which database(s) the database-level information is collected.
+It does not influence the DBMS-level information, which is gathered based on the specified classifiers.
+====
+
+This tool does not send any information automatically.
+To share this information with the Neo4j Support organization, you have to send it manually.
+
+=== Parameters
+
+.`neo4j-admin server report` parameters
+[options="header", cols="1m,3m"]
+|===
+| Parameter
+| Default
+
+|[<classifier>...]
+|[config, logs, metrics, plugins, ps, sysprop, threads, tree, version]
+|===
+
+[[classifiers]]
+.Classifiers
+[options="header", cols="<1m,^1a,<4a"]
+|===
+| Classifier
+| Online
+| Description
+
+| all
+|
+| Include all of the available classifiers.
+
+| ccstate
+|
+| Include the current cluster state.
+
+| config
+|
+| Include Neo4j configuration files.
+
+| heap
+| {check-mark}
+| Include a heap dump.
+
+| logs
+|
+| Include log files, e.g., _debug.log_, _neo4j.log_, etc.
+
+| metrics
+|
+| Include the collected metrics.
+
+| plugins
+|
+| Include a text view of the plugin directory (no files are collected).
+
+| ps
+|
+| Include a list of running processes.
+
+| raft
+|
+| Include the raft log.
+
+| sysprop
+| {check-mark}
+| Include a list of Java system properties.
+
+| threads
+| {check-mark}
+| Include a thread dump of the running instance.
+
+| tree
+|
+| Include a text view of the folder structure of the data directory (no files are collected).
+
+| tx
+|
+| Include transaction logs.
+|===
+
+The classifiers marked as _Online_ work only when you have a running Neo4j instance that the tool can find.
+
+If no classifiers are specified, the following classifiers are used: `logs`, `config`, `plugins`, `tree`, `metrics`, `threads`, `sysprop`, `ps`, and `version`.
+
+The reporting tool does not read any data from your database.
+However, the heap, the raft logs, and the transaction logs may contain data.
+Additionally, even though the standard _neo4j.conf_ file does not contain password information, for specific configurations, it may have this type of information.
+Therefore, be aware of your organization's data security rules before using the classifiers `heap`, `tx`, `raft`, and `config`.
+
+=== Options
+
+The `neo4j-admin server report` command has the following options:
+
+.`neo4j-admin server report` options
+[options="header", cols="5m,6a,2m"]
+|===
+| Option
+| Description
+| Default
+
+|--additional-config=<file>footnote:[See xref:neo4j-admin-neo4j-cli.adoc[]#_configuration[Tools -> Configuration] for details.]
+|Configuration file with additional configuration.
+|
+
+|--database=<database>
+|Name of the database to report for. Can contain * and ? for globbing. Note that * and ? have special meaning in some shells and might need to be escaped or used with quotes.
+|*
+
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
+
+|-h, --help
+|Show this help message and exit.
+|
+
+|--ignore-disk-space-check[=true\|false]
+|Ignore disk full warning.
+|false
+
+
+|--list
+|List all available classifiers.
+|
+
+|--to-path=<path>
+|Destination directory for reports. Defaults to a system tmp directory.
+|
+
+|--verbose
+|Enable verbose output.
+|
+|===
+
+By default, the tool tries to estimate the final size of the report and uses that to assert that there is enough disk space available for it.
+If there is not enough available space, the tool aborts.
+However, this estimation is pessimistic and does not consider compression.
+Therefore, if you are confident that you do have enough disk space, you can disable this check with the option `--ignore-disk-space-check`.
+
+== Examples
+
+[NOTE]
+====
+This tool uses the https://docs.oracle.com/javase/8/docs/technotes/guides/attach/index.html[Java Attach API] to gather data from a running Neo4j instance.
+Therefore, it requires the Java JDK to run properly.
+====
+
+.Invoke `neo4j-admin server report` using the default classifiers
+====
+
+The following command gathers information about the Neo4j instance using the default classifiers and saves it to the default location:
+
+[source, shell]
+----
+bin/neo4j-admin server report
+----
+====
+
+.Invoke `neo4j-admin server report` using all classifiers
+====
+
+The following command gathers information about the Neo4j instance using all classifiers and saves it to a specified location:
+
+[source, shell]
+----
+bin/neo4j-admin server report --to-path=./report all
+----
+====
+
+.Invoke `neo4j-admin server report` to gather only logs and thread dumps
+====
+
+The following command gathers only logs and thread dumps from the running Neo4j instance and saves it to a specified location:
+
+[source, shell]
+----
+bin/neo4j-admin server report --to-path=./report threads logs
+----
+====

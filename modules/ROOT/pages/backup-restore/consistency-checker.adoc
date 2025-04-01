@@ -1,0 +1,259 @@
+:description: Describes the Neo4j consistency checker.
+[[consistency-checker]]
+= Check database consistency
+
+You can use the `neo4j-admin database check` command to check the consistency of a database, a dump, or a backup.
+The `neo4j-admin` tool is located in the _/bin_ directory.
+
+== Syntax
+
+The `neo4j-admin database check` command has the following syntax:
+
+[source,role=noheader]
+----
+neo4j-admin database check [-h] [--expand-commands] [--force] [--verbose]
+                           [--check-counts[=true|false]] [--check-graph[=true|false]]
+                           [--check-indexes[=true|false]] [--check-property-owners[=true|false]]
+                           [--additional-config=<file>] [--max-off-heap-memory=<size>]
+                           [--report-path=<path>] [--threads=<number of threads>]
+                           [[--from-path-data=<path> --from-path-txn=<path>] | [--from-path=<path> [--temp-path=<path>]]]
+                           <database>
+----
+
+=== Description
+
+This command allows for checking the consistency of a database, a dump, or a backup.
+It cannot be used with a database that is currently in use.
+
+Some checks can be quite expensive, so it may be useful to turn some of them off for very large databases.
+Increasing the heap size might be a good idea.
+
+[NOTE]
+====
+It is not recommended to use an NFS to check the consistency of a database, a dump, or a backup as this slows the process down significantly.
+====
+
+=== Parameters
+
+.`neo4j-admin database check` parameters
+[options="header", cols="1m,3a"]
+|===
+| Parameter
+| Description
+
+|<database>
+|Name of the database to check.
+|===
+
+=== Options
+
+The `neo4j-admin database check` command has the following options:
+
+.`neo4j-admin database check` options
+[options="header", cols="5m,6a,4m"]
+|===
+| Option
+| Description
+| Default
+
+| --verbose
+| Enable verbose output.
+|
+
+|-h, --help
+|Show this help message and exit.
+|
+
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
+
+|--additional-config=<file>footnote:[See xref:neo4j-admin-neo4j-cli.adoc[]#_configuration[Tools -> Configuration] for details.]
+| Configuration file with additional configuration.
+|
+
+|--force
+| Force a consistency check to be run, despite resources, and may run a more thorough check.
+|
+
+|--check-indexes[=true\|false]
+|Perform consistency checks on indexes.
+|true
+
+|--check-graph[=true\|false]
+|Perform consistency checks between nodes, relationships, properties, types, and tokens.
+|true
+
+|--check-counts[=true\|false]
+| Perform consistency checks on the counts. Requires <check-graph>, and may implicitly enable <check-graph> if it were not explicitly disabled.
+|<check-graph>
+
+| --check-property-owners[=true\|false]
+| Perform consistency checks on the ownership of properties. Requires <check-graph>, and may implicitly enable <check-graph> if it were not explicitly disabled.
+|false
+
+| --report-path=<path>
+| Path to where a consistency report will be written. Interpreted as a directory, unless it has an extension of `.report`.
+| .
+
+|--max-off-heap-memory=<size>
+| Maximum memory that `neo4j-admin` can use for page cache and various caching data structures to improve performance.
+Value can be plain numbers, like `10000000` or e.g. `20G` for 20 gigabytes, or even e.g. `70%`, which will amount to 70% of currently free memory on the machine.
+|90%
+
+|--threads=<number of threads>
+|Number of threads used to check the consistency.
+|The number of CPUs on the machine.
+
+|--from-path-data=<path>
+|Path to the databases directory, containing the database directory to source from.
+| xref:configuration/configuration-settings.adoc#config_server.directories.data, [`server.directories.data`]/databases
+
+|--from-path-txn=<path>
+|Path to the transactions directory, containing the transaction directory for the database to source from.
+| xref:configuration/configuration-settings.adoc#config_server.directories.transaction.logs.root[`server.directories.transaction.logs.root`]
+
+|--from-path=<path>
+|Path to the directory containing dump/backup artifacts that need to be checked for consistency. If the directory contains multiple backups, it will select the most recent backup chain, based on the transaction IDs found, to perform the consistency check.
+|
+
+|--temp-path=<path>
+|Path to directory to be used as a staging area to extract dump/backup artifacts, if needed.
+|<from-path>
+|===
+
+[NOTE]
+====
+The `--from-path=<path>` option can also check database artifacts in AWS S3 buckets and Google Cloud storage buckets.
+For more information, see <<check-database-from-cloud-uris>>.
+====
+
+== Output
+
+If the consistency checker does not find errors, it exits cleanly and does not produce a report.
+If the consistency checker finds errors, it exits with an exit code other than `0` and writes a report file with a name in the format `inconsistencies-YYYY-MM-DD.HH24.MI.SS.report`.
+The location of the report file is the current working directory, or as specified by the parameter `report-path`.
+
+== Examples
+
+The following are examples of how to check the consistency of a database, a dump, or a backup.
+
+[NOTE]
+====
+`neo4j-admin database check` cannot be applied to xref:database-administration/composite-databases/concepts.adoc[Composite databases].
+ It must be run directly on the databases that are associated with that Composite database.
+====
+
+=== Check the consistency of a local database
+
+Note that the database must be stopped first.
+
+[source,shell]
+----
+bin/neo4j-admin database check neo4j
+----
+
+The output will look similar to the following:
+
+[source,shell]
+----
+Running consistency check with max off-heap:618.6MiB
+  Store size:160.0KiB
+  Allocated page cache:160.0KiB
+  Off-heap memory for caching:618.5MiB
+ID Generator consistency check
+....................  10%
+....................  20%
+....................  30%
+....................  40%
+....................  50%
+....................  60%
+....................  70%
+....................  80%
+....................  90%
+.................... 100%
+Index structure consistency check
+....................  10%
+....................  20%
+....................  30%
+....................  40%
+....................  50%
+....................  60%
+....................  70%
+....................  80%
+....................  90%
+.................... 100%
+Consistency check
+....................  10%
+....................  20%
+....................  30%
+....................  40%
+....................  50%
+....................  60%
+....................  70%
+....................  80%
+....................  90%
+.................... 100%
+
+----
+
+=== Check the consistency of a backup/dump
+
+Run with the `--from-path` option to check the consistency of a backup or a dump:
+
+[source,shell]
+----
+bin/neo4j-admin database check --from-path=<directory-with-backup-or-dump> neo4j
+----
+
+[[check-database-from-cloud-uris]]
+=== Check the consistency of a backup/dump stored in a cloud storage
+
+The following examples show how to check the consistency of a backup or a dump stored in a cloud storage bucket using the `--from-path` option.
+
+[.tabbed-example]
+=====
+[.include-with-AWS-S3]
+======
+
+include::partial$/aws-s3-overrides.adoc[]
+
+include::partial$/aws-s3-credentials.adoc[]
+
+. Run the `bin/neo4j-admin database check` command to check the consistency of your database located in your AWS S3 storage bucket.
+The example assumes that you have backup or dump artifacts located in the `myBucket/myDirectory` folder in your bucket.
++
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database check mydatabase --from-path=s3://myBucket/myDirectory/
+----
+======
+
+[.include-with-Google-cloud-storage]
+======
+
+include::partial$/gcs-credentials.adoc[]
+
+. Run the `bin/neo4j-admin database check` command to check the consistency of your database located in your Google storage bucket.
+The example assumes that you have backup or dump artifacts located in the `myBucket/myDirectory` folder in your bucket.
++
+[source,shell]
+----
+bin/neo4j-admin database check mydatabase --from-path=gs://myBucket/myDirectory/
+----
+======
+
+[.include-with-Azure-cloud-storage]
+======
+
+include::partial$/azb-credentials.adoc[]
+
+. Run the `bin/neo4j-admin database check` command to check the consistency of your database located in your Azure blob storage container.
+The example assumes that you have backup or dump artifacts located in the `myStorageAccount/myContainer/myDirectory` folder in Azure.
++
+[source,shell]
+----
+bin/neo4j-admin database check mydatabase --from-path=azb://myStorageAccount/myContainer/myDirectory/
+----
+======
+=====
