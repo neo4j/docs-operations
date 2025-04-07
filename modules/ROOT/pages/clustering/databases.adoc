@@ -313,7 +313,7 @@ See <<undefined-servers-backup, Undefined servers with fallback backup>> for mor
 
 If you provide a URI to a backup or a dump, the stores on all allocations will be replaced by the backup or the dump at the given URI.
 The new allocations can be put on any `ENABLED` server in the cluster.
-See <<cluster-seed-uri, Seed from URI>> for more details.
+See xref::database-administration/standard-databases/seed-from-uri.adoc[Seed from URI] for more details.
 
 
 [source, shell]
@@ -385,9 +385,12 @@ CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: [], primaries: 3, s
 [[cluster-seed]]
 == Seed a cluster
 
-There are two different ways to seed a cluster with data.
-The first option is to use a _designated seeder_, where a designated server is used to create a backed-up database on other servers in the cluster.
-The other options is to seed the cluster from URI, where all servers to host a database are seeded with an identical seed from an external source specified by the URI.
+There are two different ways to seed a cluster with data:
+
+* The first option is to use a _designated seeder_, where a designated server is used to create a backed-up database on other servers in the cluster.
+* The other option is to seed the cluster from a URI, where all servers to host the database are seeded with an identical seed from an external source specified by that URI.
+For more details, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+
 Keep in mind that using a designated seeder can be problematic in some situations as it is not known in advance how a database is going to be allocated to the servers in a cluster.
 Also, this method relies on the seed already existing on one of the servers.
 
@@ -464,191 +467,6 @@ SHOW DATABASE foo;
 9 rows available after 3 ms, consumed after another 1 ms
 ----
 
-[[cluster-seed-uri]]
-=== Seed from URI
-
-This method seeds all servers with an identical seed from an external source, specified by the URI.
-The seed can either be a full backup, a differential backup (xref:clustering/databases.adoc#cloud-seed-provider[`CloudSeedProvider`], introduced in Neo4j 5.26), or a dump from an existing database.
-The sources of seeds are called _seed providers_.
-
-The mechanism is pluggable, allowing new sources of seeds to be supported (see link:https://www.neo4j.com/docs/java-reference/current/extending-neo4j/project-setup/#extending-neo4j-plugin-seed-provider[Java Reference -> Implement custom seed providers] for more information).
-The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server, Amazon S3, Google Cloud Storage (from Neo4j 5.25), and Azure Cloud Storage (from Neo4j 5.25).
-
-[NOTE]
-====
-Amazon S3, Google Cloud Storage, and Azure Cloud Storage are supported by default, but the other providers require configuration of xref:configuration/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
-====
-
-The URI of the seed is specified when the `CREATE DATABASE` command is issued:
-
-[source, cypher, role="noplay"]
-----
-CREATE DATABASE foo OPTIONS {existingData: 'use', seedURI:'s3://myBucket/myBackup.backup'}
-----
-
-Download and validation of the seed is only performed as the new database is started.
-If it fails, the database is not available and it has the `statusMessage`: `Unable to start database` of the `SHOW DATABASES` command.
-
-[source, cypher, role="noplay"]
-----
-neo4j@neo4j> SHOW DATABASES;
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name    | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage                                            | default | home  | constituents |
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "seed3" | "standard" | []      | "read-write" | "localhost:7682" | "unknown" | FALSE  | "online"        | "offline"     | "Unable to start database `DatabaseId{3fe1a59b[seed3]}`" | FALSE   | FALSE | []           |
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-----
-
-To determine the cause of the problem, it is recommended to look at the `debug.log`.
-
-[[file-seed-provider]]
-==== FileSeedProvider
-
-label:new[Introduced in 5.26], the `FileSeedProvider`  supports:
-
-** `file:`
-
-[[url-connection-seed-provider]]
-==== URLConnectionSeedProvider
-
-The `URLConnectionSeedProvider` supports the following:
-
-** `file:` label:deprecated[Deprecated in 5.26]
-** `ftp:`
-** `http:`
-** `https:`
-
-[[cloud-seed-provider]]
-==== CloudSeedProvider
-
-label:new[Introduced in 5.25], the `CloudSeedProvider` supports:
-
-** `s3:`
-** `gs:`
-** `azb:`
-
-Starting from Neo4j 5.26, the `CloudSeedProvider` supports using xref:backup-restore/modes.adoc#differential-backup[differential backup] files as seeds.
-With the provided differential backup file, the `CloudSeedProvider` searches the directory containing differential backup files for a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] ending at the specified differential backup, and then seeds using this backup chain.
-
-[.tabbed-example]
-=====
-[role=include-with-AWS-S3 label--new-5.25]
-======
-
-include::partial$/aws-s3-overrides.adoc[]
-
-include::partial$/aws-s3-credentials.adoc[]
-
-. Create database from `myBackup.backup`.
-+
-[source,shell, role="nocopy"]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup' }
-----
-
-======
-[role=include-with-Google-cloud-storage label--new-5.25]
-======
-
-include::partial$/gcs-credentials.adoc[]
-
-. Create database from `myBackup.backup`.
-+
-[source,shell]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'gs://myBucket/myBackup.backup' }
-----
-======
-[role=include-with-Azure-cloud-storage label--new-5.25]
-======
-
-include::partial$/azb-credentials.adoc[]
-
-. Create database from `myBackup.backup`.
-+
-[source,shell]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'azb://myStorageAccount/myContainer/myBackup.backup' }
-----
-======
-=====
-
-[[s3-seed-provider]]
-==== S3SeedProvider
-
-The `S3SeedProvider` supports:
-
-** `s3:` label:deprecated[Deprecated in 5.26]
-
-
-[NOTE]
-====
-Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity.
-Therefore, if you use `S3SeedProvider`,`aws cli` is not required but can be used with the `CloudSeedProvider`.
-====
-
-The `S3SeedProvider` requires additional configuration.
-This is specified with the `seedConfig` option.
-This option expects a comma-separated list of configurations.
-Each configuration value is specified as a name followed by `=` and the value, as such:
-
-[source, cypher, role="noplay"]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedConfig: 'region=eu-west-1' }
-----
-
-`S3SeedProvider` also requires passing in credentials.
-These are specified with the `seedCredentials` option.
-Seed credentials are securely passed from the Cypher command to each server hosting the database.
-For this to work, Neo4j on each server in the cluster must be configured with identical keystores.
-This is identical to the configuration required by remote aliases, see xref:database-administration/aliases/remote-database-alias-configuration.adoc#remote-alias-config-DBMS_admin-A[Configuration of DBMS with remote database alias].
-If this configuration is not performed, the `seedCredentials` option fails.
-
-[source, cypher, role="noplay"]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedConfig: 'region=eu-west-1', seedCredentials: [accessKey];[secretKey] }
-----
-Where `accessKey` and `secretKey` are provided by AWS.
-
-
-==== Seed provider reference
-
-[cols="1,2,2",options="header"]
-|===
-| URL scheme
-| Seed provider
-| URI example
-
-| `file:`
-| `URLConnectionSeedProvider` label:deprecated[Deprecated in 5.26], +
-`FileSeedProvider` label:new[Introduced in 5.26]
-| `file://tmp/backup1.backup`
-
-| `ftp:`
-| `URLConnectionSeedProvider`
-| `ftp://myftp.com/backups/backup1.backup`
-
-| `http:`
-| `URLConnectionSeedProvider`
-| `\http://myhttp.com/backups/backup1.backup`
-
-| `https:`
-| `URLConnectionSeedProvider`
-| `\https://myhttp.com/backups/backup1.backup`
-
-| `s3:`
-| `S3SeedProvider` label:deprecated[Deprecated in 5.26], +
-`CloudSeedProvider` label:new[Introduced in 5.25]
-| `s3://mybucket/backups/backup1.backup`
-
-| `gs:`
-| `CloudSeedProvider` label:new[Introduced in 5.25]
-| `gs://mybucket/backups/backup1.backup`
-
-| `azb:`
-| `CloudSeedProvider` label:new[Introduced in 5.25]
-| `azb://mystorageaccount.blob/backupscontainer/backup1.backup`
-|===
 
 [[cluster-allow-deny-db]]
 == Controlling locations with allowed/denied databases
