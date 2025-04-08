@@ -2,7 +2,7 @@
 :page-role: enterprise-edition
 
 [[neo4j-cluster-cloud-deployments]]
-= Neo4j cluster on self-managed cloud deployments
+= Neo4j cluster in self-managed cloud deployments
 
 Before diving into the topic, it is important to understand basics about Neo4j's clustering.
 
@@ -24,30 +24,19 @@ The Neo4j AWS Marketplace listings (and listings on GitHub) use CloudFormation t
 // === Neo4j cluster and auto-scaling groups on AWS
 
 
-=== Removing a (secondary constrained) server from the cluster
+=== Remove a server from the Neo4j cluster
 
-Imagine you have a cluster consisting of three primary constrained servers and two secondary constrained servers.
-This means that three servers host primary databases and the other two host secondary databases.
+Rolling updates on Amazon Machine Images (AMIs) often involve their rotating.
+However, simply removing Neo4j servers from the target Network Load Balancer (NLB) one by one does not prevent requests from being routed to them.
+This occurs because the NLB and Neo4j server-side routing operate independently and do not share awareness of a server availability.
 
-When performing rolling updates on Amazon Machine Images (AMIs) for secondary servers, it is important to follow a structured approach.
-Rotating AMIs is a common practice in such environments.
+To correctly remove a server from the cluster and reintroduce it after the update, follow the steps outlined below:
 
-However, simply removing secondary servers from the target Network Load Balancer (NLB) one by one does not prevent read requests from being routed to them.
-This occurs because the NLB and Neo4j server-side routing operate independently and do not share awareness of server availability.
+. Remove the server from the AWS NLB.
+ This prevents external clients from sending requests to the server.
 
-To correctly remove a secondary server from the cluster and reintroduce it after the update:
-
-. Remove the server from the NLB to stop traffic routing.
-. Shut down the server before proceeding with the AMI update.
-
-
-Here are the steps:
-
-. Remove the secondary from the AWS NLB.
- This prevents external clients from sending requests to the secondary.
-
-. Since Neo4j's cluster routing (server-side routing) does not use the NLB, you need to ensure that queries are not routed to the secondary server.
-To do this, you have to cleanly shut down the secondary.
+. Since Neo4j's cluster routing (server-side routing) does not use the NLB, you need to ensure that queries are not routed to the server.
+To do this, you have to cleanly shut down the server.
 
 .. Run the following query to check servers are hosting all their assigned databases.
 The query should return no results:
@@ -72,18 +61,19 @@ SHOW DATABASES YIELD name, address, currentStatus, requestedStatus, statusMessag
 sudo systemctl stop neo4j
 ----
 +
-To configure the timeout period for waiting on active transactions to either complete or be terminated during shutdown, you can modify the environment variable `NEO4J_SHUTDOWN_TIMEOUT` using `systemctl edit neo4j.service`
-or the setting xref::configuration/configuration-settings.adoc#config_db.shutdown_transaction_end_timeout[`db.shutdown_transaction_end_timeout`] in _neo4j.conf_ file.
+To configure the timeout period for waiting on active transactions to either complete or be terminated before the shutdown, modify the setting xref::configuration/configuration-settings.adoc#config_db.shutdown_transaction_end_timeout[`db.shutdown_transaction_end_timeout`] in the _neo4j.conf_ file.
+`db.shutdown_transaction_end_timeout` defaults to 10 seconds.
 +
-By default, `NEO4J_SHUTDOWN_TIMEOUT` is set to 120 seconds and `db.shutdown_transaction_end_timeout` -- to 10 seconds.
-+
-If the shutdown process exceeds these limits, it is considered failed.
-You may need to increase the values if the system serves long-running transactions.
+The environment variable `NEO4J_SHUTDOWN_TIMEOUT` determines how long the system will wait for Neo4j to stop before forcefully terminating the process.
+You can change this using `systemctl edit neo4j.service`.
+By default, `NEO4J_SHUTDOWN_TIMEOUT` is set to 120 seconds.
+If the shutdown process exceeds this limit, it is considered failed.
+You may need to increase the value if the system serves long-running transactions.
 
 .. Verify that the shutdown process has finished successfully by checking the _neo4j.log_ for relevant log messages confirming the shutdown.
 
 
-. When everything is updated or fixed, start the secondaries one by one again.
+. When everything is updated or fixed, start the servers one by one again.
 .. Run `systemctl start neo4j`.
 .. Once the server has been restarted, confirm it is running successfully.
 +
@@ -103,7 +93,7 @@ This command shows any databases that are not in their expected state:
 SHOW DATABASES YIELD name, address, currentStatus, requestedStatus, serverID WHERE currentStatus <> requestedStatus AND serverID = [server-id] RETURN name, address, currentStatus, requestedStatus
 ----
 
-. Reattach the secondary to the NLB.
-Once the secondary server is stable and caught up, add it back to the AWS NLB target group.
+. Reattach the server to the NLB.
+Once the server is stable and caught up, add it back to the AWS NLB target group.
 
 
