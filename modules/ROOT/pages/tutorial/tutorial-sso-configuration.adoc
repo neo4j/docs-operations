@@ -47,32 +47,52 @@ Thus, changing the username claim from `sub` is not recommended.
 
 == Okta
 
+The following examples show how to configure Okta for authentication and authorization using access tokens and ID tokens.
+It assumes that you are using Okta Developer Edition Service.
+For the complete guide on how to customize tokens returned from Okta with a groups claim, see the https://developer.okta.com/docs/guides/customize-tokens-groups-claim/main/[Okta official documentation].
+
+=== Configure the client
+
+. From the left-hand side of the Okta dashboard, navigate to *Applications* and click *Create App Integration*.
+. Select *OIDC - OpenID Connect* for Sign-in method and *Single-Page Application* for Application type.
+. Click *Next*.
+. Configure the client with the appropriate redirect URI.
+.. Add a name for the app integration.
+.. Add the *Sign-in redirect URIs*, for example, `http://localhost:7474/browser/?idp_id=okta&auth_flow_step=redirect_uri`.
+This URI will accept returned token responses after successful authentication.
+. Add the *Sign-out redirect URIs*, for example, `http://localhost:7474/browser/`.
+. In the *Assignments* section, select *Skip group assignment* for now.
+. Click *Save*.
+. Take note of the Client ID.
+You will need it later when configuring the Okta parameters and the Well-known OpenID Connect endpoint in the _neo4j.conf_ file.
+
+=== Assign Okta groups to the application
+
+. From the left-hand side of the Okta dashboard, navigate to *Dashboard -> Directory -> Groups*, and click *Add Group*.
+. Add a name for the group, for example, `engineers`, and click *Save*.
+. Click the group you just created and then click *Assign people*.
+. Add users to the group.
+Users can be added to a group either on user creation or by editing the group.
+. Assign the group to an application.
+.. Click *Applications* and then *Assign Applications*.
+.. Select the application you created earlier and click *Assign*.
+
 === Access token
 
-This example shows how to configure Okta for authentication and authorization using access tokens.
+This example shows how to configure Okta for authentication and authorization using access tokens and how to configure Neo4j to use them.
 
-. Configure the client with the appropriate redirect URI.
-You can skip the group assignments in this step:
-+
-image::sso-configuration-tutorials/oidc-okta-client-creation.png[title="Okta OIDC client creation"]
-+
-image::sso-configuration-tutorials/oidc-okta-client-config-a.png[title="Okta OIDC client configuration"]
+==== Add a groups claim to access tokens
 
-. Take note of the Client ID and the Okta domain.
-You will need them later when configuring the Okta parameters and the Well-known OpenID Connect endpoint in the _neo4j.conf_ file:
-+
-image::sso-configuration-tutorials/oidc-okta-client-config-b.png[title="Okta OIDC client configuration"]
+. From the left-hand side of the Okta dashboard, navigate to *Security -> API*.
+. Click the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in access tokens:
+.. On the *Claims* tab, click *Add Claim*.
+.. Add a claim with the name `groups`.
+.. From the *Value type* dropdown, select *Groups*.
+.. From the Filter dropdown, select *Matches regex* and the value `.*`.
+.. Click *Create*.
 
-. Create groups in Okta, assign users to them (the user can be added to a group either on user creation or editing the group), and map them in the `neo4j.conf` to native groups:
-+
-image::sso-configuration-tutorials/oidc-okta-server-groups.png[title="Okta OIDC server groups"]
+==== Configure Neo4j
 
-. Configure the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in access tokens:
-+
-image::sso-configuration-tutorials/oidc-okta-authz-server.png[title="Okta OIDC authorization server"]
-+
-image::sso-configuration-tutorials/oidc-okta-server-claims.png[title="Okta OIDC server claims"]
-+
 . Configure Neo4j to use Okta authentication by configuring the following settings in the _neo4j.conf_ file:
 +
 [source, properties]
@@ -81,11 +101,11 @@ dbms.security.authentication_providers=oidc-okta
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://dev-21056049.okta.com/oauth2/default/.well-known/openid-configuration
+dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/oauth-authorization-server
 dbms.security.oidc.okta.audience=api://default
 dbms.security.oidc.okta.claims.username=sub
 dbms.security.oidc.okta.claims.groups=groups
-dbms.security.oidc.okta.params=client_id=0oa3oq6uw3uSOBf8y5d7;response_type=code;scope=openid profile email
+dbms.security.oidc.okta.params=client_id=0oao2rybx5hIERt5W5d7;response_type=code;scope=openid profile email
 dbms.security.oidc.okta.authorization.group_to_role_mapping= "engineers" = admin; \
                                                              "collaborators" = reader
 ----
@@ -101,21 +121,37 @@ image::sso-configuration-tutorials/oidc-okta-successful-login.png[title="Okta OI
 
 === ID token
 
-This example shows how to configure Okta for authentication and authorization using ID tokens.
+This example shows how to configure Okta for authentication and authorization using ID tokens and the how to configure Neo4j to use them.
 
-. Follow the first two steps from the instructions for xref:#_access_token[Access token].
+==== Add a groups claim to ID tokens
 
-. Create the claims as indicated:
-+
-image::sso-configuration-tutorials/okta-claims.svg[title="Okta claim creation panel"]
+You can add a groups claim to ID tokens to configure authentication and authorization using ID tokens.
+
+. From the left-hand side of the Okta dashboard, navigate to *Security -> API*.
+. Click the default authorization server (the one that shows `api://default` as audience) to return the `groups` claim in access tokens:
+.. On the *Claims* tab, click *Add Claim*.
+.. Add a claim with the name `groups`.
+.. From the *Include in token type* dropdown, select *ID Token*.
+.. From the *Value type* dropdown, select *Groups*.
+.. From the Filter dropdown, select *Matches regex* and the value `.*`.
+.. Click *Create*.
+. Add a claim with the name `userid` and the value type `User ID`.
 +
 [NOTE]
 ====
-In the case of access tokens, a default sub is already provided automatically.
-However, for ID tokens, the name you give to your claim needs to be also indicated in the configuration `dbms.security.oidc.okta.claims.username=userid`.
+The `userid` claim is not included in the ID token by default like the default `sub` claim for access tokens, thus you need to add it manually.
+The name you give to your claim needs to be also indicated in the configuration `dbms.security.oidc.okta.claims.username=userid` in the _neo4j.conf_ file.
 ====
-+
-. Configure the default authorization server (the one that shows api://default as audience) as indicated:
+.. Click *Add Claim*.
+.. Add a claim with the name `userid`.
+.. From the *Include in token type* dropdown, select *ID Token*.
+.. From the *Value type* dropdown, select *Expression*.
+.. In the *Value* field, type `(appuser !=null) ? appuser.userName : app.clientId`.
+.. Click *Create*.
+
+==== Configure Neo4j
+
+. Configure Neo4j to use Okta authentication by configuring the following settings in the _neo4j.conf_ file:
 +
 [source, properties]
 ----
@@ -123,19 +159,19 @@ dbms.security.authentication_providers=oidc-okta, native
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://trial-2696363.okta.com/oauth2/default/.well-known/openid-configuration
-dbms.security.oidc.okta.audience=0oa42hwrygsUCFlLO697
+dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/oauth-authorization-server
+dbms.security.oidc.okta.audience=0oao2rybx5hIERt5W5d7
 dbms.security.oidc.okta.claims.username=userid
 dbms.security.oidc.okta.claims.groups=groups
-dbms.security.oidc.okta.params=client_id=0oa42hwrygsUCFlLO697;response_type=code;scope=openid profile email
+dbms.security.oidc.okta.params=client_id=0oao2rybx5hIERt5W5d7;response_type=code;scope=openid profile email
 dbms.security.oidc.okta.authorization.group_to_role_mapping="admin_group" = admin;
 dbms.security.oidc.okta.config=token_type_principal=id_token;token_type_authentication=id_token
 ----
 +
-. You should now find the audience under Okta's sign-on tab:
-+
-image::sso-configuration-tutorials/okta-sign-on-tab.svg[title="Okta's sign-on tab"]
-+
+[TIP]
+====
+You can find the audience parameter under *OpenID Connect ID Token* of your application on the *Sign On* tab.
+====
 . (Optional) If you want control the authentication and authorization on a user level, configure xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true` in the _neo4j.conf_ file.
 This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
 For information on how to create users in this mode, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
@@ -220,7 +256,6 @@ This example shows how to configure Entra ID for authentication and authorizatio
 image::sso-configuration-tutorials/oidc-azure-client-creation.png[title="Entra OIDC client creation"]
 The redirect URI `http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri` is the URI that will accept returned token responses after successful authentication.
 . Click *Register*.
-
 
 ==== Configure Neo4j
 . After the successful app creation, on the app's *Overview* page, find the Application (client) ID value. Use it to configure the following properties in the _neo4j.conf_ file.
