@@ -126,10 +126,86 @@ After the installation finishes successfully, the CloudFormation template provid
 |===
 
 
-== Cluster version consistency
+[role=label--enterprise-edition]
+== Neo4j cluster on AWS
+
+=== Cluster version consistency
 
 When the CloudFormation template creates a new Neo4j cluster, an Auto Scaling group (ASG) is created and tagged with the monthly version of the installed Neo4j database.
 If you add more EC2 instances to your ASG, they will be installed with the same monthly version, ensuring that all Neo4j cluster servers are installed with the same version, regardless of when the EC2 instances were created.
+
+
+=== Remove a server from the Neo4j cluster
+
+Rolling updates on Amazon Machine Images (AMIs) often involve rotating the images.
+However, simply removing Neo4j servers from the target Network Load Balancer (NLB) one by one does not prevent requests from being routed to them.
+This occurs because the NLB and Neo4j server-side routing operate independently and do not share awareness of a server availability.
+
+To correctly remove a server from the cluster and reintroduce it after the update, follow the steps outlined below:
+
+. Remove the server from the AWS NLB.
+ This prevents external clients from sending requests to the server.
+
+. Since Neo4j's cluster routing (server-side routing) does not use the NLB, you need to ensure that queries are not routed to the server.
+To do this, you have to cleanly shut down the server.
+
+.. Run the following query to check servers are hosting all their assigned databases.
+The query should return no results:
++
+[source, cypher, role=noplay]
+----
+SHOW SERVERS YIELD name, hosting, requestedHosting, serverId WHERE requestedHosting <> hosting
+----
+
+.. Use the following query to check all databases are in their expected state.
+The query should return no results:
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES YIELD name, address, currentStatus, requestedStatus, statusMessage WHERE currentStatus <> requestedStatus RETURN name, address, currentStatus, requestedStatus, statusMessage
+----
+
+.. To stop the Neo4j service, run the following command:
++
+[source, shell, role=copy]
+----
+sudo systemctl stop neo4j
+----
++
+To configure the timeout period for waiting on active transactions to either complete or be terminated before the shutdown, modify the setting xref::configuration/configuration-settings.adoc#config_db.shutdown_transaction_end_timeout[`db.shutdown_transaction_end_timeout`] in the _neo4j.conf_ file.
+`db.shutdown_transaction_end_timeout` defaults to 10 seconds.
++
+The environment variable `NEO4J_SHUTDOWN_TIMEOUT` determines how long the system will wait for Neo4j to stop before forcefully terminating the process.
+You can change this using `systemctl edit neo4j.service`.
+By default, `NEO4J_SHUTDOWN_TIMEOUT` is set to 120 seconds.
+If the shutdown process exceeds this limit, it is considered failed.
+You may need to increase the value if the system serves long-running transactions.
+
+.. Verify that the shutdown process has finished successfully by checking the _neo4j.log_ for relevant log messages confirming the shutdown.
+
+
+. When everything is updated or fixed, start the servers one by one again.
+.. Run `systemctl start neo4j`.
+.. Once the server has been restarted, confirm it is running successfully.
++
+Run the following command and check the server has state `Enabled` and health `Available`.
++
+[source, cypher, role=noplay]
+----
+SHOW SERVERS WHERE name = [server-id];
+----
+
+.. Confirm that the server has started all the databases that it should.
++
+This command shows any databases that are not in their expected state:
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASES YIELD name, address, currentStatus, requestedStatus, serverID WHERE currentStatus <> requestedStatus AND serverID = [server-id] RETURN name, address, currentStatus, requestedStatus
+----
+
+. Reattach the server to the NLB.
+Once the server is stable and caught up, add it back to the AWS NLB target group.
 
 
 [role=label--enterprise-edition]
