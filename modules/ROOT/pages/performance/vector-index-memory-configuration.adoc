@@ -1,0 +1,194 @@
+= Vector index memory configuration
+:description: How to configure Neo4j vector indexes to enhance performance in search operations.
+
+Vector indexes are based on link:https://lucene.apache.org/[Lucene].
+Lucene uses OS memory, not Neo4j page cache memory, as described in the xref:performance/memory-configuration.adoc[Memory configuration] section.
+When you have a vector index, you must ensure that the OS has sufficient memory for the JVM heap, Neo4j page cache, and the Lucene vector indexes to perform optimally.
+If Lucene has insufficient memory, the OS will perform page swapping and read data from disk, which will dramatically degrade the Neo4j vector index search performance.
+Tools like IOTOP can assist in understanding disk I/O usage.
+
+== Warming up the vector index
+
+The Neo4j vector index is only loaded into memory when it is accessed.
+Ideally, the Lucene vector index is preloaded into OS-managed memory before quering the index.
+However, you can also warm up the index by running a few random queries to help the OS load the index into memory.
+The number of queries required to warm up the index depends on the size of the index and the amount of memory available.
+For a smaller index (up to 1M entries), five queries should be sufficient to load the index into memory.
+For a larger index, you may need to run a hundred queries.
+It is also recommended to test the index.
+
+[NOTE]
+====
+Since the Neo4j vector index is managed by the OS memory, restarting the server clears the buffer/cache, requiring the vector index to be reloaded into memory.
+In the event of a rolling restart/patch/upgrade, an approach may be needed to address the warmup requirement.
+====
+
+== Optimal Neo4j memory configuration for vector indexes
+
+The memory configuration recommendations are _Heap + Neo4j PageCache + .25(Vector Index Size) + Additional OS Managed Memory_.
+
+
+=== Considerations and caveats
+
+You can reduce the Neo4j page cache if you plan not to return vectors to the user or calling application, as the vectors are not needed and should not be loaded into memory.
+For example, the vector storage in a database with a total size of 459 GB is 402 GB.
+By setting the page cache to 100 GB, the important part of the graph is still in memory, and the server requirements are reduced.
+The ratio of memory to storage will be high, but Neo4j will still be able to maintain its performance.
+A 1:4 ratio should perform well.
+
+You must increase the memory if you plan to return vectors to the user or call the application and use them for a refined search.
+If you use the vectors for further searching or refining search results, the page cache memory allocation must also be increased.
+
+=== Example calculations
+
+The following examples show how to calculate the memory requirements when vectors are only used for searching and will not be returned to the user or application.
+
+.Disk storage requirements
+[cols="1,1,1"]
+|===
+| Neo4j DB
+| 10M
+| ~40GB
+
+| Vector Index (single index)
+| (1.1 * (4 * 768 + 8 * 16) * 10M)/1048576000
+| 33.5GB
+
+| Total DB Size
+|
+| 73.5GB
+|===
+
+.Memory requirements
+[cols="1,1,1"]
+|===
+| Heap
+| 10-20GB
+| 20GB
+
+| Page Cache
+| DB Size * 1.2
+| 50GB
+
+| OS Memory for Index
+| .4 of the Vector Index
+| 12GB
+
+| Total
+|
+| 82GB
+|===
+
+.Aura vector specified cluster memory configurations
+[cols="1,1,1,1,1"]
+|===
+| Instance Size
+| Disk Storage
+| Heap
+| Page Cache
+| Remaining Memory
+
+| 32GB
+| 64GB
+| 7.58GB
+| 9.01GB
+| 15.41GB
+
+| 64GB
+| 128GB
+| 16.17GB
+| 17.56GB
+| 30.27GB
+
+| 128GB
+| 256GB
+| 26.90GB
+| 49.94GB
+| 51.16GB
+
+| 256GB
+| 512GB
+| 31GB
+| 132.34GB
+| 92.66GB
+
+| 384GB
+| 768GB
+| 31GB
+| 220.25GB
+| 132.75GB
+
+| 512GB
+| 1024GB
+| 31GB
+| 308.55GB
+| 172.45GB
+|===
+
+.Aura non-vector specified cluster memory configurations
+[cols="1,1,1,1,1"]
+|===
+| Instance Size
+| Disk Storage
+| Heap
+| Page Cache
+| Remaining Memory
+
+| 32GB
+| 64GB
+| 10.39GB
+| 11.13GB
+| 10.48GB
+
+| 64GB
+| 128GB
+| 20.57GB
+| 23.43GB
+| 20GB
+
+| 128GB
+| 256GB
+| 29.60GB
+| 70.40GB
+| 28GB
+
+| 256GB
+| 512GB
+| 31GB
+| 180.20GB
+| 44.8GB
+
+| 384GB
+| 768GB
+| 31GB
+| 293.20GB
+| 59.8GB
+
+| 512GB
+| 1024GB
+| 31GB
+| 410.5GB
+| 70.5GB
+|===
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
