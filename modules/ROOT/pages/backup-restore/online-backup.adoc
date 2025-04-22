@@ -471,6 +471,193 @@ You can use the latest differential backup as the parent by setting the option `
 This can be used to ensure you have differential backups for all transactions, which would allow you to restore to any point in time.
 Otherwise, the transactions between a full backup and the previous differential backup will not be backed up as individual transactions.
 
+[.tabbed-example]
+=====
+Different scenarios for using the `--prefer-diff-as-parent` option
+[NOTE]
+The general behaviour while taking a differential backup with the `--type=DIFF` option is that the *most recent non-empty* backup is used as the parent.
+With the `--prefer-diff-as-parent` option, the *most recent non-empty differential* backup is used as the parent *when possible*:
+in case there is no backup that satisfy the condition, then we fall back to the general behaviour.
+======
 
+Example 1: *Chain with full and differential backups*
 
+Let's assume that every hour we write 10 transactions to the `neo4j` database, except from 12:30-13:30, when we don't write any transaction.
+There is a backup job that takes a backup every hour and a full backup every 4 hours.
+We refer as an _empty_ backup a backup that has no transactions, meaning that both the lower transaction ID and the upper transaction ID are zero)
+Let's say that you have this backup chain:
 
+[cols="h,e,m,h,h"]
+|===
+|Timestamp | Backup name | Backup type | Lower Transaction ID | Upper Transaction ID
+
+| 10:30
+| backup1
+| FULL
+| 1
+| 10
+
+| 11:30
+| backup2
+| DIFF
+| 11
+| 20
+
+| 12:30
+| backup3
+| DIFF
+| 21
+| 30
+
+| 13:30
+| backup4
+| DIFF
+| 0
+| 0
+
+| 14:30
+| backup5
+| FULL
+| 1
+| 40
+
+|===
+
+If at 15:30 we execute the backup command:
+[source,shell]
+----
+neo4j-admin database backup --from=<address:port> --to-path=<targetPath> --type=DIFF neo4j
+----
+
+then the result would be:
+
+[cols="h,e,m,h,h"]
+|===
+| 14:30
+| backup6
+| DIFF
+| 41
+| 50
+|===
+
+because we choose `backup5` as parent since it is the *latest non-empty* backup.
+
+Otherwise, if we execute this command:
+
+[source,shell]
+----
+neo4j-admin database backup --from=<address:port> --to-path=<targetPath> --type=DIFF --prefer-diff-as-parent neo4j
+----
+
+then the result would be:
+[cols="h,e,m,h,h"]
+|===
+| 14:30
+| backup6
+| DIFF
+| 31
+| 50
+|===
+
+because we choose `backup3` as parent since it is the *latest non-empty differential* backup.
+
+======
+
+======
+
+Example 2: *Chain with only full backups*
+
+Let's assume that we write 10 transactions to the `neo4j` database every hour, and we trigger am hourly backup.
+
+[cols="h,e,m,h,h"]
+|===
+|Timestamp | Backup name | Backup type | Lower Transaction ID | Upper Transaction ID
+
+| 10:30
+| backup1
+| FULL
+| 1
+| 10
+
+| 11:30
+| backup2
+| FULL
+| 11
+| 20
+|===
+
+In this case, there is no differential backup, so the `--prefer-diff-as-parent` option has no effect and the behaviour is the same as the default one.
+
+[source,shell]
+----
+neo4j-admin database backup \
+--from=<address:port> --to-path=<targetPath> \
+--type=DIFF --prefer-diff-as-parent \
+neo4j
+----
+
+The result would be (with or without the `--prefer-diff-as-parent` option):
+[cols="h,e,m,h,h"]
+|===
+| 12:30
+| backup3
+| DIFF
+| 21
+| 30
+|===
+
+======
+
+======
+Example 3: *Chain with only empty full backups*
+
+Let's assume that the database is empty and that we don't write anything to it, while still taking hourly backups.
+
+[cols="h,e,m,h,h"]
+|===
+|Timestamp | Backup name | Backup type | Lower Transaction ID | Upper Transaction ID
+
+| 10:30
+| backup1
+| FULL
+| 0
+| 0
+
+| 11:30
+| backup2
+| FULL
+| 0
+| 0
+|===
+
+In this case with the `--type=DIFF` option we would fail both with the `--prefer-diff-as-parent` and the `default` behaviour,
+since we're looking for the *latest non-empty* backup and there are only empty backups.
+
+[source,shell]
+----
+neo4j-admin database backup \
+--from=<address:port> --to-path=<targetPath> \
+--type=DIFF --prefer-diff-as-parent \
+neo4j
+----
+
+But if we select the `--type=AUTO` option, the command will succeed and the result would be another empty full backup.
+
+[source,shell]
+----
+neo4j-admin database backup \
+--from=<address:port> --to-path=<targetPath> \
+--type=AUTO --prefer-diff-as-parent \
+neo4j
+----
+
+[cols="h,e,m,h,h"]
+|===
+| 12:30
+| backup3
+| FULL
+| 0
+| 0
+|===
+
+======
