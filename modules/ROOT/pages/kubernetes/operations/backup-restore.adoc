@@ -472,9 +472,9 @@ backup:
   # In case of azure the bucket is the container name in the storage account
   # bucket: azure-storage-container
   bucketName: ""
-
-  #address details of the neo4j instance from which backup is to be done (serviceName or ip either one is required)
-
+  # Specify multiple backup endpoints as comma-separated string
+  # e.g. "10.3.3.2:6362,10.3.3.3:6362,10.3.3.4:6362"
+  databaseBackupEndpoints: ""
   #ex: standalone-admin.default.svc.cluster.local:6362
   # admin service name -  standalone-admin
   # namespace - default
@@ -493,12 +493,17 @@ backup:
   databaseBackupPort: ""
   #default value is cluster.local
   databaseClusterDomain: ""
-  # specify minio endpoint ex: http://demo.minio.svc.cluster.local:9000
-  # please ensure this endpoint is the s3 api endpoint or else the backup helm chart will fail
-  # as of now it works only with non tls endpoints
-  # to be used only when aws is used as cloudProvider
-  minioEndpoint: ""
-
+  # specify S3-compatible endpoint (e.g., http://s3.amazonaws.com or your custom S3 endpoint)
+  # This can be any S3-compatible endpoint including AWS S3, MinIO, or other S3-compatible storage services
+  # For TLS endpoints (https), set s3EndpointTLS to true
+  s3Endpoint: ""
+  # Enable TLS for S3 endpoint (default: false)
+  s3EndpointTLS: false
+  # Optional: Base64-encoded CA certificate for S3 endpoint TLS verification
+  # Only needed for self-signed certificates or private CA
+  s3CACert: ""
+  # Optional: Skip TLS verification (not recommended for production)
+  s3SkipVerify: false
   #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
@@ -562,6 +567,9 @@ backup:
     fromPath: ""
     # database name to aggregate. Can contain * and ? for globbing.
     database: ""
+    # Optional temporary directory for aggregation process
+    # If not specified, will use the backup directory
+    tempDir: ""
 
 #Below are all neo4j-admin database check flags / options
 #To know more about the flags read here : https://neo4j.com/docs/operations-manual/current/tools/neo4j-admin/consistency-checker/
@@ -601,6 +609,14 @@ securityContext:
   fsGroup: 7474
   fsGroupChangePolicy: "Always"
 
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 7474
+  runAsGroup: 7474
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
 # default ephemeral storage of backup container
 resources:
   requests:
@@ -678,9 +694,13 @@ The aggregate backup command turns a backup chain into a single backup file.
 This is useful when you have a backup chain that you want to restore to a different cluster, or when you want to archive a backup chain.
 For more information on the benefits of the aggregate backup chain operation, its syntax and available options, see xref:backup-restore/aggregate.adoc[Aggregate a database backup chain].
 
+Starting from 5.26 LTS, the _neo4j-admin_ Helm chart supports an optional temporary directory to be used by the aggregation process instead of the backup working directory.
+This is especially useful when the size of the backup chain is larger then the pods ephemeral storage.
+To avoid the backup aggregation job to fail due to lack of disk space, you can set the `tempDir` parameter to a persistent volume claim that has enough space to hold the backup files.
+
 [NOTE]
 ====
-The neo4j-admin Helm chart supports aggregating a backup chain stored in an AWS S3 bucket or a local mount.
+The _neo4j-admin_ Helm chart supports aggregating a backup chain stored in an AWS S3 bucket or a local mount.
 If enabled, normal backup will not be done, only aggregate backup.
 ====
 
@@ -719,6 +739,9 @@ backup:
     fromPath: "s3://bucket1/bucket2"
     # Database name to aggregate. Can contain * and ? for globbing.
     database: "neo4j"
+    # Optional temporary directory for aggregation process
+    # If not specified, will use the backup directory
+    tempDir: "/custom/temp/dir"
 
 resources:
   requests:
@@ -750,6 +773,9 @@ backup:
       fromPath: "s3://bucket1/bucket2"
       # Database name to aggregate. Can contain * and ? for globbing.
       database: "neo4j"
+      # Optional temporary directory for aggregation process
+      # If not specified, will use the backup directory
+      tempDir: "/custom/temp/dir"
 
 #The service account must already exist in your cloud provider account and have the necessary permissions to manage your S3 bucket, as well as to download and upload files. See the example policy below.
 #{
@@ -803,6 +829,9 @@ backup:
     fromPath: "/backups"
     # Database name to aggregate. Can contain * and ? for globbing.
     database: "neo4j"
+    # Optional temporary directory for aggregation process
+    # If not specified, will use the backup directory
+    tempDir: "/custom/temp/dir"
 
 tempVolume:
   persistentVolumeClaim:
