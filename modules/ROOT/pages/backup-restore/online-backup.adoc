@@ -161,7 +161,7 @@ Note: this is an EXPERIMENTAL option. Consult Neo4j support before use.
 |false
 
 |--prefer-diff-as-parent
-|label:new[Introduced in 2025.04] When performing a differential backup, prefer the latest non-empty differential backup as the parent instead of the latest full backup.
+|label:new[Introduced in 2025.04] When performing a differential backup, prefer the latest non-empty differential backup as the parent instead of the latest backup.
 |false
 
 |--temp-path=<path>
@@ -465,27 +465,26 @@ bin/neo4j-admin database backup --to-path=azb://myStorageAccount/myContainer/myD
 [[diff-backup-as-parent]]
 === Perform a differential backup using the `--prefer-diff-as-parent` option
 
-When creating a differential backup, the parent is usually the most recent (non-empty) backup in the directory.
-In some cases you may prefer to use the latest differential backup as the parent, even if there is a more recent full backup.
-You can use the latest differential backup as the parent by setting the option `--prefer-diff-as-parent` to `True`.
+When taking a differential backup with the `--type=DIFF` option, the parent, by default, is the *most recent non-empty* backup in the directory.
+In some cases, you may prefer to use the *latest differential* backup as the parent, even if there is a more recent full backup.
+You can do this by setting the option `--prefer-diff-as-parent` to `True`.
+
 This can be used to ensure you have differential backups for all transactions, which would allow you to restore to any point in time.
 Otherwise, the transactions between a full backup and the previous differential backup will not be backed up as individual transactions.
 
+The examples below cover different scenarios for using the `--prefer-diff-as-parent` option.
+
 [.tabbed-example]
 =====
-Different scenarios for using the `--prefer-diff-as-parent` option
-[NOTE]
-The general behaviour while taking a differential backup with the `--type=DIFF` option is that the *most recent non-empty* backup is used as the parent.
-With the `--prefer-diff-as-parent` option, the *most recent non-empty differential* backup is used as the parent *when possible*:
-in case there is no backup that satisfy the condition, then we fall back to the general behaviour.
+[role=include-with-Chain-with-full-and-differential-backups]
 ======
 
-Example 1: *Chain with full and differential backups*
+Let's assume that every hour you write 10 transactions to the `neo4j` database, except from 12:30-13:30, when you do not write any transaction.
 
-Let's assume that every hour we write 10 transactions to the `neo4j` database, except from 12:30-13:30, when we don't write any transaction.
-There is a backup job that takes a backup every hour and a full backup every 4 hours.
-We refer as an _empty_ backup a backup that has no transactions, meaning that both the lower transaction ID and the upper transaction ID are zero)
-Let's say that you have this backup chain:
+There is a backup job that takes a backup every hour and a full backup every four hours.
+We refer as an _empty_ backup a backup that has no transactions, meaning that both the lower transaction ID and the upper transaction ID are zero.
+
+Imagine you have the following backup chain:
 
 [cols="h,e,m,h,h"]
 |===
@@ -523,13 +522,14 @@ Let's say that you have this backup chain:
 
 |===
 
-If at 15:30 we execute the backup command:
+At 15:30, you execute the following backup command:
+
 [source,shell]
 ----
 neo4j-admin database backup --from=<address:port> --to-path=<targetPath> --type=DIFF neo4j
 ----
 
-then the result would be:
+The result would be:
 
 [cols="h,e,m,h,h"]
 |===
@@ -540,16 +540,17 @@ then the result would be:
 | 50
 |===
 
-because we choose `backup5` as parent since it is the *latest non-empty* backup.
+The result means you have chosen `backup5` as the parent for your differential `backup6` since the `backup5` is the *latest non-empty* backup.
 
-Otherwise, if we execute this command:
+However, if you execute the following command with the `--prefer-diff-as-parent` option:
 
 [source,shell]
 ----
 neo4j-admin database backup --from=<address:port> --to-path=<targetPath> --type=DIFF --prefer-diff-as-parent neo4j
 ----
 
-then the result would be:
+The result would be:
+
 [cols="h,e,m,h,h"]
 |===
 | 14:30
@@ -559,15 +560,13 @@ then the result would be:
 | 50
 |===
 
-because we choose `backup3` as parent since it is the *latest non-empty differential* backup.
+In this case, the `backup3` is selected as the parent since it is the *latest non-empty differential* backup.
 
 ======
-
+[role=include-with-Chain-with-only-full-backups]
 ======
 
-Example 2: *Chain with only full backups*
-
-Let's assume that we write 10 transactions to the `neo4j` database every hour, and we trigger am hourly backup.
+Let's assume that you write 10 transactions to the `neo4j` database every hour and trigger an hourly full backup.
 
 [cols="h,e,m,h,h"]
 |===
@@ -586,7 +585,8 @@ Let's assume that we write 10 transactions to the `neo4j` database every hour, a
 | 20
 |===
 
-In this case, there is no differential backup, so the `--prefer-diff-as-parent` option has no effect and the behaviour is the same as the default one.
+In this case, there is no differential backup.
+Therefore, the `--prefer-diff-as-parent` option has no effect and the behaviour is the same as the default one.
 
 [source,shell]
 ----
@@ -607,11 +607,10 @@ The result would be (with or without the `--prefer-diff-as-parent` option):
 |===
 
 ======
-
+[role=include-with-Chain-with-only-empty-full-backups]
 ======
-Example 3: *Chain with only empty full backups*
 
-Let's assume that the database is empty and that we don't write anything to it, while still taking hourly backups.
+Let's assume that the database is empty and you do not write anything to it, while still taking hourly full backups.
 
 [cols="h,e,m,h,h"]
 |===
@@ -630,8 +629,8 @@ Let's assume that the database is empty and that we don't write anything to it, 
 | 0
 |===
 
-In this case with the `--type=DIFF` option we would fail both with the `--prefer-diff-as-parent` and the `default` behaviour,
-since we're looking for the *latest non-empty* backup and there are only empty backups.
+In this case, you cannot perform a differential backup with the `--type=DIFF` option, and the below command fails anyway, whether you used the `--prefer-diff-as-parent` or not.
+This occurs because we are looking for the *latest non-empty* backup, and there are only empty backups.
 
 [source,shell]
 ----
@@ -641,7 +640,7 @@ neo4j-admin database backup \
 neo4j
 ----
 
-But if we select the `--type=AUTO` option, the command will succeed and the result would be another empty full backup.
+But if you select the `--type=AUTO` option, the command will succeed, and the result would be another empty *full* backup.
 
 [source,shell]
 ----
@@ -650,6 +649,8 @@ neo4j-admin database backup \
 --type=AUTO --prefer-diff-as-parent \
 neo4j
 ----
+
+The result would be:
 
 [cols="h,e,m,h,h"]
 |===
@@ -661,3 +662,4 @@ neo4j
 |===
 
 ======
+=====
