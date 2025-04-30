@@ -249,12 +249,18 @@ neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
 [[recreate-databases]]
 == Recreate a database
 
-The xref:procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure allows you to:
+In Neo4j 2025.04, the xref:procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure is deprecated in favour of xref:procedures.adoc#procedure_dbms_recreateDatabase[`dbms.recreateDatabase()`].
+
+The recreate procedure allows you to:
 
 * Change the database store to a specified backup, while keeping all the associated privileges for the database.
 
 * Make your database write-available again after it has been lost (for example, due to a disaster).
 See xref:clustering/disaster-recovery.adoc[Disaster recovery] for more information.
+
+* label:new[Introduced in 2025.02] Delete the data and schema for a database, while keeping the database privileges assigned to each role.
+
+* label:new[Introduced in 2025.04] Alter the database store format when clearing the data and schema.
 
 [CAUTION]
 ====
@@ -277,7 +283,8 @@ You need xref:authentication-authorization/dbms-administration.adoc#access-contr
 To check if the recreation is successful, use the `SHOW DATABASES` command and verify that all allocations have been started.
 
 Additionally, you have the option to modify <<alter-topology-recreate, the topology>> during the recreation process.
-However, note that the store format, access, and enrichment cannot be altered during recreation.
+However, note that up to Neo4j 2025.04, the store format, access, and enrichment cannot be altered during recreation.
+Starting with 2025.04, the store format can only be altered if the `clearData` option is used.
 
 [[recreate-seeding-options]]
 === Seeding options
@@ -304,7 +311,7 @@ See xref::database-administration/standard-databases/seed-from-uri.adoc[Seed fro
 
 [source, shell]
 ----
-CALL dbms.cluster.recreateDatabase("neo4j", {seedURI: "s3://myBucket/myBackup.backup"});
+CALL dbms.recreateDatabase("neo4j", {seedURI: "s3://myBucket/myBackup.backup"});
 ----
 
 [[seed-servers]]
@@ -328,7 +335,7 @@ The number of defined servers cannot exceed the number of total allocations in t
 +
 [source, shell]
 ----
-CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: ["serverId1", "serverId2", "serverId3"]});
+CALL dbms.recreateDatabase("neo4j", {seedingServers: ["serverId1", "serverId2", "serverId3"]});
 ----
 
 [[undefined-servers]]
@@ -339,7 +346,7 @@ The store will be replaced by the most up-to-date seeder available in the cluste
 +
 [source, shell]
 ----
-CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: []});
+CALL dbms.recreateDatabase("neo4j", {seedingServers: []});
 ----
 
 [[undefined-servers-backup]]
@@ -351,8 +358,9 @@ This means the store is replaced by the most up-to-date seeder if available; oth
 +
 [source, shell]
 ----
-CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: [], seedURI: "s3://myBucket/myBackup.backup"});
+CALL dbms.recreateDatabase("neo4j", {seedingServers: [], seedURI: "s3://myBucket/myBackup.backup"});
 ----
+
 
 [[alter-topology-recreate]]
 === Change the topology
@@ -365,8 +373,39 @@ If there are more available servers in the cluster hosting the database than the
 
 [source, shell]
 ----
-CALL dbms.cluster.recreateDatabase("neo4j", {seedingServers: [], primaries: 3, secondaries: 0});
+CALL dbms.recreateDatabase("neo4j", {seedingServers: [], primaries: 3, secondaries: 0});
 ----
+
+
+[role=label--new-2025.02]
+[[clear-data-recreate]]
+=== Clear data option
+
+In Neo4j 2025.02, the `clearData` option was added to the recreate procedure.
+This option allows you to delete the data (e.g., nodes and relationships) and the schema (e.g., constraints and indexes) for the database.
+This means you end up with an empty store, but as with the other recreate database options, all privileges associated with the database are kept.
+
+[CAUTION]
+====
+Using the clear data option means the data and schema will be deleted *permanently*.
+If you want to have the option of getting them back later, make sure to take a backup before clearing the database.
+See xref:backup-restore/online-backup.adoc[Online backup] for more information.
+====
+
+[role=label--new-2025.04]
+[[alter-store-format]]
+==== Alter the database store format
+
+In Neo4j 2025.04, the database store format can also be altered during recreation, but only when the `clearData` option is specified.
+
+See xref:database-internals/store-formats.adoc[Store formats], for more details about available database store formats in Neo4j.
+If the store format option is not defined, the recreated database ends up with the same store format as before the recreation.
+
+[source, shell]
+----
+CALL dbms.recreateDatabase("neo4j", {clearData: true, storeFormat: "block"});
+----
+
 
 [[cluster-seed]]
 == Seed a cluster
@@ -471,6 +510,7 @@ If not set, there are no mode constraints on the server.
 == Change the default database
 
 You can use the procedure xref:procedures.adoc#procedure_dbms_setDefaultDatabase[`dbms.setDefaultDatabase("newDefaultDatabaseName")`] to change the default database for a DBMS.
+Starting with Neo4j 2025.04, the default database can also be set to a local or remote database alias.
 
 . Ensure that the database to be set as default exists, otherwise create it using the command `CREATE DATABASE <database-name>`.
 . Show the name and status of the current default database by using the command `SHOW DEFAULT DATABASE`.
