@@ -2,7 +2,7 @@
 [[multi-dc-cluster-aks]]
 = Deploy a single Neo4j cluster across AKS clusters
 
-With the Neo4j Helm chart, you can deploy a Neo4j cluster on multiple AKS clusters using load balancers and an Azure application gateway.
+With the Neo4j Helm chart, you can deploy a Neo4j cluster on multiple Azure Kubernetes Service (AKS) clusters using load balancers and an Azure application gateway.
 
 The following diagram is a schematic representation of a Neo4j cluster with three primary servers running on three different AKS clusters.
 
@@ -224,7 +224,7 @@ az network vnet subnet create -g my-RG --vnet-name my-VNet -n subnet4 \
 }
 --
 . Now you are ready to create the AKS clusters.
-Get the subscription ID of `subnet1` by either running the following command (it uses the `jq` command) or copying it from the subnet creation output.
+Get the subscription ID of subnets by either running the following command (it uses the `jq` command) or copying it from the subnet creation output.
 +
 [source, shell]
 --
@@ -236,15 +236,15 @@ az network vnet subnet show -g my-RG --vnet-name my-VNet -n subnet1 --output jso
 --
 "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/
 --
-. Create the first AKS cluster named `my-aks-cluster-a` with 5 nodes in your resource group using the subscription ID.
+. Create three AKS clusters named `my-aks-cluster-a`, `my-aks-cluster-b`, and `my-aks-cluster-c` with 5 nodes each in your resource group using the subscription ID.
 +
 [source, shell]
 --
 az aks create --name my-aks-cluster-a --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet1" -g my-RG
 
-az aks create --name my-aks-cluster-b --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet2" -g my-RG
+az aks create --name my-aks-cluster-b --node-count=5 --zones 2 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet2" -g my-RG
 
-az aks create --name my-aks-cluster-c --node-count=5 --zones 1 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet3" -g my-RG
+az aks create --name my-aks-cluster-c --node-count=5 --zones 3 --vnet-subnet-id "/subscriptions/5b9ae547-ce82-4834-b276-b72904ceaa84/resourceGroups/my-RG/providers/Microsoft.Network/virtualNetworks/my-VNet/subnets/subnet3" -g my-RG
 --
 +
 .Example output
@@ -427,7 +427,7 @@ Waiting for AAD role to propagate[################################    ]  90.0000
   "windowsProfile": null
 }
 --
-. Repeat the previous two steps to create two more AKS clusters, named `my-aks-cluster-b` and `my-aks-cluster-c`.
+
 . Configure `kubectl` to use your AKS clusters using:
 +
 [source, shell]
@@ -525,6 +525,8 @@ volumes:
     mode: defaultStorageClass
 services:
   neo4j:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
     spec:
       loadBalancerIP: 10.30.2.101
     multiCluster: true
@@ -552,6 +554,8 @@ volumes:
     mode: defaultStorageClass
 services:
   neo4j:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
     spec:
       loadBalancerIP: 10.30.3.101
     multiCluster: true
