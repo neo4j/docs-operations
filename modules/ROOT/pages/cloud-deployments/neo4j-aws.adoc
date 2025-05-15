@@ -135,6 +135,46 @@ When the CloudFormation template creates a new Neo4j cluster, an Auto Scaling gr
 If you add more EC2 instances to your ASG, they will be installed with the same monthly version, ensuring that all Neo4j cluster servers are installed with the same version, regardless of when the EC2 instances were created.
 
 
+=== Neo4j cluster and Auto Scaling Group
+
+The Neo4j AWS CloudFormation template deploys a cluster into an ASG.
+However, managing a Neo4j cluster with ASG requires careful planning.
+Starting from the 5.x series, Neo4j’s clustering relies on stable servers identities.
+In contrast, ASGs are primarily designed for stateless, interchangeable workloads, which means they can terminate and recreate servers at any time, breaking their identity.
+
+To provide stable servers identities, it is recommended to use a persistent disk, e.g., Amazon Elastic Block Store (EBS).
+For more information about EBS volumes, see link:https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes.html[Amazon EBS volumes].
+Amazon EBS provides block storage resources that can be used with Amazon EC2 instances.
+
+If a server in Neo4j cluster does not remount its original EBS volume, it will either:
+
+* Start with no data (store copy issue).
+* Fail to rejoin the cluster correctly.
+
+How to run Neo4j cluster in EC2 instances with ASGs::
++
+. Create an EBS volume and tag it.
+You can follow the steps outlined in the guide link:https://docs.aws.amazon.com/ebs/latest/userguide/ebs-creating-volume.html[Create an Amazon EBS volume].
++
+. Attach the EBS volume it to an Amazon EC2 instance in the same Availability Zone.
+For more information, see link:https://docs.aws.amazon.com/ebs/latest/userguide/ebs-attaching-volume.html[Attach an Amazon EBS volume to an Amazon EC2 instance].
++
+. Ensure stable volume re-attachment.
+Use an instance startup script (via EC2 User data or `systemd` service) to:
+.. Identify its own logical identity (e.g., via private IP or hostname).
+.. Locate the correct EBS volume by tag.
+.. Attach the volume to the instance.
+.. Mount the volume to `/var/lib/neo4j` or appropriate data directory.
++
+. Use rolling updates only.
+Set `maxSurge = 0` and `maxUnavailable = 1` in any update mechanism to avoid multiple restarts that could destabilize the cluster.
++
+. Avoid auto-healing on cluster members.
+ASG health checks should not terminate nodes automatically.
+Use external monitoring (e.g., Prometheus, Neo4j’s health checks) and manual intervention for cluster members.
+
+
+
 === Remove a server from the Neo4j cluster
 
 Rolling updates on Amazon Machine Images (AMIs) often involve rotating the images.
