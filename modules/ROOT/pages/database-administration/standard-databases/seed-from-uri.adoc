@@ -28,26 +28,23 @@ neo4j@neo4j> SHOW DATABASES;
 
 To determine the cause of the problem, it is recommended to look at the `debug.log`.
 
-[NOTE]
-====
-Starting from Neo4j 2025.01, seed from URI can also be used in combination with xref:database-administration/standard-databases/create-databases.adoc[`CREATE OR REPLACE DATABASE`].
-====
 
 [[neo4j-seed-providers]]
 == Seed providers in Neo4j
 
-The seed can either be a full backup, a differential backup (see <<cloud-seed-provider, `CloudSeedProvider`>>), or a dump from an existing database.
+The seed can either be a full backup, a differential backup (see <<cloud-seed-provider, `CloudSeedProvider`>>, introduced in Neo4j 5.26), or a dump from an existing database.
 The sources of seeds are called _seed providers_.
 
 The mechanism is pluggable, allowing new sources of seeds to be supported (see link:https://www.neo4j.com/docs/java-reference/current/extending-neo4j/project-setup/#extending-neo4j-plugin-seed-provider[Java Reference -> Implement custom seed providers] for more information).
 
-The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server, Amazon S3, Google Cloud Storage, and Azure Cloud Storage.
+The product has built-in support for seed from a mounted file system (file), FTP server, HTTP/HTTPS server, Amazon S3, Google Cloud Storage (from Neo4j 5.25), and Azure Cloud Storage (from Neo4j 5.25).
 
 [NOTE]
 ====
 Amazon S3, Google Cloud Storage, and Azure Cloud Storage are supported by default, but the other providers require configuration of xref:configuration/configuration-settings.adoc#config_dbms.databases.seed_from_uri_providers[`dbms.databases.seed_from_uri_providers`].
 ====
 
+[role=label--new-5.26]
 [[file-seed-provider]]
 === FileSeedProvider
 
@@ -60,13 +57,12 @@ The `FileSeedProvider`  supports:
 
 The `URLConnectionSeedProvider` supports the following:
 
+** `file:` label:deprecated[Deprecated in 5.26]
 ** `ftp:`
 ** `http:`
 ** `https:`
 
-Starting from Neo4j 2025.01, the `URLConnectionSeedProvider` does not support `file`.
-// This is true for both Cypher 5 and Cypher 25.
-
+[role=label--new-5.25]
 [[cloud-seed-provider]]
 === CloudSeedProvider
 
@@ -76,12 +72,12 @@ The `CloudSeedProvider` supports:
 ** `gs:`
 ** `azb:`
 
-The `CloudSeedProvider` supports using xref:backup-restore/modes.adoc#differential-backup[differential backup] files as seeds.
+Starting from Neo4j 5.26, the `CloudSeedProvider` supports using xref:backup-restore/modes.adoc#differential-backup[differential backup] files as seeds.
 With the provided differential backup file, the `CloudSeedProvider` searches the directory containing differential backup files for a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] ending at the specified differential backup, and then seeds using this backup chain.
 
 [.tabbed-example]
 =====
-[role=include-with-AWS-S3]
+[role=include-with-AWS-S3 label--new-5.25]
 ======
 
 include::partial$/aws-s3-overrides.adoc[]
@@ -96,7 +92,7 @@ CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBac
 ----
 
 ======
-[role=include-with-Google-cloud-storage]
+[role=include-with-Google-cloud-storage label--new-5.25]
 ======
 
 include::partial$/gcs-credentials.adoc[]
@@ -108,7 +104,7 @@ include::partial$/gcs-credentials.adoc[]
 CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'gs://myBucket/myBackup.backup' }
 ----
 ======
-[role=include-with-Azure-cloud-storage]
+[role=include-with-Azure-cloud-storage label--new-5.25]
 ======
 
 include::partial$/azb-credentials.adoc[]
@@ -122,39 +118,9 @@ CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'azb://myStorageAcco
 ======
 =====
 
-==== Support for seeding up to a date or a transaction ID
 
-Starting from Neo4j 2025.01, the `CloudSeedProvider` supports seeding up to a specific date or transaction ID using the `seedRestoreUntil` option.
-
-[role=label--new-2025.01]
-Seed up to a specific date::
-
-To seed up to a specific date, you need to pass the differential backup, which contains the data up to that date.
-+
-[source,shell]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedRestoreUntil: datetime("2019-06-01T18:40:32.142+0100") }
-----
-+
-This will seed the database with transactions committed before the provided timestamp.
-
-[role=label--new-2025.01]
-Seed up to a specific transaction ID::
-
-To seed up to a specific transaction ID, you need to pass the differential backup that contains the data up to that transaction ID.
-+
-[source,shell]
-----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedRestoreUntil: 123 }
-----
-+
-This will seed the database with transactions up to, but not including transaction 123.
-
-[role=label--deprecated]
 [[s3-seed-provider]]
 === S3SeedProvider
-
-// When Cypher 25 is released, we have to label this section 'Cypher 5' as this functionality is only available in Cypher 5.
 
 The `S3SeedProvider` supports:
 
@@ -163,7 +129,7 @@ The `S3SeedProvider` supports:
 
 [NOTE]
 ====
-Neo4j comes bundled with necessary libraries for AWS S3 connectivity.
+Neo4j 5 comes bundled with necessary libraries for AWS S3 connectivity.
 Therefore, if you use `S3SeedProvider`,`aws cli` is not required but can be used with the `CloudSeedProvider`.
 ====
 
@@ -199,8 +165,9 @@ Where `accessKey` and `secretKey` are provided by AWS.
 | URI example
 
 | `file:`
-| `FileSeedProvider`
-| `\file://tmp/backup1.backup`
+| `URLConnectionSeedProvider` label:deprecated[Deprecated in 5.26], +
+`FileSeedProvider` label:new[Introduced in 5.26]
+| `file:/tmp/backup1.backup`
 
 | `ftp:`
 | `URLConnectionSeedProvider`
@@ -216,14 +183,15 @@ Where `accessKey` and `secretKey` are provided by AWS.
 
 | `s3:`
 | `S3SeedProvider` label:deprecated[Deprecated in 5.26], +
-`CloudSeedProvider`
+`CloudSeedProvider` label:new[Introduced in 5.25]
 | `s3://mybucket/backups/backup1.backup`
 
 | `gs:`
-| `CloudSeedProvider`
+| `CloudSeedProvider` label:new[Introduced in 5.25]
 | `gs://mybucket/backups/backup1.backup`
 
 | `azb:`
-| `CloudSeedProvider`
+| `CloudSeedProvider` label:new[Introduced in 5.25]
 | `azb://mystorageaccount.blob/backupscontainer/backup1.backup`
 |===
+
