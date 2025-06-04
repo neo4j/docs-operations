@@ -4,8 +4,9 @@
 [[database-management]]
 = Managing databases in a cluster
 
-The number of both primary and secondary servers to host a database can be set when the database is created and altered after creation.
-The command `CREATE DATABASE` can be used to specify the initial topology and `ALTER DATABASE` can be used to change the topology once the database is created.
+When creating a database or altering it after creation, you can set the number of both primary and secondary servers to host your database.
+To specify the initial topology, use the command `CREATE DATABASE`. 
+To change the topology once the database is created, run the `ALTER DATABASE` command.
 If a database is no longer needed, the command `DROP DATABASE` deletes the database from the cluster.
 
 [[create-database]]
@@ -13,12 +14,13 @@ If a database is no longer needed, the command `DROP DATABASE` deletes the datab
 
 The command to create a database in a cluster is not significantly different from the command to create a database in a non-clustered environment (see xref:database-administration/standard-databases/create-databases.adoc[Create, start, and stop databases] for more information on database management on single servers).
 The difference in a clustered environment is that the topology can be specified, i.e. how many primaries and secondaries are desired for the database.
-To create a database `foo` with 3 servers hosting the database in primary mode and 2 servers in secondary mode, the command looks like this:
+To create a database `foo` with 3 servers hosting the database in primary mode and 2 servers in secondary mode, run the following command:
 
 [source, cypher]
 ----
 CREATE DATABASE foo TOPOLOGY 3 PRIMARIES 2 SECONDARIES
 ----
+
 Alternatively, you can use link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/parameters[parameters] to provide the number of primaries and secondaries:
 
 .Parameters
@@ -44,11 +46,13 @@ For example, if the cluster's servers are set up with mode constraints to contai
 [NOTE]
 ====
 If `TOPOLOGY` is not specified, the database is created according to `initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` specified in _neo4j.conf_.
-After cluster startup, these values can be overwritten using the `dbms.setDefaultAllocationNumbers` procedure.
+After cluster startup, you can overwrite these values using the `dbms.setDefaultAllocationNumbers` procedure.
 ====
+
 [NOTE]
 ====
 A `CREATE DATABASE` command allocates the database, therefore there is no requirement to execute `REALLOCATE DATABASES` (described in xref:clustering/servers.adoc#_hosting_databases_on_added_servers[Hosting databases on added servers]).
+
 However, over time, or after several `CREATE DATABASE` commands have been issued, the distribution of databases can become unbalanced.
 At this point you can run `REALLOCATE DATABASES` to make the cluster re-balance databases across all servers that are part of the cluster.
 ====
@@ -61,7 +65,7 @@ To alter the topology of or read/write access to a database after it has been cr
 [[alter-topology]]
 === Alter database topology
 
-To change the topology of the database `foo` from the previous example, the command can look like this:
+To change the topology of the database `foo` from the previous example, run the following command:
 
 [source, cypher]
 ----
@@ -95,19 +99,19 @@ Note, like `CREATE DATABASE`, the `ALTER DATABASE` command allocates the databas
 
 This normally happens when the cluster is configured with more servers than the sum of the number of primaries and secondaries for any one database.
 
-It is not possible to automatically transition to a topology with a single primary host. Attempting to do so results in an error.
+It is not possible to automatically transition to a topology with a single primary host.
+Attempting to do so results in an error.
 
-However, it is possible to _manually_ do this transition.
-The first step is to back up the database, see xref:backup-restore/index.adoc[Backup and restore] for more information.
-Once the database is backed up, the next step is to drop the database, see xref:database-administration/standard-databases/delete-databases.adoc[Delete databases] for more information.
-The last step is to either seed a cluster from the backup with the new topology, or to restore the backup on a single server.
+However, it is possible to _manually_ do this transition:
+
+. The first step is to back up the database, see xref:backup-restore/index.adoc[Backup and restore] for more information.
+. Once the database is backed up, the next step is to drop the database.
+See xref:database-administration/standard-databases/delete-databases.adoc[Delete databases] for more details.
+. The last step is to either seed a cluster from the backup with the new topology, or to restore the backup on a single server.
 See xref:clustering/databases.adoc#cluster-seed[Seed a cluster] further on for information on seeding.
 
 Also, it is possible to automatically transition _from_ a topology with a single primary host to multiple primary hosts.
-Keep in mind that during such a transition, the database will be unavailable for a short period of time.
-
-`ALTER DATABASE` commands are optionally idempotent, with the default behavior to fail with an error if the database does not exist.
-Appending `IF EXISTS` to the command ensures that no error is returned and nothing happens should the database not exist.
+Keep in mind that during such a transition, the database is unavailable for a short period of time.
 
 If the `ALTER DATABASE` command decreases the number of allocations of a database, allocations on xref:clustering/servers.adoc#cordoned-state[cordoned servers] are removed first.
 
@@ -245,166 +249,6 @@ neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
 +----------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-
-[[recreate-databases]]
-== Recreate a database
-
-In Neo4j 2025.04, the xref:procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure is deprecated in favour of xref:procedures.adoc#procedure_dbms_recreateDatabase[`dbms.recreateDatabase()`].
-
-The recreate procedure allows you to:
-
-* Change the database store to a specified backup, while keeping all the associated privileges for the database.
-
-* Make your database write-available again after it has been lost (for example, due to a disaster).
-See xref:clustering/disaster-recovery.adoc[Disaster recovery] for more information.
-
-* label:new[Introduced in 2025.02] Delete the data and schema for a database, while keeping the database privileges assigned to each role.
-
-* label:new[Introduced in 2025.04] Alter the database store format when clearing the data and schema.
-
-[CAUTION]
-====
-The recreate procedure works only for real user databases and not for composite databases, or the `system` database.
-
-Remember that the recreate procedure results in downtime while the stores get updated.
-The time is unbounded and may depend on different factors -- for example, the size of the store, network speed, etc.
-====
-
-The database in question can be in an `online` or `offline` state when it is recreated, but a successful operation starts the database regardless of its previous state.
-
-If your database has Change Data Capture (CDC) enabled, the CDC chain will stop when the database is recreated, even though CDC remains enabled in the recreated database.
-To restore CDC functionality, follow the guide on how link:https://neo4j.com/docs/cdc/current/existing-databases/[to initialize CDC applications from an existing database].
-
-Before recreating a database, any eventual quarantined states need to be addressed.
-For more information, see xref:database-administration/standard-databases/errors.adoc#quarantine[Standard databases -> Error handling].
-
-You need xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-database-management[the `CREATE DATABASE` and `DROP DATABASE` privileges] to run the recreate procedure.
-
-To check if the recreation is successful, use the `SHOW DATABASES` command and verify that all allocations have been started.
-
-Additionally, you have the option to modify <<alter-topology-recreate, the topology>> during the recreation process.
-However, note that up to Neo4j 2025.04, the store format, access, and enrichment cannot be altered during recreation.
-Starting with 2025.04, the store format can only be altered if the `clearData` option is used.
-
-[[recreate-seeding-options]]
-=== Seeding options
-
-The store to be used during the recreation of a database can be defined in different ways.
-One method uses a backup, while others use available allocations in the cluster.
-
-You can use either <<uri-seed, `seedURI`>> or <<seed-servers, `seedingServers`>> to specify the source from which the database should be recreated.
-
-* If you define neither, an error is thrown.
-
-* If you define both of them, then `seedingServers` must be an empty list.
-See <<undefined-servers-backup, Undefined servers with fallback backup>> for more details.
-
-* If `seedingServers` is not empty and `seedURI` is also defined, an error will occur.
-
-[[uri-seed]]
-==== Use backup as a seed
-
-If you provide a URI to a backup or a dump, the stores on all allocations will be replaced by the backup or the dump at the given URI.
-The new allocations can be put on any `ENABLED` server in the cluster.
-See xref::database-administration/standard-databases/seed-from-uri.adoc[Seed from URI] for more details.
-
-
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {seedURI: "s3://myBucket/myBackup.backup"});
-----
-
-[[seed-servers]]
-==== Use available servers as a seed
-
-After the recreation is complete, the database will have the latest data store from the seeding servers.
-
-[CAUTION]
-====
-Recreation is based on remaining stores or a store defined by the user.
-This means that stores which were lost or not defined are not used for the recreation.
-If not used stores were more up to date than the used ones, this results in data loss.
-====
-
-[[specified-servers]]
-Specified servers::
-
-You can specify a set of available servers.
-The stores on all allocations will be synchronized to the most up-to-date store from the defined servers.
-The number of defined servers cannot exceed the number of total allocations in the desired topology.
-+
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {seedingServers: ["serverId1", "serverId2", "serverId3"]});
-----
-
-[[undefined-servers]]
-Undefined servers::
-
-If you provide an empty list of seeding servers and do not specify a `seedURI`, Neo4j automatically selects all available allocations of the database as seeders.
-The store will be replaced by the most up-to-date seeder available in the cluster.
-+
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {seedingServers: []});
-----
-
-[[undefined-servers-backup]]
-Undefined servers with fallback backup::
-
-If both an empty list of seeding servers and a `seedURI` are provided, Neo4j finds all available allocations of the database and use those as seeders.
-However, if no available servers can be found, the database is recreated based on the backup or the dump defined by the URI.
-This means the store is replaced by the most up-to-date seeder if available; otherwise, the backup is used.
-+
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {seedingServers: [], seedURI: "s3://myBucket/myBackup.backup"});
-----
-
-
-[[alter-topology-recreate]]
-=== Change the topology
-
-There is an option to define a new topology when recreating a database.
-This can be beneficial during a disaster, if enough servers are not available to recreate the database with the original topology.
-When altering the total number of allocations down during a recreation, it is important to remember that the number of seeding servers cannot exceed the number of total allocations of the database.
-This also holds true when using recreate with an empty list of seeders.
-If there are more available servers in the cluster hosting the database than the number of new allocations, the recreation will fail.
-
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {seedingServers: [], primaries: 3, secondaries: 0});
-----
-
-
-[role=label--new-2025.02]
-[[clear-data-recreate]]
-=== Clear data option
-
-In Neo4j 2025.02, the `clearData` option was added to the recreate procedure.
-This option allows you to delete the data (e.g., nodes and relationships) and the schema (e.g., constraints and indexes) for the database.
-This means you end up with an empty store, but as with the other recreate database options, all privileges associated with the database are kept.
-
-[CAUTION]
-====
-Using the clear data option means the data and schema will be deleted *permanently*.
-If you want to have the option of getting them back later, make sure to take a backup before clearing the database.
-See xref:backup-restore/online-backup.adoc[Online backup] for more information.
-====
-
-[role=label--new-2025.04]
-[[alter-store-format]]
-==== Alter the database store format
-
-In Neo4j 2025.04, the database store format can also be altered during recreation, but only when the `clearData` option is specified.
-
-See xref:database-internals/store-formats.adoc[Store formats], for more details about available database store formats in Neo4j.
-If the store format option is not defined, the recreated database ends up with the same store format as before the recreation.
-
-[source, shell]
-----
-CALL dbms.recreateDatabase("neo4j", {clearData: true, storeFormat: "block"});
-----
 
 
 [[cluster-seed]]

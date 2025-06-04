@@ -192,35 +192,53 @@ See xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-provide
 
 == Microsoft Entra ID (formerly Azure Active Directory)
 
+The following examples show how to configure Microsoft Entra ID for authentication and authorization using access tokens and ID tokens.
+
+=== Register the application
+
+. Log in to the https://portal.azure.com/#home[Azure portal].
+. Click *Microsoft Entra ID* and navigate to *Manage -> App registrations*.
+. Click *New registration*.
+. Type a name for your application, for example, `Neo4j SSO`.
+. Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)`.
+. Under *Redirect URI*, select `Single-page application (SPA)` and enter the redirect URI: `http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri`
+The redirect URI will accept the returned token responses after successful authentication.
+. Click *Register*.
+
 === Access token
 
-This example shows how to configure Entra ID for authentication and authorization using an access token.
+This example shows how to configure Neo4j to use an Entra ID access token for authentication and authorization.
 
-. After the successful creation of your SSO application in Azure, open the *Token configuration* tab to configure a token.
+==== Configure Entra ID
+
+. From the *App registrations* page, select the app you just created.
+. From the left-hand side menu, navigate to *Manage -> Token configuration*.
 .. Click *Add groups claim*.
-.. Select *Security groups* to include in your access token.
+.. Select *Groups assigned to the application (recommended for large enterprise companies to avoid exceeding the limit on the number of groups a token can emit)* to include in your access token.
 .. Save your changes.
 
-. Open the **Expose an API** tab and select **Add a Scope**.
-.. If you click the **Add a Scope** button for the first time, you see a new pane stating that you need to add an _Application ID URI_ before proceeding.
+. Navigate to *Expose an API* and click **Add a Scope**.
 +
+[NOTE]
+====
+The first time you click the *Add a Scope* button, you see a new pane stating that you need to add an _Application ID URI_ before proceeding.
 You can find it on your app *Overview* page.
-+
-.The GUID is used to identify specific resources or instances within Azure. You can find it on the app registration page.
-image::sso-configuration-tutorials/azure-id.svg[]
-+
-.. Click *Save and continue* after setting the _Application ID URI_.
+It is a GUID that looks like this: `api://<GUID>`.
+The GUID is a unique identifier for your application.
+====
 
+. Click *Save and continue* after setting the _Application ID URI_.
 . Fill in all mandatory fields in the pane **Add a scope**.
-.. Enter a new *Scope name*, *Admin consent display name*, and *Admin consent description*.
+.. Enter a new *Scope name* (e.g., `access-token`), *Admin consent display name*, and *Admin consent description*.
 .. Make sure the *Enabled* scope state is selected.
 .. Select the *Add scope* button again to create a new scope.
 You can add all scopes supported by your API.
-+
-Once the scopes are created, make a note of them for use later.
+Make a note of them for later.
 
-. Configure Neo4j to use Entra ID for authentication by configuring the following settings in the _neo4j.conf_ file:
-+
+==== Configure Neo4j
+
+You can configure Neo4j to use Entra ID for authentication by configuring the following settings in the _neo4j.conf_ file:
+
 [source, properties]
 ----
 # Configure the access_token
@@ -228,54 +246,36 @@ dbms.security.oidc.azure.config=principal=unique_name;code_challenge_method=S256
 # Configure the OIDC token endpoint with the Directory (tenant) ID
 dbms.security.oidc.azure.token_endpoint=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/oauth2/v2.0/token
 # Configure the iss claim in the id token with the Directory (tenant) ID
-# Make sure you add the trailing slash (`/`) at the end of the URL, or this operation might fail.
+# Make sure you add the trailing slash (`/`) at the end of the URL or this operation might fail.
 dbms.security.oidc.azure.issuer=https://sts.windows.net/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/
 # Provide the Entra ID parameters, such as client_id, response_type, scope, etc.
 dbms.security.oidc.azure.params=client_id=4376dc8b-b5af-424f-9ada-c1c1b2d416b9;response_type=code;scope=openid profile email api://4376dc8b-b5af-424f-9ada-c1c1b2d416b9/access-token
 ----
-+
-[NOTE]
-====
-As previously mentioned, the GUID here is also the Directory (tenant) ID.
-Make sure you add the trailing slash (`/`) at the end or this operation might fail.
-
-The audience parameter for access tokens is typically set with `api://` at the front.
-====
-
 
 === ID token
 
-This example shows how to configure Entra ID for authentication and authorization using ID tokens.
-
-==== Register the application
-
-. Log in to the https://portal.azure.com/#home[Azure portal].
-. Navigate to *Microsoft Entra ID > Overview*.
-. From the *Add* dropdown menu, select *App registration* and fill in the following information to create your SSO application:
-+
-image::sso-configuration-tutorials/oidc-azure-client-creation.png[title="Entra OIDC client creation"]
-The redirect URI `http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri` is the URI that will accept returned token responses after successful authentication.
-. Click *Register*.
+This example shows how to configure Neo4j to use an Entra ID ID token for authentication and authorization.
 
 ==== Configure Neo4j
-. After the successful app creation, on the app's *Overview* page, find the Application (client) ID value. Use it to configure the following properties in the _neo4j.conf_ file.
+
+. From the *App registrations* page, select the app you created in <<#_register_the_application,Register the application>>.
+. On the application *Overview* page, copy the Application (client) ID value and use it to configure the following properties in the _neo4j.conf_ file:
 +
 [source, properties]
 ----
-dbms.security.oidc.azure.audience=c2830ff5-86d9-4e38-8a2b-9efad6f3d06d
-dbms.security.oidc.azure.params=client_id=c2830ff5-86d9-4e38-8a2b-9efad6f3d06d;response_type=code;scope=openid profile email
+dbms.security.oidc.azure.audience=4376dc8b-b5af-424f-9ada-c1c1b2d416b9
+dbms.security.oidc.azure.params=client_id=4376dc8b-b5af-424f-9ada-c1c1b2d416b9;response_type=code;scope=openid profile email
 ----
 
-. Navigate to *Endpoints*, to find the OpenID Connect metadata document. Use it to configure the `well_known_discovery_uri` in the _neo4j.conf_ file.
-+
-image::sso-configuration-tutorials/oidc-azure-client-config.png[title="Entra OIDC client config"]
+. On the app's *Overview* page, click the *Endpoints* tab, and copy the *OpenID Connect metadata document* URI:
+Use it to configure the `well_known_discovery_uri` in the _neo4j.conf_ file.
 +
 [source, properties]
 ----
-dbms.security.oidc.azure.well_known_discovery_uri=https://login.microsoftonline.com/ce976899-299d-4a01-91e5-a5fee8f98626/v2.0/.well-known/openid-configuration
+dbms.security.oidc.azure.well_known_discovery_uri=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/v2.0/.well-known/openid-configuration
 ----
 
-. Configure Neo4j to use Entra ID authentication by configuring the following settings in the _neo4j.conf_ file:
+. Configure Neo4j to use Entra ID authentication in the _neo4j.conf_ file:
 +
 [source, properties]
 ----
@@ -303,7 +303,7 @@ dbms.security.oidc.azure.claims.username=sub
 
 Decide whether you want to use Entra groups directly or Entra App Roles.
 
-Using Entra groups directly might be convenient if you already have users assigned to those groups and want to perform Group-to-Role mapping in Neo4j settings.
+Using Entra groups directly might be convenient if you already have users assigned to those groups and want to perform Group-to-Role mapping in the _neo4j.conf_ file.
 
 Entra App Roles allow a layer of separation between Neo4j roles and groups.
 When App Roles are used, only the roles relevant to Neo4j are sent in the JWT token.
@@ -314,18 +314,18 @@ Details about Entra ID App Roles can be found in the https://learn.microsoft.com
 
 ==== Using Entra groups directly
 
-. Configure the server to return the Group Object IDs in the JWT identity tokens.
-To do this, set `groupMembershipClaims` to `SecurityGroup` in the Manifest of the registered application:
+. From the *App registrations* page, select your application.
+. From the left-hand side menu, navigate to *Manage -> Manifest*.
+. Verify that the server is configured to return the Group Object IDs in the JWT identity tokens:
 +
-image::sso-configuration-tutorials/oidc-azure-server-claims.png[title="Entra OIDC server claims"]
-
-. Create groups in the Entra AD console and assign users to them.
-Take note of the Object Id column.
-In the next step, you must map these to user roles in the Neo4j settings.
-+
-image::sso-configuration-tutorials/oidc-azure-server-groups.png[title="Entra OIDC server groups"]
-
-. Configure a mapping from Entra Group Object IDs to Neo4j roles.
+[source, json]
+----
+"groupMembershipClaims": "SecurityGroup, ApplicationGroup",
+----
+. From the left-hand side menu, navigate to *Manage -> Groups*.
+. Create groups and assign users to them.
+Take note of the *Object Id* column.
+. Configure a mapping from Entra Group Object Ids to Neo4j roles.
 For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
 +
 [source, properties]
@@ -333,8 +333,6 @@ For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso
 dbms.security.oidc.azure.authorization.group_to_role_mapping= "e8b6ddfa-688d-4ace-987d-6cc5516af188" = admin; \
                                                               "9e2a31e1-bdd1-47fe-844d-767502bd138d" = reader
 ----
-+
-
 . Configure Neo4j to use the `groups` field from the JWT token.
 +
 [source, properties]
@@ -344,11 +342,17 @@ dbms.security.oidc.azure.claims.groups=groups
 
 ==== Using Entra ID App roles
 
-. On the app's home page, navigate to *App roles* and add the Neo4j roles to the Microsoft Entra ID.
-+
-image::sso-configuration-tutorials/oidc-azure-app-roles.png[title="Entra OIDC app roles config"]
-
-. The *Value* column in the App roles config must either correspond to Neo4j roles or be mapped in the _neo4j.conf_ file.
+. From the left-hand side menu, navigate to *App roles* and add the Neo4j roles to the Microsoft Entra ID.
+.. Click *Create app role*.
+.. Fill in the fields:
+... *Display name*: `admin`
+... *Allowed member types*: `Users/Groups`
+... *Value*: `admin`. +
+The *Value* column must either correspond to the Neo4j roles or be mapped in the _neo4j.conf_ file.
+... *Description*: `Neo4j admin role`
+.. Click *Apply*.
+. Repeat the previous step for the other roles you want to add.
+. Configure a mapping from Entra App Roles to Neo4j roles in the _neo4j.conf_ file.
 For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
 +
 [source, properties]
@@ -356,15 +360,12 @@ For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso
 dbms.security.oidc.azure.authorization.group_to_role_mapping= "managers" = admin; \
                                                               "engineers" = reader
 ----
-
 . Configure Neo4j to use the `roles` field from the JWT token.
 +
 [source, properties]
-
 ----
 dbms.security.oidc.azure.claims.groups=roles
 ----
-
 . (Optional) If you want control the authentication and authorization on a user level, configure xref:configuration/configuration-settings.adoc#config_dbms.security.require_local_user[`dbms.security.require_local_user`] to `true` in the _neo4j.conf_ file.
 This setting mandates that users with the relevant auth provider attached to them must exist in the database before they can authenticate and authorize with that auth provider.
 For information on how to create users in this mode, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
