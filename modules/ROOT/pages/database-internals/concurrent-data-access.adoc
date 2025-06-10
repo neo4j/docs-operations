@@ -25,41 +25,51 @@ All the anomalies listed here can only occur with the read-committed isolation l
 In Cypher, it is possible to acquire write locks to simulate improved isolation in some cases.
 Consider the case where multiple concurrent Cypher queries increment the value of a property.
 Due to the limitations of the _read-committed isolation level_, the increments might not result in a deterministic final value.
-If there is a direct dependency, Cypher automatically acquires a write lock before reading.
-A direct dependency is when the right-hand side of `SET` has a dependent property read in the expression or the value of a key-value pair in a literal map.
 
-For example, if you run the following query by one hundred concurrent clients, it is very likely not to increment the property `n.prop` to 100, unless a write lock is acquired before reading the property value.
-This is because all queries read the value of `n.prop` within their own transaction, and cannot see the incremented value from any other transaction that has not yet been committed.
-In the worst-case scenario, the final value would be as low as 1 if all threads perform the read before any has committed their transaction.
+Cypher automatically acquires write locks in some cases, but not in others.
+When a Cypher query uses the `SET` clause to update a property, it may or may not acquire a write lock on the node or relationship being updated, depending on whether there is a direct dependency on the property being read.
 
-.Cypher can acquire a write lock
+==== Acquiring a write lock automatically
+
+When a Cypher query has a direct dependency on the property being read, Cypher automatically acquires a write lock before reading the property.
+This is the case when the query uses the `SET` clause to update a property on a node or relationship, and the right-hand side of the `SET` clause has a dependency on the property being read.
+For example, in the following queries, the right-hand side of `SET` has a dependent property read in an expression or a value of a key-value pair in a literal map.
+
+.Incrementing a property using an expression
 ====
-The following example requires a write lock, and Cypher automatically acquires one:
-
 [source, cypher, role="noheader"]
 ----
 MATCH (n:Example {id: 42})
 SET n.prop = n.prop + 1
 ----
+This query increments the property `n.prop` by 1.
+In this case, Cypher automatically acquires a write lock on the node `n` before reading the value of `n.prop`.
+This ensures that no other concurrent queries can modify the node `n` while this query is running, thus preventing lost updates.
 ====
 
-.Cypher can acquire a write lock
+.Incrementing a property using a map literal
 ====
-This example also requires a write lock, and Cypher automatically acquires one:
-
 [source, cypher, role="noheader"]
 ----
 MATCH (n)
 SET n += {prop: n.prop + 1}
 ----
+
+This query also increments the property `n.prop` by 1, but it does so using a map literal.
+In this case, Cypher also acquires a write lock on the node `n` before reading the value of `n.prop`.
 ====
 
-Due to the complexity of determining such a dependency in the general case, Cypher does not cover any of the following example cases:
+==== No direct dependency to acquire a write lock
 
-.Complex Cypher
+When a query does not have a direct dependency on the property being read, Cypher does not automatically acquire a write lock.
+This means if you run multiple concurrent queries that read and write the same property, it is possible to end up with lost updates by allowing other concurrent queries to modify the property value at the same time.
+
+For example, if you run the following queries by one hundred concurrent clients, it is very likely not to increment the property `n.prop` to 100, unless a write lock is acquired before reading the property value.
+This is because all queries read the value of `n.prop` within their own transaction, and cannot see the incremented value from any other transaction that has not yet been committed.
+In the worst-case scenario, the final value would be as low as 1 if all threads perform the read before any has committed their transaction.
+
+.Variable depending on results from reading the property in an earlier statement
 ====
-Variable depending on results from reading the property in an earlier statement:
-
 [source, cypher, role="noheader"]
 ----
 MATCH (n)
@@ -69,10 +79,8 @@ SET n.prop = k + 1
 ----
 ====
 
-.Complex Cypher
+.Circular dependency between properties read and written in the same query
 ====
-Circular dependency between properties read and written in the same query:
-
 [source, cypher, role="noheader"]
 ----
 MATCH (n)
@@ -80,36 +88,36 @@ SET n += {propA: n.propB + 1, propB: n.propA + 1}
 ----
 ====
 
+Workaround::
 To ensure deterministic behavior also in the more complex cases, it is necessary to explicitly acquire a write lock on the node in question.
 In Cypher there is no explicit support for this, but it is possible to work around this limitation by writing to a temporary property.
-
-.Explicitly acquire a write lock
+For example, the following query acquires a write lock for the node by writing to a *dummy* property (`n._dummy_`) before reading the requested value (`n.prop`).
+When acquired, the write lock ensures that no other concurrent queries can modify the node until the transaction is committed or rolled back.
+The dummy property is used only to acquire the write lock, therefore, it can be removed immediately after the lock is acquired.
++
+.Dummy property to acquire a write lock
 ====
-This example acquires a write lock for the node by writing to a dummy property before reading the requested value:
-
 [source, cypher, role="noheader"]
 ----
 MATCH (n:Example {id: 42})
-SET n._LOCK_ = true
+SET n._dummy_ = true
+REMOVE n._dummy_
 WITH n.prop AS p
 // ... operations depending on p, producing k
 SET n.prop = k + 1
-REMOVE n._LOCK_
 ----
 ====
-
-The existence of the `+SET n._LOCK_+` statement before the read of the `n.prop` read ensures the lock is acquired before the read action, and no updates are lost due to enforced serialization of all concurrent queries on that specific node.
 
 === Non-repeatable reads
 
 A non-repeatable read is when the same transaction reads the same data but gets inconsistent results.
 This can easily happen if reading the same data twice in a query and the data gets modified in-between by another concurrent query.
 
-.Non-repeatable read
-====
-The following example query shows that reading the same property twice can give inconsistent results.
+For example, the following query shows that reading the same property twice can give inconsistent results.
 If there are other queries running concurrently, it is not guaranteed that `p1` and `p2` have the same value.
 
+.Non-repeatable read
+====
 [source, cypher, role="noheader"]
 ----
 MATCH (n:Example {id: 42})
@@ -132,17 +140,17 @@ Similarly, the entity may not appear at all if the property is changed to a prev
 
 This anomaly can only occur with operators that scan an index, or parts of an index, for example link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/planning-and-tuning/operators/operators-detail/#query-plan-node-index-scan[`NodeIndexScan`] or link:{neo4j-docs-base-uri}/cypher-manual/{page-version}/planning-and-tuning/operators/operators-detail/#query-plan-directed-relationship-index-seek-by-range[`DirectedRelationshipIndexSeekByRange`].
 
-.Missing and double read
-====
 In the following query, each node `n` that has the property `prop` is expected to appear exactly once.
 However, concurrent updates that modify the `prop` property during index scanning may cause a node to appear multiple times or not at all in the result set.
+
+.Missing and double read
+====
 [source, cypher, role="noheader"]
 ----
 MATCH (n:Example) WHERE n.prop IS NOT NULL
 RETURN n
 ----
 ====
-
 == Locks
 
 When a write transaction occurs, Neo4j takes locks to preserve data consistency while updating.
@@ -279,15 +287,13 @@ Setting `db.lock.acquisition.timeout` to `0` -- which is the default value -- di
 
 This feature cannot be set dynamically.
 
-.Configure lock acquisition timeout
+.Set the timeout to ten seconds
 ====
-Set the timeout to ten seconds.
 [source, parameters]
 ----
 db.lock.acquisition.timeout=10s
 ----
 ====
-
 [[deadlocks]]
 == Deadlocks
 
@@ -319,6 +325,7 @@ Other code that requires synchronization should be synchronized in such a way th
 For example, running the following two queries in https://neo4j.com/docs/operations-manual/current/tools/cypher-shell/[Cypher-shell] at the same time will result in a deadlock because they are attempting to modify the same node properties concurrently:
 
 .Transaction A
+====
 [source, cypher, indent=0, role=nocopy noplay]
 ----
 :begin
@@ -327,8 +334,9 @@ WITH collect(n) as nodes
 CALL apoc.util.sleep(5000)
 MATCH (m:Test2) SET m.prop = 1;
 ----
-
+====
 .Transaction B
+====
 [source, cypher, indent=0, role=nocopy noplay]
 ----
 :begin
@@ -346,6 +354,8 @@ The transaction will be rolled back and terminated. Error: ForsetiClient[transac
  Wait list:ExclusiveLock[
 Client[6697] waits for [ForsetiClient[transactionId=6698, clientId=1]]]
 ----
+
+====
 
 [NOTE]
 ====
