@@ -9,7 +9,7 @@ CREATE ROLE roleNameModifier IF NOT EXISTS;
 CREATE ROLE roleDropper IF NOT EXISTS;
 CREATE ROLE roleAssigner IF NOT EXISTS;
 CREATE ROLE roleRemover IF NOT EXISTS;
-CREATE ROLE roleShower IF NOT EXISTS;
+CREATE ROLE roleViewer IF NOT EXISTS;
 CREATE ROLE roleManager IF NOT EXISTS;
 CREATE ROLE userAdder IF NOT EXISTS;
 CREATE ROLE userNameModifier IF NOT EXISTS;
@@ -17,7 +17,7 @@ CREATE ROLE userModifier IF NOT EXISTS;
 CREATE ROLE passwordModifier IF NOT EXISTS;
 CREATE ROLE statusModifier IF NOT EXISTS;
 CREATE ROLE userDropper IF NOT EXISTS;
-CREATE ROLE userShower IF NOT EXISTS;
+CREATE ROLE userViewer IF NOT EXISTS;
 CREATE ROLE userManager IF NOT EXISTS;
 CREATE ROLE userImpersonator IF NOT EXISTS;
 CREATE ROLE databaseAdder IF NOT EXISTS;
@@ -33,9 +33,9 @@ CREATE ROLE databaseManager IF NOT EXISTS;
 CREATE ROLE aliasAdder IF NOT EXISTS;
 CREATE ROLE aliasDropper IF NOT EXISTS;
 CREATE ROLE aliasModifier IF NOT EXISTS;
-CREATE ROLE aliasLister IF NOT EXISTS;
+CREATE ROLE aliasViewer IF NOT EXISTS;
 CREATE ROLE aliasManager IF NOT EXISTS;
-CREATE ROLE privilegeShower IF NOT EXISTS;
+CREATE ROLE privilegeViewer IF NOT EXISTS;
 CREATE ROLE privilegeAssigner IF NOT EXISTS;
 CREATE ROLE privilegeRemover IF NOT EXISTS;
 CREATE ROLE privilegeManager IF NOT EXISTS;
@@ -59,6 +59,8 @@ CREATE ROLE globbing6 IF NOT EXISTS;
 CREATE ROLE dbmsManager IF NOT EXISTS;
 CREATE ROLE configurationViewer IF NOT EXISTS;
 CREATE ROLE deniedConfigurationViewer IF NOT EXISTS;
+CREATE ROLE serverManager IF NOT EXISTS;
+CREATE ROLE serverViewer IF NOT EXISTS;
 ----
 ////
 
@@ -72,6 +74,11 @@ For more details on the differences between graphs, databases, and the DBMS, ref
 image::privileges_grant_and_deny_syntax_dbms_privileges.svg[width="800", title="Syntax of GRANT and DENY DBMS privileges"]
 
 image::privileges_hierarchy_dbms.svg[width="800", title="DBMS privileges hierarchy"]
+
+[NOTE]
+====
+You can only grant privileges to existing roles.
+====
 
 == The `admin` role privileges
 
@@ -100,7 +107,7 @@ You can create a custom role to manage DBMS privileges by granting the privilege
 Alternatively, you can copy the `admin` role and revoke or deny the unwanted privileges.
 The following exaples show how to create a custom role with a subset of the privileges that the `admin` role using both methods.
 
-=== Create a custom administrator role by creating a new role from scratch
+=== Create a custom administrator role from scratch
 
 Create an administrator role that can only manage users and roles by creating a new role and granting the `USER MANAGEMENT` and `ROLE MANAGEMENT` privileges.
 
@@ -108,19 +115,19 @@ Create an administrator role that can only manage users and roles by creating a 
 +
 [source, cypher, role=noplay]
 ----
-CREATE ROLE usermanager
+CREATE ROLE usermanager;
 ----
 . Grant the privilege to manage users:
 +
 [source, cypher, role=noplay]
 ----
-GRANT USER MANAGEMENT ON DBMS TO usermanager
+GRANT USER MANAGEMENT ON DBMS TO usermanager;
 ----
 . Grant the privilege to manage roles:
 +
 [source, cypher, role=noplay]
 ----
-GRANT ROLE MANAGEMENT ON DBMS TO usermanager
+GRANT ROLE MANAGEMENT ON DBMS TO usermanager;
 ----
 +
 As a result, the `usermanager` role has privileges that only allow user and role management.
@@ -128,7 +135,7 @@ As a result, the `usermanager` role has privileges that only allow user and role
 +
 [source, cypher, role=noplay]
 ----
-SHOW ROLE usermanager PRIVILEGES AS COMMANDS
+SHOW ROLE usermanager PRIVILEGES AS COMMANDS;
 ----
 +
 .Result
@@ -147,35 +154,35 @@ For example, the role is missing privileges for managing, creating, and dropping
 To create a more powerful administrator, you can grant a different set of privileges.
 ====
 
-=== Create a custom administrator role by copying the `admin` role
+=== Create a custom administrator role from scratch with limited capabilities
 
-You can also create a custom administrator role that can perform almost all DBMS capabilities, excluding database management.
-This is done by copying the `admin` role and denying the privileges you do not want.
-However, the role still has some limited database capabilities, such as managing transactions:
+You can also create a custom administrator role with limited capabilities.
+This can be done by creating a new role and granting all `DBMS` privileges, then denying the ones you do not want the role to have, and then granting only the privileges you want to include.
+For example, you can create a custom administrator role `customAdministrator` that has all DBMS privileges except for creating, dropping, and modifying databases, but still has the privilege for managing transactions.
 
 . Create a new role:
 +
 [source, cypher, role=noplay]
 ----
-CREATE ROLE customAdministrator
+CREATE ROLE customAdministrator;
 ----
 . Grant the privilege for all DBMS capabilities:
 +
 [source, cypher, role=noplay]
 ----
-GRANT ALL DBMS PRIVILEGES ON DBMS TO customAdministrator
+GRANT ALL DBMS PRIVILEGES ON DBMS TO customAdministrator;
 ----
 . Explicitly deny the privilege to manage databases:
 +
 [source, cypher, role=noplay]
 ----
-DENY DATABASE MANAGEMENT ON DBMS TO customAdministrator
+DENY DATABASE MANAGEMENT ON DBMS TO customAdministrator;
 ----
 . Grant the transaction management privilege:
 +
 [source, cypher, role=noplay]
 ----
-GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO customAdministrator
+GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO customAdministrator;
 ----
 +
 As a result, the `customAdministrator` role has privileges that include all DBMS privileges except creating, dropping, and modifying databases, as well as managing transactions.
@@ -183,7 +190,7 @@ As a result, the `customAdministrator` role has privileges that include all DBMS
 +
 [source, cypher, role=noplay]
 ----
-SHOW ROLE customAdministrator PRIVILEGES AS COMMANDS
+SHOW ROLE customAdministrator PRIVILEGES AS COMMANDS;
 ----
 +
 .Result
@@ -196,21 +203,30 @@ SHOW ROLE customAdministrator PRIVILEGES AS COMMANDS
 a|Rows: 3
 |===
 
-===
+=== Create a custom administrator role by copying the `admin` role
 
-CREATE ROLE newRole AS COPY OF admin and then revoke the ability to read/write/load data?
+You can also create a custom administrator role by copying the `admin` role and then revoking or denying the privileges you do not want.
+For example, you can create a new role called `newRole` that has all the privileges of the `admin` role, and then revoke the ability to read/write/load data, manage constraints, indexes, name, and remove ability to access all databases, except the `system` database.
 
+. Create a new role by copying the `admin` role:
++
 [source, cypher, role=noplay]
 ----
 CREATE ROLE newRole AS COPY OF admin;
+----
+
+. Revoke the ability to read/write/load data:
++
+[source, cypher, role=noplay]
+----
 REVOKE GRANT MATCH {*} ON GRAPH * NODE * FROM newRole;
 REVOKE GRANT MATCH {*} ON GRAPH * RELATIONSHIP * FROM newRole;
 REVOKE GRANT WRITE ON GRAPH * FROM newRole;
 REVOKE GRANT LOAD ON ALL DATA FROM newRole;
 ----
 
-potentially also remove the index/constraint/name management
-
+. Revoke the ability to manage index/constraint/name:
++
 [source, cypher, role=noplay]
 ----
 REVOKE GRANT CONSTRAINT MANAGEMENT ON DATABASE * FROM newRole;
@@ -220,22 +236,46 @@ REVOKE GRANT SHOW CONSTRAINT ON DATABASE * FROM newRole;
 REVOKE GRANT SHOW INDEX ON DATABASE * FROM newRole;
 ----
 
-If you want to be fancy we could also change what they have access on to system only:
-
+. Revoke the ability to access all databases:
++
 [source, cypher, role=noplay]
 ----
 REVOKE GRANT ACCESS ON DATABASE * FROM newRole;
+----
+. Grant the ability to access the `system` database:
++
+[source, cypher, role=noplay]
+----
 GRANT ACCESS ON DATABASE system TO newRole;
 ----
+
+. To list all privileges for the role `newRole` as commands, use the following query:
++
+[source, cypher, role=noplay]
+----
+SHOW ROLE newRole PRIVILEGES AS COMMANDS;
+----
++
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+| "GRANT ACCESS ON DATABASE `system` TO `newRole`"
+| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `newRole`"
+| "GRANT START ON DATABASE * TO `newRole`"
+| "GRANT STOP ON DATABASE * TO `newRole`"
+| "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `newRole`"
+a|Rows: 5
+|===
 
 [[access-control-dbms-administration-role-management]]
 == The DBMS `ROLE MANAGEMENT` privileges
 
-The DBMS privileges for role management can be granted, denied, and revoked like other privileges.
+The DBMS privileges for role management can be granted, denied, or revoked like other privileges.
 
 [NOTE]
 ====
-For more details about the syntax descriptions, see xref:database-administration/syntax.adoc[].
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
 ====
 
 .Role management privileges command syntax
@@ -289,12 +329,12 @@ GRANT [IMMUTABLE] ROLE MANAGEMENT
 
 === Grant privilege to create roles
 
-You can grant the privilege to add roles using the `CREATE ROLE` command.
+You can grant the privilege to add roles using the `CREATE ROLE` command. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT CREATE ROLE ON DBMS TO roleAdder
+GRANT CREATE ROLE ON DBMS TO roleAdder;
 ----
 
 As a result, the `roleAdder` role has privileges that only allow adding roles.
@@ -302,7 +342,7 @@ To list all privileges for the role `roleAdder` as commands, use the following q
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleAdder PRIVILEGES AS COMMANDS
+SHOW ROLE roleAdder PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -315,12 +355,12 @@ a|Rows: 1
 
 === Grant privilege to rename roles
 
-You can grant the privilege to rename roles using the `RENAME ROLE` privilege.
+You can grant the privilege to rename roles using the `RENAME ROLE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT RENAME ROLE ON DBMS TO roleNameModifier
+GRANT RENAME ROLE ON DBMS TO roleNameModifier;
 ----
 
 As a result, the `roleNameModifier` role has privileges that only allow renaming roles.
@@ -328,7 +368,7 @@ To list all privileges for the role `roleNameModifier`, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleNameModifier PRIVILEGES AS COMMANDS
+SHOW ROLE roleNameModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -341,12 +381,12 @@ a|Rows: 1
 
 === Grant privilege to delete roles
 
-You can grant the privilege to delete roles using the `DROP ROLE` privilege.
+You can grant the privilege to delete roles using the `DROP ROLE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT DROP ROLE ON DBMS TO roleDropper
+GRANT DROP ROLE ON DBMS TO roleDropper;
 ----
 
 As a result, the `roleDropper` role has privileges that only allow deleting roles.
@@ -354,7 +394,7 @@ To list all privileges for the role `roleDropper`, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleDropper PRIVILEGES AS COMMANDS
+SHOW ROLE roleDropper PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -367,12 +407,12 @@ a|Rows: 1
 
 === Grant privilege to assign roles
 
-You can grant the privilege to assign roles to users using the `ASSIGN ROLE` privilege.
+You can grant the privilege to assign roles to users using the `ASSIGN ROLE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ASSIGN ROLE ON DBMS TO roleAssigner
+GRANT ASSIGN ROLE ON DBMS TO roleAssigner;
 ----
 
 As a result, the `roleAssigner` role has privileges that only allow assigning/granting roles.
@@ -380,7 +420,7 @@ To list all privileges for the role `roleAssigner` as commands, use the followin
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleAssigner PRIVILEGES AS COMMANDS
+SHOW ROLE roleAssigner PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -393,12 +433,12 @@ a|Rows: 1
 
 === Grant privilege to remove roles
 
-You can grant the privilege to remove roles from users using the `REMOVE ROLE` privilege.
+You can grant the privilege to remove roles from users using the `REMOVE ROLE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT REMOVE ROLE ON DBMS TO roleRemover
+GRANT REMOVE ROLE ON DBMS TO roleRemover;
 ----
 
 As a result, the `roleRemover` role has privileges that only allow removing/revoking roles.
@@ -406,7 +446,7 @@ To list all privileges for the role `roleRemover` as commands, use the following
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleRemover PRIVILEGES AS COMMANDS
+SHOW ROLE roleRemover PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -431,33 +471,33 @@ The following query shows an example of how to grant the `SHOW ROLE` privilege:
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW ROLE ON DBMS TO roleShower
+GRANT SHOW ROLE ON DBMS TO roleViewer;
 ----
 
-As a result, the `roleShower` role has privileges that only allow showing roles.
-To list all privileges for the role `roleShower` as commands, use the following query:
+As a result, the `roleViewer` role has privileges that only allow showing roles.
+To list all privileges for the role `roleViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleShower PRIVILEGES AS COMMANDS
+SHOW ROLE roleViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"GRANT SHOW ROLE ON DBMS TO `roleShower`"
+|"GRANT SHOW ROLE ON DBMS TO `roleViewer`"
 a|Rows: 1
 |===
 
 === Grant privilege to manage roles
 
-You can grant the privilege to create, rename, delete, assign, remove, and list roles using the `ROLE MANAGEMENT` privilege.
+You can grant the privilege to create, rename, delete, assign, remove, and list roles using the `ROLE MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ROLE MANAGEMENT ON DBMS TO roleManager
+GRANT ROLE MANAGEMENT ON DBMS TO roleManager;
 ----
 
 As a result, the `roleManager` role has all privileges to manage roles.
@@ -465,7 +505,7 @@ To list all privileges for the role `roleManager` as commands, use the following
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE roleManager PRIVILEGES AS COMMANDS
+SHOW ROLE roleManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -480,11 +520,11 @@ a|Rows: 1
 [[access-control-dbms-administration-user-management]]
 == The DBMS `USER MANAGEMENT` privileges
 
-The DBMS privileges for user management can be granted, denied, and revoked like other privileges.
+The DBMS privileges for user management can be granted, denied, or revoked like other privileges.
 
 [NOTE]
 ====
-For more details about the syntax descriptions, see xref:database-administration/syntax.adoc[].
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
 ====
 
 .User management privileges command syntax
@@ -556,7 +596,7 @@ GRANT [IMMUTABLE] USER MANAGEMENT
 
 === Grant privilege to create users
 
-You can grant the privilege to add users using the `CREATE USER` privilege.
+You can grant the privilege to add users using the `CREATE USER` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -569,7 +609,7 @@ To list all privileges for the role `userAdder` as commands, use the following q
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userAdder PRIVILEGES AS COMMANDS
+SHOW ROLE userAdder PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -582,7 +622,7 @@ a|Rows: 1
 
 === Grant privilege to rename users
 
-You can grant the privilege to rename users using the `RENAME USER` privilege.
+You can grant the privilege to rename users using the `RENAME USER` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -595,7 +635,7 @@ To list all privileges for the role `userNameModifier` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userNameModifier PRIVILEGES AS COMMANDS
+SHOW ROLE userNameModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -608,7 +648,7 @@ a|Rows: 1
 
 === Grant privilege to modify users
 
-You can grant the privilege to modify users using the `ALTER USER` privilege.
+You can grant the privilege to modify users using the `ALTER USER` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -621,7 +661,7 @@ To list all privileges for the role `userModifier` as commands, use the followin
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userModifier PRIVILEGES AS COMMANDS
+SHOW ROLE userModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -633,7 +673,7 @@ a|Rows: 1
 |===
 
 
-The `ALTER USER` privilege allows the user to run the `ALTER USER` administration command with one or several of the `SET PASSWORD`, `SET PASSWORD CHANGE [NOT] REQUIRED`, `SET AUTH`, `REMOVE AUTH` and `SET STATUS` parts.
+The `ALTER USER` privilege allows the user to run the `ALTER USER` administration command with one or several of the `SET PASSWORD`, `SET PASSWORD CHANGE [NOT] REQUIRED`, `SET AUTH`, `REMOVE AUTH` and `SET STATUS` parts. +
 For example:
 
 [source, cypher, role=noplay]
@@ -641,9 +681,14 @@ For example:
 ALTER USER jake SET PASSWORD 'verysecret' SET STATUS SUSPENDED
 ----
 
+[NOTE]
+====
+Note that the combination of the `SET PASSWORDS`, `SET AUTH`, `SET USER STATUS`, and the `SET USER HOME DATABASE` privilege actions is equivalent to the `ALTER USER` privilege action.
+====
+
 === Grant privilege to modify users' passwords
 
-You can grant the privilege to modify users' passwords and whether those passwords must be changed upon first login using the `SET PASSWORDS` privilege.
+You can grant the privilege to modify users' passwords and whether those passwords must be changed upon first login using the `SET PASSWORDS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -656,7 +701,7 @@ To list all privileges for the role `passwordModifier` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE passwordModifier PRIVILEGES AS COMMANDS
+SHOW ROLE passwordModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -667,7 +712,7 @@ SHOW ROLE passwordModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-The `SET PASSWORDS` privilege allows you to run the `ALTER USER` administration command with one or both of the `SET PASSWORD` and `SET PASSWORD CHANGE [NOT] REQUIRED` parts.
+The `SET PASSWORDS` privilege allows the user to run the `ALTER USER` administration command with one or both of the `SET PASSWORD` and `SET PASSWORD CHANGE [NOT] REQUIRED` parts.
 
 [source, cypher, role=noplay]
 ----
@@ -676,7 +721,7 @@ ALTER USER jake SET PASSWORD 'abcd5678' CHANGE NOT REQUIRED
 
 === Grant privilege to modify users' auth providers
 
-You can grant the privilege to modify users' auth providers using the `SET AUTH` privilege.
+You can grant the privilege to modify users' auth providers using the `SET AUTH` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -686,7 +731,7 @@ GRANT SET AUTH ON DBMS TO userModifier
 As a result, the `userModifier` role has privileges that only allow modifying users' auth providers.
 
 The `SET AUTH` privilege allows the user to run the `ALTER USER` administration command with one or both of the `SET
-AUTH` and `REMOVE AUTH` parts.
+AUTH` and `REMOVE AUTH` parts. +
 For example:
 
 [source, cypher, role=noplay]
@@ -696,7 +741,7 @@ ALTER USER jake REMOVE AUTH 'native' SET AUTH 'oidc-okta' { SET id 'jakesUniqueO
 
 === Grant privilege to modify the account status of users
 
-You can grant the privilege to modify the account status of users using the `SET USER STATUS` privilege.
+You can grant the privilege to modify the account status of users using the `SET USER STATUS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -709,7 +754,7 @@ To list all privileges for the role `statusModifier` as commands, use the follow
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE statusModifier PRIVILEGES AS COMMANDS
+SHOW ROLE statusModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -729,7 +774,7 @@ ALTER USER jake SET STATUS ACTIVE
 
 === Grant privilege to modify the home database of users
 
-You can grant the privilege to modify the home database of users using the `SET USER HOME DATABASE` privilege.
+You can grant the privilege to modify the home database of users using the `SET USER HOME DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -742,7 +787,7 @@ To list all privileges for the role `statusModifier` as commands, use the follow
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE statusModifier PRIVILEGES AS COMMANDS
+SHOW ROLE statusModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -754,7 +799,7 @@ SHOW ROLE statusModifier PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-The `SET USER HOME DATABASE` privilege allows you to run the `ALTER USER` administration command with only the `SET HOME DATABASE` or `REMOVE HOME DATABASE` part:
+The `SET USER HOME DATABASE` privilege allows the user to run the `ALTER USER` administration command with only the `SET HOME DATABASE` or `REMOVE HOME DATABASE` part:
 
 [source, cypher, role=noplay]
 ----
@@ -766,14 +811,9 @@ ALTER USER jake SET HOME DATABASE otherDb
 ALTER USER jake REMOVE HOME DATABASE
 ----
 
-[NOTE]
-====
-Note that the combination of the `SET PASSWORDS`, `SET AUTH`, `SET USER STATUS`, and the `SET USER HOME DATABASE` privilege actions is equivalent to the `ALTER USER` privilege action.
-====
-
 === Grant privilege to delete users
 
-You can grant the privilege to delete users using the `DROP USER` privilege.
+You can grant the privilege to delete users using the `DROP USER` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -786,7 +826,7 @@ To list all privileges for the role `userDropper` as commands, use the following
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userDropper PRIVILEGES AS COMMANDS
+SHOW ROLE userDropper PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -800,33 +840,33 @@ a|Rows: 1
 
 === Grant privilege to show users
 
-You can grant the privilege to show users using the `SHOW USER` privilege.
+You can grant the privilege to show users using the `SHOW USER` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW USER ON DBMS TO userShower
+GRANT SHOW USER ON DBMS TO userViewer
 ----
 
-As a result, the `userShower` role has privileges that only allow showing users.
-To list all privileges for the role `userShower` as commands, use the following query:
+As a result, the `userViewer` role has privileges that only allow showing users.
+To list all privileges for the role `userViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userShower PRIVILEGES AS COMMANDS
+SHOW ROLE userViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"GRANT SHOW USER ON DBMS TO `userShower`"
+|"GRANT SHOW USER ON DBMS TO `userViewer`"
 a|Rows: 1
 |===
 
 === Grant privilege to manage users
 
-You can grant the privilege to create, rename, modify, delete, and list users using the `USER MANAGEMENT` privilege.
+You can grant the privilege to create, rename, modify, delete, and list users using the `USER MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -839,7 +879,7 @@ To list all privileges for the role `userManager` as commands, use the following
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE userManager PRIVILEGES AS COMMANDS
+SHOW ROLE userManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -853,9 +893,14 @@ a|Rows: 1
 [[access-control-dbms-administration-impersonation]]
 == The DBMS `IMPERSONATE` privileges
 
-The DBMS privileges for impersonation can be granted, denied, and revoked like other privileges.
+The DBMS privileges for impersonation can be granted, denied, or revoked like other privileges.
 
 Impersonation is the ability of a user to assume another user's roles (and therefore privileges), with the restriction of not being able to execute updating `admin` commands as the impersonated user (i.e. they would still be able to use `SHOW` commands).
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 You can use the `IMPERSONATE` privilege to allow a user to impersonate another user.
 
@@ -880,40 +925,34 @@ GRANT [IMMUTABLE] IMPERSONATE (user[, ...])
 
 === Grant privilege to impersonate all users
 
-You can grant the privilege to impersonate all users using the `IMPERSONATE (*)` privilege.
+You can grant the privilege to impersonate all users using the `IMPERSONATE (*)` privilege. +
 For example:
 
-[NOTE]
-====
-`userImpersonator` must be an existing role in order to grant the privilege.
-====
+.Query
+[source, cypher, role=noplay]
+----
+GRANT IMPERSONATE (*) ON DBMS TO allUserImpersonator
+----
+
+As a result, the `allUserImpersonator` role has privileges that allow impersonating all users.
+To list all privileges for the role `allUserImpersonator` as commands, use the following query:
 
 .Query
 [source, cypher, role=noplay]
 ----
-GRANT IMPERSONATE (*) ON DBMS TO userImpersonator
+SHOW ROLE allUserImpersonator PRIVILEGES AS COMMANDS;
 ----
-
-As a result, the `userImpersonator` role has privileges that allow impersonating all users.
-To list all privileges for the role `userImpersonator` as commands, use the following query:
-
-.Query
-[source, cypher, role=noplay]
-----
-SHOW ROLE userImpersonator PRIVILEGES AS COMMANDS
-----
-
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 | command
-| "GRANT IMPERSONATE (*) ON DBMS TO `userImpersonator`"
+| "GRANT IMPERSONATE (*) ON DBMS TO `allUserImpersonator`"
 a|Rows: 1
 |===
 
 === Grant privilege to impersonate specific users
 
-You can grant (or revoke) the privilege to impersonate specific users or a subset of users using the following query:
+You can also grant the privilege to impersonate specific users or a subset of users. +
 For example:
 
 .Query
@@ -931,12 +970,17 @@ Then, you deny the privilege to impersonate `alice`:
 DENY IMPERSONATE (alice) ON DBMS TO userImpersonator
 ----
 
-As a result, the `userImpersonator` user would be able to impersonate all users, except `alice`.
+As a result, the `userImpersonator` user would be able to impersonate only `bob`.
 
 [[access-control-dbms-administration-database-management]]
 == The DBMS `DATABASE MANAGEMENT` privileges
 
-The DBMS privileges for database management can be granted, denied and revoked like other privileges.
+The DBMS privileges for database management can be granted, denied, or revoked like other privileges.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Database management privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -1007,7 +1051,7 @@ GRANT [IMMUTABLE] DATABASE MANAGEMENT
 
 === Grant privilege to create standard databases
 
-You can grant the privilege to create standard databases using the `CREATE DATABASE` privilege.
+You can grant the privilege to create standard databases using the `CREATE DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1020,7 +1064,7 @@ To list all privileges for the role `databaseAdder` as commands, use the followi
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE databaseAdder PRIVILEGES AS COMMANDS
+SHOW ROLE databaseAdder PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1033,7 +1077,7 @@ a|Rows: 1
 
 === Grant privilege to create composite databases
 
-You can grant the privilege to create composite databases using the `CREATE COMPOSITE DATABASE` privilege.
+You can grant the privilege to create composite databases using the `CREATE COMPOSITE DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1046,7 +1090,7 @@ To list all privileges for the role `compositeDatabaseAdder` as commands, use th
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE compositeDatabaseAdder PRIVILEGES AS COMMANDS
+SHOW ROLE compositeDatabaseAdder PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1059,7 +1103,7 @@ a|Rows: 1
 
 === Grant privilege to delete standard databases
 
-You can grant the privilege to delete standard databases using the `DROP DATABASE` privilege.
+You can grant the privilege to delete standard databases using the `DROP DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1072,7 +1116,7 @@ To list all privileges for the role `databaseDropper` as commands, use the follo
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE databaseDropper PRIVILEGES AS COMMANDS
+SHOW ROLE databaseDropper PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1085,7 +1129,7 @@ a|Rows: 1
 
 === Grant privilege to delete composite databases
 
-You can grant the privilege to delete composite databases using the `DROP COMPOSITE DATABASE` privilege.
+You can grant the privilege to delete composite databases using the `DROP COMPOSITE DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1098,7 +1142,7 @@ To list all privileges for the role `compositeDatabaseDropper` as commands, use 
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE compositeDatabaseDropper PRIVILEGES AS COMMANDS
+SHOW ROLE compositeDatabaseDropper PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1111,12 +1155,12 @@ a|Rows: 1
 
 === Grant privilege to modify standard databases
 
-You can grant the privilege to modify standard databases using the `ALTER DATABASE` privilege.
+You can grant the privilege to modify standard databases using the `ALTER DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ALTER DATABASE ON DBMS TO databaseModifier
+GRANT ALTER DATABASE ON DBMS TO databaseModifier;
 ----
 
 As a result, the `databaseModifier` role has privileges that only allow modifying standard databases.
@@ -1124,7 +1168,7 @@ To list all privileges for the role `databaseModifier` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE databaseModifier PRIVILEGES AS COMMANDS
+SHOW ROLE databaseModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1135,9 +1179,9 @@ SHOW ROLE databaseModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-=== Grant privilege to modify access to composite databases
+=== Grant privilege to modify access to standard databases
 
-You can grant the privilege to modify access to composite databases using the `ALTER COMPOSITE DATABASE` privilege.
+You can grant the privilege to modify access to standard databases using the `SET DATABASE ACCESS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1150,7 +1194,7 @@ To list all privileges for the role `accessModifier` as commands, use the follow
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE accessModifier PRIVILEGES AS COMMANDS
+SHOW ROLE accessModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1161,9 +1205,10 @@ SHOW ROLE accessModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
+[rol=label--new-2025.06]
 === Grant privilege to modify the default language of standard databases
 
-You can grant the privilege to modify the default language of standard databases using the `SET DATABASE DEFAULT LANGUAGE` privilege.
+You can grant the privilege to modify the default language of standard databases using the `SET DATABASE DEFAULT LANGUAGE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
@@ -1176,7 +1221,7 @@ To list all privileges for the role `languageModifier` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE languageModifier PRIVILEGES AS COMMANDS
+SHOW ROLE languageModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1187,14 +1232,15 @@ SHOW ROLE languageModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-=== Grant privilege to modify the default language of composite databases
+[rol=label--new-2025.06]
+=== Grant privilege to modify a composite databases
 
-You can grant the privilege to modify the default language of composite databases using the `SET COMPOSITE DATABASE DEFAULT LANGUAGE` privilege.
+You can grant the privilege to modify composite databases using the `ALTER COMPOSITE DATABASE` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ALTER COMPOSITE DATABASE ON DBMS TO compositeDatabaseModifier
+GRANT ALTER COMPOSITE DATABASE ON DBMS TO compositeDatabaseModifier;
 ----
 
 As a result, the `compositeDatabaseModifier` role has privileges that only allow modifying composite databases.
@@ -1202,7 +1248,7 @@ To list all privileges for the role `compositeDatabaseModifier` as commands, use
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE compositeDatabaseModifier PRIVILEGES AS COMMANDS
+SHOW ROLE compositeDatabaseModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1215,12 +1261,12 @@ a|Rows: 1
 
 === Grant privilege to manage composite databases
 
-You can grant the privilege to create, delete, and modify composite databases using the `COMPOSITE DATABASE MANAGEMENT` privilege.
+You can grant the privilege to create, delete, and modify composite databases using the `COMPOSITE DATABASE MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT COMPOSITE DATABASE MANAGEMENT ON DBMS TO compositeDatabaseManager
+GRANT COMPOSITE DATABASE MANAGEMENT ON DBMS TO compositeDatabaseManager;
 ----
 
 As a result, the `compositeDatabaseManager` role has all privileges to manage composite databases.
@@ -1228,7 +1274,7 @@ To list all privileges for the role `compositeDatabaseManager` as commands, use 
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE compositeDatabaseManager PRIVILEGES AS COMMANDS
+SHOW ROLE compositeDatabaseManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1241,12 +1287,12 @@ a|Rows: 1
 
 === Grant privilege to manage standard and composite databases
 
-You can grant the privilege to create, delete, and modify standard and composite databases using the `DATABASE MANAGEMENT` privilege.
+You can grant the privilege to create, delete, and modify standard and composite databases using the `DATABASE MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT DATABASE MANAGEMENT ON DBMS TO databaseManager
+GRANT DATABASE MANAGEMENT ON DBMS TO databaseManager;
 ----
 
 As a result, the `databaseManager` role has all privileges to manage standard and composite databases.
@@ -1254,7 +1300,7 @@ To list all privileges for the role `databaseManager` as commands, use the follo
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE databaseManager PRIVILEGES AS COMMANDS
+SHOW ROLE databaseManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1268,7 +1314,13 @@ a|Rows: 1
 [[access-control-dbms-administration-alias-management]]
 == The DBMS `ALIAS MANAGEMENT` privileges
 
-The DBMS privileges for alias management can be granted, denied and revoked like other privileges and can be applied to both local and remote aliases.
+The DBMS privileges for alias management can be granted, denied, or revoked like other privileges.
+This applies to both local and remote aliases.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Alias management privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -1309,12 +1361,12 @@ TO role[, ...]
 
 === Grant privilege to create aliases
 
-You can grant the privilege to create aliases using the `CREATE ALIAS` privilege.
+You can grant the privilege to create aliases using the `CREATE ALIAS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT CREATE ALIAS ON DBMS TO aliasAdder
+GRANT CREATE ALIAS ON DBMS TO aliasAdder;
 ----
 
 As a result, the `aliasAdder` role has privileges that only allow creating aliases.
@@ -1322,7 +1374,7 @@ To list all privileges for the role `aliasAdder` as commands, use the following 
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE aliasAdder PRIVILEGES AS COMMANDS
+SHOW ROLE aliasAdder PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1335,12 +1387,12 @@ a|Rows: 1
 
 === Grant privilege to delete aliases
 
-You can grant the privilege to delete aliases using the `DROP ALIAS` privilege.
+You can grant the privilege to delete aliases using the `DROP ALIAS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT DROP ALIAS ON DBMS TO aliasDropper
+GRANT DROP ALIAS ON DBMS TO aliasDropper;
 ----
 
 As a result, the `aliasDropper` role has privileges that only allow deleting aliases.
@@ -1348,7 +1400,7 @@ See all privileges for the role `aliasDropper` as commands, use the following qu
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE aliasDropper PRIVILEGES AS COMMANDS
+SHOW ROLE aliasDropper PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1361,12 +1413,12 @@ a|Rows: 1
 
 === Grant privilege to modify aliases
 
-You can grant the privilege to modify aliases using the `ALTER ALIAS` privilege.
+You can grant the privilege to modify aliases using the `ALTER ALIAS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ALTER ALIAS ON DBMS TO aliasModifier
+GRANT ALTER ALIAS ON DBMS TO aliasModifier;
 ----
 
 As a result, the `aliasModifier` role has privileges that only allow modifying aliases.
@@ -1374,7 +1426,7 @@ To list all privileges for the role `aliasModifier` as commands, use the followi
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE aliasModifier PRIVILEGES AS COMMANDS
+SHOW ROLE aliasModifier PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1388,38 +1440,38 @@ a|Rows: 1
 
 === Grant privilege to list aliases
 
-You can grant the privilege to list aliases using the `SHOW ALIAS` privilege.
+You can grant the privilege to list aliases using the `SHOW ALIAS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW ALIAS ON DBMS TO aliasLister
+GRANT SHOW ALIAS ON DBMS TO aliasViewer;
 ----
 
-As a result, the `aliasLister` role has privileges that only allow modifying aliases.
-To list all privileges for the role `aliasLister` as commands, use the following query:
+As a result, the `aliasViewer` role has privileges that only allow modifying aliases.
+To list all privileges for the role `aliasViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE aliasLister PRIVILEGES AS COMMANDS
+SHOW ROLE aliasViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"GRANT SHOW ALIAS ON DBMS TO `aliasLister`"
+|"GRANT SHOW ALIAS ON DBMS TO `aliasViewer`"
 a|Rows: 1
 |===
 
 === Grant privilege to manage aliases
 
-You can grant the privilege to create, delete, modify, and list aliases using the `ALIAS MANAGEMENT` privilege.
+You can grant the privilege to create, delete, modify, and list aliases using the `ALIAS MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ALIAS MANAGEMENT ON DBMS TO aliasManager
+GRANT ALIAS MANAGEMENT ON DBMS TO aliasManager;
 ----
 
 As a result, the `aliasManager` role has all privileges to manage aliases.
@@ -1427,7 +1479,7 @@ To list all privileges for the role `aliasManager` as commands, use the followin
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE aliasManager PRIVILEGES AS COMMANDS
+SHOW ROLE aliasManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1441,7 +1493,12 @@ a|Rows: 1
 [[access-control-dbms-administration-server-management]]
 == The DBMS `SERVER MANAGEMENT` privileges
 
-The DBMS privileges for server management can be granted, denied, and revoked like other privileges.
+The DBMS privileges for server management can be granted, denied, or revoked like other privileges.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Server management privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -1463,12 +1520,12 @@ GRANT [IMMUTABLE] SHOW SERVERS
 
 === Grant privilege to manage servers
 
-You can grant the privilege to show, enable, rename, alter, reallocate, deallocate, and drop servers using the `SERVER MANAGEMENT` privilege.
+You can grant the privilege to show, enable, rename, alter, reallocate, deallocate, and drop servers using the `SERVER MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT SERVER MANAGEMENT ON DBMS TO serverManager
+GRANT SERVER MANAGEMENT ON DBMS TO serverManager;
 ----
 
 As a result, the `serverManager` role has all privileges to manage servers.
@@ -1476,7 +1533,7 @@ To list all privileges for the role `serverManager` as commands, use the followi
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE serverManager PRIVILEGES AS COMMANDS
+SHOW ROLE serverManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1490,34 +1547,39 @@ a|Rows: 1
 
 === Grant privilege to show servers
 
-You can grant the privilege to show servers using the `SHOW SERVERS` privilege.
+You can grant the privilege to show servers using the `SHOW SERVERS` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW SERVERS ON DBMS TO serverLister
+GRANT SHOW SERVERS ON DBMS TO serverViewer;
 ----
 
-As a result, the `serverLister` role has privileges that only allow showing servers.
-To list all privileges for the role `serverLister` as commands, use the following query:
+As a result, the `serverViewer` role has privileges that only allow showing servers.
+To list all privileges for the role `serverViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE serverLister PRIVILEGES AS COMMANDS
+SHOW ROLE serverViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"GRANT SHOW SERVERS ON DBMS TO `serverLister`"
+|"GRANT SHOW SERVERS ON DBMS TO `serverViewer`"
 a|Rows: 1
 |===
 
 [[access-control-dbms-administration-privilege-management]]
 == The DBMS `PRIVILEGE MANAGEMENT` privileges
 
-The DBMS privileges for privilege management can be granted, denied and revoked like other privileges.
+The DBMS privileges for privilege management can be granted, denied, or revoked like other privileges.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Privilege management privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -1553,27 +1615,27 @@ GRANT [IMMUTABLE] PRIVILEGE MANAGEMENT
 
 You can grant the privilege to list privileges using the `SHOW PRIVILEGE` privilege. +
 A user with this privilege is allowed to execute the `SHOW PRIVILEGES` and `SHOW ROLE roleName PRIVILEGES` administration commands.
-To execute the `SHOW USER username PRIVILEGES` administration command, both this privilege and the `SHOW USER` privilege are required.
+To execute the `SHOW USER username PRIVILEGES` administration command, both this privilege and the `SHOW USER` privilege are required. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW PRIVILEGE ON DBMS TO privilegeShower
+GRANT SHOW PRIVILEGE ON DBMS TO privilegeViewer;
 ----
 
-As a result, the `privilegeShower` role has privileges that only allow showing privileges.
-To list all privileges for the role `privilegeShower` as commands, use the following query:
+As a result, the `privilegeViewer` role has privileges that only allow showing privileges.
+To list all privileges for the role `privilegeViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE privilegeShower PRIVILEGES AS COMMANDS
+SHOW ROLE privilegeViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
 [options="header,footer", width="100%", cols="m"]
 |===
 |command
-|"GRANT SHOW PRIVILEGE ON DBMS TO `privilegeShower`"
+|"GRANT SHOW PRIVILEGE ON DBMS TO `privilegeViewer`"
 a|Rows: 1
 |===
 
@@ -1588,12 +1650,12 @@ Other users' privileges cannot be listed when using a non-native auth provider.
 === Grant privilege to assign privileges
 
 You can grant the privilege to assign privileges using the `ASSIGN PRIVILEGE` privilege. +
-A user with this privilege is allowed to execute `GRANT` and `DENY` administration commands.
+A user with this privilege is allowed to execute `GRANT` and `DENY` administration commands. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT ASSIGN PRIVILEGE ON DBMS TO privilegeAssigner
+GRANT ASSIGN PRIVILEGE ON DBMS TO privilegeAssigner;
 ----
 
 As a result, the `privilegeAssigner` role has privileges that only allow assigning privileges.
@@ -1601,7 +1663,7 @@ To list all privileges for the role `privilegeAssigner` as commands, use the fol
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE privilegeAssigner PRIVILEGES AS COMMANDS
+SHOW ROLE privilegeAssigner PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1615,12 +1677,12 @@ a|Rows: 1
 === Grant privilege to remove privileges
 
 You can grant the privilege to remove privileges from roles using the `REMOVE PRIVILEGE` privilege. +
-A user with this privilege is allowed to execute `REVOKE` administration commands.
+A user with this privilege is allowed to execute `REVOKE` administration commands. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT REMOVE PRIVILEGE ON DBMS TO privilegeRemover
+GRANT REMOVE PRIVILEGE ON DBMS TO privilegeRemover;
 ----
 
 As a result, the `privilegeRemover` role has privileges that only allow removing privileges.
@@ -1628,7 +1690,7 @@ To list all privileges for the role `privilegeRemover` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE privilegeRemover PRIVILEGES AS COMMANDS
+SHOW ROLE privilegeRemover PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1641,12 +1703,12 @@ a|Rows: 1
 
 === Grant privilege to manage privileges
 
-You can grant the privilege to list, assign, and remove privileges using the `PRIVILEGE MANAGEMENT` privilege.
+You can grant the privilege to list, assign, and remove privileges using the `PRIVILEGE MANAGEMENT` privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT PRIVILEGE MANAGEMENT ON DBMS TO privilegeManager
+GRANT PRIVILEGE MANAGEMENT ON DBMS TO privilegeManager;
 ----
 
 As a result, the `privilegeManager` role has all privileges to manage privileges.
@@ -1654,7 +1716,7 @@ To list all privileges for the role `privilegeManager` as commands, use the foll
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE privilegeManager PRIVILEGES AS COMMANDS
+SHOW ROLE privilegeManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1669,7 +1731,12 @@ a|Rows: 1
 [[access-control-dbms-administration-execute]]
 == The DBMS `EXECUTE` privileges
 
-The DBMS privileges for procedure and user-defined function execution can be granted, denied and revoked like other privileges.
+The DBMS privileges for procedure and user-defined function execution can be granted, denied, or revoked like other privileges.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Execute privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -1709,26 +1776,26 @@ GRANT [IMMUTABLE] EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S] name-globbing[, .
 |===
 
 [[access-control-execute-procedure]]
-=== The `EXECUTE PROCEDURE` privilege
+=== Grant privilege to execute procedures
 
 You can grant the privilege to execute procedures using the `EXECUTE PROCEDURE` privilege. +
 A role with this privilege is allowed to execute the procedures matched by the <<access-control-name-globbing, name-globbing>>.
-For example:
+
+For example, the following query allow the execution of procedures starting with `db.schema`:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE db.schema.* ON DBMS TO procedureExecutor
+GRANT EXECUTE PROCEDURE db.schema.* ON DBMS TO procedureExecutor;
 ----
 
 Users with the role `procedureExecutor` can run any procedure in the `db.schema` namespace.
 The procedure is run using the user's own privileges.
 
-As a result, the `procedureExecutor`  role has privileges that only allow executing procedures in the `db.schema` namespace.
 To list all privileges for the role `procedureExecutor` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE procedureExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE procedureExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1739,27 +1806,29 @@ SHOW ROLE procedureExecutor PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-=== Grant privilege to execute specific procedures
+=== Grant privilege to execute all but some procedures
 
-You can grant the privilege to execute specific procedures using `EXECUTE PROCEDURES *` and deny the unwanted procedures.
+You can grant the privilege to execute all except a few procedures using `EXECUTE PROCEDURES *` and deny the unwanted procedures.
 For example, the following queries allow the execution of all procedures, except those starting with `dbms.cluster`:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE * ON DBMS TO deniedProcedureExecutor
+GRANT EXECUTE PROCEDURE * ON DBMS TO deniedProcedureExecutor;
 ----
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO deniedProcedureExecutor
+DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO deniedProcedureExecutor;
 ----
 
-As a result, the `deniedProcedureExecutor` role has privileges that only allow executing all procedures except those starting with `dbms.cluster`.
+Users with the role `deniedProcedureExecutor` can run any procedure except those starting with `dbms.cluster`.
+The procedure is run using the user's own privileges.
+
 To list all privileges for the role `deniedProcedureExecutor` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedProcedureExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE deniedProcedureExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1776,7 +1845,7 @@ The `dbms.cluster.checkConnectivity`, `dbms.cluster.cordonServer`, `dbms.cluster
 
 
 [[access-control-execute-boosted-procedure]]
-=== The `EXECUTE BOOSTED PROCEDURE` privilege
+=== Grant privilege to execute procedures with elevated privileges
 
 You can grant the privilege to execute procedures with elevated privileges using the `EXECUTE BOOSTED PROCEDURE` privilege. +
 A user with this privilege will not be restricted to their other privileges when executing the procedures matched by the <<access-control-name-globbing, name-globbing>>.
@@ -1784,8 +1853,11 @@ The `EXECUTE BOOSTED PROCEDURE` privilege only affects the elevation, and not th
 Therefore, it is needed to grant `EXECUTE PROCEDURE` privilege for the procedures as well.
 Both `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` are needed to execute a procedure with elevated privileges.
 
-=== Grant privilege to execute boosted procedures
-For example:
+==== Grant privilege to execute some procedures with elevated privileges
+
+You can grant the privilege to execute some procedures with elevated privileges using `EXECUTE BOOSTED PROCEDURE *`.
+
+For example, the following query allow the execution of all procedures and `db.labels` and `db.relationshipTypes` with elevated privileges:
 
 [source, cypher, role=noplay]
 ----
@@ -1801,7 +1873,7 @@ To list all privileges for the role `boostedProcedureExecutor` as commands, use 
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE boostedProcedureExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE boostedProcedureExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1814,30 +1886,27 @@ SHOW ROLE boostedProcedureExecutor PRIVILEGES AS COMMANDS
 a|Rows: 3
 |===
 
-=== Grant `EXECUTE PROCEDURE` and deny `EXECUTE BOOSTED PROCEDURE`
+[[deny-privilege-to-execute-procedures-with-elevated-privileges]]
+==== Deny privilege to execute procedures with elevated privileges
 
-As with grant, denying `EXECUTE BOOSTED PROCEDURE` on its own only affects the elevation and not the execution of the procedure.
-For example:
-
-[source, cypher, role=noplay]
-----
-GRANT EXECUTE PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor1
-----
+As with grant, denying `EXECUTE BOOSTED PROCEDURE` on its own only affects the elevation and not the execution of the procedure. +
+For example, the following query allows the execution of all procedures using the user's own privileges, but prevents the elevation of `db.labels`:
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor1
+GRANT EXECUTE PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor1;
+DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor1;
 ----
 
 As a result, the `deniedBoostedProcedureExecutor1` role has privileges that allow the execution of all procedures using the user's own privileges.
 It also prevents the `db.labels` procedure from being elevated.
-Still, the denied `EXECUTE BOOSTED PROCEDURE` does not block execution of `db.labels`.
+Still, the denied `EXECUTE BOOSTED PROCEDURE` does not block the execution of `db.labels`.
 
 To list all privileges for role `deniedBoostedProcedureExecutor1` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedBoostedProcedureExecutor1 PRIVILEGES AS COMMANDS
+SHOW ROLE deniedBoostedProcedureExecutor1 PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1849,17 +1918,21 @@ SHOW ROLE deniedBoostedProcedureExecutor1 PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-=== Grant `EXECUTE BOOSTED PROCEDURE` and deny `EXECUTE PROCEDURE`
+[[execute-boosted-procedures-deny-execution]]
+==== Grant privilege to execute boosted procedures and deny execution of specific procedures
 
+You can also grant the privilege to execute boosted procedures and deny the execution of specific procedures.
+
+For example, the following queries allow the execution of all boosted procedures, except `db.labels`:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor2
+GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor2;
 ----
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor2
+DENY EXECUTE PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor2;
 ----
 
 As a result, the `deniedBoostedProcedureExecutor2` role has privileges that allow elevating the privileges for all procedures, but cannot execute any due to missing or denied `EXECUTE PROCEDURE` privileges.
@@ -1867,7 +1940,7 @@ To list all privileges for the role `deniedBoostedProcedureExecutor2` as command
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedBoostedProcedureExecutor2 PRIVILEGES AS COMMANDS
+SHOW ROLE deniedBoostedProcedureExecutor2 PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1879,24 +1952,30 @@ SHOW ROLE deniedBoostedProcedureExecutor2 PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-=== Grant `EXECUTE BOOSTED PROCEDURE` and deny `EXECUTE BOOSTED PROCEDURE`
+[[execute-boosted-procedures-deny-elevation]]
+==== Grant privilege to execute boosted procedures and deny elevation of specific procedures
+
+You can also grant the privilege to execute boosted procedures and deny the elevation of specific procedures.
+
+For example, the following queries allow the execution of all boosted procedures, except `db.labels`:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor3
+GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor3;
 ----
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor3
+DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor3;
 ----
 
-As a result, the `deniedBoostedProcedureExecutor3` role has privileges that allow elevating the privileges for all procedures except `db.labels`, however no procedures can be executed due to missing `EXECUTE PROCEDURE` privilege.
+As a result, the `deniedBoostedProcedureExecutor3` role has privileges that allow elevating the privileges for all procedures except `db.labels`.
+However, no procedures can be executed due to missing `EXECUTE PROCEDURE` privilege.
 To list all privileges for the role `deniedBoostedProcedureExecutor3` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedBoostedProcedureExecutor3 PRIVILEGES AS COMMANDS
+SHOW ROLE deniedBoostedProcedureExecutor3 PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1908,14 +1987,15 @@ SHOW ROLE deniedBoostedProcedureExecutor3 PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-.How would the privileges from examples 1 to 3 affect the output of a procedure?
-[example]
-====
-Assume there is a procedure called `myProc`.
+==== Control procedure output with privileges
+
+You can control the output of procedures based on the privileges granted or denied to a role using the `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` privileges.
+For example, assume there is a procedure called `myProc`.
 
 This procedure gives the result `A` and `B` for a user with `EXECUTE PROCEDURE` privilege and `A`, `B` and `C` for a user with `EXECUTE BOOSTED PROCEDURE` privilege.
 
-Now, adapt the privileges from examples 1 to 3 to be applied to this procedure and show what is returned.
+Now, adapt the privileges from sections <<deny-privilege-to-execute-procedures-with-elevated-privileges, Deny privilege to execute procedures with elevated privileges>> (example 1), <<execute-boosted-procedures-deny-execution, Grant privilege to execute boosted procedures and deny execution of specific procedures>> (example 2), and <<execute-boosted-procedures-deny-elevation, Grant privilege to execute boosted procedures and deny elevation of specific procedures>> (example 3) to be applied to this procedure and show what is returned.
+
 With the privileges from example 1, granted `EXECUTE PROCEDURE *` and denied `EXECUTE BOOSTED PROCEDURE myProc`, the `myProc` procedure returns the result `A` and `B`.
 
 With the privileges from example 2, granted `EXECUTE BOOSTED PROCEDURE *` and denied `EXECUTE PROCEDURE myProc`, execution of the `myProc` procedure is not allowed.
@@ -1927,29 +2007,28 @@ For comparison, when granted:
 * `EXECUTE PROCEDURE myProc`: the `myProc` procedure returns the result `A` and `B`.
 * `EXECUTE BOOSTED PROCEDURE myProc`: execution of the `myProc` procedure is not allowed.
 * `EXECUTE PROCEDURE myProc` and `EXECUTE BOOSTED PROCEDURE myProc`: the `myProc` procedure returns the result `A`, `B`, and `C`.
-====
 
 
 [[access-control-admin-procedure]]
-=== The `EXECUTE ADMIN PROCEDURE` privilege
+=== Grant privilege to execute admin procedures
 
-You can grant the privilege to execute admin procedures (annotated with `@Admin`) using the `EXECUTE ADMIN PROCEDURE` privilege. +
+You can grant the privilege to execute admin procedures (annotated with `@Admin`) using the `EXECUTE ADMIN PROCEDURES` privilege. +
 This privilege is equivalent with granting the <<access-control-execute-procedure, `EXECUTE PROCEDURE`>> and <<access-control-execute-boosted-procedure, `EXECUTE BOOSTED PROCEDURE`>> privileges on each of the admin procedures.
-Any newly added `admin` procedure is automatically included in this privilege.
+Any newly added `admin` procedure is automatically included in this privilege. +
 For example:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO adminProcedureExecutor
+GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO adminProcedureExecutor;
 ----
 
-Users with the role `adminProcedureExecutor` can then run any `admin` procedure with elevated privileges.
+Users with the role `adminProcedureExecutor` can run any `admin` procedure with elevated privileges.
 As a result, the `adminProcedureExecutor` role has privileges that allow the execution of all admin procedures.
 To list all privileges for the role `adminProcedureExecutor` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE adminProcedureExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE adminProcedureExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -1970,7 +2049,7 @@ Any denied `EXECUTE` privilege results in the procedure not being allowed to be 
 In this case, it does not matter whether `EXECUTE PROCEDURE`, `EXECUTE BOOSTED PROCEDURE` or `EXECUTE ADMIN PROCEDURES` is being denied.
 
 [[access-control-execute-user-defined-function]]
-=== The `EXECUTE USER DEFINED FUNCTION` privilege
+=== Grant privilege to execute user-defined functions
 
 //EXECUTE [USER [DEFINED]] FUNCTION[S]
 You can grant the privilege to execute user-defined functions (UDFs) using the `EXECUTE USER DEFINED FUNCTION` privilege.
@@ -1978,16 +2057,16 @@ A role with this privilege is allowed to execute the UDFs matched by the <<acces
 
 [IMPORTANT]
 ====
-The `EXECUTE USER DEFINED FUNCTION` privilege does not apply to built-in functions, which are always executable.
+The `EXECUTE USER DEFINED FUNCTION` privilege does not apply to built-in UDFs, which are always executable.
 ====
 
-=== Execute user-defined function
+==== Execute user-defined function
 
-The following query shows an example of how to grant this privilege:
+The following query shows an example of how to grant the `EXECUTE USER DEFINED FUNCTION` privilege:
 
 [source,cypher,role=noplay]
 ----
-GRANT EXECUTE USER DEFINED FUNCTION apoc.coll.* ON DBMS TO functionExecutor
+GRANT EXECUTE USER DEFINED FUNCTION apoc.coll.* ON DBMS TO functionExecutor;
 ----
 
 Or in short form:
@@ -1998,14 +2077,14 @@ GRANT EXECUTE FUNCTION apoc.coll.* ON DBMS TO functionExecutor
 ----
 
 Users with the role `functionExecutor` can thus run any UDF in the `apoc.coll` namespace.
-The function in the example is run using the user's own privileges.
+The function is run using the user's own privileges.
 
 As a result, the `functionExecutor` role has privileges that only allow executing UDFs in the `apoc.coll` namespace.
 To list all privileges for the role `functionExecutor` as commands, use the following query:
 
 [source,cypher,role=noplay]
 ----
-SHOW ROLE functionExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE functionExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2017,39 +2096,40 @@ a|Rows: 1
 |===
 ======
 
-=== Grant privilege to execute specific user-defined functions
+==== Grant privilege to execute execute all but some UDFs
 
-To allow the execution of all but a few UDFs, you can grant `+EXECUTE USER DEFINED FUNCTIONS *+` and deny the unwanted functions.
+To allow the execution of all but a few UDFs, you can grant `+EXECUTE USER DEFINED FUNCTIONS *+` and deny the unwanted UDFs.
 For example, the following queries allow the execution of all UDFs except those starting with `apoc.any.prop`:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE USER DEFINED FUNCTIONS * ON DBMS TO deniedFunctionExecutor
+GRANT EXECUTE USER DEFINED FUNCTIONS * ON DBMS TO deniedFunctionExecutor;
 ----
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE USER DEFINED FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor
+DENY EXECUTE USER DEFINED FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor;
 ----
 
 Or in short form:
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE FUNCTIONS * ON DBMS TO deniedFunctionExecutor
+GRANT EXECUTE FUNCTIONS * ON DBMS TO deniedFunctionExecutor;
 ----
 
 [source, cypher, role=noplay]
 ----
-DENY EXECUTE FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor
+DENY EXECUTE FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor;
 ----
 
-As a result, the `deniedFunctionExecutor` role has privileges that only allow the execution of all procedures except those starting with `apoc.any.prop`.
+As a result, the `deniedFunctionExecutor` role has privileges that only allow the execution of all UDFs except those starting with `apoc.any.prop`.
+The function is run using the user's own privileges.
 To list all privileges for the role `deniedFunctionExecutor` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedFunctionExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE deniedFunctionExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2061,40 +2141,40 @@ SHOW ROLE deniedFunctionExecutor PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-The `apoc.any.property` and `apoc.any.properties` are blocked, as well as any other procedures starting with `apoc.any.prop`.
+The `apoc.any.property` and `apoc.any.properties` are blocked, as well as any other UDFs starting with `apoc.any.prop`.
 ======
 
 [[access-control-execute-boosted-user-defined-function]]
-=== The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege
+=== Grant privilege to execute user-defined functions with elevated privileges
 
 //EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S]
-You can elevate the privilege to execute user-defined functions (UDFs) by granting the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege. +
+You can grant the privilege to execute user-defined functions (UDFs) with elevated privileges using the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege. +
 A user with this privilege will not be restricted to their other privileges when executing the UDFs matched by the <<access-control-name-globbing, name-globbing>>.
 The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege only affects the elevation and not the execution of the function.
-Therefore, it is needed to grant `EXECUTE USER DEFINED FUNCTION` privilege for the functions as well.
+Therefore, it is needed to grant `EXECUTE USER DEFINED FUNCTION` privilege for the UDFs as well.
 Both `EXECUTE USER DEFINED FUNCTION` and `EXECUTE BOOSTED USER DEFINED FUNCTION` are needed to execute a function with elevated privileges.
 
 [IMPORTANT]
 ====
-The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege does not apply to built-in functions, as they have no concept of elevated privileges.
+The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege does not apply to built-in UDFs, as they have no concept of elevated privileges.
 ====
 
-=== Execute boosted user-defined function
+==== Execute boosted user-defined function
 
 The following query shows an example of how to grant the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege:
 
 [source,cypher,role=noplay]
 ----
-GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS TO boostedFunctionExecutor
-GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor
+GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS TO boostedFunctionExecutor;
+GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor;
 ----
 
 Or in short form:
 
 [source,cypher,role=noplay]
 ----
-GRANT EXECUTE FUNCTION * ON DBMS TO boostedFunctionExecutor
-GRANT EXECUTE BOOSTED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor
+GRANT EXECUTE FUNCTION * ON DBMS TO boostedFunctionExecutor;
+GRANT EXECUTE BOOSTED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor;
 ----
 
 Users with the role `boostedFunctionExecutor` can thus run `apoc.any.properties` with full privileges and see every property on the node/relationship, not just the properties that the user has `READ` privilege on.
@@ -2105,7 +2185,7 @@ To list all privileges for the role `boostedFunctionExecutor` as commands, use t
 
 [source,cypher,role=noplay]
 ----
-SHOW ROLE boostedFunctionExecutor PRIVILEGES AS COMMANDS
+SHOW ROLE boostedFunctionExecutor PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2122,7 +2202,12 @@ a|Rows: 2
 == The DBMS `SETTING` privileges
 
 You can grant the privilege to show configuration settings using the `SHOW SETTING` privilege.
-A role with this privilege is allowed to query the configuration settings matched by the <<access-control-name-globbing, name-globbing>>.
+A role with this privilege is allowed to list the configuration settings matched by the <<access-control-name-globbing, name-globbing>>.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 .Setting privileges command syntax
 [options="header", width="100%", cols="3a,2"]
@@ -2134,7 +2219,7 @@ A role with this privilege is allowed to query the configuration settings matche
 GRANT [IMMUTABLE] SHOW SETTING[S] name-globbing[, ...]
   ON DBMS
   TO role[, ...]
-| Enables the specified roles to query given configuration settings.
+| Enables the specified roles to list given configuration settings.
 |===
 
 === Grant privilege to show all settings
@@ -2144,17 +2229,17 @@ The following query shows an example of how to grant `SHOW SETTING` privilege to
 
 [source, cypher, role=noplay]
 ----
-GRANT SHOW SETTING server.bolt.* ON DBMS TO configurationViewer
+GRANT SHOW SETTING server.bolt.* ON DBMS TO configurationViewer;
 ----
 
-Users with the role `configurationViewer` can then query any setting in the `server.bolt` namespace.
+Users with the role `configurationViewer` can then view any setting in the `server.bolt` namespace.
 
-As a result, the `configurationViewer` role has privileges that only allow querying settings in the `server.bolt` namespace.
+As a result, the `configurationViewer` role has privileges that only allow listing settings in the `server.bolt` namespace.
 To list all privileges for the role `configurationViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE configurationViewer PRIVILEGES AS COMMANDS
+SHOW ROLE configurationViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2165,27 +2250,27 @@ SHOW ROLE configurationViewer PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-=== Grant privilege to show specific settings
+=== Grant privilege to show execute all but some settings
 
-You can grant the privilege to show all settings using `SHOW SETTINGS *` and deny the unwanted settings. +
-For example, the following queries allow the querying of all settings, except those starting with `dbms.security`:
-
-[source, cypher, role=noplay]
-----
-GRANT SHOW SETTINGS * ON DBMS TO deniedConfigurationViewer
-----
+You can grant the privilege to show all but a few settings using `SHOW SETTINGS *` and deny the unwanted settings. +
+For example, the following queries allow you to view all settings, except those starting with `dbms.security`:
 
 [source, cypher, role=noplay]
 ----
-DENY SHOW SETTING dbms.security* ON DBMS TO deniedConfigurationViewer
+GRANT SHOW SETTINGS * ON DBMS TO deniedConfigurationViewer;
 ----
 
-As a result, the `deniedConfigurationViewer` role has privileges that allow querying all settings except those starting with `dbms.security`.
+[source, cypher, role=noplay]
+----
+DENY SHOW SETTING dbms.security* ON DBMS TO deniedConfigurationViewer;
+----
+
+As a result, the `deniedConfigurationViewer` role has privileges that allow listing all settings except those starting with `dbms.security`.
 To list all privileges for the role `deniedConfigurationViewer` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE deniedConfigurationViewer PRIVILEGES AS COMMANDS
+SHOW ROLE deniedConfigurationViewer PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2197,7 +2282,7 @@ SHOW ROLE deniedConfigurationViewer PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-As the query result shows, access to any setting starting with `dbms.security` are blocked, but the rest can still be queried.
+As the query result shows, viewing settings starting with `dbms.security` is blocked, but the rest can still be listed.
 
 
 [[access-control-dbms-administration-all]]
@@ -2208,12 +2293,17 @@ The `ALL DBMS PRIVILEGES` privilege is equivalent to granting the following priv
 
 * Create, drop, assign, remove, and show roles.
 * Create, alter, drop, show, and impersonate users.
-* Create, alter, and drop databases and aliases.
-* Enable, alter, rename, reallocate, deallocate, and drop servers
+* Create, alter, drop, and show databases and aliases.
+* Enable, alter, rename, reallocate, deallocate, drop, and show servers.
 * Show, assign, and remove privileges.
 * Execute all procedures with elevated privileges.
 * Execute all user-defined functions with elevated privileges.
 * Show all configuration settings.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
 
 [source, syntax, role=noheader]
 ----
@@ -2226,14 +2316,14 @@ For example, to grant the role `dbmsManager` all DBMS abilities, use the followi
 
 [source, cypher, role=noplay]
 ----
-GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager
+GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager;
 ----
 
 To list all privileges for the role `dbmsManager` as commands, use the following query:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS
+SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS;
 ----
 
 .Result
@@ -2278,42 +2368,42 @@ Note that the same rules apply to user-defined functions and settings.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE * ON DBMS TO globbing1
+GRANT EXECUTE PROCEDURE * ON DBMS TO globbing1;
 ----
 
 Users with the role `globbing1` can run all the procedures.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE mine.*.exampleProcedure ON DBMS TO globbing2
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure ON DBMS TO globbing2;
 ----
 
 Users with the role `globbing2` can run procedures `mine.public.exampleProcedure` and `mine.private.exampleProcedure`, but no other procedures.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE mine.*.exampleProcedure? ON DBMS TO globbing3
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure? ON DBMS TO globbing3;
 ----
 
 Users with the role `globbing3` can run procedures `mine.public.exampleProcedure1`, `mine.private.exampleProcedure1`, and `mine.private.exampleProcedure2`, but no other procedures.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE *.exampleProcedure ON DBMS TO globbing4
+GRANT EXECUTE PROCEDURE *.exampleProcedure ON DBMS TO globbing4;
 ----
 
 Users with the role `globbing4` can run procedures `your.exampleProcedure`, `mine.public.exampleProcedure`, and `mine.private.exampleProcedure`, but no other procedures.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE mine.public.exampleProcedure* ON DBMS TO globbing5
+GRANT EXECUTE PROCEDURE mine.public.exampleProcedure* ON DBMS TO globbing5;
 ----
 
 Users with the role `globbing5` can run procedures `mine.public.exampleProcedure`, `mine.public.exampleProcedure1` and `mine.public.exampleProcedure42`, but no other procedures.
 
 [source, cypher, role=noplay]
 ----
-GRANT EXECUTE PROCEDURE `mine.public.with#*§Characters`, mine.private.`with#Spec???§Characters` ON DBMS TO globbing6
+GRANT EXECUTE PROCEDURE `mine.public.with#*§Characters`, mine.private.`with#Spec???§Characters` ON DBMS TO globbing6;
 ----
 
 Users with the role `globbing6` can run procedures `mine.public.with#Special§Characters`, and `mine.private.with#Special§Characters`, but no other procedures.
