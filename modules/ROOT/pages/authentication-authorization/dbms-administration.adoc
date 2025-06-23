@@ -79,13 +79,14 @@ The xref:authentication-authorization/built-in-roles.adoc#access-control-built-i
 
 These include:
 
-* Create, delete, and modify databases and aliases.
+* <<access-control-dbms-administration-database-management, Create, delete, and modify databases>> and  <<access-control-dbms-administration-alias-management, aliases>>.
 * Change configuration parameters.
-* Manage transactions.
-* Manage users and roles.
-* Manage sub-graph privileges.
-* Manage procedure security.
-* Load data.
+* xref:authentication-authorization/database-administration.adoc#access-control-database-administration-transaction[Manage transactions].
+* Manage <<access-control-dbms-administration-role-management, users>> and <<access-control-dbms-administration-user-management, roles>>.
+* Manage sub-graph <<access-control-dbms-administration-privilege-management, privileges>>.
+* Manage <<access-control-dbms-administration-impersonation, impersonation privileges>>.
+* Manage <<access-control-dbms-administration-execute, procedure security>>.
+* Manage <<access-control-dbms-administration-load-privileges, load data security>>.
 
 To enable a user to perform these tasks, you can grant them the `admin` role, but it is also possible to make a custom role with a subset of these privileges.
 All privileges are also assignable using Cypher commands.
@@ -148,7 +149,7 @@ To create a more powerful administrator, you can grant a different set of privil
 
 === Create a custom administrator role by copying the `admin` role
 
-You can also create a custom administrator role that can  perform almost all DBMS capabilities, excluding database management.
+You can also create a custom administrator role that can perform almost all DBMS capabilities, excluding database management.
 This is done by copying the `admin` role and denying the privileges you do not want.
 However, the role still has some limited database capabilities, such as managing transactions:
 
@@ -177,7 +178,7 @@ DENY DATABASE MANAGEMENT ON DBMS TO customAdministrator
 GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO customAdministrator
 ----
 +
-As a result, the `customAdministrator` role has privileges that include all DBMS privileges except creating, dropping, and modifying databases and aliases, as well as managing transactions.
+As a result, the `customAdministrator` role has privileges that include all DBMS privileges except creating, dropping, and modifying databases, as well as managing transactions.
 . To list all privileges for the role `customAdministrator` as commands, use the following query:
 +
 [source, cypher, role=noplay]
@@ -195,6 +196,37 @@ SHOW ROLE customAdministrator PRIVILEGES AS COMMANDS
 a|Rows: 3
 |===
 
+===
+
+CREATE ROLE newRole AS COPY OF admin and then revoke the ability to read/write/load data?
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE newRole AS COPY OF admin;
+REVOKE GRANT MATCH {*} ON GRAPH * NODE * FROM newRole;
+REVOKE GRANT MATCH {*} ON GRAPH * RELATIONSHIP * FROM newRole;
+REVOKE GRANT WRITE ON GRAPH * FROM newRole;
+REVOKE GRANT LOAD ON ALL DATA FROM newRole;
+----
+
+potentially also remove the index/constraint/name management
+
+[source, cypher, role=noplay]
+----
+REVOKE GRANT CONSTRAINT MANAGEMENT ON DATABASE * FROM newRole;
+REVOKE GRANT INDEX MANAGEMENT ON DATABASE * FROM newRole;
+REVOKE GRANT NAME MANAGEMENT ON DATABASE * FROM newRole;
+REVOKE GRANT SHOW CONSTRAINT ON DATABASE * FROM newRole;
+REVOKE GRANT SHOW INDEX ON DATABASE * FROM newRole;
+----
+
+If you want to be fancy we could also change what they have access on to system only:
+
+[source, cypher, role=noplay]
+----
+REVOKE GRANT ACCESS ON DATABASE * FROM newRole;
+GRANT ACCESS ON DATABASE system TO newRole;
+----
 
 [[access-control-dbms-administration-role-management]]
 == The DBMS `ROLE MANAGEMENT` privileges
@@ -335,7 +367,7 @@ a|Rows: 1
 
 === Grant privilege to assign roles
 
-You can grant the privilege to assign roles using the `ASSIGN ROLE` privilege.
+You can grant the privilege to assign roles to users using the `ASSIGN ROLE` privilege.
 For example:
 
 [source, cypher, role=noplay]
@@ -361,7 +393,7 @@ a|Rows: 1
 
 === Grant privilege to remove roles
 
-You can grant the privilege to remove roles using the `REMOVE ROLE` privilege.
+You can grant the privilege to remove roles from users using the `REMOVE ROLE` privilege.
 For example:
 
 [source, cypher, role=noplay]
@@ -390,12 +422,12 @@ a|Rows: 1
 You can grant the privilege to show roles using the `SHOW ROLE` privilege.
 A role with this privilege is allowed to execute the `SHOW ROLES` and `SHOW POPULATED ROLES` administration commands.
 
-The following query shows an example of how to grant the `SHOW ROLE` privilege:
-
 [NOTE]
 ====
 In order to use `SHOW ROLES WITH USERS` and `SHOW POPULATED ROLES WITH USERS` administration commands, both the `SHOW ROLE` and the `SHOW USER` privileges are required.
 ====
+
+The following query shows an example of how to grant the `SHOW ROLE` privilege:
 
 [source, cypher, role=noplay]
 ----
@@ -635,18 +667,31 @@ SHOW ROLE passwordModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-The `SET PASSWORDS` privilege allows the user to run the `ALTER USER` administration command with one or both of the `SET PASSWORD` and `SET PASSWORD CHANGE [NOT] REQUIRED` parts.
+The `SET PASSWORDS` privilege allows you to run the `ALTER USER` administration command with one or both of the `SET PASSWORD` and `SET PASSWORD CHANGE [NOT] REQUIRED` parts.
 
 [source, cypher, role=noplay]
 ----
 ALTER USER jake SET PASSWORD 'abcd5678' CHANGE NOT REQUIRED
 ----
 
-A user that is granted the `SET AUTH` privilege is allowed to run the `ALTER USER` administration command with one or both of the `SET AUTH` and `REMOVE AUTH` parts:
+=== Grant privilege to modify users' auth providers
+
+You can grant the privilege to modify users' auth providers using the `SET AUTH` privilege.
+For example:
 
 [source, cypher, role=noplay]
 ----
-ALTER USER jake REMOVE AUTH 'native SET AUTH 'oidc-okta' { SET id 'jakesUniqueOktaUserId' }
+GRANT SET AUTH ON DBMS TO userModifier
+----
+As a result, the `userModifier` role has privileges that only allow modifying users' auth providers.
+
+The `SET AUTH` privilege allows the user to run the `ALTER USER` administration command with one or both of the `SET
+AUTH` and `REMOVE AUTH` parts.
+For example:
+
+[source, cypher, role=noplay]
+----
+ALTER USER jake REMOVE AUTH 'native' SET AUTH 'oidc-okta' { SET id 'jakesUniqueOktaUserId' }
 ----
 
 === Grant privilege to modify the account status of users
@@ -675,7 +720,7 @@ SHOW ROLE statusModifier PRIVILEGES AS COMMANDS
 a|Rows: 1
 |===
 
-A user that is granted the `SET USER STATUS` privilege is allowed to run the `ALTER USER` administration command with only the `SET STATUS` part:
+The `SET USER STATUS` privilege allows the user to run the `ALTER USER` administration command with only the `SET STATUS` part:
 
 [source, cypher, role=noplay]
 ----
@@ -709,7 +754,7 @@ SHOW ROLE statusModifier PRIVILEGES AS COMMANDS
 a|Rows: 2
 |===
 
-A user that is granted the `SET USER HOME DATABASE` privilege is allowed to run the `ALTER USER` administration command with only the `SET HOME DATABASE` or `REMOVE HOME DATABASE` part:
+The `SET USER HOME DATABASE` privilege allows you to run the `ALTER USER` administration command with only the `SET HOME DATABASE` or `REMOVE HOME DATABASE` part:
 
 [source, cypher, role=noplay]
 ----
