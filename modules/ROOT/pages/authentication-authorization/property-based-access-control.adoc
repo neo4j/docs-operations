@@ -12,9 +12,9 @@ CREATE ROLE regularUsers;
 [[property-based-access-control]]
 = Property-based access control
 
-Property-based access control grants permissions to users to read node properties based on property/value conditions.
+Property-based access control grants or denies permission to read or traverse nodes or relationships based on property/value conditions.
 Each property-based privilege can only be restricted by a single property.
-For information about read privileges and their syntax, see xref:authentication-authorization/privileges-reads.adoc[Read privileges].
+For information about the syntax of these privileges, see xref:authentication-authorization/privileges-reads.adoc[Read privileges].
 
 [IMPORTANT]
 ====
@@ -25,28 +25,32 @@ Users who can change this property can affect the granted property-based privile
 
 == Syntax
 
-To specify the property/value conditions of the read privilege, you can use the following syntax:
+To specify the property/value conditions of the privilege, you can use the following syntax:
 
 [source, syntax, role="noheader"]
 ----
 {GRANT | DENY | REVOKE [GRANT | DENY]}
 [IMMUTABLE]
-{MATCH | READ | TRAVERSE}	
+{MATCH | READ | TRAVERSE}
   ON { HOME GRAPH | GRAPH[S] { * | name[, ...] } }
     [
       ELEMENT[S] { * | label-or-rel-type[, ...] }
       | NODE[S] { * | label[, ...] }
       | RELATIONSHIP[S] { * | rel-type[, ...] }
       | FOR {
-  
-([var][:label["|" ...]] "{" property: value "}") 
-  | (var[:label["|" ...]]) 
-      WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
-  | (var[:label["|" ...]] 
-WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } ) 
-}
-
- {TO | FROM} role[, ...] 
+          ([var][:label["|" ...]] "{" property: value "}")
+          | (var[:label["|" ...]])
+            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
+          | (var[:label["|" ...]]
+            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } )
+          | ()[<]-"["[var][:type["|" ...]] "{" property: value "}" "]"-[>]()
+          | ()[<]-"["var[:type["|" ...]]"]"-[>]()
+            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
+          | ()[<]-"["var[:type["|" ...]]
+            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } "]"-[>]()
+      }
+    ]
+ {TO | FROM} role[, ...]
 ----
 
 
@@ -57,7 +61,7 @@ See xref:authentication-authorization/limitations.adoc#property-based-access-con
 
 When having property rules, the following factors can worsen the impact on performance:
 
-* The number of properties on the nodes concerned (more properties = greater performance impact).
+* The number of properties on the nodes and relationships concerned (more properties = greater performance impact).
 * The number of property-based privileges (more property-based privileges = greater performance impact).
 * The type of the privilege: `TRAVERSE` property-based privileges have greater performance impact than `READ` property-based privileges.
 * The type of storage medium in operation. The impact of the property-based privileges on performance is considerably amplified by accessing disc storage.
@@ -81,7 +85,7 @@ GRANT privilege-name ON GRAPH graph-name FOR pattern TO role-name
 The user role does not need to have `READ` privilege for the property used by the property-based privilege.
 ====
 
-=== Grant a property-based privilege on a specific property using its value
+=== Grant a property-based privilege on a specific property using the value of another property
 
 The following example shows how to grant permission to `READ` the `address` property on `Email` or `Website` nodes with domain `exampledomain.com` to role `regularUsers`:
 
@@ -97,6 +101,12 @@ Alternatively, you can use the following syntax:
 GRANT READ { address } ON GRAPH * FOR (:Email|Website {domain: 'exampledomain.com'}) TO regularUsers
 ----
 
+The following example shows how to grant permission to `READ` the `since` property on `OWNS` relationships having `classification` equal to `UNCLASSIFIED` to role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT READ { since } ON GRAPH * FOR ()-[o:OWNS]-() WHERE o.classification = 'UNCLASSIFIED' TO regularUsers
+----
 
 === Grant a property-based privilege using `NULL`
 
@@ -109,20 +119,22 @@ GRANT TRAVERSE ON GRAPH * FOR (n:Email) WHERE n.classification IS NULL TO regula
 
 === Deny a property-based privilege using a comparison operator
 
-The following example shows how to deny permission to `READ` and `TRAVERSE` nodes where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`:
+The following example shows how to deny permission to `READ` and `TRAVERSE` nodes and relationships where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`:
 
 [source, syntax, role="noheader"]
 ----
 DENY MATCH {*} ON GRAPH * FOR (n) WHERE n.classification <> 'UNCLASSIFIED' TO regularUsers
+DENY MATCH {*} ON GRAPH * FOR ()-[r]-() WHERE r.classification <> 'UNCLASSIFIED' TO regularUsers
 ----
 
 === Grant a property-based privilege on all properties using a property value
 
-The following example shows how to grant permission to `READ` all properties on nodes where the property `securityLevel` is higher than `3` to role `regularUsers`:
+The following example shows how to grant permission to `READ` all properties on nodes and relationships where the property `securityLevel` is higher than `3` to role `regularUsers`:
 
 [source, syntax, role="noheader"]
 ----
 GRANT READ {*} ON GRAPH * FOR (n) WHERE n.securityLevel > 3 TO regularUsers
+GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.securityLevel > 3 TO regularUsers
 ----
 
 [NOTE]
@@ -132,22 +144,24 @@ The role `regularUsers` does not need to have `READ` privilege for the property 
 
 === Deny a property-based privilege using a list of values
 
-The following example shows how to deny permission to `READ` all properties on nodes where the property `classification` is not included in the list of `[UNCLASSIFIED, PUBLIC]`:
+The following example shows how to deny permission to `READ` all properties on nodes and relationships where the property `classification` is not included in the list of `[UNCLASSIFIED, PUBLIC]`:
 
 [source, syntax, role="noheader"]
 ----
 DENY READ {*} ON GRAPH * FOR (n) WHERE NOT n.classification IN ['UNCLASSIFIED', 'PUBLIC'] TO regularUsers
+DENY READ {*} ON GRAPH * FOR ()-[r]-() WHERE NOT r.classification IN ['UNCLASSIFIED', 'PUBLIC'] TO regularUsers
 ----
 
 // The last two examples were added in 5.26.
 
 === Grant a property-based privilege using temporal value
 
-The following example shows how to grant permission to `READ` all properties on nodes where the property `createdAt` is later than the current date:
+The following example shows how to grant permission to `READ` all properties on nodes and relationships where the property `createdAt` is later than the current date:
 
 [source, syntax, role="noheader"]
 ----
 GRANT READ {*} ON GRAPH * FOR (n) WHERE n.createdAt > date() TO regularUsers
+GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.createdAt > date() TO regularUsers
 ----
 
 [NOTE]
@@ -159,7 +173,7 @@ This is essential when revoking property-based privileges containing evaluated f
 
 [NOTE]
 ====
-Not all temporal values are comparable, see link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/operators/#cypher-ordering[Cypher Manual -> Syntax -> Operators -> Ordering and comparison of values].
+Not all temporal values are comparable, see link:{neo4j-docs-base-uri}/cypher-manual/current/values-and-types/ordering-equality-comparison[Cypher Manual -> Equality, ordering, and comparison of value types].
 ====
 
 You can show the privilege created by the command in the previous example as a revoke command by running:
@@ -174,6 +188,7 @@ SHOW ROLE regularUsers PRIVILEGES AS REVOKE COMMANDS
 |===
 |command
 |"REVOKE GRANT READ {*} ON GRAPH * FOR (n) WHERE n.createdAt > date('2024-10-25') FROM `regularUsers`"
-a|Rows: 1
+|"REVOKE GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.createdAt > date('2024-10-25') FROM `regularUsers`"
+a|Rows: 2
 |===
 
