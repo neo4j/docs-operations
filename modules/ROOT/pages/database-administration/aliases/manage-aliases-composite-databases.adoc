@@ -228,11 +228,12 @@ However, when it comes to escaping names using backticks, there are some additio
 Dots in alias names are ambiguous.
 They could either be interpreted as part of the name itself, or as the dot that separates a composite namespace from the alias name.
 
+[role=label--new-2025.06]
 === Conflicting names
-Before Neo4j 2025.06, it was possible to create conflicting aliases such as the constituent alias `flowers` within the composite database `garden` as well as the non-composite local alias `garden.flowers`.
-Both of these would be referred to by the same name `garden.flowers`.
+In versions earlier than Neo4j 2025.06, it is possible to create conflicting aliases, such as the constituent alias `flowers` within the composite database `garden` as well as the non-composite local alias `garden.flowers`.
+Both of these are referred to by the same name, `garden.flowers`.
 
-Neo4j 2025.06 and later versions ensure that no such conflicts exist and will throw an exception when attempting to create a new alias with the same name as an existing alias.
+Neo4j 2025.06 and later versions ensure that no such conflicts exist and throw an exception when attempting to create a new alias with the same name as an existing alias.
 
 [.tabbed-example]
 =====
@@ -260,7 +261,7 @@ Failed to create the specified database alias 'garden.flowers': Database name or
 ======
 
 Creating a regular alias with the same name as an existing composite constituent is disallowed.
-In Cypher 25 it is clear that the two names are considered the same, since the parts are not quoted separately as they would be in Cypher 5.
+In Cypher 25, the two names are considered the same since the parts are not quoted separately as they would be in Cypher 5.
 
 .Query
 [source, cypher]
@@ -282,7 +283,8 @@ Failed to create the specified database alias 'garden.flowers': Database name or
 =====
 [role=include-with-cypher-5]
 ======
-Creating a composite constituent with the same name as an existing non-composite alias is disallowed. This example scenario is prevented already on the second line, thus the constituent on the third line cannot be created.
+Creating a composite constituent with the same name as an existing non-composite alias is disallowed.
+This example scenario is already prevented on the second line; thus, the constituent on the third line cannot be created.
 
 .Query
 [source, cypher]
@@ -304,7 +306,7 @@ Cannot create database 'garden' because another database 'garden.flowers' exists
 ======
 
 Creating a composite constituent with the same name as an existing non-composite alias is disallowed.
-This example scenario is prevented already on the second line, thus the constituent on the third line cannot be created.
+This example scenario is already prevented on the second line; thus, the constituent on the third line cannot be created.
 The Cypher 25 syntax makes no distinction between the names to clarify that they are considered equivalent.
 
 .Query
@@ -324,14 +326,13 @@ Cannot create database 'garden' because another database 'garden.flowers' exists
 =====
 
 
-Creating a composite constituent with the same name as an existing non-composite alias is disallowed:
 
 === Cypher 25 specific behaviour
 ==== Accessing an existing alias with dots
 
 Cypher 25 relies on the guarantee that no conflicting names are allowed in Neo4j 2025.06 and later.
-The following queries all act on the same alias, regardless if that alias is a composite constituent or not.
-The special quoting of separate name parts that was necessary in Cypher 5 is not permitted in Cypher 25.
+The following queries all act on the same alias, regardless of whether that alias is a composite constituent or not.
+The special quoting of separate name parts that is necessary in Cypher 5 is not permitted in Cypher 25.
 
 .Parameters
 [source, javascript]
@@ -349,15 +350,11 @@ CYPHER 25 USE `my.garden.beautiful.flowers` RETURN 1
 ----
 
 ==== Creating a new alias with dots
-During `CREATE`, Cypher 25 will split the given name on each dot, left to right, and check if a corresponding composite database exists.
-If no composite database is found, Cypher25 will fall back to creating a regular non-composite alias instead.
 
-The following query attempts to create in order:
+During `CREATE`, Cypher 25 splits the given name on each dot, left to right, and checks if a corresponding composite database exists.
+If no composite database is found, Cypher25 falls back to creating a regular non-composite alias.
 
-* Constituent alias `garden.beautiful.flowers` within composite database `my`.
-* Constituent alias `beautiful.flowers` within composite database `my.garden`.
-* Constituent alias `flowers` within composite database `my.garden.beautiul`.
-* Regular non-composite alias `my.garden.beautiful.flowers`.
+For example:
 
 .Query
 [source, cypher]
@@ -365,7 +362,21 @@ The following query attempts to create in order:
 CYPHER 25 CREATE COMPOSITE DATABASE `my.garden`
 CYPHER 25 CREATE ALIAS `my.garden.beautiful.flowers` FOR DATABASE `northwind-graph`
 ----
-Since it finds the composite database `my.garden` it will create the constituent alias `beautiful.flowers` within the found composite.
+
+The query attempts to create the following aliases in the given order:
+
+. Constituent alias `garden.beautiful.flowers` within composite database `my`.
+. Constituent alias `beautiful.flowers` within composite database `my.garden`.
+. Constituent alias `flowers` within composite database `my.garden.beautiful`.
+. Regular non-composite alias `my.garden.beautiful.flowers`.
+
+.Query
+[source, cypher]
+----
+CYPHER 25 CREATE COMPOSITE DATABASE `my.garden`
+CYPHER 25 CREATE ALIAS `my.garden.beautiful.flowers` FOR DATABASE `northwind-graph`
+----
+When it finds the composite database `my.garden`, it creates the constituent alias `beautiful.flowers` within that composite.
 
 
 
@@ -375,7 +386,11 @@ Since it finds the composite database `my.garden` it will create the constituent
 
 The composite database name and the database alias name need to be quoted individually.
 Backticks may be added regardless of whether the name contains special characters or not, so it is good practice to always backtick both names, e.g.  `++`composite`++.++`alias`++`.
-Note however that separating composite database name and alias name with backticks is no longer supported in Cypher 25.
+[NOTE]
+====
+Separating composite database name and alias name with backticks is no longer supported in Cypher 25.
+See <<_cypher_25_specific_behaviour, Cypher 25 specific behaviour>> for details.
+====
 
 The following example creates a database alias named `my alias with spaces` as a constituent in the composite database named `my-composite-database-with-dashes`:
 
@@ -421,7 +436,8 @@ CYPHER 5 CREATE ALIAS `my.composite.database.with.dots`.`my.other.alias.with.dot
 
 ==== Single dots and local database aliases
 [NOTE]
-This used to be deprecated, but the deprecation has since been revoked.
+====
+As of Neo4j 2025.06, this feature is no longer deprecated.
 
 There is a special case for local database aliases with a single dot without any existing composite database.
 If a composite database `some` exists, the query below will create a database alias named `alias` within the composite database `some`.
