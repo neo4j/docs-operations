@@ -1,5 +1,4 @@
 :description: how to modify standard databases in Neo4j using the Cypher command `ALTER DATABASE`.
-[role=enterprise-edition not-on-aura]
 [[administration-databases-alter-database]]
 = Alter databases
 
@@ -19,7 +18,8 @@ ALTER DATABASE name [IF EXISTS]
 {
 SET ACCESS {READ ONLY \| READ WRITE} \|
 SET TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}] \|
-SET OPTION option value
+SET OPTION option value \|
+SET DEFAULT LANGUAGE CYPHER {5\|25}
 }
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
@@ -30,13 +30,16 @@ ALTER DATABASE name [IF EXISTS]
 REMOVE OPTION option
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
+|===
 
 [NOTE]
 ====
 There can be multiple `SET OPTION` or `REMOVE OPTION` clauses for different option keys.
-====
-|===
 
+`SET DEFAULT LANGUAGE CYPHER {5|25}` is available from Neo4j 2025.06 onwards.
+====
+
+[role=label--enterprise-edition label--not-on-aura]
 [[manage-databases-alter]]
 == Alter database access mode
 
@@ -59,11 +62,11 @@ Modifying access mode is only available to standard databases and not composite 
 
 === Alter database access mode to read-only
 
-To modify the database access mode, use the following command where `customers` is the database name:
+To modify the database access mode, use the following command where `actors` is the database name:
 
 [source, cypher]
 ----
-ALTER DATABASE customers SET ACCESS READ ONLY
+ALTER DATABASE actors SET ACCESS READ ONLY
 ----
 
 The database access mode can be seen in the `access` output column of the command `SHOW DATABASES`:
@@ -79,7 +82,7 @@ SHOW DATABASES yield name, access
 +----------------------------+
 | name        | access       |
 +----------------------------+
-| "customers" | "read-only"  |
+| "actors"    | "read-only"  |
 | "movies"    | "read-write" |
 | "neo4j"     | "read-write" |
 | "system"    | "read-write" |
@@ -97,13 +100,49 @@ ALTER DATABASE nonExisting IF EXISTS
 SET ACCESS READ WRITE
 ----
 
+[role=label--new-2025.06]
+[[alter-database-default-language]]
+== Alter the default Cypher version of an existing database
+
+You can change the default Cypher version of an existing database, including the `system` database, using the `ALTER DATABASE` command with the `SET DEFAULT LANGUAGE` clause.
+For example:
+
+[source, cypher]
+----
+ALTER DATABASE movies SET DEFAULT LANGUAGE CYPHER 25
+----
+This command will change the default Cypher version of the database `movies` to Cypher 25.
+
+include::partial$/view-cypher-version.adoc[]
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | defaultLanguage
+
+| "actors"  | "CYPHER 25"
+| "movies"  | "CYPHER 25"
+| "neo4j"   | "CYPHER 25"
+| "system"  | "CYPHER 25"
+
+2+d|Rows: 4
+|===
+
+[NOTE]
+====
+Setting the default language to `CYPHER 25` ensures that all queries run on that database will use the version of `Cypher 25` that the database is currently running (unless you prepend your queries with `CYPHER 5`, which overrides this default).
+For example, a Neo4j 2025.08 database with default language `Cypher 25` will use `Cypher 25` as it exists in Neo4j 2025.08, including any changes introduced in Neo4j 2025.06, 2025.07, and 2025.08.
+====
+
+[role=label--enterprise-edition label--not-on-aura]
 == Alter database topology
 
 In a cluster environment, you can use the `ALTER DATABASE` command to change the number of servers hosting a database.
 For more information, see xref::clustering/databases.adoc#alter-topology[Managing databases in a cluster].
 
+[role=label--enterprise-edition label--not-on-aura]
 [[alter-database-options]]
-== `ALTER DATABASE` options
+== Alter database options
 
 The `ALTER DATABASE` command can be used to set or remove specific options for a database.
 
@@ -146,7 +185,7 @@ SHOW DATABASES yield name, options
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | +name+ | +options+
-| +"customers"+ | +{}+
+| +"actors"+ | +{}+
 | +"movies"+ | +{txLogEnrichment: "FULL"}+
 | +"neo4j"+ | +{}+
 | +"system"+ | +{}+
@@ -173,7 +212,7 @@ SHOW DATABASES YIELD name, options
 [role="queryresult",options="header,footer",cols="2*<m"]
 |===
 | +name+ | +options+
-| +"customers"+ | +{}+
+| +"actors"+ | +{}+
 | +"movies"+ | +{}+
 | +"neo4j"+ | +{}+
 | +"system"+ | +{}+
