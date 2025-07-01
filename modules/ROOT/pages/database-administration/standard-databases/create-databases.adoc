@@ -1,24 +1,18 @@
-:description: how to create, start, and stop databases in Neo4j. How to use `CREATE DATABASE`, `START DATABASE`, `STOP DATABASE` Cypher commands.
+:description: how to create databases in Neo4j. How to use `CREATE DATABASE` Cypher command.
 :page-aliases: manage-databases/queries.adoc
 [role=enterprise-edition not-on-aura]
 [[manage-databases-create]]
-= Create, start, and stop databases
+= Create databases
 
 Neo4j supports the management of multiple databases within the same DBMS.
 The metadata for these databases, including the associated security model, is maintained in a special database called the `system` database.
 All multi-database administrative commands must be run against the `system` database.
 These administrative commands are automatically routed to the `system` database when connected to the DBMS over Bolt.
 
-[NOTE]
-====
-Administrative commands should not be used during a rolling upgrade.
-For more information, see link:{neo4j-docs-base-uri}/upgrade-migration-guide/upgrade/upgrade-4.4/causal-cluster/[Upgrade and Migration Guide -> Upgrade a cluster].
-====
-
-[[create-neo4j-database]]
-== Create databases
-
 You can create a database using the Cypher command `CREATE DATABASE`.
+The initial contents of the database depend on the state of the server and the options provided to the command.
+When no additional options are provided, `CREATE DATABASE` will attempt to mount any pre-existing store files in place (e.g., as the result of restoring a backup).
+If no pre-existing store files are available, it will create an empty database.
 
 [NOTE]
 ====
@@ -27,15 +21,20 @@ Having dots (`.`) in the database names is not recommended.
 This is due to the difficulty of determining if a dot is part of the database name or a delimiter for a database alias in a composite database.
 ====
 
-`block` is the default format for all newly-created databases as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified. +
+`block` is the default format for all newly created databases as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified. +
 If you want to change it, you can set a new value for the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration in the _neo4j.conf_ file. +
 Alternatively, you can set the store format of new databases using the `CREATE DATABASE databasename OPTIONS {storeFormat: 'the-new-format'}` command.
 However, if the store is seeded with `seedURI`, `existingDataSeedServer` or `existingDataSeedInstance`, or if the command is being used to mount pre-existing store files already present on the disk, they will use their current store format without any alterations.
 
 See xref:database-internals/store-formats.adoc[Store formats], for more details about available database store formats in Neo4j.
 
-=== Syntax
+== Syntax
 
+[options="header", width="100%", cols="1m,5a"]
+[.tabbed-example]
+=====
+[role=include-with-cypher-5]
+======
 [options="header", width="100%", cols="1m,5a"]
 |===
 | Command | Syntax
@@ -45,6 +44,7 @@ See xref:database-internals/store-formats.adoc[Store formats], for more details 
 [source, syntax, role="noheader"]
 ----
 CREATE DATABASE name [IF NOT EXISTS]
+[DEFAULT LANGUAGE CYPHER {5\|25}]
 [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
 [OPTIONS "{" option: value[, ...] "}"]
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
@@ -53,16 +53,62 @@ CREATE DATABASE name [IF NOT EXISTS]
 [source, syntax, role="noheader"]
 ----
 CREATE OR REPLACE DATABASE name
+[DEFAULT LANGUAGE CYPHER {5\|25}]
 [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
 [OPTIONS "{" option: value[, ...] "}"]
 [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
-
 |===
+
+[NOTE]
+====
+`[DEFAULT LANGUAGE CYPHER {5|25}]` is available in Cypher 5 starting from Neo4j 2025.06 onwards.
+====
+======
+
+[role=include-with-cypher-25]
+======
+
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
+| CREATE DATABASE
+|
+[source, syntax, role="noheader"]
+----
+CREATE DATABASE name [IF NOT EXISTS]
+[[SET] DEFAULT LANGUAGE CYPHER {5\|25}]
+[[SET] TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+
+[source, syntax, role="noheader"]
+----
+CREATE OR REPLACE DATABASE name
+[[SET] DEFAULT LANGUAGE CYPHER {5\|25}]
+[[SET] TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+|===
+
+[NOTE]
+====
+`[[SET] DEFAULT LANGUAGE CYPHER {5|25}]` is available from Neo4j 2025.06 onwards. +
+`[TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]` is replaced by `[[SET] TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]` in Cypher 25.
+====
+======
+=====
 
 
 [[manage-databases-create-database-options]]
-=== Options
+== Options
+
+[.tabbed-example]
+=====
+[role=include-with-cypher-5]
+======
 
 The `CREATE DATABASE` command can have a map of options, e.g. `OPTIONS {key: 'value'}`.
 
@@ -128,17 +174,85 @@ Starting from Neo4j 2025.01, you can use `existingData`, `seedURI`, `seedConfig`
 The `existingDataSeedInstance` and `existingDataSeedServer` are still not supported with the `CREATE OR REPLACE DATABASE` command.
 More details about seeding options can be found in xref::clustering/databases.adoc#cluster-seed[Seed a cluster].
 ====
+======
+[role=include-with-cypher-25]
+======
+The `CREATE DATABASE [OR REPLACE]` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
 
+[options="header"]
+|===
 
-=== Examples
+| Key | Value | Description
 
-==== Create a database
+|`existingDataSeedServer`
+| ID of the cluster server
+|
+Defines which server is used for seeding the data of the created database.
+The server ID can be found in the `serverId` column after running `SHOW SERVERS`.
 
-To create a database named `customers`, use the command `CREATE DATABASE` followed by the name of this database.
+| `seedURI`
+| URI to a backup, a folder that contains backup artifacts or a dump from an existing database.
+|
+Defines a seed from an external source, which will be used to seed all servers.
+
+| `seedConfig`
+| Comma-separated list of configuration values.
+|
+For more information see xref::clustering/databases.adoc#cluster-seed-uri[Seed from URI].
+
+| `txLogEnrichment`
+| `FULL` \| `DIFF` \| `OFF`
+|
+Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
+
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/current/get-started/self-managed/#set-enrichment-mode/[Change Data Capture Manual -> Enable CDC on self-managed instances -> Set the enrichment mode].
+
+| `storeFormat`
+| `aligned` \| `standard` \| `high_limit` \| `block`
+|
+Defines the store format if the database created is new.
+`high_limit` and `standard` formats are deprecated from 5.23.
+For more information on store formats, see xref::database-internals/store-formats.adoc[Store formats].
+
+If the store is seeded with `seedURI` or `existingDataSeedServer`, or if the command is used to mount pre-existing store files already present on the disk, they will retain their current store format without any modifications.
+
+| `seedRestoreUntil`
+| Datetime or transaction id. E.g. `datetime("2025-01-01T12:15:00.000+0100")` or `123456`
+|
+If you are passing a `seedURI` that leads to a backup chain, including differential backups, you can choose to not apply all the transactions in the differential backups.
+To seed up to a specific date, specify a `datetime`.
+This will seed the database with transactions committed before the provided timestamp.
+To seed up to a specific transaction ID, specify a transaction ID.
+This will seed the database with transactions up to, but not including the specified transaction.
+
+| `seedSourceDatabase` label:new[Introduced in 2025.06]
+| A source database name
+|
+If the `seedURI` points to a folder containing backups for multiple databases, you can specify the database name to filter the artifacts.
+
+| `existingData` label:deprecated[Deprecated in 2025.06]
+| `use`
+|
+Included for backward compatibility only, has no effect and will be removed in a future version.
+
+|===
+
+[NOTE]
+====
+In Cypher 25, the options `seedCredentials` and `existingDataSeedInstance` have been removed, while the `existingData` option is now deprecated and has no effect.
+====
+======
+=====
+
+The following examples show how to create a database using the `CREATE DATABASE` command with various options.
+
+== Create a database
+
+To create a database named `actors`, use the command `CREATE DATABASE` followed by the name of this database.
 
 [source, cypher]
 ----
-CREATE DATABASE customers
+CREATE DATABASE actors
 ----
 
 When you create a database, it shows up in the listing provided by the command `SHOW DATABASES`:
@@ -154,7 +268,7 @@ SHOW DATABASES YIELD name
 +-------------+
 | name        |
 +-------------+
-| "customers" |
+| "actors"    |
 | "movies"    |
 | "neo4j"     |
 | "system"    |
@@ -162,9 +276,13 @@ SHOW DATABASES YIELD name
 ----
 
 
-==== Create a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
+== Create a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
 
-Sub-clause `WAIT` allows you to specify a time limit in which the command must complete and return.
+[.tabbed-example]
+=====
+[role=include-with-cypher-5]
+======
+Sub-clause `WAIT` allows you to specify a time limit for the command to complete and return.
 
 [source, cypher]
 ----
@@ -183,9 +301,35 @@ CREATE DATABASE slow WAIT 5 SECONDS
 
 The `success` column provides an aggregate status of whether or not the command is considered successful.
 Thus, every row has the same value, determined on a successful completion without a timeout.
+======
+[role=include-with-cypher-25 label--new-2025.06]
+======
+Sub-clause `WAIT` allows you to specify a time limit for the command to complete and return.
 
+[source, cypher]
+----
+CREATE DATABASE slow WAIT 5 SECONDS
+----
 
-==== Create databases with `IF NOT EXISTS` or `OR REPLACE`
+.Result
+[role="queryresult"]
+----
+info: Server `ServerId{b55c6551}` at address `server1:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+
+info: Server `ServerId{a9e7e8f1}` at address `server2:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+
+info: Server `ServerId{0f7cb48e}` at address `server3:7687` has caught up.
+03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)
+----
+
+The command returns a notification for each server in the cluster to indicate the status of that command on that server.
+In this example, all three cluster members have returned `03N85 (Neo.ClientNotification.Cluster.ServerCaughtUp)`, which indicates that the server has applied the command successfully and is up to date.
+======
+=====
+
+== Create a database with `IF NOT EXISTS` or `OR REPLACE`
 
 The `CREATE DATABASE` command is optionally idempotent, with the default behavior to fail with an error if the database already exists.
 There are two ways to circumvent this behavior.
@@ -194,17 +338,17 @@ First, appending `IF NOT EXISTS` to the command ensures that no error is returne
 
 [source, cypher]
 ----
-CREATE DATABASE customers IF NOT EXISTS
+CREATE DATABASE actors IF NOT EXISTS
 ----
 
 Second, adding `OR REPLACE` to the command deletes any existing database and creates a new one.
 
 [source, cypher]
 ----
-CREATE OR REPLACE DATABASE customers
+CREATE OR REPLACE DATABASE actors
 ----
 
-This is equivalent to running `DROP DATABASE customers IF EXISTS` followed by `CREATE DATABASE customers`.
+This is equivalent to running `DROP DATABASE actors IF EXISTS` followed by `CREATE DATABASE actors`.
 
 Keep in mind that using `CREATE OR REPLACE DATABASE` also removes indexes and constraints.
 To preserve them, run the following Cypher commands before the `CREATE OR REPLACE DATABASE` and save their outputs:
@@ -228,141 +372,38 @@ The behavior of `IF NOT EXISTS` and `OR REPLACE` apply to both standard and comp
 The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
 ====
 
+[role=label--new-2025.06]
+== Set a default Cypher version for a standard database
 
-[[manage-databases-start]]
-== Start databases
-
-Databases can be started using the command `START DATABASE`.
-
-[NOTE]
-====
-Both standard databases and composite databases can be started using this command.
-====
-
-
-=== Syntax
-
-[options="header", width="100%", cols="1m,5a"]
-|===
-| Command | Syntax
-
-| START DATABASE
-|
-[source, syntax, role="noheader"]
-----
-START DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-----
-
-|===
-
-=== Examples
-
-==== Start a database
-
-Starting a database is a straightforward operation.
-Suppose you have a database named `customers`.
-To start it, use the following command:
+You can set the default Cypher version for a database when creating it.
+If not specified, the version for that database will be set to the default Cypher version of the DBMS.
+For example:
 
 [source, cypher]
 ----
-START DATABASE customers
+CREATE DATABASE actors DEFAULT LANGUAGE CYPHER 25
 ----
+This command creates a database named `actors` with the default Cypher version set to 25.
 
-You can see the status of the started database by running the command `SHOW DATABASE name`.
-
-[source, cypher]
-----
-SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
-----
+include::partial$/view-cypher-version.adoc[]
 
 .Result
-[role="queryresult"]
-----
-+-----------------------------------------------+
-| name        | requestedStatus | currentStatus |
-+-----------------------------------------------+
-| "customers" | "online"        | "online"      |
-+-----------------------------------------------+
-----
-
-
-==== Start a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
-
-You can start your database using `WAIT` sub-clause to ensure that the command waits for a specified amount of time until the database is started.
-
-[source, cypher]
-----
-START DATABASE customers WAIT 5 SECONDS
-----
-
-
-[[manage-databases-stop]]
-== Stop databases
-
-Databases can be stopped using the command `STOP DATABASE`.
-
-=== Syntax
-
-[options="header", width="100%", cols="1m,5a"]
+[role="queryresult",options="header,footer",cols="2*<m"]
 |===
-| Command | Syntax
+| name | defaultLanguage
 
-| STOP DATABASE
-|
-[source, syntax, role="noheader"]
-----
-STOP DATABASE name [WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-----
+| "actors"  | "CYPHER 25"
+| "movies"  | "CYPHER 5"
+| "neo4j"   | "CYPHER 25"
+| "system"  | "CYPHER 25"
 
+2+d|Rows: 4
 |===
 
-=== Examples
-
-==== Stop a database
-
-To stop a database, use the following command:
-
-[source, cypher]
-----
-STOP DATABASE customers
-----
+For more information about other options for configuring the Cypher version, see xref:configuration/cypher-version-configuration.adoc[Configure the Cypher default version].
 
 [NOTE]
 ====
-Both standard databases and composite databases can be stopped using this command.
-====
-
-The status of the stopped database can be seen using the command `SHOW DATABASE name`:
-
-[source, cypher]
-----
-SHOW DATABASE customers YIELD name, requestedStatus, currentStatus
-----
-
-.Result
-[role="queryresult"]
-----
-+-----------------------------------------------+
-| name        | requestedStatus | currentStatus |
-+-----------------------------------------------+
-| "customers" | "offline"       | "offline"     |
-+-----------------------------------------------+
-----
-
-==== Stop a database with xref:database-administration/standard-databases/wait-options.adoc[`WAIT`]
-
-You can also stop your database using the `WAIT` sub-clause, which allows you to specify the amount of time that the system should wait for the database to stop.
-
-[source, cypher]
-----
-STOP DATABASE customers WAIT 10 SECONDS
-----
-
-
-[NOTE]
-====
-Databases that are stopped with the `STOP` command are completely shut down and may be started again through the `START` command.
-In a cluster, as long as a database is in a shutdown state, it can not be considered available to other members of the cluster.
-It is not possible to do online backups against shutdown databases and they need to be taken into special consideration during disaster recovery, as they do not have a running Raft machine while shutdown.
-Unlike stopped databases, dropped databases are completely removed and are not intended to be used again at all.
+Setting the default language to `CYPHER 25` ensures that all queries run on that database will use the version of `Cypher 25` that the database is currently running (unless you prepend your queries with `CYPHER 5`, which overrides this default).
+For example, a Neo4j 2025.08 database with default language `Cypher 25` will use `Cypher 25` as it exists in Neo4j 2025.08, including any changes introduced in Neo4j 2025.06, 2025.07, and 2025.08.
 ====
