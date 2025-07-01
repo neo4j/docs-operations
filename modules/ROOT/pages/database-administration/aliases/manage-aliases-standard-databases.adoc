@@ -3,25 +3,6 @@
 [[manage-aliases-standard-databases]]
 = Managing database aliases for standard databases
 
-There are two kinds of database aliases: local and remote.
-A local database alias can only target a database within the same DBMS.
-A remote database alias may target a database from another Neo4j DBMS.
-When a query is run against a database alias, it will be redirected to the target database.
-The home database for users can be set to an alias, which will be resolved to the target database on use.
-Starting with Neo4j 2025.04, a database alias can also be set as the default database.
-
-This page describes managing database aliases for standard databases.
-Local and remote database aliases can also be created as part of a xref:database-administration/composite-databases/concepts.adoc[composite database].
-For more information, see xref:database-administration/aliases/manage-aliases-composite-databases.adoc[].
-
-A local database alias can be used in all other Cypher commands in place of the target database.
-Please note that the local database alias will be resolved while executing the command.
-Privileges are defined on the database, and not the local database alias.
-
-A remote database alias can be used for connecting to a database of a remote Neo4j DBMS, `USE` clauses, setting a user's home database, and defining the access privileges to the remote database.
-Remote database aliases require configuration to safely connect to the remote target, which is described in xref::database-administration/aliases/remote-database-alias-configuration.adoc[Connecting remote databases].
-It is not possible to impersonate a user on the remote database or to execute an administration command on the remote database via a remote database alias.
-
 Database aliases can be created and managed using a set of Cypher administration commands executed against the `system` database.
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
 When connected to the DBMS over Bolt, administration commands are automatically routed to the `system` database.
@@ -31,6 +12,39 @@ When connected to the DBMS over Bolt, administration commands are automatically 
 If a transaction modifies a database alias, other transactions concurrently executing against that alias may be aborted and rolled back for safety.
 This prevents issues such as a transaction executing against multiple target databases for the same alias.
 ====
+
+There are two kinds of database aliases - local and remote:
+
+Local database aliases::
+A local database alias can only target a database within the same DBMS.
+It can be used in all Cypher commands in place of the target database.
+Please note that the local database alias will be resolved while executing the command.
+Privileges are defined on the target database, and not the local database alias.
+
+
+Remote database aliases::
+A remote database alias may target a database from another Neo4j DBMS.
+It can be used for:
+* Connecting to a database of a remote Neo4j DBMS. +
+Remote database aliases require configuration to safely connect to the remote target, which is described in xref::database-administration/aliases/remote-database-alias-configuration.adoc[Connecting remote databases].
+It is not possible to impersonate a user on the remote database or to execute an administration command on the remote database via a remote database alias.
+* `USE` clauses.
+* Defining the access privileges to the remote database.
+* label:new[Introduced in 2025.06] Setting a default Cypher version for queries to the remote database.
+
+[NOTE]
+====
+Starting with Neo4j 2025.06, a database or remote alias can be assigned a default Cypher version.
+However, local database aliases cannot be assigned a default Cypher version.
+They always get the Cypher version of their target database.
+====
+
+When a query is run against a database alias, it will be redirected to the target database.
+The home database for users can be set to an alias, which will be resolved to the target database on use.
+Starting with Neo4j 2025.04, a database alias can also be set as the DBMS default database.
+
+This page describes managing database aliases for standard databases.
+For aliases created as part of a xref:database-administration/composite-databases/concepts.adoc[composite database], see xref:database-administration/aliases/manage-aliases-composite-databases.adoc[].
 
 [[manage-aliases-list]]
 == List database aliases
@@ -53,15 +67,18 @@ DRIVER {
   connection_pool_idle_test: duration({minutes: 2}),
   connection_pool_max_size: 10,
   logging_level: 'info'
-};
+}
+DEFAULT LANGUAGE CYPHER 25;
 ----
 ////
 
-Available database aliases can be seen using `SHOW ALIASES FOR DATABASE`.
+You can list all available database aliases using the `SHOW ALIASES FOR DATABASE` command.
+The command returns a table of all database aliases, whether they belong to a composite database or not. +
+If you need more details, you can append the command with `YIELD *`.
+The `YIELD *` clause returns the full set of columns.
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
 
-`SHOW ALIASES FOR DATABASE` will produce a table of database aliases with the following columns:
-
+.Available columns
 [options="header" cols="2m,4a,2m"]
 |===
 | Column | Description | Type
@@ -106,19 +123,21 @@ The driver options for connection to the remote database or `null` if the target
 List of xref::database-administration/aliases/manage-aliases-standard-databases.adoc#alias-management-create-remote-database-alias-driver-settings[driver settings] allowed for remote database aliases.
 | MAP
 
+| defaultLanguage label:new[Introduced in 2025.06]
+|
+The default language for non-constituent remote database aliases or `null` if it is a constituent or local database alias.
+| STRING
+
 | properties
 | Any properties set on the database alias.
 | MAP
 
 |===
 
-The detailed information for a particular database alias can be displayed using the command `SHOW ALIASES FOR DATABASE YIELD *`.
-When a `YIELD *` clause is provided, the full set of columns is returned.
+=== Show all database aliases
 
-=== Show all aliases for a database
-
-A summary of all available database aliases can be displayed using the command `SHOW ALIASES FOR DATABASE`.
-This command will show database aliases for both standard and composite databases.
+To list all database aliases, use the `SHOW ALIASES FOR DATABASE` command without any additional parameters.
+This command returns all database aliases, including local and remote aliases, for all databases in the DBMS.
 
 .Query
 [source, cypher]
@@ -138,9 +157,9 @@ SHOW ALIASES FOR DATABASE
 +--------------------------------------------------------------------------------------------+
 ----
 
-=== Show specific aliases for databases
+=== Show a specific database alias
 
-To list just one database alias, the `SHOW ALIASES` command takes an alias name;
+To list just one database alias, the `SHOW ALIASES` command takes an alias name:
 
 .Query
 [source, cypher]
@@ -158,7 +177,9 @@ SHOW ALIAS films FOR DATABASES
 +---------------------------------------------------------+
 ----
 
-=== Show detailed aliases information for a database
+=== Show detailed information about all database aliases
+
+To see all columns for all database aliases, use the `YIELD *` clause with the `SHOW ALIASES FOR DATABASE` command:
 
 .Query
 [source, cypher]
@@ -169,18 +190,18 @@ SHOW ALIASES FOR DATABASE YIELD *
 .Result
 [role="queryresult"]
 ----
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name              | composite | database  | location | url                       | user    | driver                                                                                                                                                                                                         | properties                |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "films"           | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {}                        |
-| "motion pictures" | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | {namecontainsspace: TRUE} |
-| "movie scripts"   | NULL      | "scripts" | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | {}                        |
-+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name              | composite | database  | location | url                       | user    | driver                                                                                                                                                                                                         | defaultLanguage | properties                |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "films"           | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | NULL            | {}                        |
+| "motion pictures" | NULL      | "movies"  | "local"  | NULL                      | NULL    | NULL                                                                                                                                                                                                           | NULL            | {namecontainsspace: TRUE} |
+| "movie scripts"   | NULL      | "scripts" | "remote" | "neo4j+s://location:7687" | "alice" | {connection_pool_idle_test: PT2M, connection_pool_max_size: 10, logging_level: "INFO", ssl_enforced: TRUE, connection_pool_acquisition_timeout: PT1M, connection_timeout: PT5S, connection_max_lifetime: PT1H} | "CYPHER 25"     | {}                        |
++-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-=== Show `count` of aliases for a database
+=== Show the number of database aliases
 
-The number of database aliases can be seen using a `count()` aggregation with `YIELD` and `RETURN`.
+To see the number of database aliases, use a `count()` aggregation with `YIELD` and `RETURN`.
 
 .Query
 [source, cypher]
@@ -199,9 +220,11 @@ RETURN count(*) as count
 +-------+
 ----
 
-=== Show filtered aliases information for a database
+=== Filter and sort database aliases
 
-It is possible to filter and sort the results by using `YIELD`, `ORDER BY`, and `WHERE`.
+You can filter and sort the results of the `SHOW ALIASES FOR DATABASE` command using the `YIELD`, `ORDER BY`, and `WHERE` clauses.
+The `YIELD` clause allows you to specify which columns to return, while the `ORDER BY` clause sorts the results based on a specified column.
+The `WHERE` clause filters the results based on a condition.
 
 .Query
 [source, cypher]
@@ -234,8 +257,7 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 [[alias-management-create-database-alias]]
 == Create database aliases
 
-Database aliases can be created using `CREATE ALIAS`.
-The command supports the creation of both local and remote database aliases.
+You can create both local and remote database aliases using the command `CREATE ALIAS`.
 For more information on local and remote database aliases as part of a composite database, see xref::database-administration/aliases/manage-aliases-composite-databases.adoc#create-composite-database-alias[Create database aliases in composite databases].
 
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
@@ -290,38 +312,42 @@ SHOW ALIAS `northwind` FOR DATABASE
 +---------------------------------------------------------------------------+
 ----
 
-=== Use `IF EXISTS` or `OR REPLACE` when creating database aliases
+==== Use `IF EXISTS` or `OR REPLACE` when creating database aliases
 
 The `CREATE ALIAS` command is optionally idempotent, with the default behavior to fail with an error if the database alias already exists.
-There are two ways to circumvent this behavior.
+To work around this, you can append `IF EXISTS` or `OR REPLACE` to the command.
+Both check for any remote or local database aliases.
 
-First, appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should the database alias already exist.
-
+* Appending `IF NOT EXISTS` to the command.
+This ensures that no error is returned and nothing happens should the database alias already exist.
++
 .Query
 [source, cypher]
 ----
 CREATE ALIAS `northwind` IF NOT EXISTS  FOR DATABASE `northwind-graph-2021`
 ----
 
-Second, adding `OR REPLACE` to the command results in any existing database being deleted and a new one being created.
-
+* Appending `OR REPLACE` to the command.
+This means that if the database alias already exists, it will be replaced with the new one.
++
 .Query
 [source, cypher]
 ----
 CREATE OR REPLACE ALIAS `northwind` FOR DATABASE `northwind-graph-2021`
 ----
-
-This is equivalent to running `DROP ALIAS `northwind++` IF EXISTS FOR DATABASE` followed by `CREATE ALIAS `northwind++` FOR DATABASE `northwind-graph-2021`++`.
++
+This is equivalent to running ```DROP ALIAS `northwind++` IF EXISTS FOR DATABASE++``` followed by ```CREATE ALIAS `northwind++` FOR DATABASE `northwind-graph-2021++````.
 
 [NOTE]
 ====
 The `IF NOT EXISTS` and `OR REPLACE` parts of these commands cannot be used together.
 ====
 
-=== Set properties for local database aliases
+==== Set properties for local database aliases
 
-Local database aliases can also be given properties.
-These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
+You can set properties for local database aliases using the `PROPERTIES` clause of the `CREATE ALIAS` command.
+These properties can later be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()`] function.
+For example:
 
 .Query
 [source, cypher]
@@ -331,7 +357,7 @@ FOR DATABASE `northwind-graph-2022`
 PROPERTIES { newestNorthwind: true, index: 3 }
 ----
 
-The properties are then shown in the `SHOW ALIASES FOR DATABASE YIELD ...` command.
+To verify that the properties have been set, use the `SHOW ALIASES FOR DATABASE` command with the `YIELD` clause:
 
 .Query
 [source, cypher]
@@ -356,8 +382,10 @@ SHOW ALIAS `northwind-2022` FOR DATABASE YIELD name, properties
 A database alias can target a remote database by providing an URL and the credentials of a user on the remote Neo4j DBMS.
 See xref:database-administration/aliases/remote-database-alias-configuration.adoc[] for the necessary configurations.
 
-As with local database aliases, creating remote database aliases allows `IF NOT EXISTS` and `OR REPLACE` clauses.
-Both check for any remote or local database aliases.
+Since remote database aliases target databases that are not in this DBMS, they do not fetch the default Cypher version from their target like the local database aliases.
+Instead, they are assigned the version given by xref:configuration/configuration-settings.adoc#config_db.query.default_language[`db.query.default_language`], which is set in the `neo4j.conf` file.
+Alternatively, you can specify the version in the `CREATE ALIAS` or `ALTER ALIAS` commands.
+See xref:database-administration/aliases/manage-aliases-standard-databases.adoc#set-default-language-for-remote-database-aliases[] and xref:database-administration/aliases/manage-aliases-standard-databases.adoc#alter-default-language-remote-database-alias[] for more information.
 
 .Query
 [source, cypher]
@@ -368,7 +396,7 @@ USER alice
 PASSWORD 'example_secret'
 ----
 
-When you create a database alias targeting a remote database, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+To view the remote database alias details, use the `SHOW ALIASES FOR DATABASE` command:
 
 .Query
 [source, cypher]
@@ -387,6 +415,11 @@ FOR DATABASE
 +----------------------------------------------------------------------------------------------------------+
 ----
 
+You can also use `IF EXISTS` or `OR REPLACE` when creating remote database aliases.
+It works the same way as described in the <<_use_if_exists_or_or_replace_when_creating_database_aliases, Use `IF EXISTS` or `OR REPLACE` when creating database aliases>> section.
+Both check for any remote or local database aliases.
+
+
 [[alias-management-create-remote-database-alias-driver-settings]]
 ==== Create remote database aliases with driver settings
 
@@ -394,17 +427,17 @@ It is possible to override the default driver settings per database alias, which
 
 This is the list of the allowed driver settings for remote database aliases:
 
-* ssl_enforced (Default: `true`) -- SSL for remote database alias drivers is configured through the target URL scheme.
+* `ssl_enforced` (Default: `true`) -- SSL for remote database alias drivers is configured through the target URL scheme.
 If `ssl_enforced` is set to true, a secure URL scheme is enforced.
-This will be validated when the command is executed.
-* connection_timeout -- for details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.connect_timeout[dbms.routing.driver.connection.connect_timeout]
-* connection_max_lifetime -- for details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.max_lifetime[dbms.routing.driver.connection.max_lifetime].
+It is be validated when the command is executed.
+* `connection_timeout` (For details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.connect_timeout[dbms.routing.driver.connection.connect_timeout].)
+* `connection_max_lifetime` (For details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.max_lifetime[dbms.routing.driver.connection.max_lifetime].)
 * connection_pool_acquisition_timeout -- for details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.acquisition_timeout[dbms.routing.driver.connection.pool.acquisition_timeout].
 * connection_pool_idle_test -- for details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.idle_test[dbms.routing.driver.connection.pool.idle_test].
-* connection_pool_max_size -- for details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.max_size[dbms.routing.driver.connection.pool.max_size].
-* logging_level (For details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.logging.level[dbms.routing.driver.logging.level])
+* `connection_pool_max_size` (For details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.connection.pool.max_size[dbms.routing.driver.connection.pool.max_size].)
+* `logging_level` (For details, see xref:configuration/configuration-settings.adoc#config_dbms.routing.driver.logging.level[dbms.routing.driver.logging.level].)
 
-The driver settings are set in the `DRIVER` clause of the `CREATE ALIAS` or `ALTER ALIAS` commands.
+You can set these driver settings when creating a remote database alias using the `DRIVER` clause of the `CREATE ALIAS` or `ALTER ALIAS` commands.
 For example, the following query creates a remote database alias using driver settings `connection_timeout` and
 `connection_pool_max_size` for connecting to the remote database `northwind-graph-2020`:
 
@@ -421,7 +454,7 @@ DRIVER {
 }
 ----
 
-When a database alias targeting a remote database has been created, its details can be shown with the `SHOW ALIASES FOR DATABASE` command.
+To view the remote database alias details, including the driver settings, use the `SHOW ALIASES FOR DATABASE` command with the `YIELD *` clause:
 
 .Query
 [source, cypher]
@@ -439,11 +472,52 @@ SHOW ALIAS `remote-with-driver-settings` FOR DATABASE YIELD *
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+[role=label--new-2025.06]
+[[set-default-language-for-remote-database-aliases]]
+==== Set a default Cypher version for remote database aliases
+
+You can set a default Cypher version for remote database aliases using the `DEFAULT LANGUAGE` clause of the `CREATE ALIAS` or `ALTER ALIAS` commands.
+For example, the following query creates a remote database alias with the default language `CYPHER 25`:
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `remote-with-default-language`
+FOR DATABASE `northwind-graph-2020`
+  AT "neo4j+s://location:7687"
+  USER alice
+  PASSWORD 'example_secret'
+  DEFAULT LANGUAGE CYPHER 25
+----
+
+To view the remote database alias details, including the default language, use the `SHOW ALIASES FOR DATABASE` command with the `YIELD` clause:
+
+.Query
+[source, cypher]
+----
+SHOW ALIAS `remote-with-default-language` FOR DATABASE YIELD name, defaultLanguage
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------+
+| name                           | defaultLanguage |
++--------------------------------------------------+
+| "remote-with-default-language" | "CYPHER 25"     |
++--------------------------------------------------+
+----
+
+[NOTE]
+====
+Setting the default language to `CYPHER 25` ensures that all queries run on that database will use the version of `Cypher 25` that the database is currently running (unless you prepend your queries with `CYPHER 5`, which overrides this default).
+For example, a Neo4j 2025.08 database with default language `Cypher 25` will use `Cypher 25` as it exists in Neo4j 2025.08, including any changes introduced in Neo4j 2025.06, 2025.07, and 2025.08.
+====
 
 ==== Set properties for remote database aliases
 
-Just as the local database aliases, the remote database aliases can be given properties.
-These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()` function].
+You can set properties for remote database aliases using the `PROPERTIES` clause of the `CREATE ALIAS` command.
+These properties can then be used in queries with the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/graph/#functions-graph-propertiesByName[`graph.propertiesByName()`] function.
 
 .Query
 [source, cypher]
@@ -453,7 +527,7 @@ USER alice PASSWORD 'password'
 PROPERTIES { newestNorthwind: false, index: 6 }
 ----
 
-The properties are then shown in the `SHOW ALIASES FOR DATABASE YIELD ...` command.
+To view the remote database alias properties, use the `SHOW ALIASES FOR DATABASE` command with the `YIELD` clause:
 
 .Query
 [source, cypher]
@@ -475,8 +549,9 @@ SHOW ALIAS `remote-northwind-2021` FOR DATABASE YIELD name, properties
 [[alias-management-alter-database-alias]]
 == Alter database aliases
 
-
-Database aliases can be altered using `ALTER ALIAS` to change its database target, properties, URL, user credentials, or driver settings.
+You can alter both local and remote database aliases using the `ALTER ALIAS` command.
+For all aliases, the command allows you to change the target database and properties of the database alias.
+For remote aliases, the command also allows you to change the URL, user credentials, default language, or driver settings of the database alias.
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
 Only the clauses used will be altered.
 
@@ -485,10 +560,10 @@ Only the clauses used will be altered.
 Local database aliases cannot be altered to remote aliases, or vice versa.
 ====
 
-=== Alter local database aliases
+=== Alter a local database alias target
 
-Example of altering a local database alias target.
-
+You can alter a local database alias to target a different database using the `SET DATABASE TARGET` clause of the `ALTER ALIAS` command.
+For example:
 
 .Query
 [source, cypher]
@@ -497,8 +572,8 @@ ALTER ALIAS `northwind`
 SET DATABASE TARGET `northwind-graph-2021`
 ----
 
-When a local database alias has been altered, it will show up in the `aliases` column for the target database provided by the command `SHOW DATABASES`.
-
+To verify that the local database alias has a new target database, you can use the `SHOW DATABASE` command.
+It shows up in the `aliases` column for the target database.
 .Query
 [source, cypher]
 ----
@@ -516,42 +591,45 @@ SHOW DATABASE `northwind-graph-2021`
 ----
 
 
-=== Alter remote database aliases
+=== Alter a remote database alias target
 
-Example of altering a remote database alias target.
-
-.Query
-[source, cypher]
-----
-ALTER ALIAS `remote-northwind` SET DATABASE
-TARGET `northwind-graph-2020` AT "neo4j+s://other-location:7687"
-----
-
-=== Alter remote credentials and driver settings for remote database aliases
-
-Example of altering a remote database alias credentials and driver settings.
+You can alter a remote database alias to target a different remote database using the `SET DATABASE TARGET` clause of the `ALTER ALIAS` command.
+For example:
 
 .Query
 [source, cypher]
 ----
-ALTER ALIAS `remote-with-driver-settings` SET DATABASE
-USER bob
-PASSWORD 'new_example_secret'
-DRIVER {
-  connection_timeout: duration({ minutes: 1}),
-  logging_level: 'debug'
-}
+ALTER ALIAS `remote-northwind`
+SET DATABASE TARGET `northwind-graph-2020` AT "neo4j+s://other-location:7687"
+----
+
+=== Alter a remote database alias credentials and driver settings
+
+You can change the user credentials and driver settings of a remote database alias using the `USER`, `PASSWORD`, and `DRIVER` subclauses of the `SET DATABASE` clause of the `ALTER ALIAS` command.
+For example:
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `remote-with-driver-settings`
+SET DATABASE
+  USER bob
+  PASSWORD 'new_example_secret'
+  DRIVER {
+    connection_timeout: duration({ minutes: 1}),
+    logging_level: 'debug'
+  }
 ----
 
 [IMPORTANT]
 ====
 All driver settings are replaced by the new ones.
-In this case, by not repeating the driver setting `connection_pool_max_size` the value will be deleted and fall back to the default value.
+In this case, by not repeating the driver setting `connection_pool_max_size`, the value will be deleted and fall back to the default value.
 ====
 
-=== Remove custom driver settings from remote database aliases
+=== Remove all custom driver settings from a remote database alias
 
-Example of altering a remote database alias to remove all custom driver settings.
+You can remove all custom driver settings from a remote database alias by setting the `DRIVER` clause to an empty map `{}`.
 
 .Query
 [source, cypher]
@@ -560,9 +638,30 @@ ALTER ALIAS `movie scripts` SET DATABASE
 DRIVER {}
 ----
 
-=== Alter properties for local and remote database aliases
+[role=label--new-2025.06]
+[[alter-default-language-remote-database-alias]]
+=== Alter the default Cypher version of a remote database alias
 
-Examples of altering local and remote database alias properties.
+You can alter the default Cypher version of a remote database alias using the `SET DATABASE DEFAULT LANGUAGE` clause of the `ALTER ALIAS` command.
+For example:
+
+.Query
+[source, cypher]
+----
+ALTER ALIAS `remote-with-default-language`
+SET DATABASE DEFAULT LANGUAGE CYPHER 5
+----
+
+[NOTE]
+====
+Setting the default language to `CYPHER 5` ensures that all queries run on that database will use the version of `Cypher 5` as it existed at the time of the Neo4j 2025.06 release (unless you prepend your queries with `CYPHER 25`, which overrides this default).
+Any changes introduced after the 2025.06 release will not affect the semantics of the query.
+====
+
+=== Alter properties of local and remote database aliases
+
+You can alter the properties of a local or remote database alias using the `SET DATABASE PROPERTIES` clause of the `ALTER ALIAS` command.
+For example:
 
 .Query
 [source, cypher]
@@ -597,13 +696,14 @@ ALTER ALIAS `no-alias` IF EXISTS SET DATABASE TARGET `northwind-graph-2021`
 [[alias-management-drop-database-alias]]
 == Delete database aliases
 
-Both local and remote database aliases can be deleted using the `DROP ALIAS` command.
+You can delete both local and remote database aliases using the `DROP ALIAS` command.
 The required privileges are described in the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-alias-management[The DBMS ALIAS MANAGEMENT privileges].
 
 
 === Delete local database aliases
 
-Delete a local database alias.
+You can delete a local database alias using the `DROP ALIAS` command.
+For example:
 
 .Query
 [source, cypher]
@@ -611,7 +711,8 @@ Delete a local database alias.
 DROP ALIAS `northwind` FOR DATABASE
 ----
 
-When a database alias has been deleted, it will no longer show up in the `aliases` column provided by the command `SHOW DATABASES`.
+To verify that the local database alias has been deleted, you can use the `SHOW DATABASES` command.
+The deleted alias will no longer appear in the `aliases` column.
 
 .Query
 [source, cypher]
@@ -631,7 +732,8 @@ SHOW DATABASE `northwind-graph-2021`
 
 === Delete remote database aliases
 
-Delete a remote database alias.
+You can delete a remote database alias using the `DROP ALIAS` command.
+For example:
 
 .Query
 [source, cypher]
@@ -639,7 +741,7 @@ Delete a remote database alias.
 DROP ALIAS `remote-northwind` FOR DATABASE
 ----
 
-When a database alias has been deleted, it will no longer show up in the `SHOW ALIASES FOR DATABASE` command.
+To verify that the remote database alias has been deleted, you can use the `SHOW ALIASES FOR DATABASE` command.
 
 .Query
 [source, cypher]
@@ -657,7 +759,6 @@ SHOW ALIASES `remote-northwind` FOR DATABASE
 ----
 
 === Use `IF EXISTS` when deleting database aliases
-
 
 The `DROP ALIAS` command is optionally idempotent, with the default behavior to fail with an error if the database alias does not exist.
 Inserting `IF EXISTS` after the alias name ensures that no error is returned and nothing happens should the alias not exist.
