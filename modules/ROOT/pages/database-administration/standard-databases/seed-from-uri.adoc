@@ -1,32 +1,50 @@
 :page-role: enterprise-edition
-:description: How to create a database using a seed from URI. 
+:description: How to create a database using a seed from URI.
 
-[[database-seed-uri]]
 = Create a database from a URI
 
 This method seeds all databases with an identical seed from an external source, specified by a URI.
 
 You specify the seed URI as an argument of the `CREATE DATABASE` command:
 
-[source, cypher, role="noplay"]
+[.tabbed-example]
+=====
+[role=include-with-Cypher-5]
+======
+
+[source, cypher5]
 ----
-CREATE DATABASE foo OPTIONS {existingData: 'use', seedURI:'s3://myBucket/myBackup.backup'}
+CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI:'s3://myBucket/myBackup.backup' }
 ----
+
+======
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
+[source, cypher25]
+----
+CREATE DATABASE foo OPTIONS { seedURI:'s3://myBucket/myBackup.backup' }
+----
+======
+=====
+
+[NOTE]
+====
+The `existingData` option is required in Cypher 5 and deprecated in Cypher 25.
+====
 
 Download and validation of the seed is only performed as the new database is started.
 If it fails, the database is not available and it has the `statusMessage`: `Unable to start database` of the `SHOW DATABASES` command.
 
-[source, cypher, role="noplay"]
+.Example failure output for `SHOW DATABASES`
+[source, role="queryresult"]
 ----
-neo4j@neo4j> SHOW DATABASES;
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | name    | type       | aliases | access       | address          | role      | writer | requestedStatus | currentStatus | statusMessage                                            | default | home  | constituents |
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | "seed3" | "standard" | []      | "read-write" | "localhost:7682" | "unknown" | FALSE  | "online"        | "offline"     | "Unable to start database `DatabaseId{3fe1a59b[seed3]}`" | FALSE   | FALSE | []           |
-+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-To determine the cause of the problem, it is recommended to look at the `debug.log`.
+To determine the cause of the problem, check the `debug.log` file.
 
 [NOTE]
 ====
@@ -55,6 +73,12 @@ The `FileSeedProvider`  supports:
 
 ** `file:`
 
+[NOTE]
+====
+Local file paths must be absolute paths.
+====
+
+
 [[url-connection-seed-provider]]
 === URLConnectionSeedProvider
 
@@ -65,7 +89,8 @@ The `URLConnectionSeedProvider` supports the following:
 ** `https:`
 
 Starting from Neo4j 2025.01, the `URLConnectionSeedProvider` does not support `file`.
-// This is true for both Cypher 5 and Cypher 25.
+This is true for both Cypher 5 and Cypher 25.
+
 
 [[cloud-seed-provider]]
 === CloudSeedProvider
@@ -90,9 +115,18 @@ include::partial$/aws-s3-credentials.adoc[]
 
 . Create database from `myBackup.backup`.
 +
-[source,shell, role="nocopy"]
+Using Cypher 5:
++
+[source,cypher5]
 ----
 CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup' }
+----
++
+Using Cypher 25 label:new[Introduced in 2025.06]:
++
+[source,cypher25]
+----
+CREATE DATABASE foo OPTIONS { seedURI: 's3://myBucket/myBackup.backup' }
 ----
 
 ======
@@ -103,10 +137,20 @@ include::partial$/gcs-credentials.adoc[]
 
 . Create database from `myBackup.backup`.
 +
-[source,shell]
+Using Cypher 5:
++
+[source,cypher5]
 ----
 CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'gs://myBucket/myBackup.backup' }
 ----
++
+Using Cypher 25 label:new[Introduced in 2025.06]:
++
+[source,cypher25]
+----
+CREATE DATABASE foo OPTIONS { seedURI: 'gs://myBucket/myBackup.backup' }
+----
+
 ======
 [role=include-with-Azure-cloud-storage]
 ======
@@ -115,15 +159,24 @@ include::partial$/azb-credentials.adoc[]
 
 . Create database from `myBackup.backup`.
 +
-[source,shell]
+Using Cypher 5:
++
+[source,cypher5]
 ----
 CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 'azb://myStorageAccount/myContainer/myBackup.backup' }
+----
++
+Using Cypher 25 label:new[Introduced in 2025.06]:
++
+[source,cypher25]
+----
+CREATE DATABASE foo OPTIONS { seedURI: 'azb://myStorageAccount/myContainer/myBackup.backup' }
 ----
 ======
 =====
 
 
-[role=label--deprecated]
+[role=label--deprecated label--cypher-5]
 [[s3-seed-provider]]
 === S3SeedProvider
 
@@ -137,17 +190,20 @@ The `S3SeedProvider` supports:
 [NOTE]
 ====
 Neo4j comes bundled with necessary libraries for AWS S3 connectivity.
-Therefore, if you use `S3SeedProvider`,`aws cli` is not required but can be used with the `CloudSeedProvider`.
+Therefore, if you use `S3SeedProvider`, `aws cli` is not required (as it instead is with `CloudSeedProvider`).
 ====
 
 The `S3SeedProvider` requires additional configuration.
-This is specified with the `seedConfig` option.
-This option expects a comma-separated list of configurations.
-Each configuration value is specified as a name followed by `=` and the value, as such:
+This is specified with the `seedConfig` option, which expects a comma-separated list of configurations.
+Each configuration entry is specified in the format `key=value`, as such:
 
-[source, cypher, role="noplay"]
+[source, cypher]
 ----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedConfig: 'region=eu-west-1' }
+CREATE DATABASE foo OPTIONS {
+    existingData: 'use',
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedConfig: 'region=eu-west-1'
+}
 ----
 
 `S3SeedProvider` also requires passing in credentials.
@@ -155,13 +211,19 @@ These are specified with the `seedCredentials` option.
 Seed credentials are securely passed from the Cypher command to each server hosting the database.
 For this to work, Neo4j on each server in the cluster must be configured with identical keystores.
 This is identical to the configuration required by remote aliases, see xref:database-administration/aliases/remote-database-alias-configuration.adoc#remote-alias-config-DBMS_admin-A[Configuration of DBMS with remote database alias].
-If this configuration is not performed, the `seedCredentials` option fails.
+Without this configuration, the `seedCredentials` option fails.
 
-[source, cypher, role="noplay"]
+[source, cypher5]
 ----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedConfig: 'region=eu-west-1', seedCredentials: [accessKey];[secretKey] }
+CREATE DATABASE foo OPTIONS {
+    existingData: 'use',
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedConfig: 'region=eu-west-1',
+    seedCredentials: <accessKey>;<secretKey>
+}
 ----
-Where `accessKey` and `secretKey` are provided by AWS.
+Where `<accessKey>` and `<secretKey>` are provided by AWS.
+
 
 === Seed provider reference
 
@@ -173,7 +235,7 @@ Where `accessKey` and `secretKey` are provided by AWS.
 
 | `file:`
 | `FileSeedProvider`
-| `\file:///tmp/backup1.backup`
+| `file:/tmp/backup1.backup`
 
 | `ftp:`
 | `URLConnectionSeedProvider`
@@ -209,27 +271,67 @@ Starting from Neo4j 2025.01, when creating a database you can seed up to a speci
 
 The `seedRestoreUntil` option is supported by the `CloudSeedProvider` and the `FileSeedProvider`.
 
-
 Seed up to a specific date::
 
-To seed up to a specific date, you need to pass the differential backup, which contains the data up to that date.
+To seed up to a specific date, provide the differential backup containing the data up to that date.
 +
-[source,shell]
+[.tabbed-example]
+=====
+[role=include-with-Cypher-5]
+======
+[source,cypher5]
 ----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedRestoreUntil: datetime("2019-06-01T18:40:32.142+0100") }
+CREATE DATABASE foo OPTIONS {
+    existingData: 'use',
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedRestoreUntil: datetime('2019-06-01T18:40:32.142+0100')
+}
 ----
+======
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
+[source,cypher25]
+----
+CREATE DATABASE foo OPTIONS {
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedRestoreUntil: datetime('2019-06-01T18:40:32.142+0100')
+}
+----
+======
+=====
 +
 This will seed the database with transactions committed before the provided timestamp.
 
 
 Seed up to a specific transaction ID::
 
-To seed up to a specific transaction ID, you need to pass the differential backup that contains the data up to that transaction ID.
+To seed up to a specific transaction ID, provide the differential backup containing the data up to that transaction ID.
 +
-[source,shell]
+[.tabbed-example]
+=====
+[role=include-with-Cypher-5]
+======
+[source,cypher5]
 ----
-CREATE DATABASE foo OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup', seedRestoreUntil: 123 }
+CREATE DATABASE foo OPTIONS {
+    existingData: 'use',
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedRestoreUntil: 123
+}
 ----
+======
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+[source,cypher25]
+----
+CREATE DATABASE foo OPTIONS {
+    seedURI: 's3://myBucket/myBackup.backup',
+    seedRestoreUntil: 123
+}
+----
+======
+=====
 +
-This will seed the database with transactions up to, but not including transaction 123.
+This will seed the database with transactions up to (but not including) transaction 123.
 
