@@ -9,12 +9,12 @@ Starting with Neo4j 2025.04, a database alias can also be set as the default dat
 ////
 [source, cypher, role=test-setup]
 ----
-CREATE DATABASE `sci-fi-books`;
-CREATE COMPOSITE DATABASE `library`;
-CREATE ALIAS `library`.`sci-fi` FOR DATABASE `sci-fi-books`;
-CREATE ALIAS `library`.`romance` FOR DATABASE `romance-books` AT 'neo4j+s://location:7687' USER alice PASSWORD 'password';
-CREATE COMPOSITE DATABASE garden;
-CREATE DATABASE `perennial-flowers`;
+CYPHER 25 CREATE DATABASE `sci-fi-books`;
+CYPHER 25 CREATE COMPOSITE DATABASE `library`;
+CYPHER 25 CREATE ALIAS `library.sci-fi` FOR DATABASE `sci-fi-books`;
+CYPHER 25 CREATE ALIAS `library.romance` FOR DATABASE `romance-books` AT 'neo4j+s://location:7687' USER alice PASSWORD 'password';
+CYPHER 25 CREATE COMPOSITE DATABASE garden;
+CYPHER 25 CREATE DATABASE `perennial-flowers`;
 ----
 ////
 
@@ -58,7 +58,7 @@ For a description of all the returned columns of this command, and for ways in w
 
 Both local and remote database aliases can be part of a xref::database-administration/composite-databases/concepts.adoc[composite database].
 
-The database alias is made of two parts, separated by a dot: the namespace and the alias name.
+The database alias consists of two parts, separated by a dot: the namespace and the alias name.
 
 The namespace must be the name of the composite database.
 
@@ -220,15 +220,175 @@ SHOW DATABASE garden YIELD name, type, constituents
 ----
 
 [[alias-management-escaping]]
-== Database alias names and escaping
+== Database alias names that contain dots
 
 Naming database aliases in composite databases follows the same rule as xref:database-administration/aliases/naming-aliases.adoc[naming aliases for standard databases].
 However, when it comes to escaping names using backticks, there are some additional things to consider:
 
-=== Quoting database alias and composite database names
+Dots in alias names are ambiguous.
+They could either be interpreted as part of the name itself, or as the dot that separates a composite namespace from the alias name.
+
+[role=label--new-2025.06]
+=== Conflicting names
+In versions earlier than Neo4j 2025.06, it is possible to create conflicting aliases, such as the constituent alias `flowers` within the composite database `garden` as well as the non-composite local alias `garden.flowers`.
+Both of these are referred to by the same name, `garden.flowers`.
+
+Neo4j 2025.06 and later versions ensure that no such conflicts exist and throw an exception when attempting to create a new alias with the same name as an existing alias.
+
+[.tabbed-example]
+=====
+[role=include-with-cypher-5]
+======
+Creating a regular alias with the same name as an existing composite constituent is disallowed:
+
+.Query
+[source, cypher]
+----
+CYPHER 5 CREATE COMPOSITE DATABASE `garden`
+CYPHER 5 CREATE ALIAS `garden`.`flowers` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+Failed to create the specified database alias 'garden.flowers': Database name or alias already exists.
+----
+The exception has the GQLSTATUS code link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42001[42001 - invalid syntax] with the cause link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42N11[42N11 - graph reference already exists].
+
+======
+
+[role=include-with-cypher-25]
+======
+
+Creating a regular alias with the same name as an existing composite constituent is disallowed.
+In Cypher 25, the two names are considered the same since the parts are not quoted separately as they would be in Cypher 5.
+
+.Query
+[source, cypher]
+----
+CYPHER 25 CREATE COMPOSITE DATABASE `garden`
+CYPHER 25 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+CYPHER 25 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+Failed to create the specified database alias 'garden.flowers': Database name or alias already exists.
+----
+The exception has the GQLSTATUS code link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42001[42001 - invalid syntax] with the cause link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42N11[42N11 - graph reference already exists].
+======
+=====
+
+[.tabbed-example]
+=====
+[role=include-with-cypher-5]
+======
+Creating a composite constituent with the same name as an existing non-composite alias is disallowed.
+This example scenario is already prevented on the second line; thus, the constituent on the third line cannot be created.
+
+.Query
+[source, cypher]
+----
+CYPHER 5 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE COMPOSITE DATABASE `garden`
+CYPHER 5 CREATE ALIAS `garden`.`flowers` FOR DATABASE `northwind-graph`
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+Cannot create database 'garden' because another database 'garden.flowers' exists with an ambiguous name.
+----
+The exception has the GQLSTATUS code link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42N87[42N87 - database or alias with similar name exists].
+======
+
+[role=include-with-cypher-25]
+======
+
+Creating a composite constituent with the same name as an existing non-composite alias is disallowed.
+This example scenario is already prevented on the second line; thus, the constituent on the third line cannot be created.
+The Cypher 25 syntax makes no distinction between the names to clarify that they are considered equivalent.
+
+.Query
+[source, cypher]
+----
+CYPHER 25 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+CYPHER 25 CREATE COMPOSITE DATABASE `garden`
+CYPHER 25 CREATE ALIAS `garden.flowers` FOR DATABASE `northwind-graph`
+----
+
+.Error message
+[source, output, role="noheader"]
+----
+Cannot create database 'garden' because another database 'garden.flowers' exists with an ambiguous name.
+----
+The exception has GQLSTATUS code link:{neo4j-docs-base-uri}/status-codes/current/errors/gql-errors/42N87[42N87 - database or alias with similar name exists].
+======
+=====
+
+
+
+[role=label--new-2025.06]
+=== Cypher 25 specific behaviour
+==== Accessing an existing alias with dots
+
+Cypher 25 relies on the guarantee that no conflicting names are allowed in Neo4j 2025.06 and later.
+The following queries all act on the same alias, regardless of whether that alias is a composite constituent or not.
+The special quoting of separate name parts that is necessary in Cypher 5 is not permitted in Cypher 25.
+
+.Parameters
+[source, javascript]
+----
+{
+  "name": "my.garden.beautiful.flowers"
+}
+----
+.Query
+[source, cypher]
+----
+CYPHER 25 ALTER ALIAS `my.garden.beautiful.flowers` SET DATABASE PROPERTIES { perennial: true }
+CYPHER 25 ALTER ALIAS $name SET DATABASE PROPERTIES { perennial: true }
+CYPHER 25 USE `my.garden.beautiful.flowers` RETURN 1
+----
+
+==== Creating a new alias with dots
+
+During `CREATE`, Cypher 25 splits the given name on each dot, left to right, and checks if a corresponding composite database exists.
+If no composite database is found, Cypher 25 falls back to creating a regular non-composite alias.
+
+For example:
+
+.Query
+[source, cypher]
+----
+CYPHER 25 CREATE COMPOSITE DATABASE `my.garden`
+CYPHER 25 CREATE ALIAS `my.garden.beautiful.flowers` FOR DATABASE `northwind-graph`
+----
+
+The query attempts to create the following aliases in the given order:
+
+. Constituent alias `garden.beautiful.flowers` within composite database `my`.
+. Constituent alias `beautiful.flowers` within composite database `my.garden`.
+. Constituent alias `flowers` within composite database `my.garden.beautiful`.
+. Regular non-composite alias `my.garden.beautiful.flowers`.
+
+When it finds the composite database `my.garden`, it creates the constituent alias `beautiful.flowers` within that composite.
+
+
+
+=== Cypher 5 specific behaviour
+
+==== Quoting database alias and composite database names
 
 The composite database name and the database alias name need to be quoted individually.
 Backticks may be added regardless of whether the name contains special characters or not, so it is good practice to always backtick both names, e.g.  `++`composite`++.++`alias`++`.
+[NOTE]
+====
+Separating composite database name and alias name with backticks is no longer supported in Cypher 25.
+See <<_cypher_25_specific_behaviour, Cypher 25 specific behaviour>> for details.
+====
 
 The following example creates a database alias named `my alias with spaces` as a constituent in the composite database named `my-composite-database-with-dashes`:
 
@@ -242,7 +402,7 @@ CREATE DATABASE `northwind-graph`;
 .Query
 [source, cypher]
 ----
-CREATE ALIAS `my-composite-database-with-dashes`.`my alias with spaces` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS `my-composite-database-with-dashes`.`my alias with spaces` FOR DATABASE `northwind-graph`
 ----
 
 When not quoted individually, a database alias with the full name `my alias with.dots and spaces` gets created instead:
@@ -250,10 +410,10 @@ When not quoted individually, a database alias with the full name `my alias with
 .Query
 [source, cypher]
 ----
-CREATE ALIAS `my alias with.dots and spaces` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS `my alias with.dots and spaces` FOR DATABASE `northwind-graph`
 ----
 
-=== Handling multiple dots
+==== Handling multiple dots
 
 //Examples where dots are not separators between composite name and alias name are impossible to test, because the right escaping cannot be inferred automatically.
 
@@ -263,18 +423,20 @@ Though these always need to be quoted in order to avoid ambiguity with the compo
 .Query
 [source, cypher, role=test-skip]
 ----
-CREATE ALIAS `my.alias.with.dots` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS `my.alias.with.dots` FOR DATABASE `northwind-graph`
 ----
 
 .Query
 [source, cypher, role=test-skip]
 ----
-CREATE ALIAS `my.composite.database.with.dots`.`my.other.alias.with.dots` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS `my.composite.database.with.dots`.`my.other.alias.with.dots` FOR DATABASE `northwind-graph`
 ----
 
-
-[role=label--deprecated]
-=== Single dots and local database aliases
+==== Single dots and local database aliases
+[NOTE]
+====
+As of Neo4j 2025.06, this feature is no longer deprecated.
+====
 
 There is a special case for local database aliases with a single dot without any existing composite database.
 If a composite database `some` exists, the query below will create a database alias named `alias` within the composite database `some`.
@@ -283,10 +445,10 @@ If no such database exists, however, the same query will instead create a databa
 .Query
 [source, cypher]
 ----
-CREATE ALIAS some.alias FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS some.alias FOR DATABASE `northwind-graph`
 ----
 
-=== Handling parameters
+==== Handling parameters
 
 When using parameters, names cannot be quoted.
 When the given parameter includes dots, the first dot will be considered the divider for the composite database.
@@ -304,7 +466,7 @@ Consider the query with parameter:
 .Query
 [source, cypher]
 ----
-CREATE ALIAS $aliasname FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE ALIAS $aliasname FOR DATABASE `northwind-graph`
 ----
 
 If the composite database `mysimplecompositedatabase` exists, then a database alias `myalias` will be created in that composite database.
@@ -326,7 +488,7 @@ If `mycompositedatabase` does not exist, the command will create a database alia
 
 In these cases, it is recommended to avoid parameters and explicitly quote the composite database name and alias name separately to avoid ambiguity.
 
-=== Handling parameters
+==== Handling parameters
 
 Further special handling with parameters is needed for database aliases and similarly named composite databases.
 
@@ -335,8 +497,8 @@ Consider the setup:
 .Query
 [source, cypher, role="noheader test-skip"]
 ----
-CREATE COMPOSITE DATABASE foo
-CREATE ALIAS `foo.bar` FOR DATABASE `northwind-graph`
+CYPHER 5 CREATE COMPOSITE DATABASE foo
+CYPHER 5 CREATE ALIAS `foo.bar` FOR DATABASE `northwind-graph`
 ----
 
 The alias `foo.bar` does not belong to the composite database `foo`.
@@ -354,7 +516,7 @@ Dropping this alias using parameters fails with an error about a missing alias:
 .Query
 [source, cypher, role=test-fail]
 ----
-DROP ALIAS $aliasname FOR DATABASE
+CYPHER 5 DROP ALIAS $aliasname FOR DATABASE
 ----
 
 .Error message
