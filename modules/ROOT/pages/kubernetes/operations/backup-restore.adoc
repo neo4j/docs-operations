@@ -8,6 +8,65 @@ For performing backups, Neo4j uses the _Admin Service_, which is only available 
 For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
+[[kubernetes-backup-modes]]
+== Backup modes
+
+Neo4j's Helm chart supports two backup modes:
+
+=== Cloud provider mode
+Uses Neo4j's native cloud storage integration with direct upload to create immutable backup objects:
+
+* **Supported providers**: AWS S3, Google Cloud Storage, Azure Blob Storage
+* **Benefits**: No persistent volume requirements, supports differential backups, immutable backup objects
+* **Configuration**: Set `cloudProvider` to `aws`, `gcp`, or `azure`
+
+=== Local mode  
+Creates local backups in `/backups` mount:
+
+* **Requirements**: Persistent storage for large databases (configured via `tempVolume`)
+* **Configuration**: Leave `cloudProvider` empty
+
+[[kubernetes-cloud-native-features]]
+== Cloud-native backup features
+
+When using cloud providers, Neo4j's native backup provides:
+
+* **Direct cloud storage upload** - No intermediate local storage required
+* **Differential backup chains** with `preferDiffAsParent: true`
+* **Immutable backup objects** in cloud storage
+* **Support for S3-compatible endpoints**
+* **Enhanced S3 configuration** including custom CA certificates and endpoint settings
+
+[[kubernetes-differential-backups]]
+== Differential backups
+
+For cloud providers, differential backups eliminate the need for persistent volumes:
+
+[source, yaml, subs="attributes+,+macros"]
+----
+backup:
+  cloudProvider: "aws"
+  bucketName: "my-backups"
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true  # Fallback to FULL if DIFF fails
+----
+
+**How it works:**
+
+1. First backup creates a FULL backup in cloud storage
+2. Subsequent backups create DIFF backups that reference the cloud-stored FULL backup
+3. No local storage of previous backups required
+
+[NOTE]
+====
+**`preferDiffAsParent` is fully supported and eliminates the need for persistent volumes!**
+
+* **Helm Value**: `backup.preferDiffAsParent: true`
+* **Cloud-Native**: DIFF backups reference cloud-stored FULL backups directly
+* **No PV Required**: Previous backups don't need to be stored locally
+====
+
 [[kubernetes-neo4j-backup-cloud]]
 == Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
 
@@ -120,6 +179,10 @@ backup:
   cloudProvider: "gcp"
   secretName: "gcpcreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -145,6 +208,10 @@ backup:
   cloudProvider: "aws"
   secretName: "awscreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -170,6 +237,10 @@ backup:
   cloudProvider: "azure"
   secretName: "azurecreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -209,6 +280,10 @@ backup:
   cloudProvider: "gcp"
   secretName: ""
   secretKeyName: ""
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -236,6 +311,10 @@ backup:
   cloudProvider: "aws"
   secretName: ""
   secretKeyName: ""
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -262,6 +341,10 @@ backup:
   database: "neo4j,system"
   cloudProvider: "azure"
   azureStorageAccountName: "storageAccountName"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -306,6 +389,16 @@ backup:
 
   # Optional: Skip TLS verification (not recommended for production)
   s3SkipVerify: false
+
+  # Optional: Force path-style addressing for S3 requests
+  s3ForcePathStyle: true
+
+  # Optional: Specify S3 region
+  s3Region: "us-east-1"
+
+  # Alternative: Use Kubernetes secret for CA certificate
+  s3CASecretName: "s3-ca-cert"
+  s3CASecretKey: "ca.crt"
 ----
 
 The following are examples of how to configure the backup system for different S3-compatible storage providers:
@@ -380,6 +473,31 @@ backup:
 * The `s3SkipVerify` parameter should only be used in development environments.
 * Legacy MinIO support through the `minioEndpoint` parameter is deprecated - use `s3Endpoint` instead.
 ====
+
+=== S3 CA certificate setup
+
+For S3 endpoints with custom CA certificates:
+
+==== Using Kubernetes secrets
+
+1. **Create the CA certificate secret:**
++
+[source, bash]
+----
+kubectl create secret generic s3-ca-cert --from-file=ca.crt=/path/to/your/ca.crt
+----
+
+2. **Configure the backup job:**
++
+[source, yaml]
+----
+backup:
+  cloudProvider: "aws"
+  s3Endpoint: "https://your-s3-endpoint.com"
+  s3CASecretName: "s3-ca-cert"
+  s3CASecretKey: "ca.crt"
+  s3EndpointTLS: true  # Automatically set when s3CASecretName is provided
+----
 
 
 [[kubernetes-neo4j-backup-on-prem]]
@@ -502,6 +620,13 @@ backup:
   s3CACert: ""
   # Optional: Skip TLS verification (not recommended for production)
   s3SkipVerify: false
+  # Optional: Force path-style addressing for S3 requests
+  s3ForcePathStyle: false
+  # Optional: Specify S3 region
+  s3Region: ""
+  # Alternative: Use Kubernetes secret for CA certificate
+  s3CASecretName: ""
+  s3CASecretKey: ""
   #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
@@ -551,6 +676,11 @@ backup:
   parallelRecovery: false
   verbose: true
   heapSize: ""
+  # Enable differential backups using the latest differential backup as parent
+  # This eliminates the need for persistent volumes when using cloud providers
+  preferDiffAsParent: false
+  # Fallback to FULL backup if DIFF backup fails
+  fallbackToFull: true
 
   # https://neo4j.com/docs/operations-manual/current/backup-restore/aggregate/
   # Performs aggregate backup. If enabled, NORMAL BACKUP WILL NOT BE DONE only aggregate backup
@@ -949,3 +1079,37 @@ For more information, see xref:backup-restore/restore-backup.adoc#restore-backup
 ====
 To restore the `system` database, follow the steps described in xref:kubernetes/operations/dump-load.adoc[Dump and load databases (offline)].
 ====
+
+[[kubernetes-backup-migration]]
+== Migration from traditional to cloud-native backups
+
+To migrate from persistent volume-based backups to cloud-native:
+
+1. **Perform final traditional backup**
+2. **Upload existing backups to cloud storage** (if needed)
+3. **Update configuration** to use cloud provider
+4. **Remove persistent volume configuration**
+5. **Enable `preferDiffAsParent`** for future differential backups
+
+.Example migration
+[source, yaml]
+----
+# Before (Traditional)
+backup:
+  database: "neo4j"
+  databaseAdminServiceName: "neo4j-admin"
+tempVolume:
+  persistentVolumeClaim:
+    claimName: "backup-pvc"
+
+# After (Cloud-Native)
+backup:
+  cloudProvider: "aws"
+  bucketName: "neo4j-backups"
+  database: "neo4j"
+  databaseAdminServiceName: "neo4j-admin"
+  secretName: "aws-credentials"
+  secretKeyName: "credentials"
+  preferDiffAsParent: true
+# tempVolume configuration removed
+----
