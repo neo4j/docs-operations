@@ -16,10 +16,10 @@ CREATE ROLE unrestricted;
 
 Using Neo4j's role-based access control imposes some limitations and implications that users should be aware of, such as:
 
-* Impact on query results regardless of whether the indexes are used.
-* Impact results when nodes have multiple labels.
-* Potential performance impacts when querying large graphs with complex security rules.
+* Impact on query results regardless of whether indexes are used.
+* Impact on query results when nodes have multiple labels.
 * The need for careful management of user roles and privileges to avoid unintended data exposure.
+* Potential performance impacts when querying large graphs with complex security rules.
 
 [[access-control-limitations-indexes]]
 == Security and indexes
@@ -186,6 +186,71 @@ Otherwise, it will process as described before.
 
 In this case, the query will return zero results rather than simply returning the results `Andy` and `Sandy`, which might have been expected.
 
+=== Avoiding fail-open `DENY` behavior
+
+A `DENY` rule fails open when its criteria is not met, so Neo4j does not apply the restriction and it grants access by default if a broader `GRANT` exists.
+This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
+
+For example, consider the following scenarios:
+
+.Example of an un-met `DENY` failing open with property-based RBAC
+====
+You grant a user access to a property, but then try to restrict it with a `DENY` rule that does not match the data.
+If the `DENY` rule does not match any data, it does not apply, and the user can still access the property.
+
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES Employee TO myRole
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position = 'CEO' TO myRole
+----
+In this case, if the `e.position` property is null or misspelled, the `DENY` rule will not apply, and `myRole` will see the `salary` property.
+
+A better way is to use a `GRANT` rule that only allows access to the `salary` property for employees whose position is not 'CEO'.
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position <> 'CEO' TO myRole
+----
+
+Or, if for some reason using `DENY` is unavoidable, the problem can be mitigated by adding an additional `DENY` to cover the case where `e.position` is null:
+[source, cypher]
+----
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position IS NULL TO myRole
+----
+This way, if `e.position` is null, the user will not see the `salary` property, and the `DENY` will not apply.
+
+Alternatively, you can add a constraint to ensure that the `e.position` property cannot be null, so the `DENY` condition is always checkable:
+[source, cypher]
+----
+CREATE CONSTRAINT ON (e:Employee) ASSERT e.position IS NOT NULL;
+----
+This way, the `DENY` will never apply due to null values, and the user will not see the `salary` property for employees whose position is 'CEO'.
+
+====
+
+.Example of an un-met `DENY` failing open with label-based RBAC
+====
+
+In a similar way, a `DENY` rule will not apply when it is too broad and does not match the data.
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES * TO myRole;
+----
+
+This grants read access to the `salary` property on all nodes, including those that should not be accessible.
+
+Then, you try to restrict it with a `DENY` rule to prevent access to the `salary` property on nodes labeled `Management`:
+[source, cypher]
+----
+DENY READ {salary} ON GRAPH * NODES Management TO myRole;
+----
+In this case, if the `Management` label is not present on a node that has the `salary` property, the `DENY` rule will not apply, and `myRole` will still see the `salary` property on that node.
+A better way is to use a `GRANT` rule to only allow access to the `salary` property for nodes that have a specific label, such as `IndividualContributor`:
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES IndividualContributor TO myRole;
+----
+This way, the user will only see the `salary` property on nodes that have the `IndividualContributor` label, and not on any other nodes.
+====
 
 [[access-control-limitations-labels]]
 == Security and labels
