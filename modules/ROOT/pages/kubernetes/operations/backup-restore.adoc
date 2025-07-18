@@ -8,6 +8,31 @@ For performing backups, Neo4j uses the _Admin Service_, which is only available 
 For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
+[[kubernetes-backup-storage-options]]
+== Backup storage options
+
+Neo4j's Helm chart supports both full and differential backups and can be configured to use cloud providers or local storage.
+
+=== Cloud storage
+
+Neo4j Helm chart uses Neo4j's native cloud storage integration with direct upload to create immutable backup objects.
+This allows you to back up your Neo4j databases directly to cloud storage without the need for persistent volumes.
+The chart can be configured to use cloud providers, such as AWS S3, Google Cloud Storage, and Azure Blob Storage, by setting the `cloudProvider` parameter to `aws`, `gcp`, or `azure` in the _backup-values.yaml_ file.
+
+The following features are supported:
+
+* *Direct cloud storage upload* - No intermediate local storage required.
+* *Differential backup chains* with `preferDiffAsParent: true`.
+* *Immutable backup objects* in cloud storage.
+* *Support for S3-compatible endpoints*.
+* *Enhanced S3 configuration* including custom CA certificates and endpoint settings.
+
+=== Local storage
+
+Local storage creates local backups in the `/backups` mount.
+This mount must be configured to use a persistent storage for large databases using `tempVolume`.
+The `cloudProvider` must be empty.
+
 [[kubernetes-neo4j-backup-cloud]]
 == Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
 
@@ -31,6 +56,12 @@ For more information, see xref:kubernetes/quickstart-standalone/index.adoc[Quick
 For more information, see link:https://min.io/docs/minio/linux/integrations/aws-cli-with-minio.html[MinIO official documentation].
 * The latest Neo4j Helm charts.
 You can update the repository to get the latest charts using `helm repo update`.
+
+[NOTE]
+====
+When using cloud providers, differential backups do not require persistent volumes with previous backups.
+Instead, the chart will first create a full backup in the cloud storage, and then, the subsequent backups will be differential backups that reference this full backup.
+====
 
 === Create a Kubernetes secret
 
@@ -120,6 +151,10 @@ backup:
   cloudProvider: "gcp"
   secretName: "gcpcreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -145,6 +180,10 @@ backup:
   cloudProvider: "aws"
   secretName: "awscreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -170,6 +209,10 @@ backup:
   cloudProvider: "azure"
   secretName: "azurecreds"
   secretKeyName: "credentials"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -209,6 +252,10 @@ backup:
   cloudProvider: "gcp"
   secretName: ""
   secretKeyName: ""
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -236,6 +283,10 @@ backup:
   cloudProvider: "aws"
   secretName: ""
   secretKeyName: ""
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -262,6 +313,10 @@ backup:
   database: "neo4j,system"
   cloudProvider: "azure"
   azureStorageAccountName: "storageAccountName"
+  # Enable cloud-native differential backups
+  preferDiffAsParent: true
+  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
+  fallbackToFull: true
 
 consistencyCheck:
   enabled: true
@@ -283,7 +338,8 @@ tempVolume:
 
 [NOTE]
 ====
-You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart.
+You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart only when using local storage.
+When using cloud providers, persistent volumes are not required for differential backups.
 For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
@@ -306,6 +362,16 @@ backup:
 
   # Optional: Skip TLS verification (not recommended for production)
   s3SkipVerify: false
+
+  # Optional: Force path-style addressing for S3 requests
+  s3ForcePathStyle: true
+
+  # Optional: Specify S3 region
+  s3Region: "us-east-1"
+
+  # Alternative: Use Kubernetes secret for CA certificate
+  s3CASecretName: "s3-ca-cert"
+  s3CASecretKey: "ca.crt"
 ----
 
 The following are examples of how to configure the backup system for different S3-compatible storage providers:
@@ -381,6 +447,29 @@ backup:
 * Legacy MinIO support through the `minioEndpoint` parameter is deprecated - use `s3Endpoint` instead.
 ====
 
+=== S3 CA certificate setup
+
+For S3 endpoints with custom CA certificates, use a Kubernetes secret to manage the CA certificate:
+
+. Create the CA certificate secret:
++
+[source, bash]
+----
+kubectl create secret generic s3-ca-cert --from-file=ca.crt=/path/to/your/ca.crt
+----
+
+. Configure the backup job:
++
+[source, yaml]
+----
+backup:
+  cloudProvider: "aws"
+  s3Endpoint: "https://your-s3-endpoint.com"
+  s3CASecretName: "s3-ca-cert"
+  s3CASecretKey: "ca.crt"
+  s3EndpointTLS: true  # Automatically set when s3CASecretName is provided
+----
+
 
 [[kubernetes-neo4j-backup-on-prem]]
 == Prepare to back up a database(s) to on-premises storage
@@ -390,7 +479,8 @@ When configuring the _backup-values.yaml_ file, keep the “cloudProvider” fie
 
 [NOTE]
 ====
-You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart.
+You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart only when using local storage.
+When using cloud providers, persistent volumes are not required for differential backups.
 For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
@@ -502,6 +592,13 @@ backup:
   s3CACert: ""
   # Optional: Skip TLS verification (not recommended for production)
   s3SkipVerify: false
+  # Optional: Force path-style addressing for S3 requests
+  s3ForcePathStyle: false
+  # Optional: Specify S3 region
+  s3Region: ""
+  # Alternative: Use Kubernetes secret for CA certificate
+  s3CASecretName: ""
+  s3CASecretKey: ""
   #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
@@ -551,6 +648,11 @@ backup:
   parallelRecovery: false
   verbose: true
   heapSize: ""
+  # Enable differential backups using the latest differential backup as parent
+  # This eliminates the need for persistent volumes when using cloud providers
+  preferDiffAsParent: false
+  # Fallback to FULL backup if DIFF backup fails
+  fallbackToFull: true
 
   # https://neo4j.com/docs/operations-manual/current/backup-restore/aggregate/
   # Performs aggregate backup. If enabled, NORMAL BACKUP WILL NOT BE DONE only aggregate backup
@@ -890,12 +992,7 @@ cypher-shell -u neo4j -p <password> -d system
 ----
 DROP DATABASE neo4j;
 ----
-. Exit the Cypher Shell command-line console:
-+
-[source, shell, role='noheader']
-----
-:exit;
-----
+. Exit the Cypher Shell command-line console by typing `:exit;`.
 
 === Restore the database backup
 
@@ -949,3 +1046,21 @@ For more information, see xref:backup-restore/restore-backup.adoc#restore-backup
 ====
 To restore the `system` database, follow the steps described in xref:kubernetes/operations/dump-load.adoc[Dump and load databases (offline)].
 ====
+
+[[kubernetes-backup-migration]]
+== Migrate from traditional to cloud-native backups
+
+To migrate from persistent volume-based backups to cloud-native backups, you need to follow these steps:
+
+. Perform a final traditional backup to ensure you have the latest data.
+For more information, see <<kubernetes-neo4j-backup-on-prem, Prepare to back up a database(s) to on-premises storage>> and <<kubernetes-neo4j-backup, Back up your databases>>.
+. Upload existing backups to the cloud storage bucket if needed.
+You can use cloud provider CLI tools to transfer your backup files:
+** For AWS S3: `aws s3 cp /path/to/backups s3://your-bucket/backups --recursive`
+** For Google Cloud Storage: `gsutil cp -r /path/to/backups gs://your-bucket/backups`
+** For Azure Blob Storage: `az storage blob upload-batch --source /path/to/backups --destination your-container`
+. Update the _backup-values.yaml_ file to configure the cloud provider, bucket name, and credentials.
+See <<kubernetes-neo4j-backup-cloud, Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket>> for details.
+. Install the _neo4j-admin_ Helm chart with the updated _backup-values.yaml_ file to back up your databases to the cloud provider bucket.
+See <<_back_up_your_databases, Back up your databases>> for details.
+
