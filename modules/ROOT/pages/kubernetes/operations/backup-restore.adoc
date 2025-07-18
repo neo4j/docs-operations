@@ -8,30 +8,18 @@ For performing backups, Neo4j uses the _Admin Service_, which is only available 
 For more information, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 ====
 
-[[kubernetes-backup-modes]]
-== Backup modes
+[[kubernetes-backup-storage-options]]
+== Backup storage options
 
-Neo4j's Helm chart supports two backup modes:
+Neo4j's Helm chart supports both full and differential backups and can be configured to use cloud providers or local storage.
 
-=== Cloud provider mode
+=== Cloud storage
 
-Cloud provider mode uses Neo4j's native cloud storage integration with direct upload to create immutable backup objects.
+Neo4j Helm chart uses Neo4j's native cloud storage integration with direct upload to create immutable backup objects.
+This allows you to back up your Neo4j databases directly to cloud storage without the need for persistent volumes.
+The chart can be configured to use cloud providers, such as AWS S3, Google Cloud Storage, and Azure Blob Storage, by setting the `cloudProvider` parameter to `aws`, `gcp`, or `azure` in the _backup-values.yaml_ file.
 
-* *Supported providers*: AWS S3, Google Cloud Storage, and Azure Blob Storage.
-* *Benefits*: No persistent volume requirements. Supports differential backups and immutable backup objects.
-* *Configuration*: Set `cloudProvider` to `aws`, `gcp`, or `azure`.
-
-=== Local mode
-
-Local mode creates local backups in `/backups` mount.
-
-* *Requirements*: Persistent storage for large databases (configured via `tempVolume`).
-* *Configuration*: Leave `cloudProvider` empty.
-
-[[kubernetes-cloud-native-features]]
-== Cloud-native backup features
-
-When using cloud providers, Neo4j's native backup provides:
+The following features are supported:
 
 * *Direct cloud storage upload* - No intermediate local storage required.
 * *Differential backup chains* with `preferDiffAsParent: true`.
@@ -39,35 +27,11 @@ When using cloud providers, Neo4j's native backup provides:
 * *Support for S3-compatible endpoints*.
 * *Enhanced S3 configuration* including custom CA certificates and endpoint settings.
 
-[[kubernetes-differential-backups]]
-== Differential backups
+=== Local storage
 
-For cloud providers, differential backups eliminate the need for persistent volumes:
-
-[source, yaml, subs="attributes+,+macros"]
-----
-backup:
-  cloudProvider: "aws"
-  bucketName: "my-backups"
-  preferDiffAsParent: true
-  type: "AUTO"  # First backup will be FULL, subsequent ones DIFF
-  fallbackToFull: true  # Fallback to FULL if DIFF fails
-----
-
-**How it works:**
-
-. The first backup creates a full backup in the cloud storage.
-. Subsequent backups create differential backups that reference the cloud-stored full backup.
-. No local storage of previous backups is required.
-
-[NOTE]
-====
-`preferDiffAsParent` is fully supported and eliminates the need for persistent volumes.
-
-* *Helm Value*: `backup.preferDiffAsParent: true`.
-* *Cloud-Native*: DIFF backups reference cloud-stored FULL backups directly.
-* *No PV Required*: Previous backups don't need to be stored locally.
-====
+Local storage creates local backups in the `/backups` mount.
+This mount must be configured to use a persistent storage for large databases using `tempVolume`.
+The `cloudProvider` must be empty.
 
 [[kubernetes-neo4j-backup-cloud]]
 == Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket
@@ -516,6 +480,7 @@ When configuring the _backup-values.yaml_ file, keep the “cloudProvider” fie
 [NOTE]
 ====
 You need to create the persistent volume and persistent volume claim before installing the _neo4j-admin_ Helm chart only when using local storage.
+When using cloud providers, persistent volumes are not required for differential backups.
 For more information, see xref:kubernetes/persistent-volumes.adoc[Volume mounts and persistent volumes].
 ====
 
@@ -1090,6 +1055,10 @@ To migrate from persistent volume-based backups to cloud-native backups, you nee
 . Perform a final traditional backup to ensure you have the latest data.
 For more information, see <<kubernetes-neo4j-backup-on-prem, Prepare to back up a database(s) to on-premises storage>> and <<kubernetes-neo4j-backup, Back up your databases>>.
 . Upload existing backups to the cloud storage bucket if needed.
+You can use cloud provider CLI tools to transfer your backup files:
+** For AWS S3: `aws s3 cp /path/to/backups s3://your-bucket/backups --recursive`
+** For Google Cloud Storage: `gsutil cp -r /path/to/backups gs://your-bucket/backups`
+** For Azure Blob Storage: `az storage blob upload-batch --source /path/to/backups --destination your-container`
 . Update the _backup-values.yaml_ file to configure the cloud provider, bucket name, and credentials.
 See <<kubernetes-neo4j-backup-cloud, Prepare to back up a database(s) to a cloud provider (AWS, GCP, and Azure) bucket>> for details.
 . Install the _neo4j-admin_ Helm chart with the updated _backup-values.yaml_ file to back up your databases to the cloud provider bucket.
