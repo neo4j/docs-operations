@@ -5,8 +5,10 @@
 [source, cypher, role=test-setup]
 ----
 CREATE ROLE regularUsers;
+CREATE ROLE alterDbUsers;
 CREATE ROLE databaseAdminUsers;
 CREATE DATABASE `remote-db`;
+CREATE COMPOSITE DATABASE `composite`;
 CREATE USER jake SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
 ----
 ////
@@ -184,7 +186,8 @@ See link:{neo4j-docs-base-uri}/status-codes/{page-version}/notifications/all-not
 
 The hierarchy between the different database privileges is shown in the image below.
 
-image::privileges_hierarchy_database.svg[title="Database privileges hierarchy"]
+// TODO: do we want two pictures, one for Cypher 5 and one for Cypher 25? I'd guess not but I'm not sure
+image::privileges_hierarchy_database.svg[width="800", title="Database privileges hierarchy"]
 
 
 
@@ -234,6 +237,52 @@ GRANT [IMMUTABLE] { START \| STOP }
 
 | Description
 | Grants the specified roles the privilege to start or stop the home database, specific database(s), or all databases.
+
+|===
+
+// TODO: mark this as available only in Cypher 25, and from 2025.07
+.Database privilege syntax
+[cols="<15s,<85"]
+|===
+
+| Command
+m| +GRANT { ALTER DATABASE \| SET DATABASE ACCESS \| SET DATABASE DEFAULT LANGUAGE }+
+
+| Syntax
+a|
+[source, syntax, role="noheader", indent=0]
+----
+GRANT [IMMUTABLE] { ALTER DATABASE \| SET DATABASE ACCESS \| SET DATABASE DEFAULT LANGUAGE }
+  ON { HOME DATABASE \| DATABASE[S] {* \| name[, ...] } }
+  TO role[, ...]
+----
+
+| Description
+| Grants the specified roles the privilege to modify everything, database access or default language of the home database, specific database(s), or all databases.
+Only applies to standard databases.
+
+|===
+
+// TODO: mark this as available only in Cypher 25, and from 2025.08
+.Database privilege syntax
+[cols="<15s,<85"]
+|===
+
+| Command
+m| +GRANT { ALTER COMPOSITE DATABASE }+
+
+| Syntax
+a|
+[source, syntax, role="noheader", indent=0]
+----
+GRANT [IMMUTABLE] { ALTER COMPOSITE DATABASE }
+  ON { HOME DATABASE \| DATABASE[S] {* \| name[, ...] } }
+  TO role[, ...]
+----
+
+| Description
+| Grants the specified roles the privilege to modify the home database, specific database(s), or all databases.
+Only applies to composite databases.
 
 |===
 
@@ -479,8 +528,8 @@ GRANT [IMMUTABLE] TRANSACTION [MANAGEMENT] [( { * \| user[, ...] } )]
 
 |===
 
-
-image::privileges_grant_and_deny_syntax_database_privileges.svg[title="Syntax of GRANT and DENY Database Privileges"]
+// TODO: do we want two pictures, one for Cypher 5 and one for Cypher 25? I'd guess not but I'm not sure
+image::privileges_grant_and_deny_syntax_database_privileges.svg[width="800", title="Syntax of GRANT and DENY Database Privileges"]
 
 
 [[access-control-database-administration-access]]
@@ -564,7 +613,7 @@ DENY [IMMUTABLE] START
   TO role[, ...]
 ----
 
-For example, to deny the role `regularUsers` the ability to start to the database `neo4j`, use:
+For example, to deny the role `regularUsers` the ability to start to the database `system`, use:
 
 [source, cypher, role=noplay]
 ----
@@ -596,7 +645,7 @@ DENY [IMMUTABLE] STOP
   TO role[, ...]
 ----
 
-For example, to deny the role `regularUsers` the ability to stop the database `neo4j`, use:
+For example, to deny the role `regularUsers` the ability to stop the database `system`, use:
 
 [source, cypher, role=noplay]
 ----
@@ -626,6 +675,172 @@ a|Rows: 6
 [NOTE]
 ====
 Note that `START` and `STOP` privileges are not included in the xref:authentication-authorization/database-administration.adoc#access-control-database-administration-all[`ALL DATABASE PRIVILEGES`].
+====
+
+// TODO: mark this as available only in Cypher 25, and from 2025.07 (`ALTER DATABASE`, `SET DATABASE ACCESS`, `SET DATABASE DEFAULT LANGUAGE`) and 2025.08 (`ALTER COMPOSITE DATABASE`)
+[[access-control-database-administration-alter-db]]
+== The alter database related privileges
+
+The `ALTER DATABASE`, `SET DATABASE ACCESS`, `SET DATABASE DEFAULT LANGUAGE`, and `ALTER COMPOSITE DATABASE` privileges can be granted both as database privileges and as DBMS privileges.
+The DBMS privilege version is equivalent to granting the privilege for all databases, `DATABASE *`.
+For more information on the DBMS privilege versions, see the xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-database-management[`DATABASE MANAGEMENT` privileges].
+
+
+The `ALTER DATABASE` privilege can be used to enable the ability to modify a standard database:
+
+[source, syntax, role="noheader"]
+----
+GRANT [IMMUTABLE] ALTER DATABASE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to grant the role `alterDbUsers` the ability to modify the database `neo4j`, use:
+
+[source, cypher, role=noplay]
+----
+GRANT ALTER DATABASE ON DATABASE neo4j TO alterDbUsers
+----
+
+The `ALTER DATABASE` privilege can also be denied:
+
+[source, syntax, role="noheader"]
+----
+DENY [IMMUTABLE] ALTER DATABASE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to deny the role `alterDbUsers` the ability to modify to the database `system`, use:
+
+[source, cypher, role=noplay]
+----
+DENY ALTER DATABASE ON DATABASE system TO alterDbUsers
+----
+
+The `SET DATABASE ACCESS` privilege can be used to enable the ability to modify access, read-only or read-write, to a standard database:
+
+[source, syntax, role="noheader"]
+----
+GRANT [IMMUTABLE] SET DATABASE ACCESS
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+This should not be confused with the `ACCESS` privileges that enables the ability for a user to access a database.
+
+For example, to grant the role `alterDbUsers` the ability to modify the access of the database `neo4j`, use:
+
+[source, cypher, role=noplay]
+----
+GRANT SET DATABASE ACCESS ON DATABASE neo4j TO alterDbUsers
+----
+
+The `SET DATABASE ACCESS` privilege can also be denied:
+
+[source, syntax, role="noheader"]
+----
+DENY [IMMUTABLE] SET DATABASE ACCESS
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to deny the role `alterDbUsers` the ability to modify the access of the database `neo4j`, use:
+
+[source, cypher, role=noplay]
+----
+DENY SET DATABASE ACCESS ON DATABASE neo4j TO alterDbUsers
+----
+
+The `SET DATABASE DEFAULT LANGUAGE` privilege can be used to enable the ability to modify the default language of a standard database:
+
+[source, syntax, role="noheader"]
+----
+GRANT [IMMUTABLE] SET DATABASE DEFAULT LANGUAGE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to grant the role `alterDbUsers` the ability to modify the default language of the database `neo4j`, use:
+
+[source, cypher, role=noplay]
+----
+GRANT SET DATABASE DEFAULT LANGUAGE ON DATABASE neo4j TO alterDbUsers
+----
+
+The `SET DATABASE DEFAULT LANGUAGE` privilege can also be denied:
+
+[source, syntax, role="noheader"]
+----
+DENY [IMMUTABLE] SET DATABASE DEFAULT LANGUAGE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to deny the role `alterDbUsers` the ability to modify the default language of the database `system`, use:
+
+[source, cypher, role=noplay]
+----
+DENY SET DATABASE DEFAULT LANGUAGE ON DATABASE system TO alterDbUsers
+----
+
+The `ALTER COMPOSITE DATABASE` privilege can be used to enable the ability to modify a composite database:
+
+[source, syntax, role="noheader"]
+----
+GRANT [IMMUTABLE] ALTER COMPOSITE DATABASE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to grant the role `alterDbUsers` the ability to modify the home database as long as it's a composite database, use:
+
+[source, cypher, role=noplay]
+----
+GRANT ALTER COMPOSITE DATABASE ON HOME DATABASE TO alterDbUsers
+----
+
+The `ALTER COMPOSITE DATABASE` privilege can also be denied:
+
+[source, syntax, role="noheader"]
+----
+DENY [IMMUTABLE] ALTER COMPOSITE DATABASE
+  ON { HOME DATABASE | DATABASE[S] { * | name[, ...] } }
+  TO role[, ...]
+----
+
+For example, to deny the role `alterDbUsers` the ability to modify to the composite database `composite`, use:
+
+[source, cypher, role=noplay]
+----
+DENY ALTER COMPOSITE DATABASE ON DATABASE composite TO alterDbUsers
+----
+
+The privileges granted can be seen using the `SHOW PRIVILEGES` command:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE alterDbUsers PRIVILEGES AS COMMANDS
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY ALTER COMPOSITE DATABASE ON DATABASE `composite` TO `alterDbUsers`"
+|"DENY ALTER DATABASE ON DATABASE `system` TO `alterDbUsers`"
+|"DENY SET DATABASE ACCESS ON DATABASE `neo4j` TO `alterDbUsers`"
+|"DENY SET DATABASE DEFAULT LANGUAGE ON DATABASE `system` TO `alterDbUsers`"
+|"GRANT ALTER COMPOSITE DATABASE ON HOME DATABASE TO `alterDbUsers`"
+|"GRANT ALTER DATABASE ON DATABASE `neo4j` TO `alterDbUsers`"
+|"GRANT SET DATABASE ACCESS ON DATABASE `neo4j` TO `alterDbUsers`"
+|"GRANT SET DATABASE DEFAULT LANGUAGE ON DATABASE `neo4j` TO `alterDbUsers`"
+a|Rows: 8
+|===
+
+[NOTE]
+====
+Note that `ALTER DATABASE`, `SET DATABASE ACCESS`, `SET DATABASE DEFAULT LANGUAGE`, and `ALTER COMPOSITE DATABASE` privileges are not included in the xref:authentication-authorization/database-administration.adoc#access-control-database-administration-all[`ALL DATABASE PRIVILEGES`].
 ====
 
 
@@ -873,7 +1088,7 @@ GRANT [IMMUTABLE] ALL [[DATABASE] PRIVILEGES]
 
 [NOTE]
 ====
-Note that the privileges for starting and stopping all databases, and transaction management, are not included in the `ALL DATABASE PRIVILEGES` grant.
+Note that the privileges for starting, stopping and modifying all databases, and transaction management, are not included in the `ALL DATABASE PRIVILEGES` grant.
 These privileges are associated with administrators while other database privileges are of use to domain and application developers.
 ====
 
