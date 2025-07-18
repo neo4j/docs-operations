@@ -14,26 +14,33 @@ CREATE ROLE unrestricted;
 [[access-control-limitations]]
 = Limitations
 
-The known limitations and implications of Neo4j's role-based access control security are described in this section.
+It is very important to apply the principle of least privilege when defining user roles and privileges.
+Further to that, Neo4j's role-based access control has some limitations and implications that users should be aware of, such as:
+
+* Impact on query results regardless of whether indexes are used.
+* Impact on query results when nodes have multiple labels.
+* The need for careful management of user roles and privileges to avoid unintended data exposure.
+* Potential performance impacts when querying large graphs with complex security rules.
 
 [[access-control-limitations-indexes]]
 == Security and indexes
 
-As described in link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/search-performance-indexes/overview/[Cypher Manual -> Indexes for search performance], Neo4j {neo4j-version} supports the creation and use of indexes to improve the performance of Cypher queries.
+Neo4j lets you create and use indexes to speed up Cypher queries.
+See the link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/search-performance-indexes/[Cypher Manual -> Indexes] for more details on the different types of indexes available in Neo4j.
 
-Note that the Neo4j security model impacts the results of queries, regardless if the indexes are used or not.
-When using non full-text Neo4j indexes, a Cypher query will always return the same results it would have if no index existed.
-This means that, if the security model causes fewer results to be returned due to restricted read access in xref:authentication-authorization/manage-privileges.adoc[Graph and sub-graph access control],
+However, Neo4j’s security model still controls what results you see, regardless of whether or not you use indexes.
+For example, when you use link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/search-performance-indexes/overview/[search-performance indexes] (non–full-text) indexes, queries return the same results they would without any index.
+This means that, if the security model causes fewer results to be returned due to restricted read access in xref:authentication-authorization/manage-privileges.adoc[graph and sub-graph access control],
 the index will also return the same fewer results.
 
-However, this rule is not fully obeyed by link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Cypher Manual -> Indexes for full-text search].
-These specific indexes are backed by _Lucene_ internally.
-It is therefore not possible to know for certain whether a security violation has affected each specific entry returned from the index.
-In face of this, Neo4j will return zero results from full-text indexes in case it is determined that any result might be violating the security privileges active for that query.
+link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Full-text indexes] work differently.
+These indexes use Lucene under the hood.
+Because of that, Neo4j cannot check whether a security violation has affected each specific entry returned from the index.
+So, if there is any chance a result might violate active security privileges for a query, Neo4j returns zero results from the full-text indexes.
 
-Since full-text indexes are not automatically used by Cypher, they do not lead to the case where the same Cypher query would return different results simply because such an index was created.
-Users need to explicitly call procedures to use these indexes.
-The problem is only that, if this behavior is not known by the user, they might expect the full-text index to return the same results that a different, but semantically similar, Cypher query does.
+Also, Cypher does not use full-text indexes automatically — you have to explicitly call procedures to use them.
+This avoids a situation where the same Cypher query would return different results simply because such an index exists.
+The problem is that if you do not know this behavior, you might expect the full-text index to return the same results that a different but semantically similar Cypher query does.
 
 === Example with denied properties
 
@@ -54,16 +61,16 @@ Full-text indexes support multiple labels.
 See link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes//[Cypher Manual -> Indexes for full-text search] for more details on creating and using full-text indexes.
 ====
 
-After creating these indexes, it would appear that the latter two indexes accomplish the same thing.
+After creating these indexes, it may look that the latter two indexes accomplish the same thing.
 However, this is not completely accurate.
 The composite and full-text indexes behave in different ways and are focused on different use cases.
 A key difference is that full-text indexes are backed by _Lucene_, and will use the _Lucene_ syntax for querying.
 
 This has consequences for users restricted on the labels or properties involved in the indexes.
 Ideally, if the labels and properties in the index are denied, they can correctly return zero results from both native indexes and full-text indexes.
-However, there are borderline cases where this is not as simple.
+However, there are borderline cases where this is not that simple.
 
-Imagine the following nodes were added to the database:
+Imagine the following nodes are added to the database:
 
 [source, cypher]
 ----
@@ -120,7 +127,7 @@ CALL db.index.fulltext.queryNodes("userNames", "ndy") YIELD node, score
 RETURN node.name
 ----
 
-The problem now is that it is not certain whether the results provided by the index were achieved due to a match to the `name` or the `surname` property.
+The problem now is that it is not certain whether the results provided by the index are achieved due to a match to the `name` or the `surname` property.
 The steps taken by the query engine would be:
 
 * Run a _Lucene_ query on the full-text index to produce results containing `ndy` in either property, leading to five results.
@@ -180,40 +187,106 @@ Otherwise, it will process as described before.
 
 In this case, the query will return zero results rather than simply returning the results `Andy` and `Sandy`, which might have been expected.
 
+=== Avoiding fail-open `DENY` behavior
+
+A `DENY` rule fails open when its criteria is not met, so Neo4j does not apply the restriction and it grants access by default if a broader `GRANT` exists.
+This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
+To avoid this, you can apply the principle of least privilege and allow access only to the specific data that the user should see.
+
+For example, consider the following scenarios:
+
+.Example of an un-met `DENY` failing open with property-based RBAC
+====
+You grant a user access to a property and try to restrict it with a `DENY` rule.
+However, if the `DENY` rule does not match any data, for example, if the property is null or misspelled, the `DENY` rule will not apply, and the user can still access the property.
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES Employee TO myRole
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position = 'CEO' TO myRole
+----
+In this case, if the `e.position` property is null or misspelled, the `DENY` rule will not apply, and `myRole` will see the `salary` property.
+
+A better way is to apply the principle of least privilege and only grant access to the `salary` property for employees whose position is not 'CEO'.
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position <> 'CEO' TO myRole
+----
+
+Or, if for some reason using `DENY` is unavoidable, the problem can be mitigated by adding an additional `DENY` to cover the case where `e.position` is null:
+[source, cypher]
+----
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position IS NULL TO myRole
+----
+This way, if `e.position` is null, the user will not see the `salary` property, and the `DENY` will not apply.
+
+Alternatively, you can add a constraint to ensure that the `e.position` property cannot be null, so the `DENY` condition is always checkable:
+[source, cypher]
+----
+CREATE CONSTRAINT ON (e:Employee) ASSERT e.position IS NOT NULL;
+----
+This way, the `DENY` will never apply due to null values, and the user will not see the `salary` property for employees whose position is 'CEO'.
+
+====
+
+.Example of an un-met `DENY` failing open with label-based RBAC
+====
+
+In a similar way, a `DENY` rule will not apply when it is too broad and does not match the data.
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES * TO myRole;
+----
+
+This grants read access to the `salary` property on all nodes, including those that should not be accessible.
+
+Then, you try to restrict it with a `DENY` rule to prevent access to the `salary` property on nodes labeled `Management`:
+[source, cypher]
+----
+DENY READ {salary} ON GRAPH * NODES Management TO myRole;
+----
+In this case, if the `Management` label is not present on a node that has the `salary` property, the `DENY` rule will not apply, and `myRole` will still see the `salary` property on that node.
+
+A better way is to apply the principle of least privilege and only grant access to the `salary` property for nodes that have a specific label, such as `IndividualContributor`:
+[source, cypher]
+----
+GRANT READ {salary} ON GRAPH * NODES IndividualContributor TO myRole;
+----
+This way, the user will only see the `salary` property on nodes that have the `IndividualContributor` label, and not on any other nodes.
+====
 
 [[access-control-limitations-labels]]
 == Security and labels
 
 === Traversing the graph with multi-labeled nodes
 
-The general influence of access control privileges on graph traversal is described in detail in xref:authentication-authorization/manage-privileges.adoc[Graph and sub-graph access control].
-The following section will only focus on nodes due to their ability to have multiple labels.
-Relationships can only have one type of label and thus they do not exhibit the behavior this section aims to clarify.
-While this section will not mention relationships further, the general function of the traverse privilege also applies to them.
+In Neo4j, nodes can have multiple labels, but relationships only have one type.
+This is important when it comes to controlling who can see what.
 
-For any node that is traversable, due to `GRANT TRAVERSE` or `GRANT MATCH`,
-the user can get information about the attached labels by calling the built-in `labels()` function.
-In the case of nodes with multiple labels, they can be returned to users that weren't directly granted access to.
+The following section only focuses on nodes because they can have multiple labels.
+The same general rules apply to relationships, but they are simpler.
 
-To give an illustrative example, imagine a graph with three nodes: one labeled `:A`, another labeled `:B` and one with the labels `:A` and `:B`.
-In this case, there is a user with the role `custom` defined by:
+For details on the general influence of access control privileges on graph traversal, see xref:authentication-authorization/manage-privileges.adoc[Graph and sub-graph access control].
 
+
+If a user is granted access to a traversable node using `GRANT TRAVERSE` or `GRANT MATCH`, they will be able to get information about the attached labels by calling the built-in `labels()` function.
+In the case of nodes with multiple labels, this means that the user will be able to see all labels attached to the node, even if they were not granted access to traverse on some of those labels.
+
+For example, if a user has the following role:
 [source, cypher]
 ----
 GRANT TRAVERSE ON GRAPH * NODES A TO custom
 ----
 
-If that user were to execute
-
+And the graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B`.
+If the user executes the following query:
 [source, cypher]
 ----
 MATCH (n:A)
 RETURN n, labels(n)
 ----
+They will get a result with two nodes: the node with label `:A` and the node with labels `:A :B`.
 
-They would get a result with two nodes: the node that was labeled with `:A` and the node with labels `:A :B`.
-
-In contrast, executing
+In contrast, if the user executes:
 
 [source, cypher]
 ----
@@ -221,19 +294,20 @@ MATCH (n:B)
 RETURN n, labels(n)
 ----
 
-This will return only the one node that has both labels: `:A` and `:B`.
-Even though `:B` did not have access to traversals, there is one node with that label accessible in the dataset due to the allow-listed label `:A` that is attached to the same node.
+They will get only the node that has both labels: `:A` and `:B`.
+Even though `:B` does not have access to traversals, there is one node with that label accessible in the dataset due to the allow-listed label `:A` that is attached to the same node.
 
-If a user is denied to traverse on a label they will never get results from any node that has this label attached to it.
+If a user is denied to traverse on a label, they will never get results from any node that has this label attached to it.
 Thus, the label name will never show up for them.
-As an example, this can be done by executing:
+For example, if the user has the following role:
 
 [source, cypher]
 ----
 DENY TRAVERSE ON GRAPH * NODES B TO custom
 ----
 
-The query
+And the graph contains the same three nodes as before, the user will not be able to traverse the node with label `:B`.
+Thus, the query
 
 [source, cypher]
 ----
@@ -257,25 +331,22 @@ In contrast to the normal graph traversal described in the previous section, the
 That means:
 
 * If a label is explicitly whitelisted (granted), it will be returned by this procedure.
-* If a label is denied or isn't explicitly allowed, it will not be returned by this procedure.
+* If a label is denied or is not explicitly allowed, it will not be returned by this procedure.
 
-Reusing the previous example, imagine a graph with three nodes: one labeled `:A`, another labeled `:B` and one with the labels `:A` and `:B`.
-In this case, there is a user with the role `custom` defined by:
-
+For example, if a user has the following role:
 [source, cypher]
 ----
 GRANT TRAVERSE ON GRAPH * NODES A TO custom
 ----
 
-This means that only label `:A` is explicitly allow-listed.
-Thus, executing
-
+and the graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B`,
+the user will be able to execute the following query:
 [source, cypher]
 ----
 CALL db.labels()
 ----
-
-will only return label `:A`, because that is the only label for which traversal was granted.
+This will return a list of labels, which in this case will only include the label `:A`.
+The label `:B` will not be returned, because the user does not have access to traverse on it.
 
 [[access-control-limitations-non-existing-labels]]
 === Privileges for non-existing labels, relationship types, and property names
@@ -332,15 +403,17 @@ To ensure success on the first attempt, when setting up the privileges for the `
 In this example, when creating the custom role, connect to `testing` and run `CALL db.createLabel('A')` to ensure Alice creates the node successfully on her first attempt.
 
 
-
 [[access-control-limitations-db-operations]]
 == Security and performance
 
-The rules of a security model may impact the performance of some database operations.
-This is because extra security checks are necessary, and they require additional data access.
+=== Security rules and database operations
+
+The rules of a security model may impact the performance of some database operations, because Neo4j has to do extra security checks, which require additional data access.
 For example, count store operations, which are usually fast lookups, may experience notable differences in performance.
 
-The following example shows how the database behaves when adding security rules to roles `restricted` and `unrestricted`:
+Let's take the following example.
+The database has two roles defined `restricted` and `unrestricted`.
+The `restricted` role has limited access to traversals, while the `unrestricted` role has no restrictions.
 
 [source, cypher]
 ----
@@ -389,10 +462,11 @@ So due to the additional data access required by the security checks, this opera
 |===
 
 [[property-based-access-control-limitations]]
-=== Property-based access control limitations
+=== Security rules based on property rules and performance
+
 Extra node or relationship-level security checks are necessary when adding security rules based on property rules, and these can have a significant performance impact.
 
-The following example shows how the database behaves when adding security rules for nodes to roles `restricted` and `unrestricted`. 
+The following example shows how the database behaves when adding security rules for nodes to roles `restricted` and `unrestricted`.
 The same limitations apply to relationships.
 
 [source, cypher]
