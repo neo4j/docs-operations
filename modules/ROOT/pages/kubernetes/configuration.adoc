@@ -211,7 +211,7 @@ For more information, see xref:kubernetes/security.adoc[Configure SSL].
 
 
 Some examples of possible K8s configurations::
-* Configure (or disable completely) the Kubernetes LoadBalancer that exposes Neo4j outside the Kubernetes cluster by modifying the `externalService` object in the _values.yml_ file.
+* Configure (or disable completely) the Kubernetes LoadBalancer that exposes Neo4j outside the Kubernetes cluster by modifying the `services.neo4j.spec.loadBalancerIP` object in the _values.yml_ file.
 * Set the `securityContext` used by Neo4j Pods by modifying the `securityContext` object in the _values.yml_ file.
 * Configure manual persistent volume provisioning or set the `StorageClass` to be used as the Neo4j persistent storage.
 
@@ -269,7 +269,7 @@ neo4j:
   # The operations pod ends successfully if the server is enabled, or it was already enabled
   operations:
       enableServer: false
-      image: "neo4j/helm-charts-operations:5.26.0"
+      image: "neo4j/helm-charts-operations:2025.06.2"
       # protocol can be "neo4j or "neo4j+ssc" or "neo4j+s". Default set to neo4j
       # Note: Do not specify bolt protocol here...it will FAIL.
       protocol: "neo4j"
@@ -283,6 +283,7 @@ neo4j:
   # Email inquiries can be directed to: licensing@neo4j.com
   #
   # Set acceptLicenseAgreement: "yes" to confirm that you have a Neo4j license agreement.
+  # Set acceptLicenseAgreement: "eval" to use Neo4j Enterprise Edition for evaluation purposes.
   acceptLicenseAgreement: "no"
   #
   # set offlineMaintenanceModeEnabled: true to restart the StatefulSet without the Neo4j process running
@@ -508,6 +509,9 @@ services:
     # If enabled: is set to false, the LoadBalancer will be orphaned and will have to manually deleted post uninstall and the hook job will not be created
     cleanup:
       enabled: true
+      # Pod annotations for the cleanup job
+      podAnnotations:
+        sidecar.istio.io/inject: "false"
       image:
         registry: docker.io
         repository: bitnami/kubectl
@@ -557,6 +561,14 @@ config:
   # server.memory.heap.initial_size: "317m"
   # server.memory.heap.max_size: "317m"
 
+  # Enable automatic reloading of TLS certificates
+  dbms.security.tls_reload_enabled: "true"
+
+  # SPeeDy (Sharded Property Database) feature flag
+  # Enables the sharded property database feature for improved performance with large datasets
+  # Set to "true" to enable SPeeDy, "false" to disable (default: false)
+  internal.dbms.sharded_property_database.enabled: "false"
+
 apoc_config: {}
 #  apoc.trigger.enabled: "true"
 #  apoc.import.file.enabled: "true"
@@ -600,6 +612,8 @@ containerSecurityContext:
 # Because Neo4j uses Java these values are large to distinguish between long Garbage Collection pauses (which don't require a restart) and an actual failure.
 # These values should mark Neo4j as not ready after at most 5 minutes of problems (20 attempts * max 15 seconds between probes)
 readinessProbe:
+  tcpSocket:
+    port: 7687
   failureThreshold: 20
   timeoutSeconds: 10
   periodSeconds: 5
@@ -608,6 +622,8 @@ readinessProbe:
 # Because Neo4j uses Java these values are large to distinguish between long Garbage Collection pauses (which don't require a restart) and an actual failure.
 # These values should trigger a restart after at most 10 minutes of problems (40 attempts * max 15 seconds between probes)
 livenessProbe:
+  tcpSocket:
+    port: 7687
   failureThreshold: 40
   timeoutSeconds: 10
   periodSeconds: 5
@@ -617,6 +633,8 @@ livenessProbe:
 # When restoring Neo4j from a backup it's important that startup probe gives time for Neo4j to recover and/or upgrade store files
 # When using Neo4j clusters it's important that startup probe give the Neo4j cluster time to form
 startupProbe:
+  tcpSocket:
+    port: 7687
   failureThreshold: 1000
   periodSeconds: 5
 
@@ -659,6 +677,7 @@ ssl:
 
 # Kubernetes cluster domain suffix
 clusterDomain: "cluster.local"
+
 
 # Override image settings in Neo4j pod
 image:
