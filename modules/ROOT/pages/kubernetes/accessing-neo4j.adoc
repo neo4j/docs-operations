@@ -292,7 +292,7 @@ kubectl get service `<my-neo4j-name>-lb-neo4j` -ocustom-columns=ip:.status.loadB
 kubectl get service -l helm.neo4j.com/service=neo4j,helm.neo4j.com/name=<release-name> -ocustom-columns=ip:.status.loadBalancer.ingress[].ip
 ----
 
-If the Kubernetes `LoadBalancer` implementation that you are using supports setting a static IP, the IP address of the `LoadBalancer` can be configured in the Neo4j Helm release by setting `externalService.loadBalancerIP`.
+If the Kubernetes `LoadBalancer` implementation that you are using supports setting a static IP, the IP address of the `LoadBalancer` can be configured in the Neo4j Helm release by setting `services.neo4j.spec.loadBalancerIP`.
 If a static IP address is not explicitly set, then Kubernetes does not guarantee that a dynamically assigned IP address will not change.
 
 When exposing a Neo4j database on the Internet, it is recommended to use a static IP and configure SSL on the exposed services.
@@ -307,33 +307,40 @@ The default values are:
 ----
 services:
   neo4j:
-     annotations: { }
-     loadBalancerIP: NULL
-     ports:
-       http:
-         enabled: true
-         # uncomment to publish http on port 80 (neo4j default is 7474)
-         # port: 80
-         # targetPort: 7474
-         # name: http
-       https:
-         enabled: true
+    enabled: true
+    annotations: { }
+    spec:
+      type: LoadBalancer
+      loadBalancerIP: NULL
+    ports:
+      http:
+        enabled: true # Set this to false to remove HTTP from this service (this does not affect whether http is enabled for the neo4j process)
+        # uncomment to publish http on port 80 (neo4j default is 7474)
+        #port: 80
+        #targetPort: 7474
+        #name: http
+        #nodePort: <your-nodeport>, enabled only when type set to NodePort
+      https:
+        enabled: true # Set this to false to remove HTTPS from this service (this does not affect whether https is enabled for the neo4j process)
         # uncomment to publish http on port 443 (neo4j default is 7473)
-        # port: 443
-        # targetPort: 7473
-        # name: https
-       bolt:
-         enabled: true
+        #port: 443
+        #targetPort: 7473
+        #name: https
+        #nodePort: <your-nodeport>, enabled only when type set to NodePort
+      bolt:
+        enabled: true # Set this to false to remove BOLT from this service (this does not affect whether https is enabled for the neo4j process)
         # Uncomment to explicitly specify the port to publish Neo4j Bolt (7687 is the default)
-        # port: 7687
-        # targetPort: 7687
-        # name: tcp-bolt
-       backup:
-         enabled: false
+        #port: 7687
+        #targetPort: 7687
+        #name: tcp-bolt
+        #nodePort: <your-nodeport>, enabled only when type set to NodePort
+      backup:
+        enabled: false # Set this to true to expose backup port externally (n.b. this could have security implications. Backup is not authenticated by default)
         # Uncomment to explicitly specify the port to publish Neo4j Backup (6362 is the default)
-        # port: 6362
-        # targetPort: 6362
-        # name: tcp-backup
+        #port: 6362
+        #targetPort: 6362
+        #name: tcp-backup
+        #nodePort: <your-nodeport>, enabled only when type set to NodePort
 ----
 
 Disabling/enabling a port on the `services.neo4j` object removes it from the load balancer but does not affect whether it is disabled/enabled in Neo4j.
