@@ -98,13 +98,30 @@ The default value of `db.tx_log.rotation.retention_policy` is changed from `2 da
 For more information, see xref:database-internals/transaction-logs.adoc#transaction-logging-log-retention[Configure transaction log retention policy].
 
 Having the least amount of transaction log data speeds up the checkpoint process.
-To configure the number of IOs per second the checkpoint process is allowed to use, use the configuration parameter xref:configuration/configuration-settings.adoc#config_db.checkpoint.iops.limit[`db.checkpoint.iops.limit`].
+To configure the number of IOs per second the checkpoint process is allowed to use, set the configuration parameter xref:configuration/configuration-settings.adoc#config_db.checkpoint.iops.limit[`db.checkpoint.iops.limit`].
 
 [NOTE]
 ====
 Disabling the IOPS limit can cause transaction processing to slow down a bit.
 For more information, see xref:performance/disks-ram-and-other-tips.adoc#performance-checkpoint-iops-limit[Checkpoint IOPS limit] and xref:configuration/configuration-settings.adoc#_transaction_log_settings[Transaction log settings].
 ====
+
+Additionally, starting from 2025.07, you can also use xref:configuration/configuration-settings.adoc#config_db.checkpoint.throughput.limit[`db.checkpoint.throughput.limit`] to define checkpoint speed in terms of bytes per second.
+Compared to the IOPS limit, the throughput limit enforces a stricter control over flush speed, with the checkpoint process yielding more to stay within the configured throughput.
+
+Starting from 2025.07, the checkpoint log messages also include the average flush speed:
+
+.Example of a log message with IOPS-limited checkpoint
+[results]
+----
+Checkpoint triggered by "Call to db.checkpoint() procedure" @ txId: 92, append index: 92 checkpoint completed in 7s 464ms. Checkpoint flushed 251909 pages (9% of total available pages), in 249641 IOs. Checkpoint performed with IO limit: 600 IOPS, paused in total 70 times(6026 millis). Average checkpoint flush speed: 281.1MiB/s.
+----
+
+.Example of a log message with throughput-limited checkpoint
+[results]
+----
+Checkpoint triggered by "Call to db.checkpoint() procedure" @ txId: 88, append index: 88 checkpoint completed in 39s 457ms. Checkpoint flushed 314688 pages (12% of total available pages), in 311753 IOs. Checkpoint performed with IO limit: 64.00MiB/s, paused in total 77 times(38085 millis). Average checkpoint flush speed: 63.04MiB/s.
+----
 
 [[checkpoint-logging-and-metrics]]
 == Checkpoint logging and metrics
@@ -122,14 +139,14 @@ The following details the expected messages to appear in the _logs\debug.log_ up
 +
 ....
 2023-05-28 13:08:51.603+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for tx count threshold" @ txId: 118 checkpoint started...
-2023-05-28 13:08:51.669+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for tx count threshold" @ txId: 118 checkpoint completed in 66ms. Checkpoint flushed 74 pages (7% of total available pages), in 58 IOs. Checkpoint performed with IO limit: 789 IOPS, paused in total 0 times(0 millis). Average checkpoint flush speed: 592.0KiB/s.
+2023-05-28 13:08:51.669+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for tx count threshold" @ txId: 118 checkpoint completed in 66ms. Checkpoint flushed 74 pages (7% of total available pages), in 58 IOs. Checkpoint performed with IO limit: 789 IOPS, paused in total 0 times(0 millis). Average checkpoint : 592.0KiB/s.
 ....
 
 * Checkpoint when `db.checkpoint=continuous`:
 +
 ....
 2023-05-28 13:17:21.927+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for continuous threshold" @ txId: 171 checkpoint started...
-2023-05-28 13:17:21.941+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for continuous threshold" @ txId: 171 checkpoint completed in 13ms. Checkpoint flushed 74 pages (7% of total available pages), in 58 IOs. Checkpoint performed with IO limit: 789 IOPS, paused in total 0 times(0 millis). Average checkpoint flush speed: 592.0KiB/s.
+2023-05-28 13:17:21.941+0000 INFO [o.n.k.i.t.l.c.CheckPointerImpl] Checkpoint triggered by "Scheduled checkpoint for continuous threshold" @ txId: 171 checkpoint completed in 13ms. Checkpoint flushed 74 pages (7% of total available pages), in 58 IOs. Checkpoint performed with IO limit: 789 IOPS, paused in total 0 times(0 millis). Average checkpoint : 592.0KiB/s.
 ....
 
 * Checkpoint as a result of database shutdown:
