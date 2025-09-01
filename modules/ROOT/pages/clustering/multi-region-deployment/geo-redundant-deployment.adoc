@@ -1,0 +1,210 @@
+:description: The page describes recommended and non-recommended patterns of deploying Neo4j cluster across multiple cloud regions / data centers.
+[role=enterprise-edition]
+
+
+= Designing a resilient Neo4j cluster across cloud regions
+
+[[multi-region-deployment-overview]]
+== Overview
+
+Deploying a resilient multi-region cluster, the goal is to achieve high availability, disaster recovery, and tolerance against the loss of a data center.
+
+You should take into account cluster architecture and topology and decide where database primaries and secondaries are located, balancing performance and fault tolerance.
+ 
+Pay attention to networking and traffic routing:
+
+* If database primaries are distant from each other, that will increase your write latency.
+* To commit a change, xref:clustering/introduction.adoc#clustering-primary-mode[the writer primary] must get confirmation from a quorum of members, including itself.
+If primaries are far apart, network latency adds to commit time.
+
+
+[[recommended-cluster-patterns]]
+== Recommended Neo4j cluster design patterns
+
+[[secondaries-for-read-resilience]]
+=== Use database secondaries for read resilience
+
+You can locate all the database primaries in one data center (DC) and database secondaries in another region for better read performance.
+This provides fast writes, because they will be performed within the region.
+
+However, if the data center with primaries goes down, your cluster loses write availability.
+Though read availability may remain via the secondaries.
+
+==== How to recover from loss of a data center?
+
+You can restore the cluster write availability without the failed region:
+
+* If you have enough secondary servers in another data center, you can switch their mode to primary and not have to store copy or wait a long time for primary servers to restore.
+* Use secondaries to re-seed databases if needed.
+Run xref:database-administration/standard-databases/recreate-database.adoc[the `dbms.recreateDatabase()` procedure].
+
+Example steps::
+
+. Promote secondary servers to primaries to make the `system` database write-available.
+This requires restarting processes.
+For other scenarios, see xref:clustering/multi-region-deployment/disaster-recovery.adoc#make-the-system-database-write-available[the steps] in the Disaster recovery guide on how to make the `system` database write-available again.
+
+. Mark missing servers as not available by cordoning them.
+For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.  
+
+. Recreate each user database, letting it choose the existing xref:database-administration/standard-databases/recreate-database.adoc#seed-servers[servers as seeders].
+You will need to accept a smaller topology that will fit in the remaining data center/cloud region.
+
+For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
+
+
+[[geo-distributed-dc]]
+=== Use geo-distributed data centers (3DC)
+
+You can place each primary server in a different data center using a minimum of three data centers.
+
+Therefore, if one data center fails, only one primary member is lost and the cluster can continue without data loss.
+
+However, you always pay cross-region latency times for every write operation.
+
+==== How to recover from loss of a data center?
+
+This setup has no loss of quorum, so the cluster keeps running -- only with reduced fault tolerance (with no room for extra failures).
+
+To restore fault tolerance, you can either wait until the affected region is back online or start a new primary member somewhere else that will provide resilience and re-establish three-region fault tolerance.
+
+Example steps::
+
+. Start and enable a new server.
+See xref:clustering/servers.adoc#cluster-add-server[How to add a server to the cluster] for details.
+
+. Remove the unavailable server from the cluster:
+.. First, xref:clustering/servers.adoc#_deallocating_databases_from_a_server[deallocate databases] from it.
+.. Then xref:clustering/servers.adoc#_dropping_a_server[drop the server]. 
+For more information, visit the xref:clustering/servers.adoc[].
+
+For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
+
+
+[[geo-distribution-system-database]]
+=== Use full geo-distribution for the `system` database only (3DC)
+
+You can place all primaries for user databases in one region, with secondaries in another.
+
+In a third region, deploy a primary server only for the `system` database (in addition to those in the first two regions).
+
+* This server can be a small machine, since the `system` database has minimal resource requirements.
+
+* To prevent user databases from being allocated to it, set the `allowedDatabases` constraint to some name that will never be used.
+
+Your writes will be fast, because they are within the region.
+
+If a region goes down, you retain write availability for the `system` database, which makes restoring write availability to the user databases easier.
+
+However, if the region with primaries goes down, you lose write availability for the user databases.
+Though read availability may remain via the secondaries.
+
+==== How to recover from loss of a data center?
+
+If you lose the region with primaries in, the user databases will go write-unavailable, though the secondaries should continue to provide read availability.
+Because of the third region, the `system` database will remain write available, so you will be able to get the user databases back to write available without process downtime.
+
+However, if you need to use the `recreateDatabase()` procedure, it will involve downtime for the user database.
+
+Example steps::
+
+. Mark missing servers as not present by cordoning them.
+For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
+
+. Recreate each user database, letting it select the existing xref:database-administration/standard-databases/recreate-database.adoc#seed-servers[servers as seeders].
+You need to accept a smaller topology that fits in the remaining data center.
+
+
+[[cluster-anti-patterns]]
+== Neo4j cluster design patterns to avoid
+
+
+[[two-dc-unbalanced-membership]]
+=== Two data centers with unbalanced membership
+
+Suppose you decide to set up just two data centers, placing two primaries in data center 1 (DC1) and one primary in the data center 2 (DC2).
+
+If the writer primary is located in DC1, then writes can be fast because a local quorum can be reached.
+This setup can tolerate the loss of one data center — but only if the failure is in DC2.
+If DC1 fails, you lose two primary members, which means the quorum is lost and the cluster becomes unavailable for writes.
+
+Keep in mind that any issue could push the system back to cross–data center write latencies.
+Worse, because of the latency, the member in DC2 may fall behind.
+In that case a failure of a member in DC1 means the database is write-unavailable until the DC2 member has caught up.
+
+If leadership shifts to DC2, this makes all writes slow.
+
+Finally, there is no guarantee against data lost if DC1 goes down.
+Beacuse the primary member in DC2 may not be up to date with writes, even in append.
+
+
+
+[[two-dc-balanced-membership]]
+=== Two data centers with balanced membership
+
+The worst scenario is to operate with just two data centers and place two or three primaries in each of them.
+
+This means the failure of either data center leads to loss of quorum and, therefore, to loss of the cluster write-availability.
+
+Besides, all writes have to pay the cross-region latency cost.
+
+This design pattern is strongly recommended to avoid.
+
+== Summary
+
+.Comparison of cluster designs
+[cols="1,2,2a,2a,2", options="header"]
+|===
+| Setup
+| Design
+| Pros
+| Cons
+| Best use case
+
+5+^| Recommended patterns
+
+| Secondaries for read resilience
+| Primaries in one region, secondaries in other regions
+| * Fast writes (local quorum). +
+* Local reads in remote regions.
+| * Loss of write availability if primary region fails. +
+* Recovery requires reseeding
+| Applications needing fast writes.
+The cluster can tolerate downtime during recovery.
+
+| Geo-distributed data centers (3DC)
+| Each primary in a different region (≥3).
+| * Survives loss of one DC without data loss. +
+* Quorum remains intact.
+| * Higher write latency (cross-region). +
+* Requires more complex networking.
+| Critical systems needing continuous availability even if a full region fails.
+
+| Full geo-distribution for the `system` database only (3DC)
+| User database primaries in one region, secondaries in another, `system` primaries across three regions
+| * Fast user database writes (local). +
+* The `system` database is always available, which means smoother recovery. +
+* Reads available if primaries fail.
+| * Loss of user database writes if primary region fails. +
+* Recovery requires reseeding.
+| Balanced approach: fast normal operations, easier recovery, some downtime acceptable.
+
+5+^| Non-recommended patterns
+
+| Two DCs – Unbalanced membership
+| Two primaries are in DC1, one primary is in DC2.
+| Fast writes if a leader is in DC1.
+| * Quorum lost if DC1 fails. +
+* Risk of data loss. +
+* Cross-region latency if leader is in DC2.
+| Should be avoided.
+
+| Two DCs – Balanced membership
+| Equal primaries in two DCs.
+| (none significant)
+| * Quorum lost if either DC fails. +
+* All writes pay cross-region latency.
+| Should be avoided.
+|===
+
+
