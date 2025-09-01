@@ -1,0 +1,47 @@
+
+name: "Generate and Publish HTML"
+
+on:
+  push:
+    branches:
+    - 'dev'
+  workflow_dispatch:
+
+env:
+  PUBLISH_TO: ${{ github.ref == 'refs/heads/dev' && 'dev' || 'prod' }}
+
+jobs:
+
+  docs-build:
+    name: Generate HTML
+    uses: neo4j/docs-tools/.github/workflows/reusable-docs-build.yml@v2
+    with:
+      package-script: 'verify:publish'
+
+  docs-verify:
+    name: Verify HTML
+    needs: docs-build
+    uses: neo4j/docs-tools/.github/workflows/reusable-docs-verify.yml@v2
+    with:
+      failOnWarnings: true
+
+  publish-html:
+    name: Publish HTML
+    needs: docs-verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Publish
+        uses: peter-evans/repository-dispatch@bf47d102fdb849e755b0b0023ea3e81a44b6f570 # v2.1.2
+        with:
+          token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          repository: neo4j/docs-publish
+          event-type: publish-html
+          client-payload: |-
+            {
+              "org": "${{ github.repository_owner }}",
+              "repo": "${{ github.event.repository.name }}",
+              "run_id": "${{ github.run_id }}",
+              "args": "--dryrun",
+              "publish_env": "${{ env.PUBLISH_TO }}"
+            }
