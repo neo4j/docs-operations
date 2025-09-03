@@ -36,18 +36,18 @@ Though read availability may remain via the secondaries.
 
 You can restore the cluster write availability without the failed DC:
 
-* If you have enough secondary servers in another data center, you can switch their mode to primary and not have to store copy or wait a long time for primary servers to restore.
+* If you have enough secondary members of the database in another data center, you can switch their mode to primary and not have to store copy or wait a long time for primary copies to restore.
 * Use secondaries to re-seed databases if needed.
 Run xref:database-administration/standard-databases/recreate-database.adoc[the `dbms.recreateDatabase()` procedure].
 
 Example steps::
 
-. Promote secondary servers to primaries to make the `system` database write-available.
+. Promote secondary copies of the `system` database to primaries to make the `system` database write-available.
 This requires restarting processes.
 For other scenarios, see xref:clustering/multi-region-deployment/disaster-recovery.adoc#make-the-system-database-write-available[the steps] in the Disaster recovery guide on how to make the `system` database write-available again.
 
 . Mark missing servers as not available by cordoning them.
-For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.  
+For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on the remaining cluster.  
 
 . Recreate each user database, letting it choose the existing xref:database-administration/standard-databases/recreate-database.adoc#seed-servers[servers as seeders].
 You will need to accept a smaller topology that will fit in the remaining data center/cloud region.
@@ -60,7 +60,7 @@ For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster
 
 image::geo-distributed-primaries.svg[width="400", title="Cluster design with primaries distributed across three data centers", role=popup]
 
-You can place each primary server in a different data center using a minimum of three data centers.
+You can place each primary copy in a different data center using a minimum of three data centers.
 
 Therefore, if one data center fails, only one primary member is lost and the cluster can continue without data loss.
 
@@ -92,7 +92,7 @@ image::geo-distribution-system-db.svg[width="400", title="Primaries for the `sys
 
 You can place all primaries for user databases in one data center, with secondaries in another.
 
-In a third DC, deploy a primary server only for the `system` database (in addition to those in the first two data centers).
+In a third DC, deploy a server that only hosts a primary member of the `system` database (in addition to those in the first two data centers).
 
 * This server can be a small machine, since the `system` database has minimal resource requirements.
 
@@ -178,7 +178,8 @@ This design pattern is strongly recommended to avoid.
 | * Fast writes (local quorum). +
 * Local reads in remote data centers.
 | * Loss of write availability if DC with primaries fails. +
-* Recovery requires reseeding
+* Recovery requires reseeding.
+* Process restarts required if DC with primaries fails.
 | Applications needing fast writes.
 The cluster can tolerate downtime during recovery.
 
@@ -187,7 +188,6 @@ The cluster can tolerate downtime during recovery.
 | * Survives loss of one DC without data loss. +
 * Quorum remains intact.
 | * Higher write latency (cross-data center). +
-* Requires more complex networking.
 | Critical systems needing continuous availability even if a full data center fails.
 
 | Full geo-distribution for the `system` database only (3DC)
