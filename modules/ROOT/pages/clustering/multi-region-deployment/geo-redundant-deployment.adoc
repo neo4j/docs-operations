@@ -26,21 +26,21 @@ If primaries are far apart, network latency adds to commit time.
 
 image::secondaries-for-read-resilience.svg[width="400", title="Cluster design with database secondaries for better read performance", role=popup]
 
-You can locate all the database primaries in one data center (DC) and database secondaries in another DC for better read performance.
-This provides fast writes, because they will be performed within the DC.
+For better read performance, you can locate all database primaries in one data center (DC) and database secondaries in another DC.
+This also provides fast writes, because they will be performed within the DC.
 
 However, if the DC with primaries goes down, your cluster loses write availability.
 Though read availability may remain via the secondaries.
 
-==== How to recover from loss of a data center?
+==== Recovering from the loss of a data center
 
 You can restore the cluster write availability without the failed DC:
 
-* If you have enough secondary members of the database in another data center, you can switch their mode to primary and not have to store copy or wait a long time for primary copies to restore.
-* Use secondaries to re-seed databases if needed.
-Run xref:database-administration/standard-databases/recreate-database.adoc[the `dbms.recreateDatabase()` procedure].
+* If you have enough secondary members of the database in another data center, you can switch their mode to primary and not have to store a copy or wait a long time for primary copies to restore.
+* You can use secondaries to re-seed databases if needed.
+See xref:database-administration/standard-databases/recreate-database.adoc[the `dbms.recreateDatabase()` procedure] for more details.
 
-Example steps::
+Example recovery steps::
 
 . Promote secondary copies of the `system` database to primaries to make the `system` database write-available.
 This requires restarting processes.
@@ -50,7 +50,7 @@ For other scenarios, see xref:clustering/multi-region-deployment/disaster-recove
 For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on the remaining cluster.  
 
 . Recreate each user database, letting it choose the existing xref:database-administration/standard-databases/recreate-database.adoc#seed-servers[servers as seeders].
-You will need to accept a smaller topology that will fit in the remaining data center/cloud region.
+You need to accept a smaller topology that will fit in the remaining DC.
 
 For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
 
@@ -58,28 +58,29 @@ For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster
 [[geo-distributed-dc]]
 === Geo-distribution of user database primaries
 
-image::geo-distributed-primaries.svg[width="400", title="Cluster design with primaries distributed across three data centers", role=popup]
+image::geo-distributed-primaries.svg[width="400", title="Cluster design with database primaries distributed across three data centers", role=popup]
 
-You can place each primary copy in a different data center using a minimum of three data centers.
+You can place each primary copy in a different data center (DC) using a minimum of three data centers.
 
-Therefore, if one data center fails, only one primary member is lost and the cluster can continue without data loss.
+Therefore, if one DC fails, only one primary member is lost and the cluster can continue without data loss.
 
 However, you always pay cross-data center latency times for every write operation.
 
-==== How to recover from loss of a data center?
+==== Recovering from the loss of a data center
 
 This setup has no loss of quorum, so the cluster keeps running -- only with reduced fault tolerance (with no room for extra failures).
 
 To restore fault tolerance, you can either wait until the affected DC is back online or start a new primary member somewhere else that will provide resilience and re-establish three-DC fault tolerance.
 
-Example steps::
+Example recovery steps::
 
 . Start and enable a new server.
 See xref:clustering/servers.adoc#cluster-add-server[How to add a server to the cluster] for details.
 
 . Remove the unavailable server from the cluster:
 .. First, xref:clustering/servers.adoc#_deallocating_databases_from_a_server[deallocate databases] from it.
-.. Then xref:clustering/servers.adoc#_dropping_a_server[drop the server]. 
+.. Then xref:clustering/servers.adoc#_dropping_a_server[drop the server].
++
 For more information, visit the xref:clustering/servers.adoc[].
 
 For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
@@ -90,7 +91,7 @@ For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster
 
 image::geo-distribution-system-db.svg[width="400", title="Primaries for the `system` database distributed across three data centers", role=popup]
 
-You can place all primaries for user databases in one data center, with secondaries in another.
+You can place all primaries for user databases in one data center (DC), with secondaries in another.
 
 In a third DC, deploy a server that only hosts a primary member of the `system` database (in addition to those in the first two data centers).
 
@@ -105,14 +106,14 @@ If a DC goes down, you retain write availability for the `system` database, whic
 However, if the DC with primaries goes down, you lose write availability for the user databases.
 Though read availability may remain via the secondaries.
 
-==== How to recover from loss of a data center?
+==== Recovering from the loss of a data center
 
 If you lose the DC with primaries in, the user databases will go write-unavailable, though the secondaries should continue to provide read availability.
-Because of the third DC, the `system` database will remain write available, so you will be able to get the user databases back to write available without process downtime.
+Because of the third DC, the `system` database remains write-available, so you will be able to get the user databases back to write-available without process downtime.
 
 However, if you need to use the `recreateDatabase()` procedure, it will involve downtime for the user database.
 
-Example steps::
+Example recovery steps::
 
 . Mark missing servers as not present by cordoning them.
 For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
@@ -130,9 +131,10 @@ You need to accept a smaller topology that fits in the remaining data center.
 
 image::2dc-unbalanced-membership.svg[width="400", title="Unbalanced data center primary distribution", role=popup]
 
-Suppose you decide to set up just two data centers, placing two primaries in data center 1 (DC1) and one primary in the data center 2 (DC2).
+Suppose, you decide to set up just two data centers, placing two primaries in data center 1 (DC1) and one primary in the data center 2 (DC2).
 
 If the writer primary is located in DC1, then writes can be fast because a local quorum can be reached.
+
 This setup can tolerate the loss of one data center — but only if the failure is in DC2.
 If DC1 fails, you lose two primary members, which means the quorum is lost and the cluster becomes unavailable for writes.
 
