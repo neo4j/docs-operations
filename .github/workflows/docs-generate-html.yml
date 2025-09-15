@@ -1,22 +1,59 @@
 
-name: "Generate and Publish HTML"
+name: "Generate HTML"
 
+# edit the list of branches according to your repository
+# the list of branches should contain all the branches in your Antora publish playbooks
 on:
   push:
     branches:
     - 'dev'
+    - 'main'
+    - '5.x'
+    - '4.4'
   workflow_dispatch:
 
+# change `dev` and `main` according to your repository's branch names
+# `dev` is the branch you use to build and publish to staging
+# `main` is the branch you use to build and publish to neo4j.com/docs
+# in some cases, PROD_BRANCH and DEV_BRANCH may be the same branch
 env:
-  PUBLISH_TO: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+  PROD_BRANCH: 'main'
+  DEV_BRANCH: 'dev'
 
 jobs:
 
+  prepare-ref-env:
+    name: Set build branch and environments
+    runs-on: ubuntu-latest
+    outputs:
+      build-ref: ${{ steps.set-ref-env.outputs.build-ref }}
+      environments: ${{ steps.set-ref-env.outputs.environments }}
+    steps:
+      - name: Set Build Ref
+        id: set-ref-env
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/${{ env.DEV_BRANCH }}" ]]; then
+            build_from=${{ env.DEV_BRANCH }}
+            environments='["dev"]'
+          else
+            build_from=${{ env.PROD_BRANCH }}
+            environments='["prod"]'
+          fi
+          # if dev branch = prod branch publish to both
+          if [[ "${{ env.DEV_BRANCH }}" == "${{ env.PROD_BRANCH }}" ]]; then
+            environments='["dev","prod"]'
+          fi
+          echo "build-ref=${build_from}" >> $GITHUB_OUTPUT
+          echo "environments=${environments[@]}" >> $GITHUB_OUTPUT
+
   docs-build:
     name: Generate HTML
+    needs: prepare-ref-env
     uses: neo4j/docs-tools/.github/workflows/reusable-docs-build.yml@v2
     with:
       package-script: 'verify:publish'
+      build-ref: ${{needs.prepare-ref-env.outputs.build-ref}}
+      fetch-depth: 0
 
   docs-verify:
     name: Verify HTML
@@ -27,11 +64,15 @@ jobs:
 
   publish-html:
     name: Publish HTML
-    needs: docs-verify
+    needs: [docs-verify, prepare-ref-env]
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        environments: ${{ fromJson(needs.prepare-ref-env.outputs.environments) }}
+
     steps:
-      - name: Trigger Publish
+      - name: Publish to ${{ matrix.environments }}
         uses: peter-evans/repository-dispatch@bf47d102fdb849e755b0b0023ea3e81a44b6f570 # v2.1.2
         with:
           token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
@@ -43,5 +84,5 @@ jobs:
               "repo": "${{ github.event.repository.name }}",
               "run_id": "${{ github.run_id }}",
               "args": "--dryrun",
-              "publish_env": "${{ env.PUBLISH_TO }}"
+              "publish_env": "${{ matrix.environments }}"
             }
