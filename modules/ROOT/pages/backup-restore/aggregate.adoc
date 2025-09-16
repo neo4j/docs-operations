@@ -1,7 +1,7 @@
 [role=enterprise-edition]
 [[aggregate-backup]]
 = Aggregate a database backup chain
-:description: This section describes how to aggregate a backup chain into a single backup.
+:description: This section describes how to aggregate a backup chain into a single backup and recover a full backup.
 
 [[aggregate-backup-command]]
 == Command
@@ -17,6 +17,8 @@ The benefits of aggregating a backup chain are notably:
 As part of the aggregation, transactions contained in the differential backups are applied to the store contained in the full backup artifact.
 This operation is called _recovery_ and can be costly.
 * Reduces the risk of losing chain’s links.
+* Some commands, like consistency check, cannot run against a backup chain or a full backup that is not recovered.
+Aggregating produces an artifact they can work against.
 
 
 [role=label--changed-2025.01]
@@ -205,3 +207,40 @@ bin/neo4j-admin backup aggregate --from-path=azb://myStorageAccount/myContainer/
 ----
 ======
 =====
+
+
+[[aggregate-unrecovered-full-backup]]
+=== Aggregating an unrecovered full backup
+
+To check if a full backup is in a recovered state, run the `neo4j-admin backup inspect` command:
+
+[source,shell]
+----
+bin/neo4j-admin backup inspect /mnt/backups/neo4j-2025-09-10T08-14-56.backup
+----
+
+The output will include the `RECOVERED` column.
+If it shows `false`, the backup is not yet recovered:
+
+[output]
+----
+|                                                 FILE | DATABASE |                          DATABASE ID |          TIME (UTC) | FULL | COMPRESSED | LOWEST TX | HIGHEST TX | STORE ID HASH | RECOVERED |
+| file:///mnt/backups/neo4j-2025-09-10T08-14-56.backup |    neo4j | 4e98fab8-6ae6-46cc-84c0-61ee8a8db60a | 2025-09-10T08:14:56 | true |       true |         1 |          3 |    -116350002 |     false |
+----
+
+If your full backup is not recovered, you have to aggregate it first.
+Run the following command:
+
+[source,shell]
+----
+bin/neo4j-admin backup aggregate --from-path=/mnt/backups/neo4j-2025-09-10T08-14-56.backup --keep-old-backup=true
+----
+
+This command will:
+
+* Generate a new, recovered backup alongside the existing one.
+* Preserve the original backup file (due to `--keep-old-backup=true`).
+
+After aggregation, you can run consistency checker against the recovered backup and/or restore it.
+
+
