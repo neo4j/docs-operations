@@ -152,9 +152,6 @@ Use the following steps to regain write availability for the `system` database i
 They create a new `system` database from the most up-to-date copy of the `system` database that can be found in the cluster.
 It is important to get a `system` database that is as up-to-date as possible, so it corresponds to the view before the disaster closely.
 
-.Guide
-[%collapsible]
-====
 
 [NOTE]
 =====
@@ -180,10 +177,12 @@ Be aware that not replacing servers can cause cluster overload when databases ar
 =====
 +
 . On each server, run `bin/neo4j-admin database load system --from-path=[path-to-dump] --overwrite-destination=true` to load the current `system` database dump.
++
+image::system-db-restored.svg[width="400", title="The `system` database is restored and unconstrained servers are added", role=popup]
++
 . On each server, ensure that the discovery settings are correct.
 See xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information.
 . Start the Neo4j process on all servers.
-====
 
 
 [[make-servers-available]]
@@ -217,16 +216,17 @@ This is done in two different steps:
 * Any allocations that cannot move by themselves require the database to be recreated so that they are forced to move.
 * Any allocations that can move will be instructed to do so by deallocating the server.
 
-.Guide
-[%collapsible]
-====
+
 . For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
 This prevents new database allocations from being moved to this server.
++
+image::servers-cordoned.svg[width="400", title="Cordon unavailable servers", role=popup]
+
 . For each `Cordoned` server, make sure a new *unconstrained* server has been added to the cluster to take its place.
 See xref:clustering/servers.adoc#cluster-add-server[Add a server to the cluster] for more information.
 +
-If servers were added in the <<make-the-system-database-write-available, Make the `system` database write-available>> step of this guide, additional servers might not be needed here.
-It is important that the new servers are unconstrained, or deallocating servers might be blocked even though enough servers were added.
+If servers were added in the <<make-the-system-database-write-available, Make the `system` database write-available>> step of this guide (like it is done in the current disaster recovery example), additional servers might not be needed here.
+It is important that the new servers are unconstrained, or deallocating servers might be blocked even though enough servers were added. 
 +
 [NOTE]
 =====
@@ -266,9 +266,13 @@ If any database has `currentStatus` = `quarantined` on an available server, recr
 =====
 If you recreate databases using xref:database-administration/standard-databases/recreate-database.adoc#undefined-servers[undefined servers] or xref:database-administration/standard-databases/recreate-database.adoc#undefined-servers-backup[undefined servers with fallback backup], the store might not be recreated as up-to-date as possible in certain edge cases where the `system` database has been restored.
 =====
++
+image::servers-cordoned-databases-moved.svg[width="400", title="Recreate databases", role=popup]
 
 . For each `Cordoned` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
 This will move all database allocations from this server to an available server in the cluster.
++
+image::servers-deallocated.svg[width="400", title="Deallocate databases from unavailable servers", role=popup]
 +
 [NOTE]
 =====
@@ -278,7 +282,7 @@ Another reason is that some available servers are also `Cordoned`.
 
 . For each deallocating or deallocated server, run `DROP SERVER deallocated-server-id`.
 This removes the server from the cluster's view.
-====
+
 
 
 [[make-databases-write-available]]
@@ -318,13 +322,12 @@ A stricter verification can be done to verify that all databases are in their de
 For the stricter check, run `SHOW DATABASES` and verify that `requestedStatus` = `currentStatus` for all database allocations on all servers.
 
 ==== Path to correct state
+
 Use the following steps to make all databases in the cluster write-available again.
 They include recreating any databases that are not write-available and identifying any recreations that will not complete.
 Recreations might fail for different reasons, but one example is that the checksums do not match for the same transaction on different servers.
 
-.Guide
-[%collapsible]
-====
+
 . Identify all write-unavailable databases by running `CALL dbms.cluster.statusCheck([])` as described in the <<#example-verification, Example verification>> part of this disaster recovery step.
 Filter out all databases desired to be stopped, so that they are not recreated unnecessarily.
 . Recreate every database that is not write-available and has not been recreated previously.
@@ -345,4 +348,7 @@ Recreating a database will not complete if one of the following messages is disp
 ** `No store found on any of the seeders ServerId1, ServerId2...`
 . For each database which will not complete recreation, recreate them from backup using xref:database-administration/standard-databases/recreate-database.adoc#uri-seed[Backup as seed].
 
-====
+image::fully-recovered-cluster.svg[width="400", title="Fully recovered cluster", role="popup"]
+
+
+
