@@ -34,7 +34,7 @@ They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.c
 Key points:
 
 * All servers include _all_ members in their discovery list.
-* The servers for analytics have mode constraints configured that restrict their hosting mode to _secondary_ to prevent them from participating in normal write operations.
+* The servers for analytics have their mode constraints configured to _SECONDARY_ to prevent them from participating in write operations.
 * In the example below, you set `dbms.cluster.discovery.resolver_type=LIST`.
 
 To use the discovery service v2:
@@ -42,6 +42,8 @@ To use the discovery service v2:
 * You have to set the configuration of `dbms.cluster.discovery.version` to `V2_ONLY`.
 * Instead of `dbms.cluster.discovery.endpoints`, use `dbms.cluster.discovery.v2.endpoints`.
 
+. Prepare a _neo4j.conf_ file for each server.
++
 ._neo4j.conf_ on server01.example.com:
 [source, properties]
 ----
@@ -50,7 +52,7 @@ server.default_advertised_address=server01.example.com
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000
 dbms.cluster.discovery.version=V2_ONLY
 ----
-
++
 ._neo4j.conf_ on server02.example.com:
 [source, properties]
 ----
@@ -59,7 +61,7 @@ server.default_advertised_address=server02.example.com
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000
 dbms.cluster.discovery.version=V2_ONLY
 ----
-
++
 ._neo4j.conf_ on server03.example.com:
 [source, properties]
 ----
@@ -68,7 +70,7 @@ server.default_advertised_address=server03.example.com
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000
 dbms.cluster.discovery.version=V2_ONLY
 ----
-
++
 ._neo4j.conf_ on server04.example.com - an analytics server:
 [source, properties]
 ----
@@ -79,7 +81,7 @@ dbms.cluster.discovery.version=V2_ONLY
 initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
-
++
 ._neo4j.conf_ on server05.example.com - an analytics server:
 [source, properties]
 ----
@@ -91,37 +93,37 @@ initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
 
-The Neo4j servers are ready to be started.
+. The Neo4j servers are ready to be started.
 The startup order does not matter.
 
-After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+. After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
 This shows information about each member of the cluster:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS;
 ----
-
++
 [queryresult]
 ----
-+-----------------------------------------------------------------------------------------------------------+
-| name                                   | address          | state     | health      | hosting             |
-+-----------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
 | "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
 | "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "server02:7687" | "Enabled" | "Available" | ["system"]          |
 | "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "server03:7687" | "Enabled" | "Available" | ["system"]          |
 | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server04:7687" | "Free"    | "Available" | ["system"]          |
 | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Free"    | "Available" | ["system"]          |
-+-----------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------+
 ----
-
++
 For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS YIELD *;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -133,6 +135,30 @@ SHOW SERVERS YIELD *;
 | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server04:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
 | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+. To support analytic queries on the secondary servers, you have to explicitly enable them by running:
++
+[source, cypher, role=noplay]
+----
+ENABLE SERVER "df3758b1-337f-4b8a-a9de-8e745ca96549";
+ENABLE SERVER "9207bfd9-aa1b-40c2-b965-edcd3955a20e";
+----
++
+To check the result, run `SHOW SERVERS`.
+The output should show:
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
+| "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "server02:7687" | "Enabled" | "Available" | ["system"]          |
+| "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "server03:7687" | "Enabled" | "Available" | ["system"]          |
+| "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server04:7687" | "Enabled" | "Available" | ["system"]          |
+| "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Enabled" | "Available" | ["system"]          |
++----------------------------------------------------------------------------------------------------------+
 ----
 
 ======
@@ -150,6 +176,8 @@ Key points:
 * The servers for analytics have mode constraints configured that restrict their hosting mode to _secondary_ to prevent them from participating in normal write operations.
 * In the example below, you set `dbms.cluster.discovery.resolver_type=LIST`.
 
+. Prepare a _neo4j.conf_ file for each server.
++
 ._neo4j.conf_ on server01.example.com:
 [source, properties]
 ----
@@ -157,7 +185,7 @@ server.default_listen_address=0.0.0.0
 server.default_advertised_address=server01.example.com
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
 ----
-
++
 ._neo4j.conf_ on server02.example.com:
 [source, properties]
 ----
@@ -165,7 +193,7 @@ server.default_listen_address=0.0.0.0
 server.default_advertised_address=server02.example.com
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
 ----
-
++
 ._neo4j.conf_ on server03.example.com:
 [source, properties]
 ----
@@ -173,7 +201,7 @@ server.default_listen_address=0.0.0.0
 server.default_advertised_address=server03.example.com
 dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:5000,server03.example.com:5000,server04.example.com:5000,server05.example.com:5000
 ----
-
++
 ._neo4j.conf_ on server04.example.com - an analytics server:
 [source, properties]
 ----
@@ -183,7 +211,7 @@ dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:
 initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
-
++
 ._neo4j.conf_ on server05.example.com - an analytics server:
 [source, properties]
 ----
@@ -194,17 +222,17 @@ initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
 
-The Neo4j servers are ready to be started.
+. The Neo4j servers are ready to be started.
 The startup order does not matter.
 
-After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+. After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
 This shows information about each member of the cluster:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------+
@@ -217,14 +245,14 @@ SHOW SERVERS;
 | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Free"    | "Available" | ["system"]          |
 +-----------------------------------------------------------------------------------------------------------+
 ----
-
++
 For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS YIELD *;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -236,6 +264,30 @@ SHOW SERVERS YIELD *;
 | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server04:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
 | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Free"    | "Available" | ["system"]          | []                  | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+. To support analytic queries on the secondary servers, you have to explicitly enable them by running:
++
+[source, cypher, role=noplay]
+----
+ENABLE SERVER "df3758b1-337f-4b8a-a9de-8e745ca96549";
+ENABLE SERVER "9207bfd9-aa1b-40c2-b965-edcd3955a20e";
+----
++
+To check the result, run `SHOW SERVERS`.
+The output should show:
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
+| "f3bd1199-bc6f-4a38-b25c-5f7588df5182" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "b331e481-c2ba-4b4e-82f3-bb51fe171483" | "server02:7687" | "Enabled" | "Available" | ["system"]          |
+| "bd80e8fd-a51b-406a-9ed4-42daf4792aa6" | "server03:7687" | "Enabled" | "Available" | ["system"]          |
+| "df3758b1-337f-4b8a-a9de-8e745ca96549" | "server04:7687" | "Enabled" | "Available" | ["system"]          |
+| "9207bfd9-aa1b-40c2-b965-edcd3955a20e" | "server05:7687" | "Enabled" | "Available" | ["system"]          |
++----------------------------------------------------------------------------------------------------------+
 ----
 ======
 =====
@@ -282,6 +334,7 @@ The following example shows how to set up a non-fault tolerant analytics cluster
 =====
 [role=include-with-Discovery-service-v2 label--new-5.23]
 ======
+
 In this example, three servers named `server01.example.com`, `server02.example.com` and `server03.example.com` are configured.
 Neo4j Enterprise Edition is installed on all three servers.
 They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
@@ -293,7 +346,7 @@ Key points:
 * The writer server only has itself in the list of discovery.
 This means it does not seek out the other members when it starts, they have to discover it.
 This is required in order to have a cluster with only a single primary for the `system` database.
-* The servers for analytics have mode constraints configured that restrict their hosting mode to _secondary_ to prevent them from participating in normal write operations.
+* The servers for analytics have their mode constraints configured to `SECONDARY` to prevent them from participating in write operations.
 * In the example below, you set `dbms.cluster.discovery.resolver_type=LIST`.
 
 To use the discovery service v2:
@@ -301,6 +354,8 @@ To use the discovery service v2:
 * You have to set the configuration of `dbms.cluster.discovery.version` to `V2_ONLY`.
 * Instead of `dbms.cluster.discovery.endpoints`, use `dbms.cluster.discovery.v2.endpoints`.
 
+. Prepare a _neo4j.conf_ file for each server.
++
 ._neo4j.conf_ on server01.example.com - the writer:
 [source, properties]
 ----
@@ -310,7 +365,7 @@ server.default_advertised_address=server01.example.com
 dbms.cluster.discovery.v2.endpoints=server01.example.com:6000
 dbms.cluster.discovery.version=V2_ONLY
 ----
-
++
 ._neo4j.conf_ on server02.example.com - an analytics server:
 [source, properties]
 ----
@@ -321,7 +376,7 @@ dbms.cluster.discovery.version=V2_ONLY
 initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
-
++
 ._neo4j.conf_ on server03.example.com - an analytics server:
 [source, properties]
 ----
@@ -333,17 +388,17 @@ initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
 
-The Neo4j servers are ready to be started.
+. The Neo4j servers are ready to be started.
 The startup order does not matter.
 
-After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+. After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
 This shows information about each member of the cluster:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------+
@@ -354,14 +409,14 @@ SHOW SERVERS;
 | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Free"    | "Available" | ["system"]          |
 +-----------------------------------------------------------------------------------------------------------+
 ----
-
++
 For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS YIELD *;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -372,6 +427,29 @@ SHOW SERVERS YIELD *;
 | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Free"    | "Available" | ["system"]          | ["system"]          | []   | []               | []              | "SECONDARY"    | "5.8.0"     |
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
+
+. To support analytic queries on the secondary servers, you need to explicitly enable them by running:
++
+[source, cypher, role=noplay]
+----
+ENABLE SERVER "e56b49ea-243f-11ed-861d-0242ac120002";
+ENABLE SERVER "73e9a990-0a97-4a09-91e9-622bf0b239a4";
+----
++
+To check the result, run `SHOW SERVERS`.
+The output should show:
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Enabled" | "Available" | ["system"]          |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Enabled" | "Available" | ["system"]          |
++----------------------------------------------------------------------------------------------------------+
+----
+
 ======
 [role=include-with-Discovery-service-v1 label--deprecated-5.23]
 ======
@@ -390,7 +468,8 @@ This is required in order to have a cluster with only a single primary for the `
 * The servers for analytics have mode constraints configured that restrict their hosting mode to _secondary_ to prevent them from participating in normal write operations.
 * In the example below, you set `dbms.cluster.discovery.resolver_type=LIST`.
 
-
+. Prepare a _neo4j.conf_ file for each server.
++
 ._neo4j.conf_ on server01.example.com - the writer:
 [source, properties]
 ----
@@ -399,7 +478,7 @@ server.default_advertised_address=server01.example.com
 # Only has self in this list
 dbms.cluster.discovery.endpoints=server01.example.com:5000
 ----
-
++
 ._neo4j.conf_ on server02.example.com - an analytics server:
 [source, properties]
 ----
@@ -409,7 +488,7 @@ dbms.cluster.discovery.endpoints=server01.example.com:5000,server02.example.com:
 initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
-
++
 ._neo4j.conf_ on server03.example.com - an analytics server:
 [source, properties]
 ----
@@ -420,35 +499,35 @@ initial.server.mode_constraint=SECONDARY
 server.cluster.system_database_mode=SECONDARY
 ----
 
-The Neo4j servers are ready to be started.
+. The Neo4j servers are ready to be started.
 The startup order does not matter.
 
-After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+. After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
 This shows information about each member of the cluster:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS;
 ----
-
++
 [queryresult]
 ----
-+-----------------------------------------------------------------------------------------------------------+
-| name                                   | address          | state     | health      | hosting             |
-+-----------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
 | "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
 | "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Free"    | "Available" | ["system"]          |
 | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Free"    | "Available" | ["system"]          |
-+-----------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------+
 ----
-
++
 For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS YIELD *;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -460,8 +539,30 @@ SHOW SERVERS YIELD *;
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+. To support analytic queries on the secondary servers, you need to explicitly enable them by running:
++
+[source, cypher, role=noplay]
+----
+ENABLE SERVER "e56b49ea-243f-11ed-861d-0242ac120002";
+ENABLE SERVER "73e9a990-0a97-4a09-91e9-622bf0b239a4";
+----
++
+To check the result, run `SHOW SERVERS`.
+The output should show:
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------+
+| name                                   | address         | state     | health      | hosting             |
++----------------------------------------------------------------------------------------------------------+
+| "d6fbe54b-0c6a-4959-9bcb-dcbbe80262a4" | "server01:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
+| "e56b49ea-243f-11ed-861d-0242ac120002" | "server02:7687" | "Enabled" | "Available" | ["system"]          |
+| "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Enabled" | "Available" | ["system"]          |
++----------------------------------------------------------------------------------------------------------+
+----
 ======
 =====
+
 
 [[cluster-example-create-databases-on-single-primary-cluster]]
 === Create new databases in the cluster

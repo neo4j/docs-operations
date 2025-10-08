@@ -17,7 +17,7 @@ For more details, see xref:clustering/setup/discovery.adoc[].
 .Important settings for clusters
 [options="header",cols="<3,<4"]
 |===
-| Option name
+| Setting name
 | Description
 | xref:configuration/configuration-settings.adoc#config_server.default_advertised_address[`server.default_advertised_address`]
 | The address that other machines are told to connect to.
@@ -35,21 +35,44 @@ The setting configures the endpoints for **discovery service v2**.
 The setting must be set to the same value on all cluster members.
 The behavior of this setting can be modified by configuring the setting `dbms.cluster.discovery.resolver_type`.
 This is described in detail in xref:clustering/setup/discovery.adoc[].
+| xref:configuration/configuration-settings.adoc#config_dbms.cluster.minimum_initial_system_primaries_count[`dbms.cluster.minimum_initial_system_primaries_count`]
+| Minimum number of machines initially required to form a clustered DBMS.
+The cluster is considered formed when at least this many members have discovered each other, bound together, and bootstrapped a highly available `system` database.
+The default value is `3`.
+As a result, at least this many of the cluster's initial machines must have xref:configuration/configuration-settings.adoc#config_server.cluster.system_database_mode[`server.cluster.system_database_mode`] set to `PRIMARY`.
+|xref:configuration/configuration-settings.adoc#config_server.cluster.system_database_mode[`server.cluster.system_database_mode`]
+| Users must manually specify the mode for the `system` database on each server.
+The default value is `PRIMARY`.
 | xref:configuration/configuration-settings.adoc#config_initial.dbms.default_primaries_count[`initial.dbms.default_primaries_count`]
 | The number of initial database hostings in primary mode.
 If not specified, it defaults to one hosting in primary mode.
 | xref:configuration/configuration-settings.adoc#config_initial.dbms.default_secondaries_count[`initial.dbms.default_secondaries_count`]
 | The number of initial database hostings in secondary mode.
 If not specified, it defaults to zero hostings in secondary mode.
+| xref:configuration/configuration-settings.adoc#config_initial.server.mode_constraint[`initial.server.mode_constraint`]
+| Specifies the server mode - whether it can host only primary databases, only secondary databases, or both types.
+Initialized at the first DBMS startup.
+When a new server is added to the cluster, the setting is used as the default input for the `ENABLE SERVER` command; can be overriden when the command is executed.
+|xref:configuration/configuration-settings.adoc#config_initial.server.allowed_databases[`initial.server.allowed_databases`]
+|List of database names allowed on this server; all others are denied.
+When a new server is added to the cluster, the setting is used as the default input for the `ENABLE SERVER` command; can be overriden when the command is executed.
+|xref:configuration/configuration-settings.adoc#config_initial.server.denied_databases[`initial.server.denied_databases`]
+|List of database names not allowed on this server. Empty means nothing is denied.
+When a new server is added to the cluster, the setting is used as the default input for the `ENABLE SERVER` command; can be overriden when the command is executed.
+|xref:configuration/configuration-settings.adoc#config_initial.server.tags[`initial.server.tags`]
+|A list of server tag names used by the database allocation and when configuring load balancing and replication policies.
+Initialized at the first DBMS startup and/or when a newly added server is enabled.
+The setting is used as the default input for the `ENABLE SERVER` command; can be overriden when the command is executed.
 |===
 
-[NOTE]
-====
-Any setting with the `initial` prefix is only effective on the first startup of the DBMS.
-Changing the default number of primaries and secondaries dynamically can only be done with the xref:procedures.adoc#procedure_dbms_setDefaultAllocationNumbers[`dbms.setDefaultAllocationNumbers`] procedure.
+Points to consider:
+
+* Any setting with the `initial` prefix is effective on the first startup of the DBMS and/or when a new server joins the cluster and has to be explicitly xref:clustering/servers.adoc#server-enabled-state[`ENABLED`].
+
+* Changing the default number of primaries and secondaries dynamically can only be done with the xref:procedures.adoc#procedure_dbms_setDefaultAllocationNumbers[`dbms.setDefaultAllocationNumbers`] procedure.
 See xref:clustering/databases.adoc#create-database[`CREATE DATABASE`] for more information.
-To view the current default settings, use the xref:procedures.adoc#procedure_dbms_showTopologyGraphConfig[`dbms.showTopologyGraphConfig`] procedure.
-====
+
+* To view the current default settings, use the xref:procedures.adoc#procedure_dbms_showTopologyGraphConfig[`dbms.showTopologyGraphConfig`] procedure.
 
 
 [CAUTION]
@@ -69,7 +92,7 @@ Depending on the type of xref:configuration/configuration-settings.adoc#config_d
 In this case, you set `dbms.cluster.discovery.resolver_type=LIST`.
 
 
-.Configure a cluster with three servers in primary mode
+.Configure a cluster with three servers hosting databases in primary mode
 
 [.tabbed-example]
 =====
@@ -89,7 +112,11 @@ To use discovery service v2:
 
 * Instead of `dbms.cluster.discovery.endpoints`, use `dbms.cluster.discovery.v2.endpoints`.
 
+Besides, in the example below, the `dbms.cluster.minimum_initial_system_primaries_count` setting is not configured, as it defaults to three, and a cluster of three servers is being deployed.
+However, in case of setting up a cluster with only *two* servers, the setting `dbms.cluster.minimum_initial_system_primaries_count` must be set to `2` on all servers.
 
+. Prepare a _neo4j.conf_ files on each server.
++
 ._neo4j.conf_ on server01.example.com:
 [source, properties]
 ----
@@ -99,7 +126,7 @@ dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.c
 dbms.cluster.discovery.version=V2_ONLY
 initial.dbms.default_primaries_count=3
 ----
-
++
 ._neo4j.conf_ on server02.example.com:
 [source, properties]
 ----
@@ -109,7 +136,7 @@ dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.c
 dbms.cluster.discovery.version=V2_ONLY
 initial.dbms.default_primaries_count=3
 ----
-
++
 ._neo4j.conf_ on server03.example.com:
 [source, properties]
 ----
@@ -119,18 +146,18 @@ dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.c
 dbms.cluster.discovery.version=V2_ONLY
 initial.dbms.default_primaries_count=3
 ----
-
++
 The Neo4j servers are ready to be started.
 The startup order does not matter.
 
-After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
+. After the cluster has started, it is possible to connect to any of the instances and run `SHOW SERVERS` to check the status of the cluster.
 This shows information about each member of the cluster:
-
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------+
@@ -141,14 +168,23 @@ SHOW SERVERS;
 | "73e9a990-0a97-4a09-91e9-622bf0b239a4" | "server03:7687" | "Enabled" | "Available" | ["system", "neo4j"] |
 +-----------------------------------------------------------------------------------------------------------+
 ----
++
+[NOTE]
+====
+Note that initialized servers are `ENABLED` automatically at the first DBMS startup.
 
-For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
+Their values are taken from the initial settings.
 
+If you need to change the server's options, use the xref:clustering/servers.adoc#alter-server-options[`ALTER SERVER`] command.
+====
+
+. For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
++
 [source, cypher, role=noplay]
 ----
 SHOW SERVERS YIELD *;
 ----
-
++
 [queryresult]
 ----
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -174,7 +210,10 @@ If you want to follow along with the startup, you can see the messages in xref:c
 In this example, three servers named `server01.example.com`, `server02.example.com` and `server03.example.com` are configured.
 Neo4j Enterprise Edition is installed on all three servers.
 They are configured by preparing xref:configuration/file-locations.adoc[_neo4j.conf_] on each server.
-Note that they are all identical, except for the configuration of `server.default_advertised_address`:
+Note that they are all identical, except for the configuration of `server.default_advertised_address`.
+
+Besides, in the example below, the `dbms.cluster.minimum_initial_system_primaries_count` setting is not configured, as it defaults to three, and a cluster of three servers is being deployed.
+However, in case of setting up a cluster with only *two* servers, the setting `dbms.cluster.minimum_initial_system_primaries_count` must be set to `2` on all servers.
 
 ._neo4j.conf_ on server01.example.com:
 [source, properties]
@@ -225,6 +264,15 @@ SHOW SERVERS;
 +-----------------------------------------------------------------------------------------------------------+
 ----
 
+[NOTE]
+====
+Note that initialized servers are `ENABLED` automatically at the first DBMS startup.
+
+Their values are taken from the initial settings.
+
+If you need to change the server's options, use the xref:clustering/servers.adoc#alter-server-options[`ALTER SERVER`] command.
+====
+
 For more extensive information about each server, use the `SHOW SERVERS YIELD *` command:
 
 [source, cypher, role=noplay]
@@ -253,12 +301,6 @@ If you want to follow along with the startup, you can see the messages in xref:c
 ======
 =====
 
-[CAUTION]
-====
-The setting
-xref:configuration/configuration-settings.adoc#config_dbms.cluster.minimum_initial_system_primaries_count[`dbms.cluster.minimum_initial_system_primaries_count`]
-must be set to `2` on all servers in case setting up a cluster with only *two* servers.
-====
 
 [[cluster-example-create-databases-on-cluster]]
 == Create new databases in a cluster
