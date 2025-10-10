@@ -1,0 +1,36 @@
+:page-role: new-2025.10 enterprise-edition not-on-aura
+:description: This page describes the planning and sizing of sharded property databases.
+= Planning and sizing
+
+The sharded property database is deployed into an autonomous cluster with the graph shard being a regular Raft group.
+This means that the graph shard cluster should be deployed with a topology consisting of at least 3 primary servers for high availability.
+Additional primaries may be added to support a higher fault tolerance.
+If high availability is not required, then a database may be created with a single primary for minimum write latency.
+
+Secondary servers can be added to the graph shard to scale out read workloads.
+Secondaries act like caches for the graph data and are fully capable of executing read-only queries and procedures.
+
+Replicas act like secondary servers in that they are asynchronously replicated from primaries via transaction log shipping.
+They periodically poll an upstream server for new transactions and have these shipped over.
+Replicas are not in a Raft group and do not have the same high availability features as the graph shards.
+To achieve high availability of the replicas containing the property shards, it is recommended to have multiple replicas per property shard.
+The fault tolerance for a property shard replica is calculated with the formula M = F + 1, where M is the number of replicas required to tolerate F faults.
+
+image::property-shard-architecture.png[title="Sample architecture with high availability graph shard, graph shard secondaries, and 4 property shards with 2 replicas for each property shard.", role="middle"]
+
+== Planning the sizing of a sharded property database
+
+The block format (see xref:database-internals/store-formats.adoc[Store formats]) is required for both the graph shard and the property shard.
+For proper estimation of sizing, please reach out to your Neo4j representative for assistance.
+
+Resharding is the act of adding new shards and removing old ones, and moving the data to accommodate this new topology.
+This is currently not supported.
+A user cannot add additional property shards to the cluster and have the data reallocated across all property shards.
+With that in mind, each server must have sufficient disk space for each shard (to include data growth), transaction logs, and backups.
+
+[NOTE]
+====
+Resharding is currently not supported.
+However, if required, users can select more shards than needed to start with and allow space for their data to grow, as the Neo4j cluster allows databases to be moved based on server availability.
+For example, 10 property shards can be initially hosted on 5 servers (2 shards per server), and more servers can be added when they grow.
+====

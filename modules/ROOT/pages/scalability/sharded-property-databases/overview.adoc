@@ -1,0 +1,50 @@
+:page-role: new-2025.10 enterprise-edition not-on-aura
+:description: This page describes property sharding and how it works.
+= Overview
+
+.Preview Feature
+[IMPORTANT]
+====
+The *property sharding feature is offered AS-IS* as described in your agreement with Neo4j and should only be used for internal development purposes.
+
+When this feature becomes generally available, you will need to upgrade to the latest Neo4j version (requires downtime) to use the feature for non-development purposes.
+
+*Enabling the preview feature (internal parameter):*
+By default, the sharded property database is disabled.
+Use the internal setting `internal.dbms.sharded_property_database.enabled=true` to enable it.
+
+During the Preview period, customers with active contracts may contact Neo4j Support through the standard support channels.
+Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
+====
+
+== What is property sharding?
+
+Property sharding is about decoupling the properties attached to nodes and relationships and storing them in separate graphs.
+The graph structure, which includes nodes and relationships, is stored in a single "graph shard".
+The properties associated with these elements are distributed across multiple "property shards".
+This architecture allows for the independent scaling of property data, enabling the handling of larger volumes of properties without impacting the performance of the graph structure. +
+At the same time, it also allows for the optimization of storage for graph data, as the graph shards are designed to store more graph-centric information without the overhead of properties. +
+The sharded property database behaves like a standard database.
+It provides ACID guarantees for write transactions and full Cypher query support.
+
+image::sharded-architecture.png[title="High-level sketch of sharded architecture.", role="middle"]
+
+== How it works
+
+The graph shard contains only nodes and relationships without the properties.
+Each shard is simply a Neo4j database with some custom behaviors.
+
+All node and relationship properties are distributed evenly across the property shards using a hash function.
+Each property shard contains equivalent unconnected nodes and relationships, each of which has the same unique identifier as the one in the graph shard, and stores the properties associated with those elements.
+This means that each entity in the graph shard has one and only one corresponding entity in one of the property shards, and that property shard will serve all requests for that entity.
+
+The entire system is deployed into an autonomous cluster, with the graph shard being a regular Raft group (see xref:clustering/setup/routing.adoc[Leadership, routing, and load balancing]).
+This setup provides all the failover and availability guarantees and allows the addition of primaries and secondaries as in a normal Neo4j cluster.
+
+Property shards use replicas (property shard copies) for data redundancy and failover.
+Each property shard can have multiple replicas to ensure data availability.
+If one property shard fails, a replica can take over its responsibilities.
+
+Transactionality concerns are handled entirely on the graph shards using Raft consensus, the same way as in a standard database.
+However, the graph shard and a replica of the property shard must communicate with each other to ensure that ACID compliance is maintained.
+Bookmarks are used as in standard databases to ensure that the cluster is able to read its own writes.
