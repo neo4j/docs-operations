@@ -16,33 +16,33 @@ This is useful when you want to import in bulk before starting your application,
 
 === Initial import from delimited files
 
-You can use the xref:import.adoc[`neo4j-admin database import`] command to import data from delimited files into a sharded property database as in a standard Neo4j database.
+You can use the xref:import.adoc#import-tool-full[`neo4j-admin database import full`] command to import data from delimited files into a sharded property database as in a standard Neo4j database.
 This is particularly useful for large datasets that you want to import in bulk before starting your application or for incremental imports later on.
 You can specify the `--property-shard-count` option to define the number of property shards you want to create.
 This will help distribute the data across multiple servers in a Neo4j cluster.
 
 [NOTE]
 ====
-If you are creating the property shards on a self-managed server, you must have sufficient storage space available for all of the property shards that will be created.
+If you are creating the property shards on a self-managed server, the server that executes the `neo4j-admin database import` command must have sufficient storage space available for all of the property shards that will be created.
 ====
 
 The following example shows how to import a set of CSV files,  dump them to S3, and then create a database using those seeds in S3.
 
-. Using the `neo4j-admin database import` tool, import data into the `neo4j-sharded` database, creating one graph shard and three property shards.
+. Using the `neo4j-admin database import` tool, import data into the `foo-sharded` database, creating one graph shard and three property shards.
 If the process is running on the same server as another Neo4j DBMS process, the latter must be stopped.
 The `-–target-location` and `-–target-format` options will take the outputs of the import, turn them into backups, and upload them to a location ready to be seeded from.
 The backup will be uncompressed, which is the quickest way to perform a backup.
 +
 [source, shell]
 ----
-neo4j-admin database import full neo4j-sharded --nodes=nodes.csv --nodes=movies.csv --relationships=relationships.csv --input-type=csv --property-shard-count=3 --schema=schema.cypher --target-location=s3://bucket/folder/ --target-format=backup
+neo4j-admin database import full foo-sharded --nodes=nodes.csv --nodes=movies.csv --relationships=relationships.csv --input-type=csv --property-shard-count=3 --schema=schema.cypher --target-location=s3://bucket/folder/ --target-format=backup
 ----
 
-. Create the database neo4j-sharded as a sharded property database by seeding it from your dumps in the AWS S3 bucket:
+. Create the database foo-sharded as a sharded property database by seeding it from your dumps in the AWS S3 bucket:
 +
 [source, cypher]
 ----
-CREATE DATABASE `neo4j-sharded`
+CREATE DATABASE `foo-sharded`
 DEFAULT LANGUAGE CYPHER 25
 PROPERTY SHARDS { COUNT 3 }
 OPTIONS {
@@ -50,7 +50,7 @@ OPTIONS {
 };
 ----
 
-In a cluster deployment,  the cluster automatically distributes the data across its servers.
+The cluster automatically distributes the data across its servers.
 For more information on seed providers, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
 === Incremental import / offline updates
@@ -59,7 +59,7 @@ You can use the `neo4j-admin database import incremental` command to import data
 This is particularly useful for large batches of data that you want to add to an existing sharded property database.
 It allows you to do faster updates than is possible transactionally.
 
-. Stop the `neo4j-sharded` database if it is running.
+. Stop the `foo-sharded` database if it is running.
 See xref:starting-and-stopping.adoc[Starting and stopping a sharded property database] for instructions.
 
 . Run the `neo4j-admin database import incremental` command by specifying the `--property-shard-count` option to define the number of property shards you want to create, the `--target-location` and `--target-format` options to upload the resulting stores to a location ready for re-creating the databases from, and the CSV files that you wish to update your existing data with.
@@ -70,10 +70,10 @@ You must .
 
 [source, shell]
 ----
-neo4j-admin database import incremental neo4j-sharded --nodes=nodes.csv --nodes=movies.csv --relationships=relationships.csv --input-type=csv --property-shard-count=3 --schema=schema.cypher --target-location=s3://bucket/folder/ --target-format=backup
+neo4j-admin database import incremental foo-sharded --nodes=nodes.csv --nodes=movies.csv --relationships=relationships.csv --input-type=csv --property-shard-count=3 --schema=schema.cypher --target-location=s3://bucket/folder/ --target-format=backup
 ----
 
-. Re-create your database using the `DBMS.recreateDatabase()` or follow step 2 of <<splitting-existing-db-into-shards, Splitting an existing database into shards>> and creating a new database with the resulting stores the same way you would for a normal offline incremental import.
+. Re-create your database using the `dbms.recreateDatabase()` or follow step 2 of <<splitting-existing-db-into-shards, Splitting an existing database into shards>> and creating a new database with the resulting stores the same way you would for a normal offline incremental import.
 
 
 === Importing data using `LOAD CSV`
@@ -90,32 +90,32 @@ Transactional Cypher statements involving `MERGE` or `RELATIONSHIP` creation hav
 [[splitting-existing-db-into-shards]]
 === Splitting an existing database into shards
 
-You can use the neo4j-admin database copy command to split an existing database into shards.
+You can use the `neo4j-admin database copy` command to split an existing database into shards.
 It works in the same way as a standard database copy with a few additional arguments.
 You must specify `--property-shard-count` to be `> 0` to indicate that you want to create a sharded property database.
-If `--to-format` is a value other than spd_block, a warning will be printed in the log that the given format will be ignored.
-If `--to-format` is spd_block and `--property-shard-count` is not set, an exception will be thrown to specify the number of shards.
+If `--to-format` is a value other than `spd_block`, a warning will be printed in the log that the given format will be ignored.
+If `--to-format` is `spd_block` and `--property-shard-count` is not set, an exception will be thrown to specify the number of shards.
 You must also specify a new database name or set `--to-path-data` and `--to-path-txn` to a new DBMS location.
 
-The following example shows how to split the existing `neo4j` database into a new database called `neo4j-sharded`, which has 3 property shards in a cluster deployment.
+The following example shows how to split the existing `foo` database into a new database called `foo-sharded`, which has 3 property shards in a cluster deployment.
 If you are using a standalone server, you can skip steps 2 and 3.
 
-. On one of the servers, copy the data from the `neo4j` database into the database `neo4j-sharded`, creating one graph shard and three property shards.
-The `neo4j` database must be stopped.
+. On one of the servers, copy the data from the `foo` database into the database `foo-sharded`, creating one graph shard and three property shards.
+The `foo` database must be stopped.
 +
 [source, shell]
 ----
-neo4j-admin database copy neo4j neo4j-sharded --copy-schema --property-shard-count 3 --target-location=s3://bucket/folder/ --target-format=backup
+neo4j-admin database copy foo foo-sharded --copy-schema --property-shard-count 3 --target-location=s3://bucket/folder/ --target-format=backup
 ----
 +
 For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
 
 
-. Create the database `neo4j-sharded` as a sharded property database by seeding it from your dumps in AWS S3 bucket:
+. Create the database `foo-sharded` as a sharded property database by seeding it from your dumps in AWS S3 bucket:
 +
 [source, cypher]
 ----
-CREATE DATABASE `neo4j-sharded`
+CREATE DATABASE `foo-sharded`
 DEFAULT LANGUAGE CYPHER 25
 PROPERTY SHARDS { COUNT 3 }
 OPTIONS {
@@ -123,7 +123,7 @@ OPTIONS {
 };
 ----
 +
-In a cluster deployment,  the cluster automatically distributes the data across its servers.
+The cluster automatically distributes the data across its servers.
 For more information on seed providers, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
 == Online ingestion (Requires Cypher 25)
@@ -149,13 +149,13 @@ For details on configuring the Cypher version, see xref:configuration/cypher-ver
 ----
 CREATE DATABASE name [IF NOT EXISTS]
 [[SET] GRAPH SHARD {
-  [TOPOLOGY n PRIMAR{Y|IES} [m SECONDAR{Y|IES}]]
+  [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
 }]
-[SET] PROPERTY SHARD[S] {
+[SET] PROPER{TY\|IES} {
   COUNT n [TOPOLOGY m REPLICA[S]]
 }
 [OPTIONS "{" option: value[, ...] "}"]
-[WAIT [n [SEC[OND[S]]]]|NOWAIT]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
 ----
 |===
 
@@ -171,5 +171,46 @@ The count property in `SET PROPERTY SHARDS` specifies the number of property sha
 `CREATE OR REPLACE` does not replace an existing sharded database.
 ====
 
+=== Options
 
+The `CREATE DATABASE` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
+For sharded databases, only the seeding option is supported.
+
+The following table describes the `seedUri` option:
+
+[frame="topbot", grid="cols", cols="<1s,<4"]
+|===
+| *Key*
+m| seedURI
+| *Value*
+a| URI to a folder containing all the backups or a list of dumps/backups.
+
+[NOTE]
+The folder notation only works for backups, not dumps.
+
+When specifying each artifact manually the key of the map is the name of the shard.
+Where shard name = `databaseName-g000` or `databaseName-p000` for property shards where the last shard name would be `databaseName-px` where `x = numShards -1`.
+| *Description*
+a| Defines an identical seed from an external source, which will be used to seed all servers. For more information, see Seed from a URI.
+| *Example*
+|
+[source, syntax, role="noheader"]
+----
+seedUri: {
+  `neo4j-sharded-g000`: "s3://bucket/folder/foo-g000.backup",
+  `neo4j-sharded-p000`: "s3://bucket/folder/foo-p001.backup",
+  `neo4j-sharded-p001`: "s3://bucket/folder/foo-p002.backup"
+ }
+----
+Or
+[source, syntax, role="noheader"]
+----
+seedUri: "s3://bucket/folder/"
+----
+|===
+
+=== Default numbers for topology
+
+The sharded property databases use the Neo4j cluster topology.
+Therefore, you need to consider how the following settings will affect the creation of your sharded property database.
 
