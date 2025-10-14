@@ -1,3 +1,137 @@
 :page-role: new-2025.10 enterprise-edition not-on-aura
-:description:
+:description: Admin operations for sharded property databases
+:keywords: sharded property databases, sharding, admin operations, aliases, servers, backup, recovery, failover
 = Admin operations
+
+== Managing aliases for sharded databases
+
+When creating an alias for a sharded database, use the virtual database name when specifying it as the alias target.
+The following example shows how to create the alias foo for the sharded database foo-sharded:
+
+[source, cypher]
+----
+CREATE ALIAS foo FOR DATABASE `foo-sharded`
+----
+
+== Managing servers with sharded databases
+
+Graph references in server management commands must refer to shards.
+The virtual sharded database is rejected or ignored.
+
+The following example shows how to enable a server and allow allocating the property shard `foo-sharded-p000`:
+
+[source, cypher]
+----
+ENABLE SERVER server name  OPTIONS { allowedDatabases: [‘foo-sharded-p000’] }
+----
+
+== Resizing and resharding
+
+Online resharding (adding new shards, removing old ones, relocating data to accommodate the new topology) is currently not supported.
+You can reshard your data via the `neo4j-admin database copy` command.
+See xref:scalability/sharded-property-databases/data-ingestion.adoc#splitting-existing-db-into-shards[Splitting an existing database into shards] for more information.
+
+Alternatively, you can select more shards than needed to start with and allow space for their data to grow, as the Neo4j cluster allows databases to be moved based on server availability. For example, 10 property shards can be initially hosted on 5 servers (2 shards per server), and additional servers can be added as needed.
+
+//TODO: We should talk about co-location, adding/removing servers in a cluster and say what is supported and what is not.
+
+[[backup-and-recovery]]
+== Backup and recovery
+
+A sharded property database is a database made up of multiple databases.
+This means that when you want to back up a database, you must back up all the shards individually, resulting in a sharded property database backup that is composed of multiple smaller backup chains.
+
+Backup chains for each shard are produced using the neo4j-admin database backup.
+For the graph shard, its backup chain must contain one full artefact and 0+ differential artefacts.
+Each property shard’s backup chain must contain only one full backup and no differential backups.
+In practical terms, this means that to back up a sharded property database, you start with a full backup of the graph shard and then all of the property shards; any subsequent differential backups would only need to be of the graph shard.
+This is because the transaction log of the property shards is the same as the graph shard log and is just filtered when applied, so only the graph shard log is required for a restore.
+
+For example, assume there is a sharded property database called `foo` with a graph shard and 2 property shards.
+A backup must be taken of each shard, for example:
+
+[source,shell]
+----
+bin/neo4j-admin database backup "foo*" --to-path=/backups --from=localhost:6361 --remote-address-resolution
+----
+
+The `--remote-address-resolution` option requires `internal.dbms.cluster.experimental_protocol_version.dbms_enabled=true` to be set in both the _neo4j.conf_ and _neo4j-admin.conf_ files.
+
+You can then check the validity of the resulting backups using:
+
+[source,shell]
+----
+bin/neo4j-admin database backup validate "foo" --from-path=s3://bucket/backups
+----
+
+The output will indicate whether the backups are valid.
+For example:
+
+[result]
+----
+| DATABASE |                                                PATH | STATUS |
+| foo-g000 | /bucket/backups/foo-g000-2025-06-11T21-04-42.backup |     OK |
+| foo-p000 | /bucket/backups/foo-p000-2025-06-11T21-04-37.backup |     OK |
+| foo-p001 | /bucket/backups/foo-p001-2025-06-11T21-04-40.backup |     OK |
+----
+
+If valid, the backups can be used to seed a sharded property database:
+
+[source,cypher]
+----
+CYPHER 25 CREATE DATABASE baz SET GRAPH SHARD { TOPOLOGY 3 PRIMARIES 0 SECONDARIES }
+SET PROPERTY SHARDS { COUNT 2 TOPOLOGY 1 REPLICA }
+OPTIONS {seedUri:"s3://bucket/backups/"};
+----
+
+Due to potential synchronization issues that might occur when shard backups are not on the exact same transaction IDs (since backups can be taken in parallel or sequentially), the restore process is designed to be very lenient to different shards at different transaction IDs.
+As a result, a sharded property database backup is considered valid if the store files of each property shard are within the range of transactions recorded in the graph shard’s transaction log.
+
+For example, assume the graph shard’s store files are at tx 10 and it has transaction logs from tx 11-36, and property shard 1’s store files are at 13 and property shard 2’s store files are at 30, then at restore time, all databases can be recovered and made consistent up to transaction 36.
+
+You can use the command `neo4j-admin backup validate` to check whether a collection of backup chains for a database is valid.
+
+Additional actions may be required to create a validated backup if a property shard is ahead or behind the range of transactions in the graph shard backup chain.
+
+.Example output
+[result]
+----
+| DATABASE |                                         PATH | STATUS 		   		   	                                 |
+| foo-g000 | /backups/foo-g000-2025-06-11T21-04-42.backup | OK					        	                         |
+| foo-p000 | /backups/foo-p000-2025-06-11T21-04-37.backup | Backup is behind (3 < 5) the graph shard backup chain    |
+| foo-p001 | /backups/foo-p001-2025-06-11T21-04-40.backup | Backup is ahead (12 > 8) of the graph shard backup chain |
+----
+
+To form a validated backup, you must ensure that each property shard’s store files are within the range of transactions recorded in the graph shard’s transaction log.
+In the example above, property shard `foo-p000` is behind the graph shard backup chain, and property shard `foo-p001` is ahead of the graph shard backup chain.
+To form a valid sharded property database backup, you need to:
+
+* Take a full backup of the property shard `foo-p000` so that its store at least includes transaction 5.
+* Take a differential backup of the graph shard so that at least transaction 12 is included in its transaction log, so `foo-p001` is included in its range.
+
+Once a valid sharded properties database backup is formed, then differential backups can be performed by taking differential backups of the graph shard, extending the range of the graph shard chain.
+Continuing with the example, the graph chain contains transactions from 11-36, property shard 1’s store files are at 13, and property shard 2’s store files are at 30.
+You then take a differential backup of the graph shard containing transactions 37 to 50.
+At restore time, all databases can be recovered up to transaction 50 and made consistent.
+
+== System failovers
+
+In a sharded property database, property shards pull transaction log entries from the graph shard and apply them to their stores.
+Thus, it is required that the graph shard does not prune an entry from its transaction log until every replica of each property shard has pulled and applied that entry.
+Failure to meet this requirement will make a given replica of a property shard unusable.
+
+If a property shard replica does fall behind the transaction log range available on the graph shard, you can recover it by:
+
+. Connecting to the server hosting the affected replica using the _bolt://_ scheme.
+. Quarantining the replica using xref:procedures.adoc#procedure_dbms_quarantineDatabase[`dbms.quarantineDatabase()`].
+. Unquarantining the replica using xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`dbms.unquarantineDatabase()`] with the `replaceStateReplaceStore` option.
+This will force the replica to copy the database store files from another replica of the property shard.
+
+If all replicas of a given property shard are behind, then the sharded property database as a whole becomes unusable.
+This is an irrecoverable state.
+Up until this point, losing replicas reduces fault tolerance, but the database remains available.
+When a sharded property database becomes irrecoverable, it needs to be dropped and recreated from a backup.
+See <<backup-and-recovery, Backup and recovery>>.
+
+One mechanism to avoid property shards falling out of range of the graph shard’s transaction log is to set a sufficiently large transaction log prune time on the graph shard.
+See xref:scalability/sharded-property-databases/limitations-and-considerations.adoc#setting-suitable-tx-log-retention-policy[Setting a suitable transaction log retention policy].

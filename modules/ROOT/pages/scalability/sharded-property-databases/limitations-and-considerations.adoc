@@ -1,3 +1,162 @@
 :page-role: new-2025.10 enterprise-edition not-on-aura
 :description:
 = Limitations and considerations
+
+== Non-supported features
+
+=== CDC
+
+CDC is not supported in  this version.
+
+=== Unsupported procedures
+
+The following procedures are not supported by sharded databases:
+
+* cdc.earliest()
+* cdc.current()
+* cdc.query()
+* db.cdc.earliest()
+* db.cdc.current()
+* db.cdc.query()
+* db.cdc.translateId()
+* db.index.fulltext.awaitEventuallyConsistentIndexRefresh()
+* db.listLocks()
+* dbms.listPools()
+* dbms.listActiveLocks()
+* dbms.scheduler.jobs()
+* dbms.scheduler.failedJobs()
+
+
+[NOTE]
+====
+It is strongly recommended not to use `dbms.setConfigValue()` on sharded databases as sharded databases run in a clustered environment, which means the procedure must be run against each cluster member and is not propagated to other members.
+In particular, `dbms.setConfigValue()` cannot be used to set read-only behaviour as the two settings `server.databases.read_only` and `server.databases.writable` are not compatible with sharded databases.
+The correct way of setting read/write access is by using `ALTER DATABASE`.
+====
+
+=== Property-based access control (PBAC)
+
+
+PBAC is not supported in this version.
+
+=== `USE graph.byElementId()`
+
+Calling `USE graph.byElementId(<element-id>)` with an element of a sharded database is currently not supported.
+
+== Performance considerations
+
+=== Queries with `MERGE` clause
+
+`MERGE` queries are very slow at any meaningful scale.
+Due to their plan, they are likely to cause a nested loop join, which does not perform well on SPD at the moment.
+We are looking to fix this soon.
+
+=== Filtering on properties in paths
+
+Queries that need to check each relationship property for all relationships between two nodes before they can traverse the next relationship property may see performance issues.
+For example, the following query must fetch each `[k:KNOWS]` relationship between people to check each of its properties before it can traverse onto the next person:
+
+[source, cypher]
+----
+MATCH (n:Person)[k:KNOWS*1..]>(m:Person)
+WHERE k.creationDate=1268465841718
+RETURN n,k,m
+----
+
+This could be rewritten to be:
+
+[source, cypher]
+----
+MATCH (n:Person)[k:KNOWS{creationDate=1268465841718}]>+(m:Person)
+RETURN n,k,m
+----
+
+Which would perform much better, but not all queries can be rewritten in this way.
+
+=== Call in transactions for batch write operations
+
+Because of the write architecture, creating larger transactions when doing write operations that can be batched will give large performance benefits.
+For example:
+
+[source, cypher]
+----
+node_updates = [
+    { id: 1, name: "Alice", age: 30 },
+    { id: 2, name: "Bob", age: 25 },
+    { id: 3, name: "Charlie", age: 40 }
+]
+
+FOR each update IN node_updates DO
+    EXECUTE Cypher:
+        MATCH (n:Person {id: update.id})
+        SET n.name = update.name,
+            n.age = update.age
+END FOR
+----
+
+can be rewritten in a much more performant way as follows:
+
+[source, cypher]
+----
+WITH [
+    {id: 1, name: "Alice", age: 30},
+    {id: 2, name: "Bob", age: 25},
+    {id: 3, name: "Charlie", age: 40}
+] AS updates
+
+UNWIND updates AS u
+MATCH (n:Person {id: u.id})
+SET n.name = u.name,
+    n.age = u.age
+----
+
+This is the same advice that would be given for a non-sharded Neo4j database, but it is doubly important for a property-sharded database.
+
+== Other considerations
+
+=== `neo4j-admin database copy` to a sharded property database
+
+When using the `neo4j-admin database copy --property-shard-count > 0` command to split an existing database into shards, it is not possible to copy in place,  meaning you cannot replace your existing database with a sharded property database.
+You must specify a new name or set `--to-path-data` and `--to-path-txn` or `--target-location={path|uri}`
+`--target-format={database|backup}` to a new DBMS location.
+
+=== `USE` clause with sharded databases
+
+When targeting a sharded database in a `USE` clause, use its virtual database name or an alias in the graph reference.
+For example:
+
+[source, cypher]
+----
+USE `neo4j-sharded` MATCH (n) RETURN n
+----
+
+Targeting a shard directly is not supported.
+
+=== Cypher 5
+
+Cypher 5 is unsupported for sharded property databases.
+Although some queries may work, it is not officially supported.
+You must use Cypher25, which is the default for creating sharded property databases.
+See xref:configuration/cypher-version-configuration.adoc[Configure the Cypher default version].
+
+[[setting-suitable-tx-log-retention-policy]]
+=== Setting a suitable transaction log retention policy
+
+Property shards pull transaction log entries from the graph shard and apply them to their stores.
+Thus, there is a requirement that the graph shard may not prune an entry from its transaction log until each replica of each property shard has pulled and applied that entry.
+Failure to maintain this requirement can render a sharded property database irrecoverable.
+In order to ensure enough transaction logs are kept, you must set db.tx_log.rotation.retention_policy accordingly.
+A suitable heuristic is to ensure that the transaction log kept covers the transactions written between successive full backups of the sharded property database.
+
+[NOTE]
+====
+It is important to ensure that there is space for the transaction logs and that the server does not run out of disk space.
+====
+
+
+=== Controlling the property shard transaction log pull frequency
+
+The interval at which property shards pull transaction log entries from the graph shard is controlled by `internal.dbms.sharded_property_database.property_pull_interval` (defaults to 10ms).Write performance can often be improved by setting this value lower at the cost of more polling on the graph shard from the property shards, which has unknown consequences at the moment.
+
+
+`
