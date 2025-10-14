@@ -197,9 +197,9 @@ a| Defines an identical seed from an external source, which will be used to seed
 [source, syntax, role="noheader"]
 ----
 seedUri: {
-  `neo4j-sharded-g000`: "s3://bucket/folder/foo-g000.backup",
-  `neo4j-sharded-p000`: "s3://bucket/folder/foo-p001.backup",
-  `neo4j-sharded-p001`: "s3://bucket/folder/foo-p002.backup"
+  `foo-sharded-g000`: "s3://bucket/folder/foo-g000.backup",
+  `foo-sharded-p000`: "s3://bucket/folder/foo-p001.backup",
+  `foo-sharded-p001`: "s3://bucket/folder/foo-p002.backup"
  }
 ----
 Or
@@ -214,3 +214,96 @@ seedUri: "s3://bucket/folder/"
 The sharded property databases use the Neo4j cluster topology.
 Therefore, you need to consider how the following settings will affect the creation of your sharded property database.
 
+[options="header", width="100%", cols="4m,1m,1m,3a"]
+|===
+| Configuration settings with their default value
+| Default value
+| Valid values
+| Description
+
+|initial.dbms.default_primaries_count
+| 1
+| [1-10]
+| The default number of primaries for the graph shard when the database is created.
+
+|initial.dbms.default_secondaries_count
+| 0
+| [0-19]
+| The default number of secondaries for the graph shard when the database is created.
+|===
+
+=== Creating an empty sharded property database
+
+You can create an empty sharded database using the `CREATE DATABASE` command.
+The command allows you to specify the number of property shards and the topology of the graph shard.
+The following examples show how to create an empty sharded database with different configurations.
+
+====  Example 1: Create an empty sharded database with the default topology (1 primary, no secondaries, and 1 replica per property shard)
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+PROPERTY SHARDS { COUNT 3 };
+----
+
+==== Example 2: Create an empty sharded database with a custom topology
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+ SET GRAPH SHARD { TOPOLOGY 1 PRIMARY 0 SECONDARIES }
+ SET PROPERTY SHARDS { COUNT 3 TOPOLOGY 1 REPLICAS };
+----
+
+==== Example 3: Create an empty sharded database with a custom high-availability topology
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+ SET GRAPH SHARD { TOPOLOGY 3 PRIMARY 0 SECONDARIES }
+ SET PROPERTY SHARDS { COUNT 3 TOPOLOGY 2 REPLICAS };
+----
+
+=== Creating a sharded database from a URI
+
+You can create a new sharded property database from an existing database with seeding from one or more URIs.
+This is useful when you want to create a new database as a copy of an existing one, or when you want to seed a new database with data from another source.
+For more information on how seed from URI works, see the xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+
+The following example shows how to create a shared database with seeding from one or several URIs.
+
+==== Example 1: Create a sharded database with seeding from one URI
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+PROPERTY SHARDS { COUNT 3 }
+OPTIONS { seedURI: “s3://bucket/folder/” };
+----
+
+==== Example 2: Create a sharded database with seeding from one URI with a different name
+
+This one is similar to example 1, but the system looks for `other-database-g000`, etc.
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+PROPERTY SHARDS { COUNT 3 }
+OPTIONS { seedURI: “s3://bucket/folder/”, seedSourceDatabase: “other-database” };
+----
+
+==== Example 3: Create a sharded database with seeding from multiple URIs
+
+The URIs need to be keyed by the shard name they should be used to seed.
+The shard names will be `databaseName-g000` and `databaseName-p000` to `databaseName-px`, where `x` is the number of property shards `-1`.
+
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+PROPERTY SHARDS { COUNT 3 }
+OPTIONS { seedUri: {
+  `foo-sharded-g000`: "s3://bucket/folder/foo-g000.dump",
+  `foo-sharded-p000`: "s3://bucket/folder/foo-p001.dump",
+  `foo-sharded-p001`: "s3://bucket/folder/foo-p002.dump"
+ } };
+----
