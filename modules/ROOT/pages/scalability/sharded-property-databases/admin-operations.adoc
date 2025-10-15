@@ -3,10 +3,12 @@
 :keywords: sharded property databases, sharding, admin operations, aliases, servers, backup, recovery, failover
 = Admin operations
 
+Sharded property databases are managed similarly to standard Neo4j databases, with some differences in certain administrative operations.
+
 == Managing aliases for sharded databases
 
 When creating an alias for a sharded database, use the virtual database name when specifying it as the alias target.
-The following example shows how to create the alias foo for the sharded database foo-sharded:
+The following example shows how to create the alias `foo` for the sharded database `foo-sharded`:
 
 [source, cypher]
 ----
@@ -22,7 +24,7 @@ The following example shows how to enable a server and allow allocating the prop
 
 [source, cypher]
 ----
-ENABLE SERVER server name  OPTIONS { allowedDatabases: [‘foo-sharded-p000’] }
+ENABLE SERVER 'serverId'  OPTIONS { allowedDatabases: ['foo-sharded-p000'] }
 ----
 
 == Resizing and resharding
@@ -31,7 +33,9 @@ Online resharding (adding new shards, removing old ones, relocating data to acco
 You can reshard your data via the `neo4j-admin database copy` command.
 See xref:scalability/sharded-property-databases/data-ingestion.adoc#splitting-existing-db-into-shards[Splitting an existing database into shards] for more information.
 
-Alternatively, you can select more shards than needed to start with and allow space for their data to grow, as the Neo4j cluster allows databases to be moved based on server availability. For example, 10 property shards can be initially hosted on 5 servers (2 shards per server), and additional servers can be added as needed.
+Alternatively, you can select more shards than needed to start with and allow space for their data to grow, as the Neo4j cluster allows databases to be moved based on server availability.
+For example, ten property shards can be initially hosted on five servers (two shards per server), and additional servers can be added as needed.
+For details on managing databases and servers in a cluster, see xref:clustering/databases.adoc[Managing databases in a cluster] and xref:clustering/servers.adoc[Managing servers in a cluster].
 
 //TODO: We should talk about co-location, adding/removing servers in a cluster and say what is supported and what is not.
 
@@ -45,7 +49,7 @@ Backup chains for each shard are produced using the neo4j-admin database backup.
 For the graph shard, its backup chain must contain one full artefact and 0+ differential artefacts.
 Each property shard’s backup chain must contain only one full backup and no differential backups.
 In practical terms, this means that to back up a sharded property database, you start with a full backup of the graph shard and then all of the property shards; any subsequent differential backups would only need to be of the graph shard.
-This is because the transaction log of the property shards is the same as the graph shard log and is just filtered when applied, so only the graph shard log is required for a restore.
+This is because the transaction log of the property shards is the same as the graph shard log and is simply filtered when applied, so only the graph shard log is required for a restore.
 
 For example, assume there is a sharded property database called `foo` with a graph shard and 2 property shards.
 A backup must be taken of each shard, for example:
@@ -109,8 +113,8 @@ To form a valid sharded property database backup, you need to:
 * Take a full backup of the property shard `foo-p000` so that its store at least includes transaction 5.
 * Take a differential backup of the graph shard so that at least transaction 12 is included in its transaction log, so `foo-p001` is included in its range.
 
-Once a valid sharded properties database backup is formed, then differential backups can be performed by taking differential backups of the graph shard, extending the range of the graph shard chain.
-Continuing with the example, the graph chain contains transactions from 11-36, property shard 1’s store files are at 13, and property shard 2’s store files are at 30.
+Once a valid sharded properties database backup is created, differential backups can be performed by taking differential backups of the graph shard, extending the range of the graph shard chain.
+Continuing with the example, the graph chain contains transactions from 11 to 36, property shard 1’s store files are at 13, and property shard 2’s store files are at 30.
 You then take a differential backup of the graph shard containing transactions 37 to 50.
 At restore time, all databases can be recovered up to transaction 50 and made consistent.
 
