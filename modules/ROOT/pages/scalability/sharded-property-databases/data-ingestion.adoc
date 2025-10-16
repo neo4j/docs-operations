@@ -1,5 +1,6 @@
 :page-role: new-2025.10 enterprise-edition not-on-aura
-:description:
+:description: Methods for ingesting data into a sharded property database.
+:keywords: sharded property database, data ingestion, import, neo4j-admin, LOAD CSV, CREATE DATABASE
 = Data ingestion
 
 There are several ways to load data into a sharded property database:
@@ -95,7 +96,6 @@ It works in the same way as a standard database copy with a few additional argum
 You must specify `--property-shard-count` to be `> 0` to indicate that you want to create a sharded property database.
 If `--to-format` is a value other than `spd_block`, a warning will be printed in the log that the given format will be ignored.
 If `--to-format` is `spd_block` and `--property-shard-count` is not set, an exception will be thrown to specify the number of shards.
-You must also specify a new database name or set `--to-path-data` and `--to-path-txn` to a new DBMS location.
 
 The following example shows how to split the existing `foo` database into a new database called `foo-sharded`, which has 3 property shards in a cluster deployment.
 If you are using a standalone server, you can skip steps 2 and 3.
@@ -126,111 +126,10 @@ OPTIONS {
 The cluster automatically distributes the data across its servers.
 For more information on seed providers, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
-== Online ingestion (Requires Cypher 25)
+== Online ingestion
 
 You can use the online ingestion methods to import data into a sharded property database.
 This is useful for smaller datasets or when you want to create a new database from an existing one.
-
-=== `CREATE DATABASE` command with sharded databases
-
-You can create a sharded database using the Cypher command `CREATE DATABASE` (requires Cypher 25, introduced alongside Neo4j 2025.06.0).
-For details on configuring the Cypher version, see xref:configuration/cypher-version-configuration.adoc[Configure the Cypher default version].
-
-
-==== Syntax
-
-[options="header", width="100%", cols="1m,5a"]
-|===
-| Command | Syntax
-
-| CREATE DATABASE
-|
-[source, syntax, role="noheader"]
-----
-CREATE DATABASE name [IF NOT EXISTS]
-[[SET] GRAPH SHARD {
-  [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
-}]
-[SET] PROPER{TY\|IES} {
-  COUNT n [TOPOLOGY m REPLICA[S]]
-}
-[OPTIONS "{" option: value[, ...] "}"]
-[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
-----
-|===
-
-When creating a sharded database, the following are created:
-
-* A virtual sharded database `<name>`.
-* A single graph shard with the name `<name>-g000`.
-* A number of property shards with the name `<name>-p000<index>`.
-The count property in `SET PROPERTY SHARDS` specifies the number of property shards.
-
-[NOTE]
-====
-`CREATE OR REPLACE` does not replace an existing sharded database.
-====
-
-=== Options
-
-The `CREATE DATABASE` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
-For sharded databases, only the seeding option is supported.
-
-The following table describes the `seedUri` option:
-
-[frame="topbot", grid="cols", cols="<1s,<4"]
-|===
-| *Key*
-m| seedURI
-| *Value*
-a| URI to a folder containing all the backups or a list of dumps/backups.
-
-[NOTE]
-The folder notation only works for backups, not dumps.
-
-When specifying each artifact manually the key of the map is the name of the shard.
-Where shard name = `databaseName-g000` or `databaseName-p000` for property shards where the last shard name would be `databaseName-px` where `x = numShards -1`.
-| *Description*
-a| Defines an identical seed from an external source, which will be used to seed all servers. For more information, see Seed from a URI.
-| *Example*
-|
-[source, syntax, role="noheader"]
-----
-seedUri: {
-  `foo-sharded-g000`: "s3://bucket/folder/foo-g000.backup",
-  `foo-sharded-p000`: "s3://bucket/folder/foo-p001.backup",
-  `foo-sharded-p001`: "s3://bucket/folder/foo-p002.backup"
- }
-----
-Or
-[source, syntax, role="noheader"]
-----
-seedUri: "s3://bucket/folder/"
-----
-|===
-
-=== Default numbers for topology
-
-The sharded property databases use the Neo4j cluster topology.
-Therefore, you need to consider how the following settings will affect the creation of your sharded property database.
-
-[options="header", width="100%", cols="4m,1m,1m,3a"]
-|===
-| Configuration settings with their default value
-| Default value
-| Valid values
-| Description
-
-|initial.dbms.default_primaries_count
-| 1
-| [1-10]
-| The default number of primaries for the graph shard when the database is created.
-
-|initial.dbms.default_secondaries_count
-| 0
-| [0-19]
-| The default number of secondaries for the graph shard when the database is created.
-|===
 
 === Creating an empty sharded property database
 
