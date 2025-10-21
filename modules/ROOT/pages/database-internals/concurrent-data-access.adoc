@@ -257,22 +257,25 @@ For these additional locks, no assumptions or guarantees can be made concerning 
 
 === Locks for dense nodes
 
-[NOTE]
-====
-This _Locks for dense nodes_ section describes the behavior of the `standard`, `aligned`, and `high_limit` store formats.
-The `block` format has a similar but not identical feature.
-====
+When creating or deleting relationships,  Neo4j does not exclusively lock dense nodes during a transaction.
+Rather, internally shared locks prevent the deletion of nodes and shared degree locks are acquired for synchronizing with concurrent label changes for those nodes to ensure correct count updates.
 
-A node is considered dense if it at any point has had 50 or more relationships (i.e. it will still be considered dense even if it comes to have less than 50 relationships at any point in the future).
-A node is considered sparse if it has never had more than 50 relationships.
+`standard`, `aligned`, and `high_limit` store formats::
+A node is considered dense if it, at any point, has had 50 or more relationships.
+Even if it later has fewer than 50 relationships, it is still considered dense. +
+A node is considered sparse if it has never had more than 50 relationships. +
 You can configure the relationship count threshold for when a node is considered dense by setting xref:configuration/configuration-settings.adoc#config_db.relationship_grouping_threshold[`db.relationship_grouping_threshold`] configuration parameter.
 
-When creating or deleting relationships in Neo4j, dense nodes are not exclusively locked during a transaction.
-Rather, internally shared locks prevent the deletion of nodes, and shared degree locks are acquired for synchronizing with concurrent label changes for those nodes to ensure correct count updates.
+`block` format::
+A node is considered dense for *a particular relationship type* when it surpasses a certain internal size threshold, which typically happens at approximately 50 relationships of that type.
+However, it also depends on the number and size of properties connected to these relationships.
+Therefore, a node may be dense for one relationship type (e.g., A) and sparse for another (e.g., relationship type B).
 
-At commit time, relationships are inserted into their relationship chains at places that are currently uncontested (i.e. not currently modified by another transaction), and the surrounding relationships are exclusively locked.
+At commit time, relationships are inserted into the backing data structures in a manner that allows concurrent modification.
+For example, multiple transactions can create, update, or delete relationships connected to the same dense nodes concurrently.
+This process may in rare cases acquire additional exclusive locks in a sorted manner if necessary, to ensure data consistency.
 
-In other words, relationship modifications acquire coarse-grained shared node locks when doing the operation in the transaction, and then acquire precise exclusive relationship locks during commit.
+In other words, relationship modifications acquire coarse-grained shared node locks when doing the operation in the transaction, and then acquire precise exclusive locks during the commit.
 
 The locking is very similar for sparse and dense nodes.
 The biggest contention for sparse nodes is the update of the degree (i.e. number of relationships) for the node.
