@@ -379,7 +379,7 @@ SHOW ALIAS `northwind-2022` FOR DATABASE YIELD name, properties
 [[alias-management-create-remote-database-alias]]
 === Create database aliases for remote databases
 
-A database alias can target a remote database by providing an URL and the credentials of a user on the remote Neo4j DBMS.
+A database alias can target a remote database by providing a URL and the credentials of a user on the remote Neo4j DBMS.
 See xref:database-administration/aliases/remote-database-alias-configuration.adoc[] for the necessary configurations.
 
 Since remote database aliases target databases that are not in this DBMS, they do not fetch the default Cypher version from their target like the local database aliases.
@@ -387,10 +387,17 @@ Instead, they are assigned the version given by xref:configuration/configuration
 Alternatively, you can specify the version in the `CREATE ALIAS` or `ALTER ALIAS` commands.
 See xref:database-administration/aliases/manage-aliases-standard-databases.adoc#set-default-language-for-remote-database-aliases[] and xref:database-administration/aliases/manage-aliases-standard-databases.adoc#alter-default-language-remote-database-alias[] for more information.
 
+When creating a remote database alias, the credentials used to target to the remote DBMS need to be specified and can be either:
+
+* `STORED NATIVE CREDENTIALS`, using the credentials of a single native user on the remote DBMS.
+* `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local DBMS. The user needs to be logged in with an identity provider supporting OIDC. label:new[Introduced in 2025.10]
+
+To use the credentials of a native user on the remote DBMS, `USER` and `PASSWORD` need to be set when creating the alias.
+
 .Query
 [source, cypher]
 ----
-CREATE ALIAS `remote-northwind` FOR DATABASE `northwind-graph-2020`
+CREATE ALIAS `remote-northwind-stored-credentials` FOR DATABASE `northwind-graph-2020`
 AT "neo4j+s://location:7687"
 USER alice
 PASSWORD 'example_secret'
@@ -401,19 +408,50 @@ To view the remote database alias details, use the `SHOW ALIASES FOR DATABASE` c
 .Query
 [source, cypher]
 ----
-SHOW ALIAS `remote-northwind`
+SHOW ALIAS `remote-northwind-stored-credentials`
 FOR DATABASE
 ----
 
 .Result
 [role="queryresult"]
 ----
-+----------------------------------------------------------------------------------------------------------+
-| name               | composite | database               | location | url                       | user    |
-+----------------------------------------------------------------------------------------------------------+
-| "remote-northwind" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687" | "alice" |
-+----------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------------------------------------------+
+| name                                  | composite | database               | location | url                       | user    |
++-----------------------------------------------------------------------------------------------------------------------------+
+| "remote-northwind-stored-credentilas" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687" | "alice" |
++-----------------------------------------------------------------------------------------------------------------------------+
 ----
+
+The `OIDC CREDENTIAL FORWARDING` clause is used to configure a remote database alias to use the logged-in user's OIDC credentials to authenticate to the remote DBMS.
+In order to use this method to authenticate, the local DBMS and remote DBMS needs to have SSO authentication and authorization through identity providers implementing the OIDC standard configured, see the xref:authentication-authorization/sso-integration.adoc[SSO integration] on how to configure OIDC identity providers.
+
+.Query
+[source, cypher]
+----
+CREATE ALIAS `remote-northwind-oidc-credential-forwarding` FOR DATABASE `northwind-graph-2020`
+AT "neo4j+s://location:7687"
+OIDC CREDENTIAL FORWARDING
+----
+
+Since the alias use the credentials of the logged-in user when targeting the remote DBMS, there are no stored credentials and user will be `NULL`.
+
+.Query
+[source, cypher]
+----
+SHOW ALIAS `remote-northwind-oidc-credential-forwarding`
+FOR DATABASE
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------+
+| name                                          | composite | database               | location | url                       | user    |
++-------------------------------------------------------------------------------------------------------------------------------------+
+| "remote-northwind-oidc-credential-forwarding" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687" | NULL    |
++-------------------------------------------------------------------------------------------------------------------------------------+
+----
+
 
 You can also use `IF EXISTS` or `OR REPLACE` when creating remote database aliases.
 It works the same way as described in the <<_use_if_exists_or_or_replace_when_creating_database_aliases, Use `IF EXISTS` or `OR REPLACE` when creating database aliases>> section.
