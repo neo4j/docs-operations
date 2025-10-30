@@ -1,0 +1,148 @@
+:page-role: new-2025.10 enterprise-edition not-on-aura
+:description: Scaling strategies with Neo4j.
+= Scaling with Neo4j
+
+Neo4j offers various options for scaling, tailored to specific use cases and requirements. Here are some of the supported scaling strategies:
+
+* *Data replication via Neo4j analytics clustering (read scalability)* -- A Neo4j cluster is a high-availability cluster with multi-DB support.
+It is a collection of servers running Neo4j that are configured to communicate with each other.
+This means that servers and databases are decoupled: servers provide computation and storage power for databases to use.
+Each database relies on its own cluster architecture, organized into primaries (with a minimum of 3 for high availability) and secondaries (for read scaling).
+Scalability, allocation/reallocation, service elasticity, load balancing, and automatic routing are automatically provided (or they can be finely controlled).
++
+xref:clustering/setup/analytics-cluster.adoc[Neo4j analytics cluster] is good for:
+
+** Horizontal, read scalability
+** Always on, highly available with disaster recovery and rolling upgrades (Neo4j 5.0+).
+** Flexible infrastructure from 1 to many copies of the same database.
+** Servers may be service-specific (analytical/transactional workloads, data science, reporting, etc.).
+Multi-region, multi-tenant, SaaS-style scalability.
+
+* *Data federation and sharding via composite database* -- using federated queries, Neo4j allows you to query multiple Neo4j databases with a single query.
+The data is partitioned into smaller, more manageable pieces, called shards.
+Each shard can be stored on a separate server, splitting the load on resources and storage.
+Alternatively, you can deploy shards in different locations, allowing you to manage them independently or split the load on network traffic.
+Composite databases are good for:
+
+** Accessing remote databases, queries executed on federated data.
+** Parallel execution of sub-queries on large data volumes.
+** Horizontal, READ & WRITE scalability.
++
+Sharding logic adopts sharding functions, optimal time-based sharding, and other sharding keys.
+The main advantage is obtained by combining Neo4j clustering and composite databases.
+
+* *Data distribution via Infinigraph* -- using a distributed graph architecture to extend a single system without fragmenting the graph.
+//This allows, in theory, the unlimited growth of a graph.
++
+label:preview[Preview feature] xref:scalability/sharded-property-databases/overview.adoc[Property sharding] (part of Infinigraph) allows you to decouple the properties attached to nodes and relationships and store them in separate graphs.
+This architecture enables the independent scaling of property data, allowing for the handling of high volumes, heavy queries, and high read concurrency.
+
+The following table summarizes the similarities and differences between analytics clustering, composite databases, and sharded property databases:
+
+.Similarities and differences between analytics cluster, composite databases, and sharded property databases
+[cols="2,4a,4a,4a",frame="topbot",options="header"]
+|===
+|
+| Analytics cluster
+| Composite database
+| Sharded property database
+
+| *Typical use cases*
+| High Availability +
+GDS dedicated server
+| Federated data +
+Time-based sharding +
+Application-based access
+| Graphs with a large volume of properties +
+Ideal for vector and full-text search
+
+| *Scalability*
+| *Data volume:* limited to single server size +
+*Read concurrency*: horizontal scale on multiple instances
+| *Data volume:* unlimited +
+*Read concurrency*: horizontal scale on multiple instances +
+*Write concurrency*: horizontal scale depending on the graph model
+| *Data volume:* up to 100TB +
+*Read concurrency*: horizontal scale on multiple instances +
+*Write concurrency*: single instance
+
+| *Transactions*
+| Causal consistency +
+Standard transaction management
+| Parallel read transactions +
+Single-shard write transactions +
+`CALL {} IN TRANSACTION` for multiple, isolated read/write transactions with manual error handling
+| Parallel read & write transactions on all shards +
+Standard transaction management
+
+| *Data load*
+| Initial and incremental data import via neo4j-admin and Aura importer
+| Manually orchestrated import +
+Ad-hoc, project-based, sharded import
+| Initial and incremental data import via neo4j-admin and Aura importer
+
+| *Cypher queries*
+| Single database queries.
+| Parallel execution on shards. +
+Single database queries must be modified according to the sharding rules. +
+Automated shard pruning using sharding functions.
+| Parallel execution on shards. +
+Single database queries run as is. +
+Automated shard pruning based on node selection.
+
+| *User tools*
+| All tools supported.
+| Work with Browser and Cypher Shell. +
+Tools used on individual shards and Bloom are not supported on composite databases.
+| All tools supported.
+
+| *Admin tools*
+| All tools supported.
+| Tools used on individual shards are not supported on composite databases.
+| All tools supported.
+
+| *Libraries*
+| All libraries supported.
+| Supported on individual shards.
+| All libraries supported.
+|===
+
+//TODO
+//Admin considerations
+
+// == Property sharding (Preview feature)
+
+// Sharded property databases
+
+// * Admin considerations
+// * Workloads
+// ** Analytical workloads
+// ** Transactional workloads
+// ** Hybrid/Mixed workloads
+// * Applications and Services
+// ** Multi-tenant services
+// ** Ad-hoc applications
+// ** Tools and user queries
+
+//== Scaling at a glance
+//Here we can talk about what we must consider, in practical terms, if we want to create a scalable solution with Neo4j. The topics here are still generic, we will use this list to address scalability with composite and sharded properties.
+
+// * Ingestion
+// ** Offline ingestion
+// ** Online ingestion
+// ** Data streaming
+// * User Operations
+// ** Concurrency
+// ** Read/Write ratio
+// ** Heavy reads (query complexity)
+// ** Heavy writes (query complexity)
+// * Extraction
+// ** Offline extraction
+// ** Online extraction
+// * Admin Operations
+// ** Server administration & Deployment
+// ** Backup and recovery
+// ** System failovers
+// ** Data archive
+// ** Data compaction
+
