@@ -1,29 +1,32 @@
 :description: This section describes how to manage servers in a cluster.
+[role=enterprise-edition]
 [[manage-servers]]
 = Managing servers in a cluster
 
-As described previously, server-management is completely separate from database-management in a clustered environment.
+In a clustered environment, server management is completely separate from database management.
 This section describes how to work with servers in a cluster: adding and removing them, as well as altering their metadata.
+
+For details on server management command syntax, see xref:clustering/server-syntax.adoc[].
 
 
 [[server-states]]
-== Server states
-A server can exist in five different states within the DBMS:
+== Server lifecycle
+A server can exist in six different states within the DBMS:
 
 
 * Free
 * Enabled
+* Cordoned
 * Deallocating
 * Deallocated label:new[Introduced in 5.15]
-* Cordoned
 * Dropped
 
 
-image::server-states4.png[width=800]
+image::server-lifecycle.svg[width=800, title="Server's lifecycle"]
 
 === Free state
 
-When a server is discovered by the discovery service (see xref:clustering/setup/discovery.adoc[Cluster server discovery] for more information), it is created in the _Free_ state.
+When a server is discovered by the discovery service (see xref:clustering/setup/discovery.adoc[Setting up a cluster -> Cluster server discovery] for more information), it is created in the _free_ state.
 Servers in this state have a unique automatically generated ID, but are otherwise unconfigured.
 These free servers are not yet part of the cluster and cannot be allocated to host any databases.
 
@@ -38,11 +41,12 @@ When first discovered, a server's name defaults to the value of its generated se
 When you deploy a cluster for the first time, at least the minimum number of servers included in the initial deployment are automatically enabled.
 For details, refer to the example on how to xref:clustering/setup/deploy.adoc#cluster-example-configure-a-three-primary-cluster[Configure a cluster with three servers].
 
-If you add a new server after the cluster is already running, the server is added in the `FREE` state.
-A server in the `FREE` state needs to be explicitly enabled in order to be considered an active member of the cluster.
+If you add a new server after the cluster is already running, the server is added in the `Free` state.
+A server in the `Free` state needs to be explicitly enabled in order to be considered an active member of the cluster.
 
-To transition a server into the _Enabled_ state, use the command `ENABLE SERVER`:
+To transition a server into the _enabled_ state, use the command `ENABLE SERVER`:
 
+.Syntax
 [source, syntax, role=noheader]
 ----
 ENABLE SERVER 'serverId' [OPTIONS "{" option: value[,...] "}"]
@@ -53,7 +57,7 @@ If the server is already enabled and the command is executed with the same optio
 
 The possible options when enabling a server are:
 
-[options="header", width="100%", cols="2a,2,^.^"]
+[options="header", width="100%", cols="1a,2,3"]
 |===
 | Option
 | Allowed values
@@ -107,59 +111,86 @@ Once enabled, the server may be allocated databases to host.
 If you need to change some of the server's values, use the <<alter-server-options, `ALTER SERVER`>> command.
 
 
+=== Cordoned state
+
+A server in a _cordoned_ state cannot be assigned to host any newly created databases; however, the server retains the databases it already hosts.
+
+This state is primarily used for <<server-error-handling, error handling>>.
+
+To transition a server from the _enabled_ to the _cordoned_ state, run the xref:procedures.adoc#procedure_dbms_cluster_cordonServer[`dbms.cluster.cordonServer()`] procedure.
+Keep in mind that when decreasing the number of allocations of a database, allocations on cordoned servers are removed first.
+
+A server in the _cordoned_ state can be transitioned to _deallocating_ state or back to _enabled_.
+To re-enable a server, run the `ENABLE SERVER` command.
+
+You can also use the xref:procedures.adoc#procedure_dbms_cluster_uncordonServer[`dbms.cluster.uncordonServer()`] procedure.
+However, note that the procedure is deprecated in Neo4j 5.23.
+
 
 [[deallocating-state]]
 === Deallocating state
 
-A server in a deallocating state means that it can no longer host databases.
+A _deallocating_ state means a server can no longer host databases.
 It may be that the server is no longer needed and you want to remove it from the cluster.
-The command `DEALLOCATE DATABASE[S] FROM SERVER[S] _server_[,...]` is used to transition servers to the _Deallocating_ state, reallocating all their hosted databases to other servers in the cluster.
-[NOTE]
-====
+
+To transition servers to the _deallocating_ state, run the following command:
+
+[source, cypher, role="noplay"]
+----
+DEALLOCATE DATABASE[S] FROM SERVER[S] 'name'[, ...]
+----
+
+The command reallocates all user databases hosted by the server to other servers in the cluster.
 This state is *irreversible*.
 Once a server is in a deallocating state, it subsequently cannot have databases allocated to it.
 
-If you want to deallocate databases from a server in a *reversible manner*, see xref:clustering/databases.adoc#deallocate-databases[Deallocate databases] for more information.
-====
+However, you can deallocate databases from a server in a *reversible manner* by running one of the following procedures:
+
+* xref:procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServer[`dbms.cluster.deallocateDatabaseFromServer("server-name", "database-name")`]
+* xref:procedures.adoc#procedure_dbms_cluster_deallocateDatabaseFromServers[`dbms.cluster.deallocateDatabaseFromServers(["server-name1", "server-name2"\], "database-name")`]
+* xref:procedures.adoc#procedure_dbms_cluster_deallocateNumberOfDatabases[`dbms.cluster.deallocateNumberOfDatabases("server-name", number)`] 
+
+For details, see xref:clustering/databases.adoc#deallocate-databases[Managing databases in a cluster -> Deallocate databases].
+
 
 [role=label--new-5.15]
+[[deallocated-state]]
 === Deallocated state
 
-When a server is in the deallocated state, it no longer hosts any databases besides `system` and can be removed from the cluster.
+The _deallocated_ state means that a server no longer hosts any databases besides the `system` database and can be removed from the cluster.
 Additionally, deallocated servers cannot have any further databases allocated to them.
+
 Note that there is a known situation in which a previously deallocated offline server can transiently show as deallocating when restarting, it will, however, eventually return to the deallocated state without intervention.
 
-=== Cordoned state
-
-The _Cordoned_ state is similar to _Deallocating_ in that servers in this state will not be allocated to host additional databases.
-Unlike _Deallocating_ however, cordoned servers do not lose the databases they already host.
-It is worth noting that when decreasing the number of allocations of a database, allocations on cordoned servers are removed first.
-
-A server is transitioned from the _Enabled_ state to the _Cordoned_ state by executing the procedure `dbms.cluster.cordonServer`.
-A server in the _Cordoned_ state may be transitioned to _Deallocating_, or back to _Enabled_.
-
-This state is primarily used for xref:clustering/servers.adoc#server-error-handling[error handling].
 
 === Dropped state
 
-Once a server is in state _Deallocating_ and is only hosting the system database, it is safe to drop it.
-The command `DROP SERVER _server name_` logically removes the server from the cluster.
-However, as long as the server's Neo4j process is running, it is still visible to the other cluster members in the _Dropped_ state.
-Once the Neo4j process is stopped, the server finally disappears.
+The _dropped_ state means a server has been removed from the cluster but remains visible to the other cluster members.
+
+Once a server is in the _deallocated_ state and is only hosting the `system` database, it is safe to remove it.
+Use the command `DROP SERVER 'server name'` to remove the server from the cluster.
+
+However, as long as the server's Neo4j process is running, it is still visible to the other cluster members in the _dropped_ state.
+When the Neo4j process is stopped, the server finally disappears.
 Once dropped, a server cannot rejoin a cluster.
 
 [NOTE]
 ====
-The same physical hardware can rejoin the cluster, provided the Neo4j installation has been "reset" (either re-installing, or running `neo4j-admin server unbind`), causing it to receive a new generated server ID on next startup.
+To allow the same physical hardware to rejoin the cluster, reset the Neo4j installation by either:
+
+* Reinstalling Neo4j.
+* Running the xref:tools/neo4j-admin/unbind.adoc[`neo4j-admin server unbind`] command.
+
+This process ensures a new server ID is generated when the server starts again.
 ====
 
 == Listing servers
 
-The Cypher command `SHOW SERVERS` displays all current servers running in the cluster, including both servers yet to be enabled (i.e. servers in the _Free_ state) in the DBMS as well as dropped servers.
+The Cypher command `SHOW SERVERS` displays all current servers running in the cluster, including servers yet to be enabled (i.e. servers in the _free_ state) in the DBMS as well as dropped servers.
 
 [source,cypher,role=noplay]
 ----
-neo4j@neo4j> SHOW SERVERS;
+neo4j@system> SHOW SERVERS;
 +------------------------------------------------------------------------------------------------------------------+
 | name                                   | address          | state     | health      | hosting                    |
 +------------------------------------------------------------------------------------------------------------------+
@@ -175,7 +206,7 @@ To display all available information about the servers in the cluster, use `SHOW
 
 [source,cypher, role=noplay]
 ----
-neo4j@neo4j> SHOW SERVERS YIELD *;
+neo4j@system> SHOW SERVERS YIELD *;
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | serverId                               | name                                   | address          | httpAddress      | httpsAddress | state          | health      | hosting                    | requestedHosting           | tags | allowedDatabases | deniedDatabases | modeConstraint | version          |
 +---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -188,8 +219,9 @@ neo4j@neo4j> SHOW SERVERS YIELD *;
 ----
 
 
-The table of results shows information about the servers:
+The table of results shows information about the servers.
 
+.The `SHOW SERVERS` output modes
 [options="header", width="100%", cols="2a,4,2m,1,1"]
 |===
 | Column
@@ -205,7 +237,7 @@ The table of results shows information about the servers:
 | {check-mark}
 
 | serverId
-| Id of the server.
+| ID of the server.
 | STRING
 |
 | {check-mark}
@@ -217,25 +249,25 @@ The table of results shows information about the servers:
 | {check-mark}
 
 | httpAddress
-| Http address of the server (if enabled).
+| HTTP address of the server (if enabled).
 | STRING
 |
 | {check-mark}
 
 | httpsAddress
-| Https address of the server (if enabled).
+| HTTPS address of the server (if enabled).
 | STRING
 |
 | {check-mark}
 
 | state
-| Information of the state of the server: `free`, `enabled`, `deallocating`,`cordoned`, or `dropped`.
+| Information of the state of the server: `Free`, `Enabled`, `Cordoned`, `Deallocating`, `Deallocated`, or `Dropped`.
 | STRING
 | {check-mark}
 | {check-mark}
 
 | health
-| The availability of the server: `available` or `unavailable`.
+| The availability of the server: `Available` or `Unavailable`.
 | STRING
 | {check-mark}
 | {check-mark}
@@ -286,62 +318,67 @@ Composite databases do not currently appear in this list, though they do appear 
 
 
 [[cluster-add-server]]
-== Add a server to the cluster
+== Adding a server to the cluster
 
-To add a server to a running cluster (see xref:clustering/setup/deploy.adoc[Deploy a basic cluster] for more information on how to set up a basic cluster), configure it to discover other existing cluster members.
-There are several different ways to do this, see xref:clustering/setup/discovery.adoc[Cluster server discovery].
-Once the new server is configured to discover the cluster's members, it can be started.
+To add a server to a running cluster, configure it to discover other existing cluster members.
 
-Once started, the new server appears in the output of `SHOW SERVERS` with the _Free_ state.
-Copy the server's name from `SHOW SERVERS` and enable it:
+In the example below, you set `dbms.cluster.discovery.resolver_type=LIST` and use the discovery service v2 introduced in 5.23.
+For details, see xref:clustering/setup/discovery.adoc[Cluster server discovery].
 
-[source,cypher]
+To use discovery service v2:
+
+* You have to set the configuration of `dbms.cluster.discovery.version` to `V2_ONLY`.
+
+* Instead of `dbms.cluster.discovery.endpoints`, use `dbms.cluster.discovery.v2.endpoints`.
+
+* The port must be `6000`.
+
+. Prepare the _neo4j.conf_ file for the new `server.07`.
++
+._neo4j.conf_ on server07.example.com:
+[source, properties]
 ----
-neo4j@neo4j> ENABLE SERVER '42a97acc-acf6-40c0-aff2-3993e90db1ff';
+server.default_listen_address=0.0.0.0
+server.default_advertised_address=server07.example.com
+dbms.cluster.discovery.resolver_type=LIST
+dbms.cluster.discovery.v2.endpoints=server01.example.com:6000,server02.example.com:6000,server03.example.com:6000,server04.example.com:6000,server05.example.com:6000,server06.example.com:6000
+dbms.cluster.discovery.version=V2_ONLY
+server.cluster.system_database_mode=PRIMARY
 ----
++
+Configure the `system` database mode according to the server's purpose:
+* Set the mode to `PRIMARY` if the server is expected to be long-term and handle high-volume workloads.
+* Set the mode to `SECONDARY` if the server is intended to support analytics or read-heavy workloads.
++
+Additionally, you can configure a set of initial settings to provide values for the server's options.
+Those settings will be used as the default input for the `ENABLE SERVER` command.
+For details, see <<server-enabled-state, Enabled state>>.
++
+Besides, you can also set the xref:configuration/configuration-settings.adoc#config_initial.dbms.automatically_enable_free_servers[`initial.dbms.automatically_enable_free_servers`] to `true`, allowing the DBMS automatically enable a free server.
 
-The `ENABLE` command can take several options:
-
+. Once the new server is configured to discover the cluster's members, start the Neo4j process.
+. Once started, the new server appears in the output of `SHOW SERVERS` with the `Free` state.
+. Copy the server's ID from the `SHOW SERVERS` output and enable the server.
++
+The `ENABLE SERVER` command can take several options and it will override the initial settings if they are conflicting:
++
 [source,cypher, role=noplay]
 ----
-neo4j@neo4j> ENABLE SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' OPTIONS
+neo4j@system> ENABLE SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' OPTIONS
     {modeConstraint:'PRIMARY', allowedDatabases:['foo'], tags:['eu','eu-west']};
 ----
-
-`modeConstraint` is used to control whether a server can be used to host a database in only primary or secondary mode.
-`allowedDatabases` and `deniedDatabases` are collections of database names that filter which databases may be hosted on a server.
++
+* `modeConstraint` is used to control whether a server can only host standard databases in primary mode, only in secondary mode, or can host databases in either mode. 
+* `allowedDatabases` and `deniedDatabases` are collections of database names that filter which databases may be hosted on a server.
 The `allowedDatabases` and `deniedDatabases` are mutually exclusive and if both are specified, an error is returned.
-
-Optionally, it is possible to automatically enable free servers by setting the xref:configuration/configuration-settings.adoc#config_initial.dbms.automatically_enable_free_servers[`initial.dbms.automatically_enable_free_servers`] to `true`.
-This can be changed after startup using the xref:procedures.adoc#procedure_dbms_cluster_setAutomaticallyEnableFreeServers[`dbms.cluster.setAutomaticallyEnableFreeServers`] procedure.
-
-Server `tags` are used when configuring load balancing and replication policies.
+`allowedDatabases` and `deniedDatabases` do not affect composite databases, they are always available everywhere.
+* Server `tags` are used when configuring load balancing and replication policies.
 They cannot contain duplicates, so `tags:['eu', 'eu']` will return an error.
 Server tags also cannot contain commas.
-When altering server tags via cypher, the encoding is done via UTF-8.
-
-[NOTE]
+When altering server tags via Cypher, the encoding is done via UTF-8.
++
+[TIP]
 ====
-`allowedDatabases` and `deniedDatabases` do not affect Composite databases, they are always available everywhere.
-====
-
-If no options are set, a server can host any database in any mode.
-Servers can also provide default values for these options via their _neo4j.conf_ files when enabled.
-
-[source,properties]
-----
-initial.server.mode_constraint='PRIMARY'
-initial.server.allowed_databases='foo'
-initial.server.denied_databases='bar','baz'
-initial.server.tags=eu,eu-west
-----
-
-If conflicting options are provided between _neo4j.conf_ and the `ENABLE SERVER` command, those provided to `ENABLE SERVER` are used.
-
-[NOTE]
-====
-The input for server tags is a comma-separated list that cannot have duplicates.
-
 Neo4j _.conf_ files use *Latin1* for their encoding by default.
 Therefore, for server tags that need a larger character set (e.g. Chinese or Arabic), it is recommended to use Cypher to alter server tags.
 
@@ -349,16 +386,14 @@ From Neo4j 5.8.0 , _.conf_ files can use *UTF-8* by setting the environment vari
 This allows setting server tags with the larger character set via the config.
 ====
 
-=== Hosting databases on added servers
+== Hosting databases on added servers
 
 Once enabled, a server does not automatically host databases unless:
 
 * New databases are created.
 * Existing database topologies are altered to request more hosts.
-* Another server is transitioned to the _Deallocating_ state.
-* You explicitly rebalance the databases across the cluster.
-
-The command `REALLOCATE DATABASE[S]` can be used to rebalance database allocations across the cluster, adding some to the newly added server(s), see xref:clustering/databases.adoc#reallocate-databases[Reallocate databases] for more information.
+* Another server is transitioned to the _deallocating_ state.
+* You explicitly rebalance the databases across the cluster, possibly reallocating them to the newly added server(s).
 
 
 [[removing-servers]]
@@ -368,25 +403,27 @@ Removing a server from the cluster requires two steps: deallocating, then droppi
 
 === Deallocating databases from a server
 
-In preparation for removing a server from the cluster, set it to not host any databases with `DEALLOCATE DATABASES FROM SERVER 'name'` (see xref:clustering/servers.adoc#deallocating-state[Deallocating state] for more information).
+In preparation for removing a server from the cluster, set it to not host any databases with the `DEALLOCATE DATABASES FROM SERVER 'name'` command.
+
+See <<deallocating-state, deallocating state>> for more information.
 
 Either the server ID or its name can be used with the `DEALLOCATE DATABASES` command:
 
 [source,cypher]
 ----
-neo4j@neo4j> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
+neo4j@system> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
 ----
 
 When deallocating databases from servers, it is important to be mindful of the topology for each database to ensure that there are sufficient servers left in the cluster to satisfy the topologies of each database.
 Attempting to deallocate database(s) from a server that would result in less available servers than required fails with an error and no changes are made.
 
-For example, if the cluster contains 5 servers and a database `foo` has a topology requiring 3 primaries and 2 secondaries, then it is _not_ possible to deallocate any of the original 5 servers, without first enabling a 6th, or altering the desired topology of `foo` to require fewer servers overall.
+For example, if the cluster contains five servers and a database `foo` has a topology requiring three primary copies and two secondary copies, then it is *not* possible to deallocate any of the original five servers, without first adding and enabling new unconstrained servers, or altering the desired topology of `foo` to require fewer servers overall.
 
 The command can be used with `DRYRUN` to get a view of how the databases would be moved from the deallocated server(s).
 
 [source,cypher]
 ----
-neo4j@neo4j> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
+neo4j@system> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
 +------------------------------------------------------------------------------------------------------------------------------------------+
 | database | fromServerName | fromServerId                           | toServerName | toServerId                             | mode        |
 +------------------------------------------------------------------------------------------------------------------------------------------+
@@ -396,25 +433,26 @@ neo4j@neo4j> DRYRUN DEALLOCATE DATABASES FROM SERVER '135ad202-5405-4d3c-9822-df
 
 [NOTE]
 ====
-Deallocation is currently prevented in the following situations.
+Deallocation is currently prevented in the following situations:
 
-* If a database the server is hosting is offline.
-* If the server is hosting a database with an allocation of 1 primary.
-* If a quorum of servers hosting the database in primary mode are cordoned.
+* If a database, the server is hosting, is offline.
+* If the server is hosting a database with an allocation of one primary.
+* If a quorum of servers, hosting the database in primary mode, are cordoned.
 ====
 
-Once the command has been executed, the server changes state to `deallocating` and it cannot readily be enabled again, see  xref:clustering/servers.adoc#_dropped_state[Dropped state] for more information.
+Once the command has been executed, the server changes state to `Deallocating` and it cannot readily be enabled again.
+See  <<#_dropped_state, dropped state>> for more information.
 
 === Dropping a server
 
-Once `DEALLOCATE DATABASES` is executed for a server, its databases begin being moved.
-It is important not to attempt the next step before `SHOW SERVERS` reports that the deallocating server is in the (xref:clustering/servers.adoc#deallocating-state[Deallocated state]).
+Once `DEALLOCATE DATABASES` is executed against a server, its databases begin being moved.
+It is important not to attempt the next step before `SHOW SERVERS` reports that the deallocating server is in the <<deallocated-state,deallocated state>>.
 
 For example, do not drop the server `135ad202-5405-4d3c-9822-df39f59b823c` given the following output:
 
 [source,cypher,role=noplay]
 ----
-neo4j@neo4j> SHOW SERVERS;
+SHOW SERVERS;
 +------------------------------------------------------------------------------------------------------------------+
 | name                                   | address          | state          | health      | hosting               |
 +------------------------------------------------------------------------------------------------------------------+
@@ -424,15 +462,15 @@ neo4j@neo4j> SHOW SERVERS;
 
 The deallocation process may take some time, as `foo` must be successfully copied and started on a new server before it is stopped on `135ad202-5405-4d3c-9822-df39f59b823c` in order to preserve the availability and fault tolerance of `foo`.
 
-Once `SHOW SERVERS` reflects that the server is deallocated and thus no longer hosts `foo`, the server may be dropped.
+Once `SHOW SERVERS` reflects that the server is `Deallocated` and thus no longer hosts `foo`, the server may be dropped.
 Either the server ID or its name can be used:
 
 [source,cypher]
 ----
-neo4j@neo4j> DROP SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
+neo4j@system> DROP SERVER '135ad202-5405-4d3c-9822-df39f59b823c';
 ----
 
-Once this command has been executed successfully, the neo4j process on the server in question may be stopped.
+Once this command has been executed successfully, the Neo4j process on the server in question may be stopped.
 
 == Controlling a server's metadata
 
@@ -442,11 +480,17 @@ Once this command has been executed successfully, the neo4j process on the serve
 A running server can have its options modified using the `ALTER SERVER 'name' SET OPTIONS { option: value }` command.
 Either the ID or the name of the server can be used.
 
+.Syntax
+[source, syntax, role=noheader]
+----
+ALTER SERVER 'name' SET OPTIONS "{" option: value[,...] "}"
+----
+
 For example, to prevent a server from hosting databases in `PRIMARY`, execute the following:
 
 [source,cypher]
 ----
-neo4j@neo4j> ALTER SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' SET OPTIONS {modeConstraint:'SECONDARY'};
+neo4j@system> ALTER SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' SET OPTIONS {modeConstraint:'SECONDARY'};
 ----
 
 Altering servers may cause databases to be moved, and should be performed with care.
@@ -485,7 +529,7 @@ label:new[Introduced in 5.6]
 
 [NOTE]
 ====
-`allowedDatabases` and `deniedDatabases` do not affect Composite databases, they are always available everywhere.
+`allowedDatabases` and `deniedDatabases` do not affect composite databases; they are always available everywhere.
 ====
 
 As with the `DEALLOCATE DATABASES FROM SERVER ...` command, if the alteration of a server's options renders it impossible for the cluster to satisfy one or more of the databases' topologies, then the command fails and no changes are made.
@@ -522,12 +566,18 @@ Always check the current configuration with `SHOW SERVERS YIELD *` and reapply u
 
 === Renaming a server
 
+.Syntax
+[source, syntax, role=noheader]
+----
+RENAME SERVER 'name' TO 'newName'
+----
+
 When first discovered, a server's name defaults to the value of its generated server ID.
 However, as long as the server is enabled, this can be changed later using the following command:
 
 [source,cypher]
 ----
-neo4j@neo4j> RENAME SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' TO 'eu-server-4';
+neo4j@system> RENAME SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01' TO 'eu-server-4';
 ----
 
 This only affects the name of the server; the ID of the server remains fixed as `25a7efc7-d063-44b8-bdee-f23357f89f01`.
@@ -537,38 +587,39 @@ Keep in mind that the name of the server must be unique among existing servers.
 == Error handling
 
 Occasionally, servers in a cluster may suffer issues such as network partitions or process crashes.
-These easiest way to observe these server failures is by executing `SHOW SERVERS` and checking for `'Unavailable'` in the `health` column.
+The easiest way to observe these server failures is by executing `SHOW SERVERS` and checking for `'Unavailable'` in the `health` column.
 
 [NOTE]
 ====
 An `Available` health status does not indicate that a server is functioning perfectly, only that other servers in the cluster are able to make contact with it.
+
 For more in depth monitoring of cluster and server health, see xref:clustering/monitoring/show-servers-monitoring.adoc[Monitor servers].
 ====
 
-If the issue with the `Unavailable` server proves permanent, then the server should be xref:clustering/servers.adoc#removing-servers[removed].
+If the issue with the `Unavailable` server proves permanent, then the server should be <<removing-servers, removed>>.
 However, if the issue is temporary then it likely is not desirable to remove these servers entirely as this causes all their hosted databases to be moved.
 Instead it is preferable to prevent those servers from being allocated any new databases to host, either as a result of databases being created or moved.
 
-This is known as _cordoning_ the server in question, and can be achieved by executing the following procedure against the `system` database:
+This is known as cordoning the server in question, and can be achieved by executing the following procedure against the `system` database:
 
 [source,cypher]
 ----
-neo4j@neo4j> CALL dbms.cluster.cordonServer('25a7efc7-d063-44b8-bdee-f23357f89f01');
+neo4j@system> CALL dbms.cluster.cordonServer('25a7efc7-d063-44b8-bdee-f23357f89f01');
 ----
 
-`SHOW SERVERS` should then reflect that the server in question is now in _Cordoned_ state.
+`SHOW SERVERS` should then reflect that the server in question is now in _cordoned_ state.
 
-Once the issue with the server has been resolved, the server can be returned to its previous _Enabled_ state as follows:
+Once the issue with the server has been resolved, the server can be returned to its previous _enabled_ state as follows:
 
 [source,cypher]
 ----
-neo4j@neo4j> ENABLE SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01';
+neo4j@system> ENABLE SERVER '25a7efc7-d063-44b8-bdee-f23357f89f01';
 ----
 
 [NOTE]
 ====
 An unavailable server which has not been cordoned may still be allocated to host new databases.
-When the server recovers it observes that it is due to host these databases and begin catching up from some other available server (if one exists).
+When the server recovers it observes that it is due to host these databases and begin catching up from some other available servers (if one exists).
 However, in the meantime those databases have reduced fault tolerance or, worse, reduced availability.
 See xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster Recovery] for more details.
 ====
