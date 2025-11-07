@@ -180,7 +180,7 @@ You can identify them by the line `-----BEGIN RSA PRIVATE KEY-----` at the begin
 While Neo4j 5.0 can load and use those keys, they are considered deprecated and will be removed in a future version.
 ====
 
-
+[[ssl-validate-certs]]
 === Validate the key and the certificate
 
 If you need, you can validate the key file and the certificate as follows:
@@ -216,6 +216,11 @@ The SSL policies are configured by assigning values to parameters of the followi
 
 * `scope` is the name of the communication channel, such as `bolt`, `https`, `cluster`, and `backup`.
 * `setting-suffix` can be any of the following:
++
+[NOTE]
+====
+Neo4j does not validate the `setting-suffix` and if it is misspelled or incorrectly set, it will be ignored.
+====
 +
 [options="header"]
 |===
@@ -396,7 +401,7 @@ dbms.ssl.policy.bolt.public_certificate=public.crt
 +
 [TIP]
 ====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
+If the certificate is located outside of `NEO4J_HOME`, then set the absolute path for the certificates directory.
 ====
 
 .. Set the Bolt client authentication to `NONE` to disable the mutual authentication:
@@ -624,7 +629,7 @@ dbms.ssl.policy.https.public_certificate=public.crt
 +
 [TIP]
 ====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
+If the certificate is located outside of `NEO4J_HOME`, then set the absolute path for the certificates directory.
 ====
 
 .. Set the HTTPS client authentication to `NONE` to disable the mutual authentication:
@@ -655,22 +660,23 @@ openssl s_client -connect my_domain.com:7473
 Intra-cluster encryption is the security solution for the cluster communication.
 The Neo4j cluster communicates on 3 ports:
 
-* 6000 - Transactions
-* 7000 - Raft communications
-* 7688 - Server side routing
+* `6000` - Transactions
+* `7000` - Raft communications
+* `7688` - Server side routing
 
-To set up intra-cluster encryption, on each server create the folder structure and place the key file and the certificates under those.
-Then, you need to configure the SSL cluster policies in the _neo4j.conf_ file and test that the intra-cluster communication is encrypted.
+To configure SSL for intra-cluster communication, create the folder structure and place the key and certificate files under it.
+Then, configure the SSL cluster policies in the _neo4j.conf_ file and test that the intra-cluster communication is encrypted.
 
-. Set up the _cluster_ folder under _certificates_.
-.. Create a directory _cluster_ under_<NEO4J_HOME>/certificates_ folder:
+==== Set up SSL certificates for intra-cluster communications
+
+. Create a directory _cluster_ under _<NEO4J_HOME>/certificates_ folder:
 +
 [source, shell]
 ----
 mkdir certificates/cluster
 ----
 
-.. Create a directory _trusted_ and _revoked_ under _<NEO4J_HOME>/certificates/cluster_ folder:
+. Create a directory _trusted_ and _revoked_ under _<NEO4J_HOME>/certificates/cluster_ folder:
 +
 [source, shell]
 ----
@@ -703,9 +709,11 @@ Thus, the servers are able to establish trust relationships with each other.
 ----
 cp /path/to/certs/public.crt certificates/cluster/revoked
 ----
-+
+
+==== Verify the folder structure and permissions
+
 The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
+
 [options="header", cols="3,1,4*m"]
 |===
 | Path
@@ -757,21 +765,22 @@ The folder structure should look like this with the right file permissions and t
 | 0755
 | drwxr-xr-x
 |===
-+
+
 [TIP]
 ====
 The owner/group should be configured to the user/group that will be running the `neo4j` service.
 Default user/group is neo4j/neo4j.
 ====
 
-. Set the cluster SSL configuration in _neo4j.conf_.
-.. Set the cluster SSL policy to `true`:
+==== Set the cluster SSL configuration in _neo4j.conf_
+
+. Set the cluster SSL policy to `true`:
 +
 [source, properties]
 ----
 dbms.ssl.policy.cluster.enabled=true
 ----
-.. Set the appropriate certificates path and the right key and cert files:
+. Set the appropriate certificates path and the right key and cert files:
 +
 [source, properties]
 ----
@@ -782,10 +791,10 @@ dbms.ssl.policy.cluster.public_certificate=public.crt
 +
 [TIP]
 ====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
+If the certificate is located outside of `NEO4J_HOME`, then set the absolute path for the certificates directory.
 ====
 
-.. Set the cluster client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
+. Set the cluster client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
 +
 [source, properties]
 ----
@@ -799,14 +808,16 @@ The actual xref:security/ssl-framework.adoc#term-ssl-cryptographic-objects[crypt
 The trusted CA certificate will be shared however.
 ====
 
-.. Verify that the intra-cluster communication is encrypted.
+==== Verify that the intra-cluster communication is encrypted
+
+Once the intra-cluster encryption is enabled, you can verify that the communication is encrypted.
 You may use an external tooling, such as Nmap (https://nmap.org/download.html):
-+
+
 [source, shell]
 ----
 nmap --script ssl-enum-ciphers -p <port> <hostname>
 ----
-+
+
 [NOTE]
 ====
 The hostname and port have to be adjusted according to your configuration.
@@ -823,24 +834,47 @@ For more details on securing the comunication between the cluster servers, see x
 [[ssl-backup-config]]
 === Configure SSL for backup communication
 
-In a single instance, by default the backup communication happens on port `6362`.
-In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup.
-These ports are configured by `dbms.backup.listen.address` (port `6362`) and `server.cluster.listen_address` (port `6000`) respectively.
-If the intra-cluster encryption is enabled and the backup communication is using port `6000`, then your communication channels are already encrypted.
-The following steps assumes that your backup is set up on a different port.
+In a single instance, the backup communication happens on port `6362` by default. +
+In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup:
 
-To set up SSL for backup communication, create the folder structure and place the key file and the certificates under those.
-Then, you need to configure the SSL backup policies in the _neo4j.conf_ file.
+* `dbms.backup.listen.address` (port `6362`)
+* `server.cluster.listen_address` (port `6000`)
 
-. Set up the _backup_ folder under _certificates_.
-.. Create a directory _backup_ under _<NEO4J_HOME>/certificates_ folder:
+If the <<ssl-cluster-config, intra-cluster encryption>> is enabled and the backup communication uses port `6000`, then the communication channels are already encrypted.
+
+However, if your backup communication uses a different port, you need to enable SSL for it by creating a separate SSL policy.
+
+When setting up SSL for backup communication, you can choose between two options for certificates:
+
+* self-signed certificates -- This is typically the case where you control both ends of the connection, and the distribution of certificates can be automated and secured.
+However, self-signed certificates do not verify the identity of the server, so they cannot be trusted by clients and are vulnerable to man-in-the-middle attacks.
+* certificates signed by a certificate authority (CA) -- more secure option, because a known trusted authority verifies the identity of the server, ensuring authenticity and preventing impersonation.
+
+
+You can configure SSL for backup communication in one of the following ways:
+
+* Use the same certificates in the _trusted_dir_ on both the backup server and client. +
+This approach is simpler to configure but less secure, as both ends share the same identity and trust the same certificate.
+
+* Mirror the certificates on the backup server and client to achieve mutual authentication. +
+Add the server certificate to the client's _trusted_dir_ and the client certificate to the server's _trusted_dir_.
+This way, the server validates the client's certificate in addition to the typical normal TLS where only the client validates the server's certificate.
+
+* Use a certificate authority (CA) to sign both the client's and server's certificates.
+In this case, the _trusted_dir_ must contain only the CA or intermediate certificates.
+
+==== Set up SSL certificates for backup
+
+Create the folder structure and place the key and certificate files under it.
+
+. Create a directory _backup_ under _<NEO4J_HOME>/certificates_ folder:
 +
 [source, shell]
 ----
 mkdir certificates/backup
 ----
 
-.. Create a directory _trusted_ and _revoked_ under _<NEO4J_HOME>/certificates/backup_ folder:
+. Create a directory _trusted_ and _revoked_ under _<NEO4J_HOME>/certificates/backup_ folder:
 +
 [source, shell]
 ----
@@ -867,9 +901,11 @@ cp /path/to/certs/public.crt certificates/backup/trusted
 ----
 cp /path/to/certs/public.crt certificates/backup/revoked
 ----
-+
-The folder structure should look like this with the right file permissions and the groups and ownerships:
-+
+
+==== Verify the backup folder structure and permissions
+
+The folder structure should look like this with the right file permissions and the groups and ownerships, assuming the `neo4j` user runs the service:
+
 [options="header", cols="3,1,4*m"]
 |===
 | Path
@@ -921,21 +957,23 @@ The folder structure should look like this with the right file permissions and t
 | 0755
 | drwxr-xr-x
 |===
-+
+
 [TIP]
 ====
 The owner/group should be configured to the user/group that will be running the `neo4j` service.
 Default user/group is neo4j/neo4j.
 ====
 
-. Set the backup SSL configuration in _neo4j.conf_.
-.. Set the backup SSL policy to `true`:
+[ssl-backup-server-config]
+==== Set the backup SSL configuration in the _neo4j.conf_ file.
+
+. Set the backup SSL policy to `true`:
 +
 [source, properties]
 ----
 dbms.ssl.policy.backup.enabled=true
 ----
-.. Set the appropriate certificates path and the right key and cert files:
+. Set the appropriate certificates path and the right key and cert files:
 +
 [source, properties]
 ----
@@ -946,14 +984,43 @@ dbms.ssl.policy.backup.public_certificate=public.crt
 +
 [TIP]
 ====
-If the certificate is a different path outside of NEO4J_HOME, then set the absolute path for the certificates directory.
+If the certificate is located outside of `NEO4J_HOME`, then set the absolute path for the certificates directory.
 ====
 
-.. Set the backup client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
+. Set the backup client authentication to `REQUIRE` to enable the mutual authentication, which means that both ends of a channel have to authenticate:
 +
 [source, properties]
 ----
 dbms.ssl.policy.backup.client_auth=REQUIRE
+----
+
+[NOTE]
+====
+Neo4j does not validate the `setting-suffix` and if it is misspelled or incorrect, it will be ignored.
+See <<ssl-configuration, Configuration>> for more details.
+====
+
+[ssl-backup-client-config]
+=== Configure the backup client for SSL
+
+When using `neo4j-admin backup` command, the backup client needs to be configured to use SSL as well.
+Regardless of which backup port you are targeting (see <<ssl-backup-config>>), the backup client uses the SSL policy specified in `dbms.ssl.policy.backup.*`, given the same SSL policy name matches between server and client.
+
+If the backup client is on a different machine from the backup server, you must install SSL certificates and keys on the backup client machine as well, so that the backup client can authenticate the server and vice versa.
+
+The following steps assume that you have already set up the SSL certificates and keys on the backup server machine and you are using the self-signed certificates.
+
+For example, if you have set up the backup SSL policy described in section <<ssl-backup-config>>, then you need to set the following in the _neo4j-admin.conf_ file on the backup client machine:
+
+[source, properties]
+----
+dbms.ssl.policy.backup.enabled=true
+dbms.ssl.policy.backup.base_directory=certificates/backup
+dbms.ssl.policy.backup.private_key=private.key
+dbms.ssl.policy.backup.public_certificate=public.crt
+dbms.ssl.policy.backup.client_auth=REQUIRE
+dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 ----
 
 [[ssl-other-configs]]
@@ -1051,25 +1118,25 @@ However, you still can use them by explicitly specifying their configuration and
 .Bolt
 [source, properties]
 ----
-dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
+dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844
 ----
 
 .HTTPS
 [source, properties]
 ----
-dbms.ssl.policy.https.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
+dbms.ssl.policy.https.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844
 ----
 
 .Intra-cluster encryption
 [source, properties]
 ----
-dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
+dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844
 ----
 
 .Backup
 [source, properties]
 ----
-dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384
+dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844
 ----
 
 [[ssl-ocsp-config]]
@@ -1162,7 +1229,7 @@ This means that while new connections will use new certificates, the existing co
 Even if a certificate expires, active connections remain unaffected because the certificates are only used during the initial connection handshake.
 
 . Verify that the intra-cluster communication is still encrypted using external tooling, such as Nmap, described in <<ssl-cluster-config, Configuring SSL for intra-cluster communications>>.
- 
+
 
 [[ssl-terminology]]
 == Terminology
