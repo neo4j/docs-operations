@@ -22,8 +22,8 @@ A remote alias defines:
 
 When creating the remote database alias, it can be configured to authenticate with either:
 
-* `STORED NATIVE CREDENTIALS`,  i.e. the credentials of a single user on the remote **DBMS B**.
-* `OIDC CREDENTIAL FORWARDING`, i.e. passing the bearer authentication token from the user logged in through SSO and who issues the query. label:new[Introduced in 2025.10]
+* `STORED NATIVE CREDENTIALS`, the credentials of a single native user on the remote **DBMS B**.
+* `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local **DBMS A**. The user needs to be logged in with an identity provider supporting OIDC. label:new[Introduced in 2025.10]
 
 
 [[setup-example-stored-native-credentials]]
@@ -210,8 +210,8 @@ In this example, _Alice_ is an administrator and _Carol_ is a user who needs acc
 
 In the example above, _Carol_ logs in to *DBMS A* through an OIDC compliant identity provider by offering a token from the provider.
 The token is used to set the username and determine the identity provider groups of the user.
-_Alice_ is the admin of *DBMS A* and has set up SSO for the identity provider and configured the mapping of the identity provider groups to the Neo4j built-in roles and custom roles, such that _Carol_ can use the remote database alias to connect to the remote database `Db1`.
-Additionally, _Bob_ needs to configure the *DBMS B* to support SSO with the same identity provider used by _Carol_ to log in to *DBMS A*. _Bob_ also needs to configure the mapping of the identity provider groups to the Neo4j built-in roles and custom roles such that the _Carol's_ identity provider groups gives the appropriate privileges to access `Db1` on the *DBMS B*.
+_Alice_ is the admin of *DBMS A* and has set up SSO for the identity provider and configured the mapping of the identity provider groups to the Neo4j roles, such that _Carol_ can use the remote database alias to connect to the remote database `Db1`.
+Additionally, _Bob_ needs to configure the *DBMS B* to support SSO with the same identity provider used by _Carol_ to log in to *DBMS A*. _Bob_ also needs to configure the mapping of the identity provider groups to the Neo4j roles such that the _Carol's_ identity provider groups gives the appropriate privileges to access `Db1` on the *DBMS B*.
 
 
 [CAUTION]
@@ -304,11 +304,8 @@ Here is how to grant the xref:authentication-authorization/database-administrati
 GRANT ACCESS ON DATABASE `remote-neo4j` TO admin
 ----
 
-[NOTE]
-====
-In order for _Carol_ to get access to the remote database alias, she needs to be in an identity provider group that is mapped to a Neo4j role that is granted access to alias. In this example, if _Carol_ is in the identity provider group `engineers` which is mapped to the admin role, she will get the privileges of an admin and access to `remote-neo4j`.
+In order for _Carol_ to get access to the remote database alias, she needs to be in an identity provider group that is mapped to a Neo4j role that is granted access to alias. In this example, if _Carol_ is in the identity provider group `engineers` which is mapped to the `admin` role, she will get the privileges of an `admin` and access to `remote-neo4j`.
 For details on how to map identity provider groups to Neo4j roles, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
-====
 
 [NOTE]
 ====
@@ -349,6 +346,10 @@ However, they can be accessed and terminated on the remote database when connect
 ====
 Action on the remote DBMS are all attributed to the user configured for the remote database alias.
 In the case of using `STORED NATIVE CREDENTIALS`, the same credentials are used to connect to the remote DBMS independent on which end-user made the query targeting the remote alias. This will result in the stored native user being logged in the audit trails on the remote DBMS for all queries using the remote database alias.
-When using `OIDC CREDENTIAL FORWARDING` the actual end-user´s credentials and permissions will be used, this will result in per-user audit trails being logged on the remote DBMS.
+When using `OIDC CREDENTIAL FORWARDING` the actual end-user's credentials and permissions will be used, this will result in per-user audit trails being logged on the remote DBMS.
 ====
 
+[NOTE]
+====
+When using a remote database alias with OIDC credential forwarding, the user needs to be logged in to the local DBMS with OIDC, otherwise there is no token to forward and the access to the remote database will be denied with `GQLSTATUS 42NFF`.
+====
