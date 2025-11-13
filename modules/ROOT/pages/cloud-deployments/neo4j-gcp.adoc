@@ -1,99 +1,229 @@
 :description: Deploy Neo4j on Google Cloud Platform (GCP) directly from the GCP Marketplace or by using the Neo4j Deployment Manager templates hosted on GitHub.
+:page-role: enterprise-edition
 [[gcp]]
 = Neo4j on GCP
 
-Neo4j Edition can be easily deployed on Virtual Machines in Google Cloud Platform (GCP) by using the link:https://console.cloud.google.com/marketplace/product/neo4j/neo4j-enterprise-edition[official listing for Neo4j Enterprise Edition] or link:https://console.cloud.google.com/marketplace/product/neo4j/neo4j-community-edition?project=cohesive-point-368015[Neo4j Community Edition] on the GCP Marketplace].
+Neo4j can be easily deployed on Virtual Machines in Google Cloud Platform (GCP) by using the link:https://console.cloud.google.com/marketplace/product/neo4j-mp-public/neo4j-enterprise-edition[official listing] on the GCP Marketplace.
+It can be configured to deploy only Neo4j Enterprise Edition 2025.x, both standalone and cluster (1, 3, 4, 5, 6, or 7 servers).
+Previous versions of Neo4j, such as 4.4 and 5.26 LTS are no longer supported.
 
-The GCP Marketplace listing uses a Deployment Manager template maintained by Neo4j.
-The template's code is available on link:https://github.com/neo4j-partners/google-deployment-manager-neo4j[GitHub] and can be customized to meet more complex or bespoke use cases.
+== Neo4j Terraform deployment module
 
+The GCP Marketplace listing uses HashiCorp Terraform IaC tool to deploy Neo4j Enterprise Edition on GCP.
+HashiCorp Terraform is an infrastructure deployment module, which automates the creation and management of Google Cloud resources.
+It takes several parameters as inputs, deploys a set of cloud resources, and provides outputs that can be used to connect to a Neo4j DBMS.
+
+You can find the repository for the Terraform configuration files on link:https://github.com/neo4j-partners/gcp-tf-neo4j[GitHub].
+The repository structure is as follows:
+
+```
+neo4j-terraform-gcp/
+├── modules/                          # Terraform modules
+│   └── neo4j/                        # Main Neo4j module
+│       ├── scripts/                  # Startup scripts for Neo4j
+│       ├── main.tf                   # Main module configuration
+│       ├── network.tf                # Network configuration
+│       ├── variables.tf              # Module variables
+│       ├── outputs.tf                # Module outputs
+│       └── versions.tf               # Module provider requirements
+├── test/                             # Test configurations
+├── metadata.yaml                     # GCP Marketplace metadata
+├── metadata.display.yaml             # GCP Marketplace display metadata
+├── logo.png                          # Logo for GCP Marketplace
+├── main.tf                           # Root module configuration
+├── variables.tf                      # Root module variables
+├── outputs.tf                        # Root module outputs
+├── versions.tf                       # Provider and version constraints
+└── terraform.tfvars.example          # Example variables file
+```
+
+== Important considerations
+//TO CHECK with Bledi if these points are still valid or need updating
+* The deployment of cloud resources incurs costs.
+Refer to the link:https://cloud.google.com/products/calculator[GCP pricing calculator]for more information.
+
+* The Neo4j Terraform module deploys a new VPC, containing a single subnet based in the requested region.
+Unlike Azure and AWS where subnets are aligned to specific zones, GCP subnets are regional (and VPCs are global).
+
+* The Neo4j Terraform module uses an Instance Group to deploy VM instances.
+To stop a VM managed by a group, you must first remove it from that group.
+
+* Instances can be connected via SSH, using SSH-in-browser (via the GCP console).
+Click the *SSH* button in the GCP console.
+
+== Deployment steps
+
+Before deploying Neo4j using the Terraform module, ensure you have the following prerequisites in place:
+
+* Terraform 1.2.0 or newer.
+See the link:https://developer.hashicorp.com/terraform/install[official Terraform installation guide] for instructions.
+* Google Cloud SDK
+* A GCP project with billing enabled
+* Appropriate permissions to create resources in GCP
+* Default project configured in `gcloud` CLI (`gcloud config set project YOUR_PROJECT_ID`)
+
+
+=== Option 1: Deploy from GCP Marketplace
+
+. Visit the link:https://console.cloud.google.com/marketplace/product/neo4j-mp-public/neo4j-enterprise-edition[Neo4j Enterprise listing on GCP Marketplace].
+. Click *Launch*.
+. Configure the deployment parameters.
+See <<input-parameters>> for details on each parameter.
+. Review and click *Launch*.
+
+=== Option 2: Use the module directly
+
+. Ensure your default GCP project is set in gcloud CLI:
++
+[source, bash]
+----
+gcloud config set project YOUR_PROJECT_ID
+----
+
+. Copy `terraform.tfvars.example` to `terraform.tfvars` and update the values.
+See <<input-parameters>> for details on each parameter.
+. Initialize Terraform in the directory containing the Terraform configuration files:
++
+[source,bash]
+----
+terraform init
+----
+
+. Plan the deployment:
++
+[source,bash]
+----
+terraform plan
+----
+
+. Apply the configuration:
++
+[source,bash]
+----
+terraform apply
+----
+
+[[input-parameters]]
+=== Input parameters
+
+The following variables can be configured in your `terraform.tfvars` file.
+The complete list of inputs can be found in the _./variables.tf_ file.
 
 [NOTE]
 ====
-Neo4j does not provide pre-built Virtual Machine (VM) images with a pre-installed version of the product.
-The Neo4j GCP Marketplace listings (and listings on GitHub) use Deployment Manager templates that deploy and configure Neo4j dynamically with a shell script.
+* When deploying through GCP Marketplace, the `source_image` variable will be automatically set to the Marketplace-owned version of the VM image.
+* For production deployments, it is recommended to restrict the `firewall_source_range` to specific IP ranges.
+* The default machine type (c3-standard-4) is suitable for most workloads, but can be adjusted based on your requirements.
+* For large datasets, consider increasing the `disk_size` parameter.
+* The startup script includes robust error handling and non-interactive installation to ensure reliable deployment.
 ====
 
-== Supported Neo4j versions
-
-The Neo4j link:https://console.cloud.google.com/marketplace/product/neo4j/neo4j-enterprise-edition[GCP marketplace listing] can be configured to deploy either Neo4j Enterprise Edition 5, or 4.4, or Neo4j Community Edition 5.
-The Deployment Manager template always installs the latest available version.
-
-== Neo4j Deployment Manager template
-Google Cloud Deployment Manager is an infrastructure deployment service that automates the creation and management of Google Cloud resources.
-
-The Neo4j Deployment Manager template takes several parameters as inputs, deploys a set of cloud resources, and provides outputs that can be used to connect to a Neo4j DBMS.
-
-=== Important considerations
-
-* The deployment of cloud resources incurs costs.
-** Refer to the link:https://cloud.google.com/products/calculator[GCP pricing calculator]for more information.
-
-* The Neo4j Deployment Manager template deploys a new VPC, containing a single subnet based in the requested region.
-** Unlike Azure and AWS where subnets are aligned to specific zones, GCP subnets are regional (and VPCs are global).
-
-* The Neo4j Deployment Manager template uses an Instance Group to deploy VM instances.
-** To stop a VM managed by a group, you must first remove it from that group.
-
-* Instances can be connected via SSH, using SSH-in-browser (via the GCP console).
-** Click the *SSH* button in the GCP console.
-
-=== Input parameters
-
-[cols="<31s,69",frame="topbot",options="header"]
+[cols="3m,2,4a,2m",frame="topbot",options="header"]
 |===
-
+| Variable
 | Parameter Name
 | Description
+| Default Value
 
-| Deployment name
-| A name for the deployment, e.g., `neo4j-enterprise-edition`.  The deployment name can include letters (A-Z and a-z), numbers (0-9), and dashes (-).
+| project_id
+| Project ID
+| GCP Project ID of the project in which to provision resources.
+| (Required)
 
-| Graph Database Version
-| Select either 5 or 4.4.
+| license_type
+| License type
+| Neo4j license type (enterprise-byol or evaluation).
+| enterprise-byol
 
-| Node Count
-| Specify the number of desired VMs to be used to form a Neo4j cluster (a minimum of 3 instances is required to form a cluster).
+| region
+| Region
+| The GCP region where resources will be created.
+| us-central1
 
-| Node Type
-| The class of VM to use.
+| zone
+| Zone
+| The zone for the solution to be deployed.
+| us-central1-a
 
-| Disk Type
-| The type of disk volume to use on each VM instance.
+| goog_cm_deployment_name
+| Deployment Name
+| The name of the deployment and VM instances.
+| neo4j
 
-| Disk Size in GB
-| Size (in GB) of the disk volume on each VM instance. Persistent disk performance is tied to the size of the persistent disk volume. You are charged by GCP for the actual amount of provisioned disk space.
+| source_image
+| Image version
+| The VM image to use for Neo4j instances.
+| projects/neo4j-mp-public/global/images/neo4j-enterprise-edition
 
-| Admin Password
-| A password for the `neo4j` user (minimum of 8 characters).
+| network_name
+| Network name
+| The name of the VPC network to use or create.
+| neo4j-network
 
-| Install Graph Data Science
-| An option (checkbox) to install Graph Data Science (GDS).
+| subnetwork_name
+| Subnetwork name
+| The name of the subnetwork to use or create.
+| neo4j-subnet
 
-| Graph Data Science License Key
-| A valid GDS license key can be pasted into this field. License keys are sent to and stored by Neo4j. This information is used only for product activation purposes.
+| create_new_network
+| Create a new network
+| Whether to create a new network or use an existing one
+| true
 
-| Install Bloom
-| An option (checkbox) to install Neo4j Bloom.
+| subnetwork_cidr
+| Subnetwork CIDR
+| CIDR range for the subnetwork.
+| 10.10.10.0/24
 
+| node_count
+| Number of servers
+| Number of Neo4j servers to deploy. Node count must be 1 (standalone) or 3/5/7 (cluster)
+| 3
+
+| machine_type
+| Machine type
+| GCP machine type for the Neo4j servers.
+| c3-standard-4
+
+| disk_size
+| Disk size in GB
+| Size of the data disk in GB.
+| 100
+
+| admin_password
+| Admin password
+| Password for the Neo4j admin user. The password must be at least 8 characters long.
+| (Required)
+
+| install_bloom
+| Install Neo4j Bloom
+| Whether to install Neo4j Bloom.
+| false
+
+| bloom_license_key
 | Bloom License Key
-| A valid Bloom license key can be pasted into this field. License keys are sent to and stored by Neo4j. This information is used only for product activation purposes.
+| License key for Neo4j Bloom (if installing).
+| ""
+
+| firewall_source_range
+| Firewall source ranges
+| Source IP ranges for external access (comma-separated). Traffic is only allowed from sources within these IP address ranges. Use CIDR notation when entering ranges.
+| 0.0.0.0/0
 
 |===
 
 === Deployed cloud resources
 
-The environment created by the Deployment Manager template consists of the following GCP resources:
+The environment created by the Terraform module consists of the following GCP resources:
 
-* 1 subnet with a CIDR range (address space) of `10.128.0.0/20`.
-** Internal and external firewall rulesets.
-* An Instance Group (and Instance Group template) which creates:
-** 1, or between 3 and 10 VM instances (Depending on whether a single instance or an autonomous cluster is selected).
-* 1 TCP (Layer 4) Load Balancer.
+. A VPC network and subnetwork (optional).
+. Firewall rules for internal and external access.
+. Neo4j VMs with attached persistent disks.
+. Configures Neo4j for standalone or clustered operation.
 
 === Template outputs
 
-After the installation finishes successfully, the Deployment Manager template provides the following outputs:
+After the installation finishes successfully, the Terraform module provides the following outputs:
 
 [cols="<31s,69",frame="topbot",options="header"]
 |===
@@ -101,15 +231,23 @@ After the installation finishes successfully, the Deployment Manager template pr
 | Output Name
 | Description
 
-| Neo4j Browser address
-| The http URL of the Neo4j Browser.
+| neo4j_url
+| URL to access Neo4j Browser.
 
-| Database region
-| The region in which the Neo4j cluster has been deployed.
+| neo4j_bolt_url
+| Bolt URL to connect to Neo4j.
 
-| Database machine type
-| The class of VMs that have been deployed.
+| neo4j_ip_addresses
+| IP addresses of the Neo4j nodes.
 
+| neo4j_instance_names
+| Names of the Neo4j instances.
+
+| neo4j_instance_zones
+| Zones where Neo4j instances are deployed.
+
+| neo4j_instance_machine_types
+| Machine types of Neo4j instances.
 |===
 
 [NOTE]
@@ -117,19 +255,46 @@ After the installation finishes successfully, the Deployment Manager template pr
 The Neo4j Browser can be easily launched in a new window by clicking the button entitled *Log into the Neo4j Browser*.
 ====
 
+=== Providers used
 
-[role=label--enterprise-edition]
+This module only uses the following approved GCP Marketplace providers:
+
+* google
+* google-beta
+
+=== Testing the module
+
+The module includes test configurations in the _test/_ directory, which can be used to validate the deployment.
+The following test scripts are provided:
+
+* `verify_module.sh`: Basic verification for GCP Marketplace
+*  `test_deployment.sh`: Comprehensive deployment testing using marketplace_test.tfvars
+
+The test script performs thorough checks to verify:
+
+* All instances are properly deployed.
+* Neo4j services are running and accessible.
+* Neo4j Browser and Bolt interfaces are operational.
+* Cluster configuration is properly set up.
+
 == Licensing
-
-// label:Enterprise[]
 
 Installing and starting Neo4j from the GCP marketplace constitutes an acceptance of the Neo4j license agreement.
 When deploying Neo4j, you are required to confirm that you either have an Enterprise license or accept the terms of the Neo4j evaluation license.
 
-If you require the Enterprise version of either Graph Data Science or Bloom, you need to provide a key issued by Neo4j as this is required during the installation.
+If you require the Enterprise version of Bloom, you need to provide a key issued by Neo4j as this is required during the installation.
 
-To obtain a valid license for either Neo4j, Bloom, or GDS, reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form].
+To obtain a valid license for Bloom reach out to your Neo4j account representative or get in touch using the link:https://neo4j.com/contact-us/[contact form].
 
 == Delete deployment and destroy resources
 
-Navigate to the Deployment Manager section of the GCP console, select the deployment you wish to delete, and click the *Delete* button.
+To delete the deployment and destroy all associated resources, you can use the following Terraform command:
+
+[source,console]
+----
+terraform destroy
+----
+
+This command will prompt you to confirm the destruction of all resources defined in your Terraform configuration.
+Review the proposed changes carefully before confirming.
+For detailed information on the `terraform destroy` command, refer to the link:https://developer.hashicorp.com/terraform/cli/commands/destroy[official Terraform documentation].
