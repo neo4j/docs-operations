@@ -11,7 +11,16 @@ You should use this tool when:
 
 * Import performance is important because you have a large amount of data (millions/billions of entities).
 * The database can be taken offline and you have direct access to one of the servers hosting your Neo4j DBMS.
-* The database is either empty or its content is unchanged since a previous incremental import.
+* The database is non-existent or empty and you need to perform the initial data load.
+* You need to update your graph with a large amount of data.
+In this case, importing data incrementally can be more performant than transactional insertion.
++
+[NOTE]
+====
+The incremental import can be done either within a single command or in stages.
+For details, see <<_incremental_import_in_a_single_command>> and <<incremental-import-stages>>.
+====
++
 * The CSV data is clean/fault-free (nodes are not duplicated and relationships' start and end nodes exist).
 This tool can handle data faults but performance is not optimized.
 If your data has a lot of faults, it is recommended to clean it using a dedicated tool before import.
@@ -626,16 +635,18 @@ Incremental import into an existing database.
 
 === Usage and limitations
 
-[WARNING]
-====
 The importer works well on standalone servers.
 
-In clustering environments with multiple copies of the database, the updated database must be used as a source to reseed the rest of the database copies.
-You can use the procedure xref:procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`].
-For details, see xref:database-administration/standard-databases/recreate-database.adoc[Recreate a database].
+To safely perform an incremental import in a clustered environment, follow these steps:
 
-Starting the clustered database after an incremental import without reseeding or performing the incremental import on a single server while the database remains online on other clustered members may result in unpredictable consequences, including data inconsistency between cluster members.
-====
+. Run the incremental import command on a single server in the cluster. 
+This server can then be used as the xref:clustering/databases.adoc#cluster-designated-seeder[designated seeder] from which other cluster members can copy the database.
+. Reconfigure the database topology to a single primary by running the xref:procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure.
+. Then stop the database using xref:database-administration/standard-databases/create-databases.adoc#manage-databases-stop[STOP DATABASE].
+. Perform the incremental import on the server that hosts the database.
+. Then start the database with xref:database-administration/standard-databases/create-databases.adoc#manage-databases-start[START DATABASE].
+. Lastly, restore the desired database topology using xref:database-administration/standard-databases/alter-databases.adoc#[ALTER DATABASE].
+
 
 The incremental import command can be used to add:
 
