@@ -79,20 +79,22 @@ The `YIELD *` clause returns the full set of columns.
 The required privileges are described in the xref:authentication-authorization/dbms-administration/dbms-alias-management-privileges.adoc[The DBMS ALIAS MANAGEMENT privileges].
 
 .Available columns
-[options="header" cols="2m,4a,2m"]
+[options="header" cols="2m,4a,2m,2a"]
 |===
-| Column | Description | Type
+| Column | Description | Type | Default output
 
 | name
-| The fully qualified name of the database alias. label:default-output[]
+| The fully qualified name of the database alias.
 | STRING
+| {check-mark}
 
 | composite
-| The name of the composite database this alias belongs to, or `null` if the alias does not belong to a composite database. label:default-output[]
+| The name of the composite database this alias belongs to, or `null` if the alias does not belong to a composite database.
 | STRING
+| {check-mark}
 
 | database
-| The name of the target database. label:default-output[]
+| The name of the target database.
 
 This column is filtered according to the `ACCESS` privileges of the user.
 However, some privileges enable users to see additional databases regardless of their `ACCESS` privileges:
@@ -104,37 +106,45 @@ However, some privileges enable users to see additional databases regardless of 
 
 If a user has not been granted the `ACCESS` privilege to the target database and none of the above special cases apply, then it is not visible to the user and this column will be `null`.
 | STRING
+| {check-mark}
 
 | location
-| The location of the database, either `local` or `remote`. label:default-output[]
+| The location of the database, either `local` or `remote`.
 | STRING
+| {check-mark}
 
 | url
-| Target location or `null` if the target is local. label:default-output[]
+| Target location or `null` if the target is local.
 | STRING
+| {check-mark}
 
 | credentials
-| The type of credentials used to connect to the remote database, either `STORED NATIVE CREDENTIALS` or `OIDC CREDENTIAL FORWARDING`, or  null if the target database is local. label:default-output[] label:new[Introduced in 2025.10]
+| label:new[Introduced in 2025.10] The type of credentials used to connect to the remote database, either `STORED NATIVE CREDENTIALS` or `OIDC CREDENTIAL FORWARDING`, or  null if the target database is local.
 | STRING
+| {check-mark}
 
 | user
-| Native user connecting to the remote database, or `null` if the target database is local or OIDC credential forwarding is used to authenticate against the remote database. label:default-output[]
+| Native user connecting to the remote database, or `null` if the target database is local or OIDC credential forwarding is used to authenticate against the remote database.
 | STRING
+| {check-mark}
 
 | driver
 |
 The driver options for connection to the remote database or `null` if the target database is local.
 List of xref::database-administration/aliases/manage-aliases-standard-databases.adoc#alias-management-create-remote-database-alias-driver-settings[driver settings] allowed for remote database aliases.
 | MAP
+|
 
 | defaultLanguage
 |
 label:new[Introduced in 2025.06] The default language for non-constituent remote database aliases or `null` if it is a constituent or local database alias.
 | STRING
+|
 
 | properties
 | Any properties set on the database alias.
 | MAP
+|
 
 |===
 
@@ -391,12 +401,21 @@ Instead, they are assigned the version given by xref:configuration/configuration
 Alternatively, you can specify the version in the `CREATE ALIAS` or `ALTER ALIAS` commands.
 See xref:database-administration/aliases/manage-aliases-standard-databases.adoc#set-default-language-for-remote-database-aliases[] and xref:database-administration/aliases/manage-aliases-standard-databases.adoc#alter-default-language-remote-database-alias[] for more information.
 
-When creating a remote database alias, the credentials used to target to the remote DBMS need to be specified and can be either:
+When creating a remote database alias, you need to specify the credentials used to target to the remote DBMS.
+You can choose between two types of credentials:
 
 * `STORED NATIVE CREDENTIALS`, using the credentials of a single native user on the remote DBMS.
-* `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local DBMS. The user needs to be logged in with an identity provider supporting OIDC. label:new[Introduced in 2025.10]
+* label:new[Introduced in 2025.10] `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local DBMS.
+The user must be logged in with an identity provider supporting OIDC.
 
-To use the credentials of a native user on the remote DBMS, `USER` and `PASSWORD` need to be set when creating the alias.
+You can also use `IF EXISTS` or `OR REPLACE` when creating remote database aliases.
+It works the same way as described in the <<_use_if_exists_or_or_replace_when_creating_database_aliases, Use `IF EXISTS` or `OR REPLACE` when creating database aliases>> section.
+Both check for any remote or local database aliases (with `IF NOT EXISTS` also checking for databases).
+
+==== Create remote database aliases with stored native credentials
+
+You can create a remote database alias using stored native credentials by specifying the `USER` and `PASSWORD` clauses when creating the alias.
+For example:
 
 .Query
 [source, cypher]
@@ -407,8 +426,7 @@ USER alice
 PASSWORD 'example_secret'
 ----
 
-To view the remote database alias details, use the `SHOW ALIASES FOR DATABASE` command:
-
+You can verify that the remote database alias has been created correctly by using the `SHOW ALIASES FOR DATABASE` command:
 .Query
 [source, cypher]
 ----
@@ -426,8 +444,12 @@ FOR DATABASE
 +-----------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-The `OIDC CREDENTIAL FORWARDING` clause is used to configure a remote database alias to use the logged-in user's OIDC credentials to authenticate to the remote DBMS.
-In order to use this method to authenticate, the local DBMS and remote DBMS needs to have SSO authentication and authorization through identity providers implementing the OIDC standard configured, see the xref:authentication-authorization/sso-integration.adoc[SSO integration] on how to configure OIDC identity providers.
+==== Create remote database aliases with OIDC credential forwarding
+
+You can create a remote database alias using OIDC credential forwarding by specifying the `OIDC CREDENTIAL FORWARDING` clause when creating the alias.
+The `OIDC CREDENTIAL FORWARDING` clause configures the remote database alias to use the logged-in user's OIDC credentials to authenticate to it.
+To use this method for authentication, both the local and remote DBMSs must have SSO authentication and authorization through identity providers that implement the OIDC standard configured.
+See the xref:authentication-authorization/sso-integration.adoc[SSO integration] for details on how to configure OIDC identity providers.
 
 .Query
 [source, cypher]
@@ -437,7 +459,7 @@ AT "neo4j+s://location:7687"
 OIDC CREDENTIAL FORWARDING
 ----
 
-Since the alias use the credentials of the logged-in user when targeting the remote DBMS, there are no stored credentials and user will be `NULL`.
+Since the alias uses the credentials of the logged-in user when targeting the remote DBMS, there are no stored credentials, and the user will be `NULL`.
 
 .Query
 [source, cypher]
@@ -455,12 +477,6 @@ FOR DATABASE
 | "remote-northwind-oidc-credential-forwarding" | NULL      | "northwind-graph-2020" | "remote" | "neo4j+s://location:7687" | "OIDC CREDENTIAL FORWARDING" | NULL    |
 +--------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
-
-
-You can also use `IF EXISTS` or `OR REPLACE` when creating remote database aliases.
-It works the same way as described in the <<_use_if_exists_or_or_replace_when_creating_database_aliases, Use `IF EXISTS` or `OR REPLACE` when creating database aliases>> section.
-Both check for any remote or local database aliases (with `IF NOT EXISTS` also checking for databases).
-
 
 [[alias-management-create-remote-database-alias-driver-settings]]
 ==== Create remote database aliases with driver settings
@@ -672,12 +688,13 @@ In this case, by not repeating the driver setting `connection_pool_max_size`, th
 [role=label--new-2025.10]
 === Alter a remote database alias credential type
 
-Changing the type of credentials used by a remote database alias, `STORED NATIVE CREDENTIALS` or `OIDC CREDENTIAL FORWARDING`, by using the `ALTER ALIAS` command is currently not supported.
-To change the type of credentials, the remote database alias needs to be dropped and replaced with a new one.
+Changing a remote database alias credential type (`STORED NATIVE CREDENTIALS` or `OIDC CREDENTIAL FORWARDING`) using the `ALTER ALIAS` command is currently not supported
+To change the type of credentials, you must drop the remote database alias and replace it with a new one.
 
-[IMPORTANT]
+[CAUTION]
 ====
-Any associated privileges, driver settings and other properties will be lost when dropping the alias and need to be respecified for the new one. See xref:authentication-authorization/database-administration.adoc[Database privileges] on how to manage access to the remote database alias and other privileges.
+Any associated privileges, driver settings and other properties will be lost when dropping the alias and need to be respecified for the new one.
+See xref:authentication-authorization/database-administration.adoc[Database privileges] on how to manage access to the remote database alias and other privileges.
 ====
 
 === Remove all custom driver settings from a remote database alias
