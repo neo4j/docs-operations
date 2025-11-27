@@ -4,26 +4,25 @@
 [[manage-remote-aliases]]
 = Configuring remote database aliases
 
-A remote database alias can be used to provide connection to one or more graphs, on one or more remote standalone servers or clusters.
+You can use a remote database alias to connect to one or more graphs or to one or more remote standalone servers or clusters.
 
 Although remote database aliases do not store any data, they enable users or applications to perform queries on remote databases as if they were on the local DBMS server.
 All configurations can be done using xref:database-administration/aliases/manage-aliases-standard-databases.adoc[administrative commands] on a running system.
-Any changes are automatically synchronized across all instances of a cluster.
+Any changes are automatically synchronized across all members of a cluster.
 
-The following steps describe the setup required to define a remote database alias both for local and remote DBMSs.
-They are also useful should there be any changes in the name of the databases or the location of standalone servers and cluster instances.
-Additionally, you will also find information here on best practices and additional guidance on any changes in the configuration.
+The following steps describe the setup required to define a remote database alias for both local and remote DBMSs.
+They assume that you have already installed and started both DBMSs: a local *DBMS A* and a remote *DBMS B*, and that you have administrator access to both systems.
 
-A remote alias defines:
+By creating a remote alias, you define:
 
-* Which user of the remote **DBMS B** is used.
+* Which user of the remote *DBMS B* is used.
 * Where the remote database is located.
 * How to connect to the remote database using driver settings.
 
 When creating the remote database alias, it can be configured to authenticate with either:
 
-* `STORED NATIVE CREDENTIALS`, the credentials of a single native user on the remote **DBMS B**.
-* `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local **DBMS A**. The user needs to be logged in with an identity provider supporting OIDC. label:new[Introduced in 2025.10]
+* `STORED NATIVE CREDENTIALS`, the credentials of a single native user on the remote *DBMS B*.
+* label:new[Introduced in 2025.10] `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local *DBMS A*. The user needs to be logged in with an identity provider supporting OIDC.
 
 
 [[setup-example-stored-native-credentials]]
@@ -34,10 +33,10 @@ In this example, _Alice_ is an administrator and _Carol_ is a user who needs acc
 image::remote-alias-overview.svg[title="Overview of the required remote database alias setup when using stored credentials", role="middle"]
 
 
-[NOTE]
+[TIP]
 ====
 A remote database alias is only accessible to users with appropriate privileges.
-In the example above, _Bob_ is the administrator responsible for deciding which databases (`Db1` or `Db2`) the remote aliases can write and/or read.
+In this example, _Bob_ is the administrator responsible for deciding which databases (`Db1` or `Db2`) the remote aliases can write and/or read.
 Meanwhile, _Alice_ is the administrator that assigns who has access to the privileges set by _Bob_.
 In the example, _Alice_ will assign that access to _Carol_.
 
@@ -45,7 +44,7 @@ See xref:authentication-authorization/dbms-administration/index.adoc[DBMS privil
 ====
 
 _Carol_ can use her own regular credentials to access the remote database `Db1` in DBMS after _Alice_ assigns this privilege to her user profile.
-This configuration will also allow _Carol_ to access `Db2` in **DBMS B**.
+This configuration will also allow _Carol_ to access `Db2` in *DBMS B*.
 If the administrators decide this should not be the case, then _Bob_ must define the appropriate privileges.
 See xref:authentication-authorization/index.adoc[Authentication and authorization] for further information.
 
@@ -55,7 +54,8 @@ In the suggested example, there are two administrators: _Alice_ and _Bob_.
 _Bob_ is the administrator responsible for the setup of the remote DBMS, which includes the following steps:
 
 . Create the user profile to share with _Alice_.
-. Define the permissions for the user. If you don’t want this user to access `Db2`, here is where you set it.
+. Define the permissions for the user.
+If you do not want this user to access `Db2`, here is where you set it.
 . Securely transmit the credentials to _Alice_, setting up the link to database `Db1`.
 It is recommended to create a custom role to track all users shared on a remote connection, so that they remain trackable.
 
@@ -90,7 +90,7 @@ server.bolt.tls_level=REQUIRED
 === Configure a DBMS with a remote database alias (_Alice_)
 
 As _Alice_, you need to generate an encryption key.
-In this case, the credentials of a user of **DBMS B** are reversibly encrypted and stored in the system database of **DBMS A**.
+In this case, the credentials of a user of *DBMS B* are reversibly encrypted and stored in the system database of *DBMS A*.
 
 Since the algorithm used is AES/GCM, an AES encryption key needs to be provided.
 It should have length 256, and be stored in a password-protected keystore, of format pkcs12.
@@ -187,7 +187,7 @@ GRANT ACCESS ON DATABASE `remote-neo4j` TO role
 
 [NOTE]
 ====
-If a transaction modifies an alias (e.g. changing the database targeted on **DBMS B**), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+If a transaction modifies an alias (e.g. changing the database targeted on *DBMS B*), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
 This prevents issues such as a transaction executing against multiple target databases for the same alias.
 ====
 
@@ -205,15 +205,16 @@ In case it is not possible to connect to the remote alias after its creation, ve
 [[setup-example-credential-forwarding]]
 == Setup example with OIDC credential forwarding
 
-In order to use OIDC credential forwarding, both *DBMS A* and *DBMS B* need to support the same OIDC identity provider, see the xref:authentication-authorization/sso-integration.adoc[SSO integration] on how to enable OIDC.
+In order to use OIDC credential forwarding, both *DBMS A* and *DBMS B* need to support the same OIDC identity provider.
+See the xref:authentication-authorization/sso-integration.adoc[SSO integration] on how to enable OIDC.
 
 In this example, _Alice_ is an administrator and _Carol_ is a user who needs access to a database managed by _Bob_:
 
 
-image::remote-alias-credential-forwarding-overview.svg[title="Overview of the required remote database alias setup when using oidc credential forwarding", role="middle"]
+image::remote-alias-credential-forwarding-overview1.svg[title="Overview of the required remote database alias setup when using oidc credential forwarding", role="middle"]
 
 In the example above, _Carol_ logs in to *DBMS A* through an OIDC compliant identity provider by offering a token from the provider.
-The token is used to set the username and determine the identity provider groups of the user.
+The token is used to set the username and determine the identity provider groups of the user. +
 _Alice_ is the admin of *DBMS A* and has set up SSO for the identity provider and configured the mapping of the identity provider groups to the Neo4j roles, such that _Carol_ can use the remote database alias, `remote-neo4j`, to connect to the remote database `Db1`.
 Additionally, _Bob_ needs to configure the *DBMS B* to support SSO with the same identity provider used by _Carol_ to log in to *DBMS A*. _Bob_ also needs to configure the mapping of the identity provider groups to the Neo4j roles such that the _Carol's_ identity provider groups gives the appropriate privileges to access `Db1` on the *DBMS B*.
 
@@ -221,13 +222,14 @@ Additionally, _Bob_ needs to configure the *DBMS B* to support SSO with the same
 [CAUTION]
 ====
 While it is possible to use different OIDC configurations across distinct DBMS instances (DBMS A & B in this example), database administrators must be aware of the resulting privilege disparity.
-A user's effective permissions are not dictated by the identity provider groups alone, but by the mapping of those groups to the roles defined within each specific Neo4j DBMS, see xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
+A user's effective permissions are not dictated by the identity provider groups alone, but by the mapping of those groups to the roles defined within each specific Neo4j DBMS.
+See xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
+
 Crucially, if the OIDC configuration settings differ between the local DBMS and the target DBMS, the user will have different effective privileges on those systems.
 This configuration independence can lead to privilege inconsistency (e.g., over-privileging or unexpected access denial).
 ====
 
 === Configure a remote DBMS (_Bob_)
-
 
 In the suggested example, there are two administrators: _Alice_ and _Bob_.
 _Bob_ is the administrator responsible for the setup of the remote DBMS, which includes the following steps:
@@ -313,7 +315,7 @@ For details on how to map identity provider groups to Neo4j roles, see xref:auth
 
 [NOTE]
 ====
-If a transaction modifies an alias (e.g. changing the database targeted on **DBMS B**), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+If a transaction modifies an alias (e.g. changing the database targeted on *DBMS B*), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
 This prevents issues such as a transaction executing against multiple target databases for the same alias.
 ====
 
@@ -324,8 +326,8 @@ A user can connect to a remote database alias the same way they would do to a da
 This includes:
 
 * Connecting directly to the remote database alias.
-* The Cypher link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/use[`USE` clause] enables a user to query a remote database alias that they are not directly connected to:
-
+* Querying a remote database alias that they are not directly connected to using the Cypher link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/use[`USE` clause]:
++
 [source, Cypher]
 ----
 USE `remote-neo4j` MATCH (n) RETURN *
@@ -340,20 +342,15 @@ See more about xref:authentication-authorization/dbms-administration/dbms-user-m
 ALTER USER alice SET HOME DATABASE `remote-neo4j`
 ----
 
-[NOTE]
-====
-Remote alias transactions will not be visible in `SHOW TRANSACTIONS` on **DBMS A**.
-However, they can be accessed and terminated on the remote database when connecting with the same user.
-====
+== Important notes
 
-[NOTE]
-====
-Action on the remote DBMS are all attributed to the user configured for the remote database alias.
+
+* Remote alias transactions will not be visible in `SHOW TRANSACTIONS` on *DBMS A*.
+However, they can be accessed and terminated on the remote database when connecting with the same user.
+
+
+* Action on the remote DBMS are all attributed to the user configured for the remote database alias.
 In the case of using `STORED NATIVE CREDENTIALS`, the same credentials are used to connect to the remote DBMS independent on which end-user made the query targeting the remote alias. This will result in the stored native user being logged in the audit trails on the remote DBMS for all queries using the remote database alias.
 When using `OIDC CREDENTIAL FORWARDING` the actual end-user's credentials and permissions will be used, this will result in per-user audit trails being logged on the remote DBMS.
-====
 
-[NOTE]
-====
-When using a remote database alias with OIDC credential forwarding, the user needs to be logged in to the local DBMS with OIDC, otherwise there is no token to forward and the access to the remote database will be denied with `GQLSTATUS 42NFF`.
-====
+* When using a remote database alias with OIDC credential forwarding, the user needs to be logged in to the local DBMS with OIDC, otherwise there is no token to forward and the access to the remote database will be denied with GQLSTATUS link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42NFF/[`42NFF`].
