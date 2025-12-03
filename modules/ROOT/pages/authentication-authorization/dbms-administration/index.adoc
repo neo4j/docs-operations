@@ -1,0 +1,213 @@
+:description: How to use Cypher to manage Neo4j DBMS administrative privileges.
+:page-role: enterprise-edition aura-db-business-critical aura-db-dedicated
+////
+[source, cypher, role=test-setup]
+----
+CREATE USER jake SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE ROLE roleAdder IF NOT EXISTS;
+CREATE ROLE roleNameModifier IF NOT EXISTS;
+CREATE ROLE roleDropper IF NOT EXISTS;
+CREATE ROLE roleAssigner IF NOT EXISTS;
+CREATE ROLE roleRemover IF NOT EXISTS;
+CREATE ROLE roleViewer IF NOT EXISTS;
+CREATE ROLE roleManager IF NOT EXISTS;
+CREATE ROLE userAdder IF NOT EXISTS;
+CREATE ROLE userNameModifier IF NOT EXISTS;
+CREATE ROLE userModifier IF NOT EXISTS;
+CREATE ROLE userDropper IF NOT EXISTS;
+CREATE ROLE userViewer IF NOT EXISTS;
+CREATE ROLE userManager IF NOT EXISTS;
+CREATE ROLE userImpersonator IF NOT EXISTS;
+CREATE ROLE allUserImpersonator IF NOT EXISTS;
+CREATE ROLE authModifier IF NOT EXISTS;
+CREATE ROLE passwordModifier IF NOT EXISTS;
+CREATE ROLE statusModifier IF NOT EXISTS;
+CREATE ROLE homeDbModifier IF NOT EXISTS;
+CREATE ROLE databaseAdder IF NOT EXISTS;
+CREATE ROLE compositeDatabaseAdder IF NOT EXISTS;
+CREATE ROLE databaseDropper IF NOT EXISTS;
+CREATE ROLE compositeDatabaseDropper IF NOT EXISTS;
+CREATE ROLE databaseModifier IF NOT EXISTS;
+CREATE ROLE accessModifier IF NOT EXISTS;
+CREATE ROLE languageModifier IF NOT EXISTS;
+CREATE ROLE compositeDatabaseModifier IF NOT EXISTS;
+CREATE ROLE compositeDatabaseManager IF NOT EXISTS;
+CREATE ROLE databaseManager IF NOT EXISTS;
+CREATE ROLE aliasAdder IF NOT EXISTS;
+CREATE ROLE aliasDropper IF NOT EXISTS;
+CREATE ROLE aliasModifier IF NOT EXISTS;
+CREATE ROLE aliasViewer IF NOT EXISTS;
+CREATE ROLE aliasManager IF NOT EXISTS;
+CREATE ROLE privilegeViewer IF NOT EXISTS;
+CREATE ROLE privilegeAssigner IF NOT EXISTS;
+CREATE ROLE privilegeRemover IF NOT EXISTS;
+CREATE ROLE privilegeManager IF NOT EXISTS;
+CREATE ROLE procedureExecutor IF NOT EXISTS;
+CREATE ROLE deniedProcedureExecutor IF NOT EXISTS;
+CREATE ROLE boostedProcedureExecutor IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor1 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor2 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor3 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor4 IF NOT EXISTS;
+CREATE ROLE adminProcedureExecutor IF NOT EXISTS;
+CREATE ROLE functionExecutor IF NOT EXISTS;
+CREATE ROLE deniedFunctionExecutor IF NOT EXISTS;
+CREATE ROLE boostedFunctionExecutor IF NOT EXISTS;
+CREATE ROLE globbing1 IF NOT EXISTS;
+CREATE ROLE globbing2 IF NOT EXISTS;
+CREATE ROLE globbing3 IF NOT EXISTS;
+CREATE ROLE globbing4 IF NOT EXISTS;
+CREATE ROLE globbing5 IF NOT EXISTS;
+CREATE ROLE globbing6 IF NOT EXISTS;
+CREATE ROLE dbmsManager IF NOT EXISTS;
+CREATE ROLE configurationViewer IF NOT EXISTS;
+CREATE ROLE deniedConfigurationViewer IF NOT EXISTS;
+CREATE ROLE serverManager IF NOT EXISTS;
+CREATE ROLE serverViewer IF NOT EXISTS;
+----
+////
+
+[[access-control-dbms-administration]]
+= DBMS privileges
+
+All DBMS privileges are relevant system-wide.
+Like user management, they do not belong to one specific database or graph.
+For more details on the differences between graphs, databases, and the DBMS, refer to link:{neo4j-docs-base-uri}/cypher-manual/current/introduction/cypher-neo4j/[Cypher Manual -> Cypher and Neo4j].
+
+image::privileges-grant-and-deny-syntax-dbms-privileges.svg[width="800", title="Syntax of `GRANT` and `DENY` DBMS privileges"]
+
+image::privileges-hierarchy-dbms.svg[width="800", title="DBMS privileges hierarchy", role=popup]
+
+[NOTE]
+====
+You can only grant, deny, or revoke privileges to or from existing roles.
+====
+
+[[access-control-dbms-administration-all]]
+== Granting `ALL DBMS PRIVILEGES`
+
+You can grant the `ALL DBMS PRIVILEGES` privilege to a role. +
+The `ALL DBMS PRIVILEGES` privilege is equivalent to granting the following privileges:
+
+* Create, drop, assign, remove, and show roles.
+* Create, alter, drop, show, and impersonate users.
+* Create, alter, drop, and show databases and aliases.
+* Enable, alter, rename, reallocate, deallocate, drop, and show servers.
+* Show, assign, and remove privileges.
+* Execute all procedures with elevated privileges.
+* Execute all user-defined functions with elevated privileges.
+* Show all configuration settings.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
+
+[source, syntax, role=noheader]
+----
+GRANT [IMMUTABLE] ALL [[DBMS] PRIVILEGES]
+    ON DBMS
+    TO role[, ...]
+----
+
+For example, to grant the role `dbmsManager` all DBMS abilities, use the following query:
+
+[source, cypher, role=noplay]
+----
+GRANT ALL DBMS PRIVILEGES ON DBMS TO dbmsManager;
+----
+
+To list all privileges for the role `dbmsManager` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE dbmsManager PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT ALL DBMS PRIVILEGES ON DBMS TO `dbmsManager`"
+a|Rows: 1
+|===
+
+[[access-control-name-globbing]]
+== Name-globbing for procedures, user-defined functions, and settings
+
+The name-globbing for procedures, user-defined functions, and setting names is a simplified version of globbing for filename expansions.
+It only allows two wildcard characters: `+*+` and `?`, which are used for multiple and single-character matches.
+In this case, `+*+` means 0 or more characters, and `?` matches exactly one character.
+
+[NOTE]
+====
+The name-globbing is subject to the link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/naming/[Cypher Manual -> Naming rules and recommendations], with the exception that it may include dots, stars, and question marks without the need for escaping using backticks.
+
+Each part of the name-globbing separated by dots may be individually quoted.
+For example, `++mine.`procedureWith%`++` is allowed, but not `++mine.procedure`With%`++`.
+Also, note that wildcard characters behave as wildcards even when quoted.
+For example, using `++`*`++` is equivalent to using `+*+`, and thus allows executing all functions or procedures and not only the procedure or function named `+*+`.
+====
+
+Given the following list of procedures:
+
+* `mine.public.exampleProcedure`
+* `mine.public.exampleProcedure1`
+* `mine.public.exampleProcedure2`
+* `mine.public.with#Special§Characters`
+* `mine.private.exampleProcedure`
+* `mine.private.exampleProcedure1`
+* `mine.private.exampleProcedure2`
+* `mine.private.with#Special§Characters`
+* `your.exampleProcedure`
+
+The following examples demonstrate how name-globbing patterns can be used in controlling access to procedures.
+Note that the same rules apply to user-defined functions and settings.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE * ON DBMS TO globbing1;
+----
+
+Users with the role `globbing1` can run all the procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure ON DBMS TO globbing2;
+----
+
+Users with the role `globbing2` can run procedures `mine.public.exampleProcedure` and `mine.private.exampleProcedure`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.*.exampleProcedure? ON DBMS TO globbing3;
+----
+
+Users with the role `globbing3` can run procedures `mine.public.exampleProcedure1`, `mine.private.exampleProcedure1`, and `mine.private.exampleProcedure2`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE *.exampleProcedure ON DBMS TO globbing4;
+----
+
+Users with the role `globbing4` can run procedures `your.exampleProcedure`, `mine.public.exampleProcedure`, and `mine.private.exampleProcedure`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE mine.public.exampleProcedure* ON DBMS TO globbing5;
+----
+
+Users with the role `globbing5` can run procedures `mine.public.exampleProcedure`, `mine.public.exampleProcedure1` and `mine.public.exampleProcedure42`, but no other procedures.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE `mine.public.with#*§Characters`, mine.private.`with#Spec???§Characters` ON DBMS TO globbing6;
+----
+
+Users with the role `globbing6` can run procedures `mine.public.with#Special§Characters`, and `mine.private.with#Special§Characters`, but no other procedures.
+
+[NOTE]
+====
+The name-globbing may be fully or partially quoted.
+Both `+*+` and `+?+` are interpreted as wildcards in both cases.
+====
