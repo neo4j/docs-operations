@@ -1,0 +1,544 @@
+:description: Details the DBMS privileges for procedure and user-defined function execution.
+:page-role: enterprise-edition aura-db-business-critical aura-db-dedicated
+[[dbms-execute-privileges]]
+= The DBMS `EXECUTE` privileges
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE USER jake SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE ROLE roleAdder IF NOT EXISTS;
+CREATE ROLE roleNameModifier IF NOT EXISTS;
+CREATE ROLE roleDropper IF NOT EXISTS;
+CREATE ROLE roleAssigner IF NOT EXISTS;
+CREATE ROLE roleRemover IF NOT EXISTS;
+CREATE ROLE roleViewer IF NOT EXISTS;
+CREATE ROLE roleManager IF NOT EXISTS;
+CREATE ROLE userAdder IF NOT EXISTS;
+CREATE ROLE userNameModifier IF NOT EXISTS;
+CREATE ROLE userModifier IF NOT EXISTS;
+CREATE ROLE userDropper IF NOT EXISTS;
+CREATE ROLE userViewer IF NOT EXISTS;
+CREATE ROLE userManager IF NOT EXISTS;
+CREATE ROLE userImpersonator IF NOT EXISTS;
+CREATE ROLE allUserImpersonator IF NOT EXISTS;
+CREATE ROLE authModifier IF NOT EXISTS;
+CREATE ROLE passwordModifier IF NOT EXISTS;
+CREATE ROLE statusModifier IF NOT EXISTS;
+CREATE ROLE homeDbModifier IF NOT EXISTS;
+CREATE ROLE databaseAdder IF NOT EXISTS;
+CREATE ROLE compositeDatabaseAdder IF NOT EXISTS;
+CREATE ROLE databaseDropper IF NOT EXISTS;
+CREATE ROLE compositeDatabaseDropper IF NOT EXISTS;
+CREATE ROLE databaseModifier IF NOT EXISTS;
+CREATE ROLE accessModifier IF NOT EXISTS;
+CREATE ROLE languageModifier IF NOT EXISTS;
+CREATE ROLE compositeDatabaseModifier IF NOT EXISTS;
+CREATE ROLE compositeDatabaseManager IF NOT EXISTS;
+CREATE ROLE databaseManager IF NOT EXISTS;
+CREATE ROLE aliasAdder IF NOT EXISTS;
+CREATE ROLE aliasDropper IF NOT EXISTS;
+CREATE ROLE aliasModifier IF NOT EXISTS;
+CREATE ROLE aliasViewer IF NOT EXISTS;
+CREATE ROLE aliasManager IF NOT EXISTS;
+CREATE ROLE privilegeViewer IF NOT EXISTS;
+CREATE ROLE privilegeAssigner IF NOT EXISTS;
+CREATE ROLE privilegeRemover IF NOT EXISTS;
+CREATE ROLE privilegeManager IF NOT EXISTS;
+CREATE ROLE procedureExecutor IF NOT EXISTS;
+CREATE ROLE deniedProcedureExecutor IF NOT EXISTS;
+CREATE ROLE boostedProcedureExecutor IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor1 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor2 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor3 IF NOT EXISTS;
+CREATE ROLE deniedBoostedProcedureExecutor4 IF NOT EXISTS;
+CREATE ROLE adminProcedureExecutor IF NOT EXISTS;
+CREATE ROLE functionExecutor IF NOT EXISTS;
+CREATE ROLE deniedFunctionExecutor IF NOT EXISTS;
+CREATE ROLE boostedFunctionExecutor IF NOT EXISTS;
+CREATE ROLE globbing1 IF NOT EXISTS;
+CREATE ROLE globbing2 IF NOT EXISTS;
+CREATE ROLE globbing3 IF NOT EXISTS;
+CREATE ROLE globbing4 IF NOT EXISTS;
+CREATE ROLE globbing5 IF NOT EXISTS;
+CREATE ROLE globbing6 IF NOT EXISTS;
+CREATE ROLE dbmsManager IF NOT EXISTS;
+CREATE ROLE configurationViewer IF NOT EXISTS;
+CREATE ROLE deniedConfigurationViewer IF NOT EXISTS;
+CREATE ROLE serverManager IF NOT EXISTS;
+CREATE ROLE serverViewer IF NOT EXISTS;
+----
+////
+
+The DBMS privileges for procedure and user-defined function execution can be granted, denied, or revoked like other privileges.
+
+[NOTE]
+====
+For more details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Reading the administration commands syntax].
+====
+
+.Execute privileges command syntax
+[options="header", width="100%", cols="3a,2"]
+|===
+| Command
+| Description
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] EXECUTE PROCEDURE[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to execute the given procedures.
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] EXECUTE BOOSTED PROCEDURE[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to use elevated privileges when executing the given procedures.
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] EXECUTE ADMIN[ISTRATOR] PROCEDURES
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to execute procedures annotated with `@Admin`. The procedures are executed with elevated privileges.
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] EXECUTE [USER [DEFINED]] FUNCTION[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+| Enables the specified roles to execute the given user-defined functions.
+
+| [source, syntax, role=noheader]
+GRANT [IMMUTABLE] EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S] name-globbing[, ...]
+  ON DBMS
+  TO role[, ...]
+|  Enables the specified roles to use elevated privileges when executing the given user-defined functions.
+|===
+
+[[access-control-execute-procedure]]
+== Grant privilege to execute procedures
+
+You can grant the privilege to execute procedures using the `EXECUTE PROCEDURE` privilege. +
+A role with this privilege is allowed to execute the procedures matched by the xref:authentication-authorization/dbms-administration/index.adoc#access-control-name-globbing[name-globbing].
+
+=== Grant privilege to execute some procedures
+
+The following query allow the execution of procedures starting with `db.schema`:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE db.schema.* ON DBMS TO procedureExecutor;
+----
+
+Users with the role `procedureExecutor` can run any procedure in the `db.schema` namespace.
+The procedures are executed using the user's own privileges.
+
+To list all privileges for the role `procedureExecutor` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE procedureExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT EXECUTE PROCEDURE db.schema.* ON DBMS TO `procedureExecutor`"
+a|Rows: 1
+|===
+
+=== Grant privilege to execute all but some procedures
+
+You can grant the privilege to execute all except a few procedures using `EXECUTE PROCEDURES *` and deny the unwanted procedures.
+For example, the following queries allow the execution of all procedures, except those starting with `dbms.cluster`:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE * ON DBMS TO deniedProcedureExecutor;
+----
+
+[source, cypher, role=noplay]
+----
+DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO deniedProcedureExecutor;
+----
+
+Users with the role `deniedProcedureExecutor` can run any procedure except those starting with `dbms.cluster`.
+The procedures are executed using the user's own privileges.
+
+To list all privileges for the role `deniedProcedureExecutor` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedProcedureExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY EXECUTE PROCEDURE dbms.cluster* ON DBMS TO `deniedProcedureExecutor`"
+|"GRANT EXECUTE PROCEDURE * ON DBMS TO `deniedProcedureExecutor`"
+a|Rows: 2
+|===
+
+
+The `dbms.cluster.checkConnectivity`, `dbms.cluster.cordonServer`, `dbms.cluster.protocols`, `dbms.cluster.readReplicaToggle`, `dbms.cluster.routing.getRoutingTable`, `dbms.cluster.secondaryReplicationDisable`, `dbms.cluster.setAutomaticallyEnableFreeServers`, and `dbms.cluster.uncordonServer` procedures are blocked, as well as any others starting with `dbms.cluster`.
+
+
+[[access-control-execute-boosted-procedure]]
+== Grant privilege to execute procedures with elevated privileges
+
+You can grant the privilege to execute procedures with elevated privileges using the `EXECUTE BOOSTED PROCEDURE` privilege. +
+A user with this privilege will not be restricted to their other privileges when executing the procedures matched by the xref:authentication-authorization/dbms-administration/index.adoc#access-control-name-globbing[name-globbing].
+The `EXECUTE BOOSTED PROCEDURE` privilege only affects the elevation, and not the execution of the procedure.
+Therefore, it is needed to grant `EXECUTE PROCEDURE` privilege for the procedures as well.
+Both `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` are needed to execute a procedure with elevated privileges.
+
+=== Grant privilege to execute some procedures with elevated privileges
+
+You can grant the privilege to execute some procedures with elevated privileges using `EXECUTE BOOSTED PROCEDURE *`.
+
+For example, the following query allow the execution of the procedures `db.labels` and `db.relationshipTypes` with elevated privileges, and all other procedures with the user's own privileges:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE * ON DBMS TO boostedProcedureExecutor;
+GRANT EXECUTE BOOSTED PROCEDURE db.labels, db.relationshipTypes ON DBMS TO boostedProcedureExecutor
+----
+
+Users with the role `boostedProcedureExecutor` can thus run the `db.labels` and the `db.relationshipTypes` procedures with full privileges, seeing everything in the graph and not just the labels and types that the user has `TRAVERSE` privilege on.
+Without the `EXECUTE PROCEDURE`, no procedures could be executed at all.
+
+To list all privileges for the role `boostedProcedureExecutor` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE boostedProcedureExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT EXECUTE PROCEDURE * ON DBMS TO `boostedProcedureExecutor`"
+|"GRANT EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO `boostedProcedureExecutor`"
+|"GRANT EXECUTE BOOSTED PROCEDURE db.relationshipTypes ON DBMS TO `boostedProcedureExecutor`"
+a|Rows: 3
+|===
+
+[[grant-execute-procedure-deny-elevation]]
+=== Combination of granting execution and denying privilege elevation
+
+As with grant, denying `EXECUTE BOOSTED PROCEDURE` on its own only affects the elevation and not the execution of the procedure.
+
+For example:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor1;
+DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor1;
+----
+
+As a result, the `deniedBoostedProcedureExecutor1` role has privileges that allow the execution of all procedures using the user’s own privileges.
+They also prevent the `db.labels` procedure from being elevated.
+Still, the denied `EXECUTE BOOSTED PROCEDURE` does not block execution of `db.labels`.
+
+To list all privileges for role `deniedBoostedProcedureExecutor1` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedBoostedProcedureExecutor1 PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO `deniedBoostedProcedureExecutor1`"
+|"GRANT EXECUTE PROCEDURE * ON DBMS TO `deniedBoostedProcedureExecutor1`"
+a|Rows: 2
+|===
+
+[[grant-privilege-elevation-deny-execution]]
+=== Combination of granting privilege elevation and denying execution
+
+You can also grant the privilege to execute procedures with elevated privileges and deny the execution of specific procedures.
+
+For example:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor2;
+----
+
+[source, cypher, role=noplay]
+----
+DENY EXECUTE PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor2;
+----
+
+As a result, the `deniedBoostedProcedureExecutor2` role has privileges that allow elevating the privileges for all procedures, but cannot execute any due to missing or denied `EXECUTE PROCEDURE` privileges.
+
+To list all privileges for the role `deniedBoostedProcedureExecutor2` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedBoostedProcedureExecutor2 PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY EXECUTE PROCEDURE db.labels ON DBMS TO `deniedBoostedProcedureExecutor2`"
+|"GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO `deniedBoostedProcedureExecutor2`"
+a|Rows: 2
+|===
+
+[[grant-deny-privilege-elevation]]
+=== Combination of granting and denying privilege elevation
+
+You can also grant the privilege to execute procedures with elevated privileges and deny the elevation for specific procedures.
+
+For example, the following queries allow has privileges that allow elevating the privileges for all procedures except `db.labels`.
+However, no procedures can be executed due to a missing `EXECUTE PROCEDURE` privilege.
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO deniedBoostedProcedureExecutor3;
+----
+
+[source, cypher, role=noplay]
+----
+DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO deniedBoostedProcedureExecutor3;
+----
+
+As a result, the `deniedBoostedProcedureExecutor3` role has privileges that allow elevating the privileges for all procedures except `db.labels`.
+However, no procedures can be executed due to missing `EXECUTE PROCEDURE` privilege.
+
+To list all privileges for the role `deniedBoostedProcedureExecutor3` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedBoostedProcedureExecutor3 PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY EXECUTE BOOSTED PROCEDURE db.labels ON DBMS TO `deniedBoostedProcedureExecutor3`"
+|"GRANT EXECUTE BOOSTED PROCEDURE * ON DBMS TO `deniedBoostedProcedureExecutor3`"
+a|Rows: 2
+|===
+
+=== Control procedure output with privileges
+
+You can control the output of procedures based on the privileges granted or denied to a role using the `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` privileges.
+For example, assume there is a procedure called `myProc`.
+
+This procedure gives the result `A` and `B` for a user with only the `EXECUTE PROCEDURE` privilege and `A`, `B` and `C` for a user with both the `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` privileges.
+
+Now, adapt the privileges from sections <<grant-execute-procedure-deny-elevation, Combination of granting execution and denying privilege elevation>> (example 1), <<grant-privilege-elevation-deny-execution, Combination of granting privilege elevation and denying execution>> (example 2), and <<grant-deny-privilege-elevation, Combination of granting and denying privilege elevations>> (example 3) to be applied to this procedure and show what is returned.
+
+With the privileges from example 1, granted `EXECUTE PROCEDURE *` and denied `EXECUTE BOOSTED PROCEDURE myProc`, the `myProc` procedure returns the result `A` and `B`.
+
+With the privileges from example 2, granted `EXECUTE BOOSTED PROCEDURE *` and denied `EXECUTE PROCEDURE myProc`, execution of the `myProc` procedure is not allowed.
+
+With the privileges from example 3, granted `EXECUTE BOOSTED PROCEDURE *` and denied `EXECUTE BOOSTED PROCEDURE myProc`, execution of the `myProc` procedure is not allowed.
+
+For comparison, when granted:
+
+* `EXECUTE PROCEDURE myProc`: the `myProc` procedure returns the result `A` and `B`.
+* `EXECUTE BOOSTED PROCEDURE myProc`: execution of the `myProc` procedure is not allowed.
+* `EXECUTE PROCEDURE myProc` and `EXECUTE BOOSTED PROCEDURE myProc`: the `myProc` procedure returns the result `A`, `B`, and `C`.
+
+
+[[access-control-admin-procedure]]
+== Grant privilege to execute admin procedures
+
+Admin procedures (annotated with `@Admin`) are special in that they require elevated privileges to be executed at all.
+This means that to execute an admin procedure you need both the <<access-control-execute-procedure, `EXECUTE PROCEDURE`>> and <<access-control-execute-boosted-procedure, `EXECUTE BOOSTED PROCEDURE`>> privileges for that procedure.
+
+For a user to be allowed to execute all admin procedures, they can either be granted the two privileges for each of the admin procedures (which would need to be updated each time a new admin procedure is added), all procedures (which would then affect all non-admin procedures as well) or the `EXECUTE ADMIN PROCEDURES` privilege.
+
+The `EXECUTE ADMIN PROCEDURES` privilege is equivalent to granting the <<access-control-execute-procedure, `EXECUTE PROCEDURE`>> and <<access-control-execute-boosted-procedure, `EXECUTE BOOSTED PROCEDURE`>> privileges on each of the admin procedures.
+This also have the additional advantage that any newly added `admin` procedure is automatically included in this privilege. +
+For example:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO adminProcedureExecutor;
+----
+
+Users with the role `adminProcedureExecutor` can run any `admin` procedure with elevated privileges.
+As a result, the `adminProcedureExecutor` role has privileges that allow the execution of all admin procedures.
+To list all privileges for the role `adminProcedureExecutor` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE adminProcedureExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO `adminProcedureExecutor`"
+a|Rows: 1
+|===
+
+In order to compare this with the `EXECUTE PROCEDURE` and `EXECUTE BOOSTED PROCEDURE` privileges, revisit the `myProc` procedure, but this time as an `admin` procedure, which will give the result `A`, `B` and `C` when allowed to execute.
+
+By starting with a user only granted the `EXECUTE PROCEDURE myProc` or the `EXECUTE BOOSTED PROCEDURE myProc` privilege, execution of the `myProc` procedure is not allowed.
+
+However, for a user granted the `EXECUTE ADMIN PROCEDURES` or both `EXECUTE PROCEDURE myProc` and `EXECUTE BOOSTED PROCEDURE myProc`, the `myProc` procedure returns the result `A`, `B` and `C`.
+
+Any denied `EXECUTE` privilege results in the procedure not being allowed to be executed.
+In this case, it does not matter whether `EXECUTE PROCEDURE`, `EXECUTE BOOSTED PROCEDURE` or `EXECUTE ADMIN PROCEDURES` is being denied.
+
+[[access-control-execute-user-defined-function]]
+== Grant privilege to execute user-defined functions
+
+//EXECUTE [USER [DEFINED]] FUNCTION[S]
+You can grant the privilege to execute user-defined functions (UDFs) using the `EXECUTE USER DEFINED FUNCTION` privilege.
+A role with this privilege is allowed to execute the UDFs matched by the xref:authentication-authorization/dbms-administration/index.adoc#access-control-name-globbing[name-globbing].
+
+[IMPORTANT]
+====
+The `EXECUTE USER DEFINED FUNCTION` privilege does not apply to built-in functions, which are always executable.
+====
+
+=== Grant privilege to execute some user-defined functions
+
+The following query shows an example of how to grant the `EXECUTE USER DEFINED FUNCTION` privilege:
+
+[source,cypher,role=noplay]
+----
+GRANT EXECUTE USER DEFINED FUNCTION apoc.coll.* ON DBMS TO functionExecutor;
+----
+
+Or in short form:
+
+[source,cypher,role=noplay]
+----
+GRANT EXECUTE FUNCTION apoc.coll.* ON DBMS TO functionExecutor;
+----
+
+Users with the role `functionExecutor` can thus run any UDF in the `apoc.coll` namespace.
+The functions are executed using the user's own privileges.
+
+As a result, the `functionExecutor` role has privileges that only allow executing UDFs in the `apoc.coll` namespace.
+To list all privileges for the role `functionExecutor` as commands, use the following query:
+
+[source,cypher,role=noplay]
+----
+SHOW ROLE functionExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"GRANT EXECUTE FUNCTION apoc.coll.* ON DBMS TO `functionExecutor`"
+a|Rows: 1
+|===
+
+=== Grant privilege to execute all but some user-defined functions
+
+To allow the execution of all but a few UDFs, you can grant `+EXECUTE USER DEFINED FUNCTIONS *+` and deny the unwanted UDFs.
+For example, the following queries allow the execution of all UDFs except those starting with `apoc.any.prop`:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE USER DEFINED FUNCTIONS * ON DBMS TO deniedFunctionExecutor;
+----
+
+[source, cypher, role=noplay]
+----
+DENY EXECUTE USER DEFINED FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor;
+----
+
+Or in short form:
+
+[source, cypher, role=noplay]
+----
+GRANT EXECUTE FUNCTIONS * ON DBMS TO deniedFunctionExecutor;
+----
+
+[source, cypher, role=noplay]
+----
+DENY EXECUTE FUNCTION apoc.any.prop* ON DBMS TO deniedFunctionExecutor;
+----
+
+As a result, the `deniedFunctionExecutor` role has privileges that only allow the execution of all UDFs except those starting with `apoc.any.prop`.
+The functions are executed using the user's own privileges.
+To list all privileges for the role `deniedFunctionExecutor` as commands, use the following query:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLE deniedFunctionExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer", width="100%", cols="m"]
+|===
+|command
+|"DENY EXECUTE FUNCTION apoc.any.prop* ON DBMS TO `deniedFunctionExecutor`"
+|"GRANT EXECUTE FUNCTION * ON DBMS TO `deniedFunctionExecutor`"
+a|Rows: 2
+|===
+
+The `apoc.any.property` and `apoc.any.properties` are blocked, as well as any other UDFs starting with `apoc.any.prop`.
+
+[[access-control-execute-boosted-user-defined-function]]
+== Grant privilege to execute user-defined functions with elevated privileges
+
+//EXECUTE BOOSTED [USER [DEFINED]] FUNCTION[S]
+You can grant the privilege to execute user-defined functions (UDFs) with elevated privileges using the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege. +
+A user with this privilege will not be restricted to their other privileges when executing the UDFs matched by the xref:authentication-authorization/dbms-administration/index.adoc#access-control-name-globbing[name-globbing].
+The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege only affects the elevation and not the execution of the function.
+Therefore, it is needed to grant `EXECUTE USER DEFINED FUNCTION` privilege for the UDFs as well.
+Both `EXECUTE USER DEFINED FUNCTION` and `EXECUTE BOOSTED USER DEFINED FUNCTION` are needed to execute a function with elevated privileges.
+
+[IMPORTANT]
+====
+The `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege does not apply to built-in functions, as they have no concept of elevated privileges.
+====
+
+=== Grant privilege to execute some user-defined functions with elevated privileges
+
+The following query shows an example of how to grant the `EXECUTE BOOSTED USER DEFINED FUNCTION` privilege:
+
+[source,cypher,role=noplay]
+----
+GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS TO boostedFunctionExecutor;
+GRANT EXECUTE BOOSTED USER DEFINED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor;
+----
+
+Or in short form:
+
+[source,cypher,role=noplay]
+----
+GRANT EXECUTE FUNCTION * ON DBMS TO boostedFunctionExecutor;
+GRANT EXECUTE BOOSTED FUNCTION apoc.any.properties ON DBMS TO boostedFunctionExecutor;
+----
+
+Users with the role `boostedFunctionExecutor` can thus run `apoc.any.properties` with full privileges and see every property on the node/relationship, not just the properties that the user has `READ` privilege on.
+Without the `EXECUTE USER DEFINED FUNCTION`, you cannot execute any UDFs at all.
+
+As a result, the `boostedFunctionExecutor` role has privileges that allow executing the UDF `apoc.any.properties` with elevated privileges, and all other UDFs with the users' own privileges.
+To list all privileges for the role `boostedFunctionExecutor` as commands, use the following query:
+
+[source,cypher,role=noplay]
+----
+SHOW ROLE boostedFunctionExecutor PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[options="header,footer",width="100%",cols="m"]
+|===
+|command
+|"GRANT EXECUTE FUNCTION * ON DBMS TO `boostedFunctionExecutor`"
+|"GRANT EXECUTE BOOSTED FUNCTION apoc.any.properties ON DBMS TO `boostedFunctionExecutor`"
+a|Rows: 2
+|===
