@@ -1,90 +1,222 @@
-:description: Introduction to the Neo4j Clustering architecture.
-[role=enterprise-edition]
+:description: Introduction to the Neo4j clustering architecture.
+:page-role: enterprise-edition
 [[clustering-introduction]]
-= Introduction
+= Introduction: Neo4j clustering architecture
 
 [[clustering-introduction-overview]]
 == Overview
 
 Neo4j's clustering provides these main features:
 
-. *Safety:* Servers hosting databases in primary mode provide a fault tolerant platform for transaction processing which remains available while a simple majority of those Primary Servers are functioning.
-. *Scale:* Servers hosting databases in secondary mode provide a massively scalable platform for graph queries that enables very large graph workloads to be executed in a widely distributed topology.
-. *Causal consistency:* When invoked, a client application is guaranteed to read at least its own writes.
+. *Scalability:* A Neo4j cluster is a highly available cluster with multi-database support.
+It is a set of servers running a number of databases.
+Servers and databases are decoupled: servers provide computation and storage power for databases to use.
+Each database relies on its own cluster architecture, organized into primaries (with a minimum of three for high availability) and secondaries (for read scaling).
+. *Fault tolerance:* Primary database allocations provide a fault tolerant platform for transaction processing.
+A database remains available for reads and writes as long as a simple majority of its primary copies are functioning.
 . *Operability:* Database management is separated from server management.
+For details, see xref:clustering/databases.adoc[] and xref:clustering/servers.adoc[].
+. *Causal consistency:* When invoked, a client application is guaranteed to read at least its own writes.
 
-Together, this allows the end-user system to be fully functional and both read and write to the database in the event of multiple hardware and network failures and makes reasoning about database interactions straightforward.
-Additionally, the administration of a cluster is uncomplicated, including scaling the size of the cluster and distributing and balancing the available resources.
-
-The remainder of this section contains an overview of how clustering works in production, including both operational and application aspects.
+For information about cluster design patterns and anti-patterns, see xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc[].
 
 [[clustering-introduction-operational]]
 == Operational view
 
 From an operational point of view, it is useful to view the cluster as a homogenous pool of servers which run a number of databases.
-The servers have two different database-hosting capabilities, referred to as _Primary_ and _Secondary_ modes.
-A server can simultaneously act as a primary host for one or more databases and as a secondary host for other databases.
+
+Note that `primary` and `secondary` are roles for a copy of a database.
+Servers are not primary or secondary, though they have a xref:configuration/configuration-settings.adoc#config_initial.server.mode_constraint[`modeConstraint`] referred to as `PRIMARY`, `SECONDARY`, or `NONE`.
+That means they can host standard databases only in primary mode or only in secondary mode.
+If the `modeConstraint` is set to `NONE`, a server can host databases in either mode.
+In other words, a server can host primaries for some databases and secondaries for other databases.
+
 Similarly, it is possible for a database to be hosted on only one server, even when that server is part of a cluster.
-In such cases, the server is always hosting that database in primary mode.
+In such cases, the database allocation is always primary.
+See <<single-primary>> for details.
 
-image::operational-view.svg[title="Cluster Architecture",role="middle"]
+image::operational-view_current.svg[title="Cluster architecture - current",role="middle"]
 
-The two modes are foundational in any production deployment but are managed at different scales from one another and undertake different roles in managing the fault tolerance and scalability of the overall cluster.
+image::operational-view_new.svg[title="Cluster architecture. Version 1.",width=800,role="middle"]
 
-
-[[clustering-primary-mode]]
-== Primary mode
-
-A server hosting a database in primary mode allows read and write operations.
-A database can be hosted by one or more primary hosts.
-
-To achieve high availability, a database should be created with multiple primaries.
-If high availability is not required, then a database may be created with a single primary for minimum write latency.
-The remainder of this section assumes a database has multiple primaries.
-
-Database primaries achieve high availability by replicating all transactions using the Raft protocol.
-Raft ensures that the data is safely durable by waiting for a majority of primaries in a database (N/2+1) to acknowledge a transaction, before acknowledging its commit to the end user application.
-In practice, only one of the multiple primaries execute write transactions from clients.
-This writer is elected automatically from amongst a database's primaries and may change over time.
-The writer primary synchronously replicates writes to the other primaries.
-The database secondaries replicates the writes asynchronously from more up-to-date members of the cluster.
-
-This synchronous replication has an impact on write transaction latency.
-Implicitly, write transactions are acknowledged by the fastest majority, but as the number of primaries of the database grows, so does the size of the majority needed to acknowledge a write.
-
-The fault tolerance for a database is calculated with the formula M = 2F + 1, where M is the number of primaries required to tolerate F faults.
-For example:
-
-** In order to tolerate two failed primaries, you need a topology of five servers hosting your database in primary mode.
-** The smallest fault-tolerant cluster, a cluster that can tolerate one fault, must have three database primaries.
-** It is also possible to create a cluster consisting of only two primaries.
-However, that cluster is not fault-tolerant.
-If one of the two servers fails, the remaining server becomes read-only.
-** A database with a single primary server cannot tolerate any faults either.
-Therefore it is recommended to have three or more primaries to achieve high availability.
+image::operational_view_new1.svg[title="Cluster architecture. Version 2.",width=800,role="middle"]
 
 
-[NOTE]
-====
-With database primaries, should the database suffer enough primary failures, it can no longer process writes and becomes read-only to preserve safety.
-====
+[[clustering-primaries]]
+== Database primaries
+
+A _primary_ is a copy of a database that serves write operations and can be the writer for that database.
+A database can have one or more primary allocations within a cluster.
+
+Only primaries are eligible to act as the writer for a database.
+At any given time, only one primary is automatically elected as a writer among the database's primaries.
+The writer may change over time.
+
+The database writer synchronously pushes writes to other primaries and does not allow a commit to be completed until it receives confirmation that the data has been written to enough members.
+
+For high availability, create a database with multiple primaries.
+If high availability is not required, a database can be created with a single primary to achieve minimum write latency.
+
+If too many primaries fail, the database can no longer process writes and becomes read-only.
 
 
-[[clustering-secondary-mode]]
-== Secondary mode
+[[recommended-number-of-primaries]]
+=== How many primaries you should have
 
-Database secondaries are asynchronously replicated from primaries via transaction log shipping.
-They periodically poll an upstream server for new transactions and have these shipped over.
-Many secondaries can be fed data from a relatively small number of primaries, allowing for a large fan out of the query workload for scale.
+Primaries provide:
 
-Databases can typically have relatively large numbers of secondaries.
-Losing a secondary does not impact the database's availability, aside from the loss of its fraction of graph query throughput.
-It does not affect the fault tolerance of the database.
+* The ability to write to your database (with optional fault tolerance).
+* The ability to read from your database.
+* Fault tolerance for different failure scenarios.
 
-The main responsibility of database secondaries is to scale out read workloads.
-Secondaries act like caches for the graph data and are fully capable of executing arbitrary (read-only) queries and procedures.
+The fault tolerance is calculated with the formula: +
+`M = 2F + 1`, where `M` is the number of primaries required to tolerate `F` faults.
 
-Due to its asynchronous nature, secondaries may not provide all transactions committed on the primary server(s).
+Types of fault tolerance, listed *from easiest to hardest to lose*, are as follows:
+
+* *Write availability*: +
+If write availability is lost, your database cannot accept any more writes.
+* *Read availability*: +
+If read availability is lost, your database cannot serve any more reads.
+* *Durability*: +
+If durability is lost, the data written to your database is lost, and you need to restore the database from a backup.
+
+Generally speaking, fault tolerance is the number of primary database copies you can lose without affecting a certain operation.
+For instance, with one primary copy, you have no fault tolerance, because if it goes offline, nothing is available.
+If you have two servers, each with a primary copy of the database, and one goes offline, the other will still have some copy of the data, so read availability would be preserved.
+
+Such operations as shutting Neo4j process down to upgrade the binaries, or taking the server it runs on down for maintenance, are included as _faults_ in this meaning, since they make the database copy unavailable.
+
+If you want upgrades with no downtime, you need fault tolerance.
+
+Therefore, you need minimum three primaries (and three servers to host each copy) to be able to maintain write availability with the failure of one member.
+This is enough for most deployments.
+
+If you want to retain write availability with the failure of two primary members, you need <<five-primaries>>.
+
+The maximum number of primaries you can have is *nine*, but it is not recommended having that many primaries.
+Because the more primaries you have, the more servers you have to contact for each write operation, which can increase the latency of writes.
+
+
+[[clustering-secondaries]]
+== Database secondaries
+
+A _secondary_ is a database copy asynchronously replicated from primaries via transaction log shipping.
+Secondaries periodically check an upstream database member for new transactions, which are then transferred to them.
+
+The main purpose of database secondaries is to scale out read workloads.
+Secondaries act like caches for graph data and can execute arbitrary read-only queries and procedures.
+
+Multiple secondaries can be fed data from a relatively small number of primaries, providing a significant distribution of query workloads for better scalability.
+Databases can have a fairly large number of secondaries.
+
+The loss of a secondary does not affect the database's availability; however, it reduces the query throughput.
+It also does not affect the database fault tolerance.
+
+While secondaries serve as a copy of your database, providing some level of durability (what is committed cannot be lost), they do not guarantee it completely.
+Secondaries pull updates from a selected upstream member (primary) on their own schedule.
+Due to their asynchronous nature, secondaries may not provide all transactions committed on the primary allocation(s).
+
+
+[[recommended-number-of-secondaries]]
+=== How many secondaries you should have
+
+Secondaries typically provide read scale out, i.e. if you have more read queries happening than your primaries can handle, you can add secondaries to share the load; or even configure the query routing so that reads preferentially target secondaries to leave the primaries free to handle just the write workload.
+
+So, there is no hard rule about the number of secondaries to have.
+Starting with zero and adding more until your read performance and cluster stability is acceptable is the usual approach.
+
+The maximum number of secondaries you can have is *20*.
+
+
+[[primaries-secondaries-for-system-db]]
+== Primaries and secondaries for the `system` database
+
+The `system` database, which records what databases are present in the DBMS, also can be in a primary or secondary mode.
+However, unlike standard databases, it is not configured using Cypher commands to define the topology. 
+Instead, it is controlled through the xref:configuration/configuration-settings.adoc#config_server.cluster.system_database_mode[`server.cluster.system_database_mode`] setting.
+
+Use the following guidelines when deciding how many primary and secondary `system` databases to have and which servers should host them:
+
+* Stable, long-lived servers are good candidates to host a `system` primary, since they are expected to remain online and can be intentionally shut down when needed.
+* Ephemeral or frequently changing servers are good candidates to host a `system` secondary, as they may be added or removed more often.
+* A single `system` primary provides no fault tolerance for writes to the `system` database.
+Therefore, in a typical cluster deployment, it is best to start with three `system` primaries to ensure write availability.
+* Although the write volume for the `system` database is low and it can tolerate higher write latency, allowing to have more than nine `system` primaries, doing so is generally not recommended.
+
+
+[[database-topologies-examples]]
+== Examples of database topologies
+
+For information about the cluster deployment across multiple data centers, refer to the xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc[].
+
+[[single-primary]]
+=== Single primary
+
+If you have a single copy of the database, it is a primary.
+All writes and reads goes through this copy.
+If the copy becomes unavailable, no writes or reads are possible.
+If the disk for that copy is lost or corrupted, durability is lost and you must restore from the latest full backup.
+
+[[three-primaries]]
+=== Three primaries
+
+In a cluster with three primaries, the members elect a leader to process write operations.
+Each write is replicated to at least one additional primary before being considered committed (durable).
+This ensures that if any single primary fails, that update remains available on another member.
+That includes if the database copy is fully lost, including the disk being unrecoverable.
+
+image::follower-writer.svg[title="Communication between three primaries and a client",width=800,role="middle"]
+
+If one primary copy fails, the database is still write-available with the remaining two primaries, but it no longer has fault tolerance for its write availability.
+
+Another failure would prevent any new writes from being processed until either one of the other members is brought back, or the database is recreated with new members.
+The database would still be read-available on the last member though.
+
+The non-writer primaries also provide read capacity and fault tolerance.
+By default, read queries are routed away from the writer (see xref:configuration/configuration-settings.adoc#config_dbms.routing.reads_on_writers_enabled[`dbms.routing.reads_on_writers_enabled`]).
+
+See xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc#geo-distributed-dc[Geo-distribution of user database primaries] for the pattern of deploying a cluster with three primaries across three data centers.
+
+[[five-primaries]]
+=== Five primaries
+
+If you want fault tolerance greater than one arbitrary database member, deploy five primaries.
+You will have tolerance to the failure of any two primaries.
+The remaining three primaries can still maintain quorum and ensure the database continues to operate.
+
+Some of the primary copies can be complemented with secondaries on servers.
+For example: `1P+1P1S+1P1S+1P+1P`.
+
+// For information about deploying five primaries across multiple data centers, see xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc#[].
+
+
+[[primary-plus-secondaries]]
+=== Single primary plus secondaries
+
+As described above, a single primary provides no fault tolerance for both write availability or durability.
+If the single primary fails, no write operations can be processed, and if its disk is lost, the most recent updates may be lost.
+
+However, adding one or more secondaries means that read availability can be maintained despite the loss of the primary.
+
+Keep in mind that the secondaries may not have the most up to date data, which is only guaranteed to be present on the primary.
+
+The secondaries typically handle all of the read queries (see xref:configuration/configuration-settings.adoc#config_dbms.routing.reads_on_writers_enabled[`dbms.routing.reads_on_writers_enabled`]).
+
+
+[[three-primaries-plus-secondaries]]
+=== Three primaries plus secondaries
+
+As described above, three primaries provide fault tolerance for both write availability and durability.
+Both secondaries and non-writer primaries can handle read queries.
+Although, you can configure only secondaries to handle reads (see xref:configuration/configuration-settings.adoc#config_dbms.routing.reads_on_primaries_enabled[`dbms.routing.reads_on_primaries_enabled`]) if you need primaries to focus on the write workload.
+
+The loss of any single database copy does not affect write availability, read availability, or durability.
+
+If all the secondaries fail, then primaries that are not acting as the writer start handling read queries to maintain read availability.
+
+See xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc#secondaries-for-read-resilience[Read resilience with user database secondaries].
+
 
 [[causal-consistency-explained]]
 == Causal consistency
