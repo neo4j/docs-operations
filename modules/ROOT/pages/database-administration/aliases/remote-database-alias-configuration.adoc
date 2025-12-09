@@ -28,7 +28,7 @@ It is assumed that you have two separate DBMS instances: a local *DBMS A* and a 
 
 By creating a remote database alias, you define:
 
-* Which user of the remote *DBMS B* can access the remote alias.
+* Which user credentials of the remote *DBMS B* can access the remote database alias.
 * Where the remote database is located.
 * How to connect to the remote database using driver settings.
 
@@ -56,25 +56,32 @@ See xref:authentication-authorization/dbms-administration/index.adoc[DBMS privil
 
 _Carol_ can use her own regular credentials to access the remote database `db1` in *DBMS B* after _Bob_ creates a user profile for her and shares the credentials with _Alice_.
 Then, _Alice_ will be able to grant _Carol_ access to the remote database alias `db1-remote-alias` that connects to `db1` on *DBMS B* using the shared credentials.
-This configuration will also allow _Carol_ to access `db2` in *DBMS B*, if _Bob_ grants the necessary privileges to the user profile shared with _Alice_.
-See xref:authentication-authorization/index.adoc[Authentication and authorization] for further information.
+//This configuration will also allow _Carol_ to access `db2` in *DBMS B*, if _Bob_ grants the necessary privileges to the user profile shared with _Alice_.
+//See xref:authentication-authorization/index.adoc[Authentication and authorization] for further information.
 
-=== Configure the remote DBMS (_Bob_)
+=== Configure the remote DBMS B (_Bob_)
 
 As _Bob_, you are responsible for the remote *DBMS B*.
 You can create and delete users and grant or deny privileges on the databases managed by *DBMS B*.
 
 In this example, you create a user called `alias_user`, which will be used by the remote database alias to connect to `db1`, and shares the credentials with _Alice_.
 
-. Create the user profile to share with _Alice_.
-. Define the permissions for the user.
-(If you do not want this user to access `db2`, here is where you set it.)
+. Create the user profile to share with _Alice_:
 +
-.Example setup administrator B
 [source, Cypher]
 ----
 CREATE USER alias_user SET PASSWORD 'secretpassword'
+----
+. Create a custom role to track all users shared on a remote connection, so that they remain trackable:
++
+[source, Cypher]
+----
 CREATE ROLE remote
+----
+. Grant the necessary privileges on `db1` to the custom role and assign the role to the user profile created for the remote database alias:
++
+[source, Cypher]
+----
 GRANT ACCESS ON DATABASE db1 TO remote
 GRANT MATCH {*} ON GRAPH db1 TO remote
 GRANT ROLE remote TO alias_user
@@ -101,7 +108,7 @@ server.bolt.tls_level=REQUIRED
 It is recommended to create a custom role to track all users shared on a remote connection, so that they remain trackable.
 
 [[remote-alias-config-DBMS_admin-A]]
-=== Configure a DBMS with a remote database alias (_Alice_)
+=== Configure the local DBMS A and grant access to Carol (_Alice_)
 
 As _Alice_, you are responsible for setting up *DBMS А*.
 You can create and delete the database aliases and grant or deny users' access to them.
@@ -287,7 +294,7 @@ dbms.ssl.policy.bolt.client_auth=NONE
 server.bolt.tls_level=REQUIRED
 ----
 
-=== Configure the local DBMS A (_Alice_)
+=== Configure the local DBMS A and grant access to Carol (_Alice_)
 
 As _Alice_, you are responsible for setting up the local *DBMS A*.
 You can create and delete the database aliases and grant or deny users' access to them.
@@ -333,7 +340,8 @@ However, if you want to disable the secure URL scheme, you can set the driver se
 CREATE ALIAS `db1-remote-alias` FOR DATABASE `db1` AT "neo4j+s://location:7687" OIDC CREDENTIAL FORWARDING
 ----
 
-. Grant the xref:authentication-authorization/database-administration.adoc#access-control-database-administration-access[`ACCESS` privileges] to use the remote database alias to _Carol_:
+. Create a role to grant access to the remote database alias and assign it to _Carol_.
+See the xref:authentication-authorization/database-administration.adoc#access-control-database-administration-access[`ACCESS` privileges] for more information.
 +
 [source, Cypher]
 ----
