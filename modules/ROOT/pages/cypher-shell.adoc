@@ -25,7 +25,9 @@ cypher-shell [-h] [-a ADDRESS] [-u USERNAME] [--impersonate IMPERSONATE] [-p PAS
                     [--non-interactive] [--sample-rows SAMPLE-ROWS] [--wrap {true,false}] [-v]
                     [--driver-version] [-f FILE] [--change-password] [--log [LOG-FILE]]
                     [--history HISTORY-BEHAVIOUR] [--notifications] [--idle-timeout IDLE-TIMEOUT]
-                    [--error-format {gql,legacy,stacktrace}] [--fail-fast | --fail-at-end] [cypher]
+                    [--error-format {gql,legacy,stacktrace}]
+                    [--transaction-timeout TRANSACTION-TIMEOUT] [--fail-fast | --fail-at-end]
+                    [cypher]
 ----
 
 == Positional arguments
@@ -123,6 +125,10 @@ Can also be set using the environment variable `NEO4J_CYPHER_SHELL_HISTORY`.
 |--error-format {gql,legacy,stacktrace}
 |Controls how errors are displayed.
 |gql label:new[Changed in 2025.06]
+
+|--transaction-timeout TRANSACTION-TIMEOUT
+|Transaction timeout. You can specify the duration using the format `<hours>h<minutes>m<seconds>s`, for example `1h` (1 hour), `1h30m` (1 hour 30 minutes), or `30m` (30 minutes).
+|disable
 |===
 
 == Connection arguments
@@ -201,7 +207,7 @@ The TAR distribution contains only the _cypher-shell_ files, so you must install
 +
 [source, shell]
 ----
-cypher-shell/cypher-shell -a neo4j://IP-address:7687 -u neo4j -p <password>
+bin/cypher-shell -a neo4j://IP-address:7687 -u neo4j -p <password>
 ----
 +
 The output is the following:
@@ -566,6 +572,37 @@ MATCH (n:Person) WHERE n.born=1964 RETURN n.name AS name;
 ready to start consuming query after 1 ms, results consumed after another 1 ms
 ----
 ====
+
+[[cypher-shell-transaction-timeout]]
+== Transaction Timeout
+
+You can start Cypher Shell with a specific transaction timeout, which will apply to all transactions during the session.
+
+.Start with transaction timeout argument
+====
+
+[source, shell]
+----
+bin/cypher-shell -u neo4j -p <password> --transaction-timeout 10m
+----
+
+Execute a very long running query.
+
+[source, shell]
+----
+UNWIND range(0, 90_000) AS x
+CALL apoc.util.sleep(100)
+RETURN sum(x) AS sum;
+----
+
+After ~10 minutes, the transaction times out.
+
+[queryresult]
+----
+25N14: invalid transaction state - transaction termination client error. The transaction has been terminated. Retry your operation in a new transaction, and you should see a successful result. Reason: The transaction has not completed within the timeout specified at its start by the client. You may want to retry with a longer timeout.
+----
+====
+
 
 [[cypher-shell-procedures]]
 == Procedures
