@@ -8,12 +8,11 @@
 
 Neo4j's clustering provides these main features:
 
-. *Scalability:* A Neo4j cluster is a highly available cluster with multi-database support.
-It is a set of servers running a number of databases.
+. *Scalability:* A Neo4j cluster is a set of servers running multiple databases.
 Servers and databases are decoupled: servers provide computation and storage power for databases to use.
-Each database has it own independent topology, organized into primaries (with a minimum of three for high availability) and secondaries (for read scaling).
-. *Fault tolerance:* Primary database allocations provide a fault tolerant platform for transaction processing.
-A database remains available for reads and writes as long as a simple majority of its primary allocations are functioning.
+Each database has it own independent topology, organized into primaries and secondaries (for read scaling).
+. *Fault tolerance:* Primary database allocations provide a <<recommended-number-of-primaries,fault tolerant platform>> for transaction processing.
+A database remains available for writes as long as a simple majority of its primary allocations are functioning.
 . *Operability:* Database management is separated from server management.
 For details, see xref:clustering/databases.adoc[] and xref:clustering/servers.adoc[].
 . *Causal consistency:* When invoked, a client application is guaranteed to read at least its own writes.
@@ -36,11 +35,7 @@ Similarly, it is possible for a database to be hosted on only one server, even w
 In such cases, the database allocation is always primary.
 See <<single-primary>> for details.
 
-image::operational-view_current.svg[title="Cluster architecture - current",role="middle"]
-
-image::operational-view_new.svg[title="Cluster architecture. Version 1.",width=800,role="middle"]
-
-image::operational_view_new1.svg[title="Cluster architecture. Version 2.",width=800,role="middle"]
+image::operational-view_new.svg[title="Cluster architecture",width=800,role="middle"]
 
 
 [[clustering-primaries]]
@@ -73,6 +68,10 @@ Primaries provide:
 The fault tolerance is calculated with the formula: +
 `M = 2F + 1`, where `M` is the number of primaries required to tolerate `F` faults.
 
+Generally speaking, fault tolerance is the number of primary database copies you can lose without affecting a certain operation.
+For instance, with one primary copy, you have no fault tolerance, because if it goes offline, nothing is available.
+If you have two servers, each with a primary copy of the database, and one goes offline, the other will still have some copy of the data, so read availability would be preserved.
+
 Types of fault tolerance, listed *from easiest to hardest to lose*, are as follows:
 
 * *Write availability*: +
@@ -82,18 +81,14 @@ If read availability is lost, your database cannot serve any more reads.
 * *Durability*: +
 If durability is lost, the data written to your database is lost, and you need to restore the database from a backup.
 
-Generally speaking, fault tolerance is the number of primary database copies you can lose without affecting a certain operation.
-For instance, with one primary copy, you have no fault tolerance, because if it goes offline, nothing is available.
-If you have two servers, each with a primary copy of the database, and one goes offline, the other will still have some copy of the data, so read availability would be preserved.
-
-Such operations as shutting Neo4j process down to upgrade the binaries, or taking the server it runs on down for maintenance, are included as _faults_ in this meaning, since they make the database copy unavailable.
+Operations such as shutting Neo4j process down to upgrade the binaries, or taking the server it runs on offline for maintenance, are included as _faults_ in this context, since they make the database copy unavailable.
 
 If you want upgrades with no downtime, you need fault tolerance.
 
 Therefore, you need minimum three primaries (and three servers to host each copy) to be able to maintain write availability with the failure of one member.
 This is enough for most deployments.
 
-If you want to retain write availability with the failure of two primary members, you need <<five-primaries>>.
+If you want to retain write availability with the failure of two primary members, you need <<five-primaries, five primaries>>.
 
 The maximum number of primaries you can have is *nine*, but it is not recommended having that many primaries.
 Because the more primaries you have, the more servers you have to contact for each write operation, which can increase the latency of writes.
@@ -116,13 +111,13 @@ It also does not affect the database fault tolerance.
 
 While secondaries serve as a copy of your database, providing some level of durability (what is committed cannot be lost), they do not guarantee it completely.
 Secondaries pull updates from a selected upstream member (primary) on their own schedule.
-Due to their asynchronous nature, secondaries may not provide all transactions committed on the primary allocation(s).
+Due to their asynchronous nature, secondaries may temporarily lag behind the primary, meaning recently committed transactions may not be immediately visible on secondaries.
 
 
 [[recommended-number-of-secondaries]]
 === How many secondaries you should have
 
-Secondaries typically provide read scale out, i.e. if you have more read queries happening than your primaries can handle, you can add secondaries to share the load; or even configure the query routing so that reads preferentially target secondaries to leave the primaries free to handle just the write workload.
+Secondaries typically provide read scaling, i.e. if you have more read queries happening than your primaries can handle, you can add secondaries to share the load; or even configure the query routing so that reads preferentially target secondaries to leave the primaries free to handle just the write workload.
 
 So, there is no hard rule about the number of secondaries to have.
 Starting with zero and adding more until your read performance and cluster stability is acceptable is the usual approach.
@@ -187,9 +182,8 @@ You will have tolerance to the failure of any two primaries.
 The remaining three primaries can still maintain quorum and ensure the database continues to operate.
 
 Some of the primary copies can be complemented with secondaries on servers.
-For example: `1P+1P1S+1P1S+1P+1P`.
 
-// For information about deploying five primaries across multiple data centers, see xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc#[].
+// For information about deploying five primaries across multiple data centers, see xref:clustering/multi-region-deployment/geo-redundant-deployment.adoc#five-primaries-across-three-dc[].
 
 
 [[primary-plus-secondaries]]
