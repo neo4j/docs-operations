@@ -64,10 +64,13 @@ For more information, see xref:backup-restore/online-backup.adoc#online-backup-c
 
 [source,role=noheader]
 ----
-neo4j-admin database backup [-h] [--expand-commands] [--prefer-diff-as-parent] [--verbose] [--compress[=true|false]]
-                            [--keep-failed[=true|false]] [--parallel-recovery[=true|false]] [--remote-address-resolution
-                            [=true|false]] [--additional-config=<file>] [--include-metadata=none|all|users[=user1,user2]
-                            |roles] [--inspect-path=<path>] [--pagecache=<size>] [--temp-path=<path>]
+neo4j-admin database backup [-h] [--expand-commands] [--prefer-diff-as-parent] [--verbose]
+                            [--compress[=true|false]] [--keep-failed[=true|false]]
+                            [--parallel-download[=true|false]] [--parallel-recovery[=true|false]]
+                            [--remote-address-resolution[=true|false]] [--skip-recovery
+                            [=true|false]] [--additional-config=<file>]
+                            [--include-metadata=none|all|users[=user1,user2]|roles]
+                            [--inspect-path=<path>] [--pagecache=<size>] [--temp-path=<path>]
                             [--to-path=<path>] [--type=<type>] [--from=<host:port>[,<host:port>...]]... [<database>...]
 ----
 
@@ -154,6 +157,10 @@ It is recommended to use `SHOW USERS`, `SHOW ROLES`, and `SHOW ROLE $role PRIVIL
 |The size of the page cache to use for the backup process.
 |
 
+|--parallel-download[=true\|false]
+|label:new[Introduced in 2025.11] Download backup data from multiple Neo4j instances in parallel.
+|false
+
 |--parallel-recovery[=true\|false]
 | Allow multiple threads to apply pulled transactions to a backup in parallel. For some databases and workloads, this may reduce backup times significantly.
 Note: this is an EXPERIMENTAL option. Consult Neo4j support before use.
@@ -165,6 +172,10 @@ Note: this is an EXPERIMENTAL option. Consult Neo4j support before use.
 
 |--remote-address-resolution[=true\|false]
 |label:new[Introduced in 2025.09] Allow the DBMS to automatically determine which servers are eligible to serve as backup sources, instead of requiring manual selection.
+|false
+
+|--skip-recovery[=true\|false]
+|label:new[Introduced in 2025.11] Skip recovery as part of the full backup. Skipping recovery might result in faster backups, but recovery will have to be done during restore time.
 |false
 
 |--temp-path=<path>
@@ -398,6 +409,14 @@ The server selection occurs in the following order:
 * The DBMS first selects all servers hosting the database in secondary mode.
 * If it is not possible to back up from one of the secondaries, the DBMS attempts to take a backup from the primary followers before finally trying the database primary writer.
 
+
+[role=label--new-2025.11]
+==== Using `--parallel-download`
+
+Starting from 2025.11, the `--parallel-download` option is available.
+When enabled, the backup process pulls data from multiple servers which have been either defined in the `--from` option or determined from `--remote-address-resolution`.
+
+Note that this will speed up the backup process if sufficient throughput is provisioned for both the backup process and the source servers from which data is being pulled.
 
 [[online-backup-example]]
 == Examples
