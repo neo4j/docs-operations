@@ -21,7 +21,7 @@ Attribute-based access control, ABAC grants roles based on the evaluation of att
 Use the following steps to set up attribute-based access control:
 
 1. Enable attribute-based access control in the `neo4j.conf` file by setting the `internal.dbms.feature_flag.attribute_based_access_control` setting to `true`.
-2. Specify which OIDC provider will be used for attribute-based access control by setting the `internal.dbms.security.abac_enabled_authorization_providers` setting to the appropriate providers.
+2. Specify which OIDC provider(s) will be used for attribute-based access control by setting the `internal.dbms.security.abac_enabled_authorization_providers` setting to the appropriate providers.
 3. Define the authorization rules that will be used to grant roles based on user attributes by using the Cypher command `CREATE AUTH RULE`, explained below.
 4. Specify which roles will be assigned when the authorization rules are fulfilled using the `GRANT ROLE` command, explained below.
 
@@ -109,7 +109,7 @@ For information about the `GRANT ROLE` command, see xref:authentication-authoriz
 
 [NOTE]
 ====
-No roles with associated deny privileges can be assigned using attribute-based access control.
+No roles with associated deny privileges can be assigned using attribute-based access control. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
 ====
 
 [NOTE]
@@ -181,8 +181,8 @@ GRANT ROLE reader TO AUTH RULE temporary_reader;
 == Caveats and limitations
 
 * When evaluating `abac.oidc.user_attribute('<claim_key>')`, if the claim does not exist in the authentication token, it will evaluate to `NULL`.
-* Newly created auth rules are not applied to existing user sessions. Users must re-authenticate to have the new rules applied.
+* Newly created auth rules are applied to existing user sessions, but will only have access to the user claims which had rules containing them at the start of the session. Only user claims which are used in pre-existing auth rules at the start of a session are retained. Users must re-authenticate to have new rules applied if the new rules use new claims.
 * Attribute-based access control is only supported for OIDC authentication providers.
-* For troubleshooting ABAC evaluation, enable debug logging for the security log and turn on JWT claims logging at debug level in `neo4j.conf`: `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`
+* For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in `neo4j.conf`: `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`
 * Show commands for listing AUTH RULES are not supported yet.
 * Altering existing auth rules is not supported yet.
