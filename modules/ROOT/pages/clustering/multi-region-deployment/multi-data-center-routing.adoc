@@ -4,27 +4,11 @@
 [[multi-data-center-routing]]
 = Multi-data center routing
 
-This section describes the following:
-
-* <<mdc-introduction, Introduction>>
-* <<mdc-prerequisite-configuration, Prerequisite configuration>>
-** <<mdc-server-tags, Server tags>>
-** <<mdc-primaries-for-reading, Primaries for reading>>
-* <<mdc-load-balancing-framework, Load balancing>>
-** <<mdc-policy-definitions, Policy definitions>>
-** <<mdc-policy-names, Policy names>>
-** <<mdc-filters, Filters>>
-** <<mdc-dsl-example, Load balancing examples>>
-* <<mdc-strategy-plugins, Strategy plugins>>
-** <<mdc-programmatically-specify-rules, Configuring upstream selection using pre-defined catch-up strategies>>
-** <<mdc-configuration-user-defined-strategy, Configuring user-defined catch-up strategies>>
-// ** <<mdc-build-your-own-strategy-plugin, Building upstream strategy plugins using Java>>
-** <<#mdc-favoring-data-centers, Favoring data centers>>
 
 [[mdc-introduction]]
 == Introduction
 
-When deploying a multi-data center cluster it is often desirable to take advantage of locality to reduce latency and improve performance.
+When deploying a cluster it is often desirable to take advantage of locality to reduce latency and improve performance.
 For example, it is preferrable that graph-intensive workloads are executed in the local data center at LAN latencies rather than in a faraway data center at WAN latencies.
 Neo4j's _load balancing_ and _catch-up strategy plugins_ for multi-data center scenarios facilitates precisely this.
 
@@ -59,26 +43,26 @@ Note that servers can have mulitple tags.
 Server tags are defined as a key that maps onto a set of servers in a cluster.
 Server tags are defined on each server using the  xref:configuration/configuration-settings.adoc#config_initial.server.tags[`initial.server.tags`] parameter in _neo4j.conf_.
 Each server in a cluster can be tagged with to zero or more server tags.
-Server tags can be altered at runtime via the `ALTER SERVER` command,
-see xref:clustering/servers.adoc#alter-server-options[Altering server options] for more details.
+Server tags can be altered at runtime via the `ALTER SERVER` command.
+See xref:clustering/servers.adoc#alter-server-options[Altering server options] for more details.
 
 .Definition of grouping servers using server tags
 ====
 
-Grouping servers using server tags is achieved in `neo4j.conf` as in the following examples:
+Grouping servers using server tags is achieved in _neo4j.conf_ as in the following examples:
 
-.Tag the current instance with `us` and `us-east`
+.Tag the current server with `us` and `us-east`
 [source, properties]
 ----
 initial.server.tags=us,us-east
 ----
 
-.Tag the current instance with `london`
+.Tag the current server with `london`
 [source, properties]
 ----
 initial.server.tags=london
 ----
-.Tag the current instance with `eu`
+.Tag the current server with `eu`
 [source, properties]
 ----
 initial.server.tags=eu
@@ -89,10 +73,11 @@ For example, a server tagged with `gb-london` is not automatically part of the s
 ====
 
 [[mdc-primaries-for-reading]]
-=== Primaries for reading
+=== Configuration settings
 
-Depending on the deployment and the available number of servers in the cluster, different strategies make sense for whether or not the reading workload should be routed to the primary servers.
-The following configuration allows the routing of read workload to primary servers.
+Depending on the deployment and the available number of database allocations in the cluster, different strategies make sense for whether or not the reading workload should be routed to the primary allocations.
+
+The following configuration settings allow the routing of read workload to primary databases.
 Valid values are `true` and `false`.
 
 [source, properties]
@@ -100,18 +85,83 @@ Valid values are `true` and `false`.
 dbms.routing.reads_on_primaries_enabled=true
 ----
 
+[source, properties]
+----
+dbms.routing.reads_on_writers_enabled=false
+----
 
+
+[[mdc-policy-definitions]]
+=== Policy definitions
+
+The configuration of load balancing policies is transparent to client applications and expressed via DSL.
+The syntax consists of a set of rules which are considered in order.
+The first rule to produce a non-empty result is the final result.
+
+[source, properties]
+----
+rule1; rule2; rule3
+----
+
+Each rule in turn consists of a set of filters which limit the considered servers, starting with the complete set.
+Note that the evaluation of each rule starts fresh with the complete set of available servers.
+
+There is a fixed set of filters which composes a rule and they are chained together using arrows.
+
+[source, properties]
+----
+filter1 -> filter2 -> filter3
+----
+
+If there are any servers still left after the last filter then the rule evaluation has produced a result and this is returned to the driver.
+However, if there are no servers left then the next rule is considered.
+If no rule is able to produce a usable result then the driver is signalled a failure.
+
+
+[[mdc-filters]]
+=== Filters
+
+There are several filters available for specifying rules of routing policies.
+The syntax is similar to a method call with parameters.
+
+* `tags(name1, name2, ...)`
+** Only servers that are tagged with any of the specified tags pass the filter.
+** The defined names must match those of the _server tags_.
+** Prior to 5.4 `tags()` were referred to as `groups()`, which continue to work but are now deprecated.
+* `min(count)`
+** Only the minimum amount of servers are allowed to pass (or none).
+** Allows overload conditions to be managed.
+* `all()`
+** No need to specify since it is implicit at the beginning of each rule.
+** Implicitly the last rule (override this behavior using halt).
+* `halt()`
+** Only makes sense as the last filter in the last rule.
+** Stops the processing of any more rules.
+* label:new[Introduced in 2025.12] `roles()`
+** The filter applies to database copies.
+** Possible values are `writer`, `follower`, and `secondary`.
+`writer` is a primary leader.
+It synchronously replicates writes to other primaries.
+The `writer` is elected automatically from amongst database’s primaries and may change over time.
+`followers` are other primaries.
+
+The tags filter is essentially an OR-filter, e.g. `tags(A,B)` which passes any server in with either tag A, B or both (the union of the server tags).
+An AND-filter can also be created by chaining two filters as in `tags(A) \-> tags(B)`, which only passes servers with both tags (the intersect of the server tags).
+
+
+[role=label--deprecated]
 [[mdc-load-balancing-framework]]
 == The load balancing framework
 
-There are different topology-aware load balancing options available for client applications in a multi-data center Neo4j deployment.
-There are different ways to configure the load balancing for the cluster so that client applications can direct its workload at the most appropriate cluster members, such as those nearby.
+There are different ways to configure the load balancing for the cluster so that client applications can direct their workload to the most appropriate cluster members, such as those nearby.
 
 The load balancing system is based on a plugin architecture for future extensibility and for allowing user customizations.
 The current version ships with exactly one such canned plugin called the _server policies_ plugin.
 
-The server policies plugin is selected by setting the following property:
+The server policies plugin is selected by specifying the following setting:
 
+
+[role=label--deprecated-2025.05]
 [source, properties]
 ----
 dbms.routing.load_balancing.plugin=server_policies
@@ -149,33 +199,6 @@ See the link:{neo4j-docs-base-uri}/create-applications/[Neo4j Drivers manuals] f
 ====
 
 
-[[mdc-policy-definitions]]
-=== Policy definitions
-
-The configuration of load balancing policies is transparent to client applications and expressed via a simple DSL.
-The syntax consists of a set of rules which are considered in order.
-The first rule to produce a non-empty result is the final result.
-
-[source, properties]
-----
-rule1; rule2; rule3
-----
-
-Each rule in turn consists of a set of filters which limit the considered servers, starting with the complete set.
-Note that the evaluation of each rule starts fresh with the complete set of available servers.
-
-There is a fixed set of filters which composes a rule and they are chained together using arrows.
-
-[source, properties]
-----
-filter1 -> filter2 -> filter3
-----
-
-If there are any servers still left after the last filter then the rule evaluation has produced a result and this is returned to the driver.
-However, if there are no servers left then the next rule is considered.
-If no rule is able to produce a usable result then the driver is signalled a failure.
-
-
 [[mdc-policy-names]]
 === Policy names
 
@@ -196,32 +219,8 @@ Additionally, any number of policies can be created using unique policy names.
 The policy name can suggest a particular region or an application for which it is intended to be used.
 
 
-[[mdc-filters]]
-=== Filters
-
-There are four filters available for specifying rules, detailed below.
-The syntax is similar to a method call with parameters.
-
-* `tags(name1, name2, ...)`
-** Only servers that are tagged with any of the specified tags pass the filter.
-** The defined names must match those of the _server tags_.
-** Prior to 5.4 `tags()` were referred to as `groups()`, which continue to work but are now deprecated.
-* `min(count)`
-** Only the minimum amount of servers are allowed to pass (or none).
-** Allows overload conditions to be managed.
-* `all()`
-** No need to specify since it is implicit at the beginning of each rule.
-** Implicitly the last rule (override this behavior using halt).
-* `halt()`
-** Only makes sense as the last filter in the last rule.
-** Stops the processing of any more rules.
-
-The tags filter is essentially an OR-filter, e.g. `tags(A,B)` which passes any server in with either tag A, B or both (the union of the server tags).
-An AND-filter can also be created by chaining two filters as in `tags(A) \-> tags(B)`, which only passes servers with both tags (the intersect of the server tags).
-
-
 [[mdc-dsl-example]]
-== Load balancing examples
+=== Load balancing examples
 
 The discussion on multi-data center clusters introduced a four region, multi-data center setup.
 The cardinal compass points for regions and numbered data centers within those regions were used there and the same hypothetical setup is used here as well.
@@ -279,10 +278,122 @@ This example says that the cluster should load balance across servers with the `
 Failing that, any server in the `north` region can be used, and if the whole of the north is offline, any server in the cluster can be used.
 ====
 
+
+[role=label--new-2025.12]
+[[builtin-routing-policies]]
+== Built-in routing policies
+
+In 2025.12, the following built-in routing policies are introduced:
+
+* `builtin_default`
+// `roles(follower,secondary);roles(writer);halt()`
+
+* `builtin_all`
+// `all()`
+
+* `builtin_prefer_secondaries`
+// `roles(secondary);roles(follower);roles(writer);halt()`
+
+* `builtin_add_writer`
+// `roles(writer,secondary)->notEmptyRoles(secondary);roles(writer,follower);halt()`
+
+// * `builtin_prefer_writer`
+// `roles(writer,secondary);roles(follower);halt()`
+
+As user-defined policies, the built-in policies are configured when deploying a cluster or adding a server to an existing one.
+The default policy is determined according to configuration settings specified in the _neo4j.conf_ file.
+See <<mdc-primaries-for-reading, configuration settings>> and <<mdc-filters,filters>> for details.
+
+The built-in routing policies are derived from the configuration settings:
+
+* xref:configuration/configuration-settings.adoc#config_dbms.routing.reads_on_primaries_enabled[`dbms.routing.reads_on_primaries_enabled`], which defaults to `true`.
+Controls whether non-writer primaries (`followers`) are included as read endpoints.
+Otherwise, secondaries are used.
+
+* xref:configuration/configuration-settings.adoc#config_dbms.routing.reads_on_writers_enabled[`dbms.routing.reads_on_writers_enabled`], which defaults to `false`.
+Controls whether the writer is included as a read endpoint.
+Otherwise, non-writer primaries (`followers`) and secondaries are used.
+
+// internal.dbms.routing.reads_on_writer_only_enabled - default false
+
+=== Defining a built-in routing policy
+
+Routing policies are applied when the driver calls the xref:procedures.adoc#procedure_dbms_routing_getRoutingTable[`dbms.routing.getRoutingTable()`] procedure as part of client-side routing of read transactions. 
+
+////
+Together these two configuration settings produce four built-in routing policies that are expressed using a DSL.
+The DSL syntax consists of a set of rules which are considered in order.
+Each rule in turn consists of a set of <<mdc-filters, filters>> which limit the considered database allocations, starting with the complete set.
+The first rule to produce a non-empty result is the final result.
+If there are any database allocations still left after the last filter then these allocations are returned to the driver.
+If no rule is able to produce a usable result then the driver is signalled a failure.
+////
+
+The `builtin_default` routing policy::
+
+The `builtin_default` routing table prefers non-writer primaries and secondaries as read endpoints.
+Falls back to the writer if no other endpoints are available.
++
+// DSL: roles(follower,secondary);roles(writer);halt()
++
+You do not need to configure _neo4j.conf_ file as the settings remain default:
++
+[source, properties]
+----
+dbms.routing.reads_on_primaries_enabled=true
+dbms.routing.reads_on_writers_enabled=false
+----
+
+The `builtin_all` routing policy::
+
+The `builtin_all` routing table includes the writer, non-writer primaries, and secondaries as read endpoints.
++
+// DSL: all()
++
+Configure _neo4j.conf_ file:
++
+[source, properties]
+----
+dbms.routing.reads_on_primaries_enabled=true
+dbms.routing.reads_on_writers_enabled=true
+----
+
+
+The `builtin_add_writer` routing policy::
+
+The `builtin_add_writer` routing table includes writer and secondaries as read endpoints.
+If no endpoints are available, the policy falls back to tagged secondaries, before finally back to the writer and non-writer primaries. 
++
+// DSL: roles(writer,secondary)->notEmptyRoles(secondary);roles(writer,follower);halt()
++
+Configure _neo4j.conf_ file: 
++
+[source, properties]
+----
+dbms.routing.reads_on_primaries_enabled=false
+dbms.routing.reads_on_writers_enabled=true
+----
+
+
+The `builtin_prefer_secondaries` routing policy::
+
+The `builtin_prefer_secondaries` policy prefers secondaries, then non-writer primaries, and finally the writer.
++
+// DSL: roles(secondary);roles(follower);roles(writer);halt()
++
+Configure _neo4j.conf_ file: 
++
+[source, properties]
+----
+dbms.routing.reads_on_primaries_enabled=false
+----
+
+
+
 [[mdc-strategy-plugins]]
 == Catch-up strategy plugins
 
-_Catch-up strategy plugins_ are sets of rules that define how secondaries contact upstream servers in the cluster in order to synchronize transaction logs.
+_Catch-up strategy plugins_ are sets of rules that define how secondaries contact upstream database member in the cluster in order to synchronize transaction logs.
 Neo4j comes with a set of pre-defined strategies, and also leverages the <<mdc-policy-definitions, DSL>> to flexibly create user-defined strategies.
 Finally, Neo4j supports an API which advanced users may use to enhance upstream server recommendations.
 
@@ -293,24 +404,24 @@ For subsequent updates, the procedure is repeated so that the most preferred ava
 === Configuring upstream selection strategy using pre-defined catch-up strategies
 
 Neo4j ships with the following pre-defined catch-up strategy plugins.
-These provide coarse-grained algorithms for selecting an upstream server:
+These provide coarse-grained algorithms for selecting an upstream database member:
 
 [options="header",width="100%",cols="1,1"]
 |===
 | Plugin name                                          | Resulting behavior
-| `connect-to-random-primary-server`                   | Connect to any *primary server* selecting at random from those currently available.
-| `typically-connect-to-random-secondary`              | Connect to any available *secondary server*, but around 10% of the time connect to any random primary server.
-| `connect-randomly-to-server-tags`                    | Connect at random to any available *secondary server* tagged with any of the server tags specified in the comma-separated list `server.cluster.catchup.connect_randomly_to_server_tags`.
-| `leader-only`                                        | Connect only to the current Raft leader of the *primary servers*.
-| `connect-randomly-within-server-tags`                | Connect at random to any available *secondary server* with any of the server tags which this server has.
+| `connect-to-random-primary-server`                   | Connect to any *primary database allocation* selecting at random from those currently available.
+| `typically-connect-to-random-secondary`              | Connect to any available *secondary allocation*, but around 10% of the time connect to any random primary allocation.
+| `connect-randomly-to-server-tags`                    | Connect at random to any available *secondary allocation* tagged with any of the server tags specified in the comma-separated list `server.cluster.catchup.connect_randomly_to_server_tags`.
+| `leader-only`                                        | Connect only to the current Raft leader of the *primary databases*.
+| `connect-randomly-within-server-tags`                | Connect at random to any available *secondary database allocations* with any of the server tags which this server has.
 |===
 
-Pre-defined strategies are used by configuring the xref:configuration/configuration-settings.adoc#config_server.cluster.catchup.upstream_strategy[`server.cluster.catchup.upstream_strategy`] option.
+Pre-defined strategies are used by configuring the xref:configuration/configuration-settings.adoc#config_server.cluster.catchup.upstream_strategy[`server.cluster.catchup.upstream_strategy`] setting.
 Doing so allows for specification of an ordered preference of strategies to resolve an upstream provider of transaction data.
 A comma-separated list of strategy plugin names with preferred strategies is provided earlier in that list.
-The catch-up strategy is selected by asking each of the strategies in list-order whether they can provide an upstream server from which transactions can be pulled.
+The catch-up strategy is selected by asking each of the strategies in list-order whether they can provide an upstream database member from which transactions can be pulled.
 
-.Define an upstream server selection strategy
+.Define an upstream database member selection strategy
 ====
 Consider the following configuration example:
 
@@ -319,13 +430,13 @@ Consider the following configuration example:
 server.cluster.catchup.upstream_strategy=connect-randomly-to-server-tags,typically-connect-to-random-secondary
 ----
 
-With this configuration the secondary server first tries to connect to any other server with tag(s) specified in `server.cluster.catchup.connect_randomly_to_server_tags`.
-Should it fail to find any live servers with those tags, then it connects to a random secondary server.
+With this configuration the secondary first tries to connect to any other server with tag(s) specified in `server.cluster.catchup.connect_randomly_to_server_tags`.
+Should it fail to find any live servers with those tags, then it connects to a random secondary allocation.
 
 [[img-pipeline-of-strategies]]
 image::pipeline-of-strategies.svg[title="The first satisfactory response from a strategy will be used.", role="middle"]
 
-To ensure that downstream servers can still access live data in the event of upstream failures, the last resort of any server is always to contact a random primary server.
+To ensure that downstream database members can still access live data in the event of upstream failures, the last resort of any database allocation is always to contact a random primary.
 This is equivalent to ending the `server.cluster.catchup.upstream_strategy` configuration with `connect-to-random-primary-server`.
 ====
 
