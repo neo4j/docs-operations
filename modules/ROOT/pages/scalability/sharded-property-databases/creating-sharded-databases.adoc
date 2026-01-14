@@ -1,0 +1,90 @@
+:description: This page describes how to create a sharded property database using the `CREATE DATABASE` command.
+:page-role: new-2025.12 enterprise-edition not-on-aura
+:keywords: sharded property database, CREATE DATABASE, Cypher 25
+= Creating sharded property databases
+
+You can create a sharded property database using the Cypher command `CREATE DATABASE` (requires Cypher 25, introduced alongside Neo4j 2025.06.0).
+For details on configuring the Cypher version, see xref:configuration/cypher-version-configuration.adoc[Configure the Cypher default version].
+
+
+== Syntax
+
+[options="header", width="100%", cols="1m,5a"]
+|===
+| Command | Syntax
+
+| CREATE DATABASE
+|
+[source, syntax, role="noheader"]
+----
+CREATE DATABASE name [IF NOT EXISTS]
+[[SET] DEFAULT LANGUAGE CYPHER {5\|25}]
+[[SET] GRAPH SHARD {
+  [TOPOLOGY n PRIMAR{Y\|IES} [m SECONDAR{Y\|IES}]]
+}]
+[SET] PROPERTY SHARD[S] {
+  COUNT n [TOPOLOGY m REPLICA[S]]
+}
+[OPTIONS "{" option: value[, ...] "}"]
+[WAIT [n [SEC[OND[S]]]]\|NOWAIT]
+----
+|===
+
+When creating a sharded property database, the following are created:
+
+* A virtual sharded property database `<name>`.
+* A single graph shard with the name `<name>-g000`.
+* A number of property shards with the name `<name>-p<index>`, where `<index>` ranges from `000` to `999`.
+The count property in `SET PROPERTY SHARDS` specifies the number of property shards.
+
+[NOTE]
+====
+`CREATE OR REPLACE` does not replace an existing sharded property database.
+====
+
+[[create-sharded-property-database-options]]
+== Options
+
+The `CREATE DATABASE` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
+For sharded databases, only the options `seedURI`,  `seedConfig`, `seedSourceDatabase`, `seedRestoreUntil`, and `txLogEnrichment` are supported.
+For details see xref:database-administration/standard-databases/create-databases.adoc#manage-databases-create-database-options[Create databases -> Options].
+
+[NOTE]
+====
+The folder notation for `seedURI` only works for backups, not dumps.
+
+When specifying each artifact manually the key of the map is the name of the shard.
+Where shard name = `databaseName-g000` or `databaseName-p000` for property shards where the last shard name would be `databaseName-px` where `x = numShards -1`.
+====
+
+For examples on how to create a sharded property database, see xref:scalability/sharded-property-databases/data-ingestion.adoc#_online_ingestion[Online ingestion].
+
+== Default numbers for topology
+
+The sharded property databases use the Neo4j cluster topology.
+Therefore, you need to consider how the following settings will affect the creation of your sharded property database.
+`initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` affect only the graph shard
+
+[options="header", width="100%", cols="4m,1m,1m,3a"]
+|===
+| Configuration setting
+| Default value
+| Valid values
+| Description
+
+|xref:configuration/configuration-settings.adoc#config_initial.dbms.default_primaries_count[`initial.dbms.default_primaries_count`]
+| 1
+| [1-11]
+| The initial default number of primaries for the standard databases. Initialized at the first DBMS startup. If the user does not specify the number of primaries in `CREATE DATABASE`, this value will be used unless overwritten by the `dbms.setDefaultAllocationNumbers` procedure.
+
+|xref:configuration/configuration-settings.adoc#config_initial.dbms.default_secondaries_count[`initial.dbms.default_secondaries_count`]
+| 0
+| [0-20]
+| The initial default number of secondaries for the standard databases. Initialized at the first DBMS startup. If the user does not specify the number of secondaries in `CREATE DATABASE`, this value will be used unless overwritten by the `dbms.setDefaultAllocationNumbers` procedure.
+
+|xref:configuration/configuration-settings.adoc#config_initial.dbms.default_property_shard_replica_count[`initial.dbms.default_property_shard_replica_count`]
+| 1
+| [1-20]
+| The initial default number of replicas of property shards. Initialized at the first DBMS startup.
+If the user does not specify the number replicas of property shards in `CREATE DATABASE`, this value will be used unless overwritten by the `dbms.setDefaultAllocationNumbers` procedure.
+|===

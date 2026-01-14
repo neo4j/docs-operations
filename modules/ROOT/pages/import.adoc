@@ -93,29 +93,26 @@ The syntax for importing a set of CSV files is:
 
 [source, syntax, role="nocopy"]
 ----
-neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers
-                                 [=true|false]] [--ignore-empty-strings[=true|false]]
-                                 [--ignore-extra-columns[=true|false]] [--legacy-style-quoting
-                                 [=true|false]] [--normalize-types[=true|false]] [--overwrite-destination
-                                 [=true|false]] [--skip-bad-entries-logging[=true|false]]
-                                 [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes
-                                 [=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
-                                 [--additional-config=<file>] [--array-delimiter=<char>]
-                                 [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
-                                 [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+neo4j-admin database import full [-h] [--expand-commands] [--verbose]
+                                 [--auto-skip-subsequent-headers[=true|false]]
+                                 [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
+                                 [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
+                                 [--overwrite-destination[=true|false]] [--skip-bad-entries-logging[=true|false]]
+                                 [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]] [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                 [--format=<format>] [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
                                  [--input-encoding=<character-set>] [--input-type=csv|parquet]
-                                 [--max-off-heap-memory=<size>] [--quote=<char>]
-                                 [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
-                                 [--temp-path=<path>] [--threads=<num>] [--vector-delimiter=<char>] --nodes=
-                                 [<label>[:<label>]...=]<files>... [--nodes=[<label>[:<label>]...=]
-                                 <files>...]... [--relationships=[<type>=]<files>...]...
-                                 [--multiline-fields=true|false|<path>[,<path>]
+                                 [--max-off-heap-memory=<size>] [--property-shard-count=<propertyShardCount>]
+                                 [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
+                                 [--target-format=<format>] [--target-location=<path>] [--temp-path=<path>]
+                                 [--threads=<num>] [--vector-delimiter=<char>] --nodes=[<label>[:<label>]...=]
+                                 <files>... [--nodes=[<label>[:<label>]...=]<files>...]... [--relationships=[<type>=]
+                                 <files>...]... [--multiline-fields=true|false|<path>[,<path>]
                                  [--multiline-fields-format=v1|v2]] <database>
 ----
 
 === Description
 
-Initial import into a non-existent empty database.
+High-speed initial import of fault-free data from CSV files into a non-existent or empty database.
 
 === Parameters
 
@@ -180,11 +177,6 @@ Unicode character ID can be used if prepended by `\`.
 | {check-mark}
 | {check-mark}
 
-|--vector-delimiter=<char>
-|label:new[Introduced in 2025.10]Delimiter character between vector coordinates within a value in CSV data. Accepts the same values as `--array-delimiter`.
-|;
-| {check-mark}
-| {check-mark}
 
 | --auto-skip-subsequent-headers[=true\|false]
 |Automatically skip accidental header lines in subsequent files in file groups with more than one file.
@@ -194,7 +186,7 @@ Unicode character ID can be used if prepended by `\`.
 
 |--bad-tolerance=<num>
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
-|1000
+|-1 label:changed[Changed in 2025.12]
 | {check-mark}
 | {check-mark}
 
@@ -334,6 +326,12 @@ For an example, see <<import-tool-multiple-input-files-regex-example>>.
 | {check-mark}
 | {check-mark}
 
+|--property-shard-count=<propertyShardCount>footnote:shardedDb1[See xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data ingestion] for details.]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Number of shards of property data that will be created, each shard will be its own database. When this value is '0', it is the equivalent of running just a 'FULL' import.
+|0
+| {check-mark}
+|
+
 |--quote=<char>
 |Character to treat as quotation character for values in CSV data.
 
@@ -422,8 +420,20 @@ If enabled all those relationships will be found but at the cost of lower perfor
 | {check-mark}
 | {check-mark}
 
-|--temp-path=<path> label:new[Introduced in 2025.04]
-|Provide a path where to store temporary files that are created and deleted during import.
+|--target-format=<format>footnote:shardedDb1[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Target format can be either a plain database directory/files structure (`database`) or a backup artifact (`backup`). Uses the `--temp-path` location to keep any intermediate state.
+|database
+| {check-mark}
+|
+
+|--target-location=<path>footnote:shardedDb1[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Location for target backup artifact data. Used together with `--target-format=backup`.
+|
+| {check-mark}
+|
+
+|--temp-path=<path>
+|label:new[Introduced in 2025.04] Provide a path where to store temporary files that are created and deleted during import.
 If not specifically provided, the default temp path will be created inside the database directory of the imported database.
 |
 | {check-mark}
@@ -432,7 +442,7 @@ If not specifically provided, the default temp path will be created inside the d
 |--threads=<num>
 | (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal
 performance, this value should not be greater than the number of available processors.
-|20
+|
 | {check-mark}
 | {check-mark}
 
@@ -441,6 +451,12 @@ performance, this value should not be greater than the number of available proce
 |false
 | {check-mark}
 |
+
+|--vector-delimiter=<char>
+|label:new[Introduced in 2025.10] Delimiter character between vector coordinates within a value in CSV data. Also accepts 'TAB' and e.g. 'U+20AC' for specifying a character using Unicode.
+|;
+| {check-mark}
+| {check-mark}
 
 |--verbose
 |Enable verbose output.
@@ -666,26 +682,21 @@ The syntax for importing a set of CSV files incrementally is:
 
 [source, syntax, role="nocopy"]
 ----
-neo4j-admin database import incremental [-h] [--expand-commands] --force
-                                        [--update-all-matching-relationships] [--verbose]
-                                        [--auto-skip-subsequent-headers[=true|false]]
-                                        [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
-                                        [=true|false]] [--legacy-style-quoting[=true|false]]
-                                        [--normalize-types[=true|false]] [--skip-bad-entries-logging
-                                        [=true|false]] [--skip-bad-relationships[=true|false]]
-                                        [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]]
+neo4j-admin database import incremental [-h] [--expand-commands] --force [--update-all-matching-relationships]
+                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]]
+                                        [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
+                                        [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
+                                        [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships
+                                        [=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]]
                                         [--trim-strings[=true|false]] [--additional-config=<file>]
-                                        [--array-delimiter=<char>] [--bad-tolerance=<num>]
-                                        [--delimiter=<char>] [--high-parallel-io=on|off|auto]
-                                        [--id-type=string|integer|actual]
+                                        [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                        [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
                                         [--input-encoding=<character-set>] [--input-type=csv|parquet]
-                                        [--max-off-heap-memory=<size>] [--quote=<char>]
-                                        [--read-buffer-size=<size>] [--report-file=<path>]
-                                        [--schema=<path>] [--stage=all|prepare|build|merge]
-                                        [--temp-path=<path>] [--threads=<num>] [--vector-delimiter=<char>]
-                                        --nodes=[<label>[:<label>]...=]<files>... [--nodes=[<label>[:
-                                        <label>]...=]<files>...]... [--relationships=[<type>=]
-                                        <files>...]... [--multiline-fields=true|false|<path>[,<path>]
+                                        [--max-off-heap-memory=<size>] [--property-shard-count=<propertyShardCount>]
+                                        [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
+                                        [--stage=all|prepare|build|merge] [--target-format=<format>]
+                                        [--target-location=<path>] [--temp-path=<path>] [--threads=<num>]
+                                        --nodes=[<label>[:<label>]...=]<files>... [--nodes= [<label>[:<label>]...=]<files>...]... [--relationships=[<type>=]<files>...]... [--multiline-fields=true|false|<path>[,<path>]
                                         [--multiline-fields-format=v1|v2]] <database>
 ----
 
@@ -787,7 +798,7 @@ Unicode character ID can be used if prepended by `\`.
 
 |--bad-tolerance=<num>
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
-|1000
+|-1 label:changed[Changed in 2025.12]
 | {check-mark}
 | {check-mark}
 
@@ -918,6 +929,12 @@ For an example, see <<import-tool-multiple-input-files-regex-example>>.
 | {check-mark}
 | {check-mark}
 
+|--property-shard-count=<propertyShardCount>footnote:shardedDb2[See xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data ingestion] for details.]
+|label:new[Introduced in 2025.12] label:enterprise[Enterprise edition] (advanced) Number of shards of property data that will be created, each shard will be its own database. Typically this option doesn't need to be set at all, since the number of shards has already been decided during initial import.
+|0
+| {check-mark}
+|
+
 |--quote=<char>
 |Character to treat as quotation character for values in CSV data.
 
@@ -968,8 +985,9 @@ This is done by using the `--verbose` option.
 | {check-mark}
 | {check-mark}
 
-|--schema=<path> label:new[Available from 2025.02]
-|Path to the file containing the Cypher commands for creating indexes and constraints during data import.
+|--schema=<path>
+|label:new[Available from 2025.02] Path to the file containing the Cypher commands for creating indexes and constraints during data import.
+It is possible to load commands from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
 |
 | {check-mark}
 | {check-mark}
@@ -1016,8 +1034,20 @@ If enabled all those relationships will be found but at the cost of lower perfor
 | {check-mark}
 | {check-mark}
 
-|--temp-path=<path> label:new[Introduced in 2025.04]
-|Provide a path where to store temporary files that are created and deleted during import.
+|--target-format=<format>footnote:shardedDb2[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Target format can be either a plain database directory/files structure (`database`) or a backup artifact (`backup`). Uses the `--temp-path` location to keep any intermediate state.
+|database
+| {check-mark}
+|
+
+|--target-location=<path>footnote:shardedDb2[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Location for target backup artifact data. Used together with `--target-format=backup`.
+|
+| {check-mark}
+|
+
+|--temp-path=<path>
+|label:new[Introduced in 2025.04] Provide a path where to store temporary files that are created and deleted during import.
 If not specifically provided, the default temp path will be created inside the database directory of the imported database.
 |
 | {check-mark}
@@ -1025,7 +1055,7 @@ If not specifically provided, the default temp path will be created inside the d
 
 |--threads=<num>
 | (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal performance, this value should not be greater than the number of available processors.
-|20
+|
 | {check-mark}
 | {check-mark}
 

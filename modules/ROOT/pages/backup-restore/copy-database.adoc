@@ -29,6 +29,7 @@ For more information, see <<copy-estimating-iops, Estimating the processing time
 ----
 neo4j-admin database copy [-h] [--copy-schema] [--expand-commands] [--force] [--verbose] [--compact-node-store[=true|false]]
                              [--additional-config=<file>] [--from-pagecache, --max-off-heap-memory=<size>]
+                             [--property-shard-count=<propertyShardCount>] [--target-format=<format>] [--target-location=<path>]
                              [--temp-path=<path>] [--to-format=<format>]
                              [--to-path-schema=<path>] [--copy-only-node-properties=<label.property>[,<label.property>...]]...
                              [--copy-only-nodes-with-labels=<label>[,<label>...]]... [--copy-only-relationship-properties=<relationship.
@@ -43,7 +44,7 @@ neo4j-admin database copy [-h] [--copy-schema] [--expand-commands] [--force] [--
 === Description
 
 This command creates a copy of a database.
-If your labels, properties, or relationships contain dots or commas, you can use backticks to quote them, e.g. ``My,label``, ``My.property``.
+If your labels, properties, or relationships contain dots or commas, you can use backticks to quote them, e.g. \``My,label``, \``My.property``.
 A file named _<database-name>-schema.cypher_, containing the schema commands needed to recreate indexes/constraints on the copy, will be created.
 
 You can use the `--copy-schema` option to automatically copy the schema.
@@ -59,15 +60,14 @@ This option can copy the schema from any 4.4 and 5.x version to 5.26 LTS and lat
 | Description
 
 |<fromDatabase>
-|Name of the source database.
+|Name of database to copy from.
 
 |<toDatabase>
-|Name of the target database.
-If the same as `<fromDatabase>`, it is copied to a temporary location, by default the current working directory or the path as defined by `--temp-path`, before being moved to replace the original.
+|Name of database to copy to.
 |===
 
 You can use the same values for `<fromDatabase>` and `<toDatabase>` if you do not need an actual copy of the database.
-The command will replace the original database with the newly created copy.
+In this case, the database is copied to a temporary location (by default the current working directory or the path as defined by `--temp-path`), before being moved to replace the original.
 
 [[copy-database-command-options]]
 === Options
@@ -124,6 +124,10 @@ The indexes will be built the first time the database is started.
 |Force the command to run even if the integrity of the database cannot be verified.
 |
 
+|--from-pagecache, --max-off-heap-memory=<size>
+|label:new[Introduced in 2025.01] Maximum memory that the copy command can use for page cache and various caching data structures to improve performance. Values can be plain numbers, such as 10000000, or, for example, 20G for 20 gigabytes, or 70%, which will amount to 70% of currently free memory on the machine.
+|90%
+
 |--from-path-data=<path>
 |Path to the databases directory, containing the database directory to source from.
 It can be used to target databases outside of the installation.
@@ -144,16 +148,13 @@ Cannot be combined with `--copy-only-nodes-with-labels`.
 |
 
 |--ignore-relationships-with-types=<type>[,<type>...]
-|A comma-separated list of relationship types. Relationships with any of the specified
-relationship types will not be included in the copy.
+|A comma-separated list of relationship types. Relationships with any of the specified relationship types will not be included in the copy.
 Cannot be combined with `--copy-only-relationships-with-types`.
 |
 
-|--from-pagecache, --max-off-heap-memory=<size>
-|label:new[Introduced in 2025.01] Maximum memory that neo4j-admin can use for various data structures and caching to improve performance.
-Values can be plain numbers, such as 10000000, or 20G for 20 gigabytes.
-It can also be specified as a percentage of the available memory, for example 70%.
-|90%
+|--property-shard-count=<propertyShardCount>footnote:shardedDb[See xref:scalability/sharded-property-databases/data-ingestion.adoc#splitting-existing-db-into-shards[Property Sharding -> Splitting an existing database into shards] for details.]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Number of shards of property data that will be created, each shard will be its own database.
+|0
 
 |--skip-labels=<label>[,<label>...]
 |A comma-separated list of labels to ignore.
@@ -172,6 +173,14 @@ Cannot be combined with `--skip-node-properties`, `--copy-only-node-properties`,
 |A comma-separated list of property keys to ignore for relationships with the specified
 type.
 Cannot be combined with `--skip-properties` or `--copy-only-relationship-properties`.
+|
+
+|--target-format=<format>footnote:shardedDb[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Target format can be either a plain database directory/files structure (`database`) or a backup artifact (`backup`). Uses the `--temp-path` location to keep any intermediate state.
+|database
+
+|--target-location=<path>footnote:shardedDb[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Location for target backup artifact data. Used together with `--target-format=backup`.
 |
 
 |--temp-path=<path>
