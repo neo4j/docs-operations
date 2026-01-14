@@ -57,9 +57,9 @@ For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster
 
 
 [[geo-distributed-dc]]
-=== Geo-distribution of user database primaries
+=== Geo-distribution of primary databases
 
-image::geo-distributed-primaries.svg[width="400", title="Cluster design with database primaries distributed across three data centers", role=popup]
+image::geo-distributed-primaries.svg[width="400", title="Cluster design with primaries distributed across three data centers", role=popup]
 
 You can place each primary copy in a different data center (DC), using at least three data centers.
 
@@ -123,6 +123,52 @@ For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-
 You need to accept a smaller topology that will fit in the remaining data center.
 
 For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
+
+
+[[five-primaries-across-three-dc]]
+=== Fault tolerance to the failure of any two primaries
+
+image::five-primaries-three-dc.svg[title="Five primary allocations distributed across three data centers",width=700]
+
+To tolerate the failure of any two arbitrary servers or two primaries, your database must have five primary allocations.
+
+For multi-data center deployments, it is recommended to distribute five primaries across three data centers using the `2P+2P+1P` layout.
+You can also add secondaries, for example, to run backup jobs.
+See _Figure 4. Five primary allocations distributed across three data centers_.
+With this configuration, the cluster can tolerate the loss of any single data center.
+
+Deployments using only two data centers (for example, `3P+2P` or `4P+1P`) or three data centers with an uneven distribution (such as `3P+1P+1P`) are not recommended.
+These configurations can only tolerate the loss of specific data centers rather than *any* data center.
+
+If you possess a sufficient infrastructure, you can distribute five primaries across five data centers.
+
+==== Recovering from the loss of a data center
+
+This setup allows you to lose up to two primary database allocations or _any_ single data center.
+Quorum is not lost, so the cluster keeps running.
+
+If you lose three primaries, your database needs to be recreated since it has lost a majority of primary allocations and is therefore write-unavailable.
+However, the recreation can be based on the primary and secondary allocations still present on healthy servers, so a backup is not required. 
+
+Example recovery steps::
+
+. Start and enable new servers.
+See xref:clustering/servers.adoc#cluster-add-server[How to add a server to the cluster] for details.
+
+. Mark missing servers as not present by cordoning them.
+For each `Unavailable` server, run `CALL dbms.cluster.cordonServer("unavailable-server-id")` on one of the available servers.
+
+. For each `Cordoned` server, run `DEALLOCATE DATABASES FROM SERVER cordoned-server-id` on one of the available servers.
+This will move all database allocations from this server to an available server in the cluster.
+
+. Remove unavailable servers from the cluster:
+.. First, xref:clustering/servers.adoc#_deallocating_databases_from_a_server[deallocate databases] from it.
+.. Then xref:clustering/servers.adoc#_dropping_a_server[drop the server].
++
+For more information, visit the xref:clustering/servers.adoc[].
+
+For detailed scenarios, see the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
+
 
 
 [[cluster-anti-patterns]]
@@ -189,7 +235,7 @@ This design pattern is strongly recommended to avoid.
 The cluster can tolerate downtime during recovery.
 
 | Geo-distributed data centers (3DC)
-| Each primary in a different data center (≥3).
+| Each primary in a different data center (≥3)
 | * Survives loss of one DC without data loss. +
 * Quorum remains intact.
 | * Higher write latency (cross-data center). +
@@ -203,6 +249,14 @@ The cluster can tolerate downtime during recovery.
 | * Loss of user database writes if DC with primaries fails. +
 * Recovery requires reseeding.
 | Balanced approach: fast normal operations, easier recovery, some downtime acceptable.
+
+| Tolerance to the failure of any two primaries (3DC)
+| Five primaries distributed across three data centers
+| * Tolerance to the loss up to two primaries. + 
+* With the `2P+2P+1P` layout, the cluster tolerates the loss of _any_ single data center.
+| * The recommended fault tolerance depends on careful distribution of primaries; uneven or two–data center layouts reduce resilience and are not recommended. +
+* Higher write latency (cross-data center).
+| Systems that must remain available even during server or full data center failures. 
 
 5+^| Non-recommended patterns
 
