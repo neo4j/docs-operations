@@ -3,7 +3,7 @@
 = Listing sharded property databases
 
 You can view all or a specific sharded property database using the `SHOW DATABASES` command.
-For details on the command syntax and arguments, see xref:database-administration/standard-databases/listing-databases.adoc[List databases].
+For details on the command syntax, arguments and a complete list of the returned columns, see xref:database-administration/standard-databases/listing-databases.adoc[List databases].
 
 Sharded property databases are listed differently depending on your privileges.
 If you have either `CREATE/DROP/ALTER DATABASE`, `SET DATABASE ACCESS`, or `DATABASE MANAGEMENT` privileges, a sharded database is shown as a set of databases with different types:
@@ -14,7 +14,7 @@ If you have either `CREATE/DROP/ALTER DATABASE`, `SET DATABASE ACCESS`, or `DATA
 
 Without those privileges, you will only be able to see the virtual sharded database listed.
 
-== Listing virtual sharded database
+== Listing virtual sharded databases
 
 The virtual sharded database aggregates the information of the underlying shards.
 Some columns are empty for the virtual sharded database.
@@ -140,12 +140,13 @@ The lag is expressed in negative integers.
 
 == Distinction between the columns `shardTxnLag` and `replicationLag`
 
-The columns `shardTxnLag` and `replicationLag` both provide information about how far behind a shard or database is in terms of transactions, but they measure different aspects:
+The columns `shardTxnLag` and `replicationLag` are only shown for the underlying shards of a sharded property database. Both provide information about how far behind a shard is in terms of transactions, but they measure different aspects:
 
-* The `shardTxnLag` column displays the number of transactions the current shard is behind compared to the most up-to-date shard allocation of the sharded database.
-The lag is expressed in negative integers.
+* The `shardTxnLag` column displays the number of transactions the current shard is behind compared to the most up-to-date shard allocation of the entire sharded database.
 
-* The column `replicationLag` shows the number of transactions the current database is behind compared to the most up-to-date allocation of that database.
+* The `replicationLag` column displays the number of transactions the current database is behind compared to the most up-to-date allocation of the same shard.
+
+Since the information gathered from the shards is a snapshot gathered within a cluster and there may be delays in reporting, it is possible to observe that a property shard allocation is ahead of all graph shard allocations, even though that does not happen in practice.
 
 == Examples
 
@@ -153,51 +154,86 @@ The lag is expressed in negative integers.
 
 === Example of a sharded database where all shards are online
 
+If we created a sharded database `foo` with:
+
+* a graph shard with 1 primary and 0 secondaries
+* 3 property shards with 1 property shard replica each
+
+the following query could give you an overview of the sharded property database.
+
 .Query
 [source, cypher, role=test-result-skip]
 ----
-CYPHER 25 SHOW DATABASES YIELD name, type, role, currentStatus, statusMessage, graphShards, propertyShards, currentPropertyShardReplicas, requestedPropertyShardReplicas
+CYPHER 25 SHOW DATABASES
+YIELD name, type, role, currentStatus, statusMessage, graphShards, propertyShards
 ----
 
 .Result
 [role="queryresult"]
 ----
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name       | type             | role                     | currentStatus   | statusMessage | graphShards  | propertyShards                        | currentPropertyShardReplicas | requestedPropertyShardReplicas |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "foo"      | "standard"       | "primary"                | "online"        | ""            | ["foo-g000"] | ["foo-p000", "foo-p001", "foo-p0002"] | NULL                         | NULL                           |
-| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""            | NULL         | NULL                                  | NULL                         | NULL                           |
-| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
-| "foo-p001" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
-| "foo-p002" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
-| "system"   | "system"         | "primary"                | "online"        | ""            | NULL         | NULL                                  | NULL                         | NULL                           |
-+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | currentStatus   | statusMessage | graphShards  | propertyShards                        |
++---------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | "online"        | ""            | ["foo-g000"] | ["foo-p000", "foo-p001", "foo-p0002"] |
+| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""            | NULL         | NULL                                  |
+| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  |
+| "foo-p001" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  |
+| "foo-p002" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  |
++---------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 === Example of a sharded database with a mixed status
 
+Given the same topology and query you could get the following output if not all shard are online just yet.
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | currentStatus   | statusMessage                 | graphShards  | propertyShards                        |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | "online"        | "online (4) and starting (1)" | ["foo-g000"] | ["foo-p000", "foo-p001", "foo-p0002"] |
+| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""                            | NULL         | NULL                                  |
+| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""                            | NULL         | NULL                                  |
+| "foo-p001" | "property shard" | "property shard replica" | "starting"      | ""                            | NULL         | NULL                                  |
+| "foo-p002" | "property shard" | "property shard replica" | "online"        | ""                            | NULL         | NULL                                  |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+=== Example of showing a sharded property database topology
+
+With the following query you can list the topology of the sharded property database `foo`.
+
 .Query
 [source, cypher, role=test-result-skip]
 ----
-CYPHER 25 SHOW DATABASES YIELD name, type, role, currentStatus, statusMessage
+CYPHER 25 SHOW DATABASES
+YIELD name, type, role, currentSecondariesCount, currentPropertyShardReplicas, requestedPrimariesCount, requestedSecondariesCount, requestedPropertyShardReplicas
+WHERE name STARTS WITH 'foo'
 ----
 
 .Result
 [role="queryresult"]
 ----
-+------------------------------------------------------------------------------------------------------------+
-| name       | type             | role                     | currentStatus   | statusMessage                 |
-+------------------------------------------------------------------------------------------------------------+
-| "foo"      | "standard"       | "primary"                | "mixed"         | "online (4) and starting (1)" |
-| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""                            |
-| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""                            |
-| "foo-p001" | "property shard" | "property shard replica" | "online"        | ""                            |
-| "foo-p002" | "property shard" | "property shard replica" | "starting"      | ""                            |
-| "system"   | "system"         | "primary"                | "online"        | ""                            |
-+------------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | currentPrimariesCount | currentSecondariesCount | currentPropertyShardReplicas | requestedPrimariesCount | requestedSecondariesCount | requestedPropertyShardReplicas |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | NULL                  | NULL                     | NULL                         | NULL                   | NULL                      | NULL                           |
+| "foo-g000" | "graph shard"    | "primary"                | 1                     | 0                        | NULL                         | 1                      | 0                         | NULL                           |
+| "foo-p000" | "property shard" | "property shard replica" | NULL                  | NULL                     | 1                            | NULL                   | NULL                      | 1                              |
+| "foo-p001" | "property shard" | "property shard replica" | NULL                  | NULL                     | 1                            | NULL                   | NULL                      | 1                              |
+| "foo-p002" | "property shard" | "property shard replica" | NULL                  | NULL                     | 1                            | NULL                   | NULL                      | 1                              |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
 === Example of a sharded database with lag
+
+If we created a sharded database `foo` with:
+
+* a graph shard with 2 primaries and 0 secondaries
+* 3 property shards with 2 property shard replicas each
+
+the following query could show the lag between the allocations with the following query.
 
 .Query
 [source, cypher, role=test-result-skip]
@@ -223,5 +259,3 @@ CYPHER 25 SHOW DATABASES YIELD name, type, role, lastCommittedTxn, replicationLa
 | "foo-p002" | "property shard" | "property shard replica" | 40                 | -2                | -2          |
 +-----------------------------------------------------------------------------------------------------------------+
 ----
-
-Since the information gathered from the shards is a snapshot of the underlying cluster and there may be delays in reporting, it is possible to observe that a property shard is ahead of the graph shard, even though that does not happen in practice.
