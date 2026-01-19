@@ -4,10 +4,10 @@
 [[database-management]]
 = Managing databases in a cluster
 
-When creating a database or altering it after creation, you can specify its role: `PRIMARY` or `SECONDARY`.
-To specify the initial topology, use the command `CREATE DATABASE`.
+When creating a database or altering it after creation, you can select the number of `primary` and `secondary` allocations for it, i.e., define a topology for a database.
+To specify the initial database topology, use the Cypher command `CREATE DATABASE`.
 To change the topology once the database is created, run the `ALTER DATABASE` command.
-Note that the database role must be aligned with the server's xref:clustering/servers.adoc#server-enabled-state[`modeConstraint`], which value can be `PRIMARY`, or `SECONDARY`, or `NONE`.
+Note that the database role must be aligned with the server’s `modeConstraint`, which value can be `PRIMARY`, or `SECONDARY`, or `NONE`.
 
 If a database is no longer needed, the command `DROP DATABASE` deletes the database from the cluster.
 
@@ -20,6 +20,7 @@ When connected to this database you can only perform a specific set of administr
 In the clustered environment, the `system` database can be in a primary or secondary mode.
 To configure its mode, use the xref:configuration/configuration-settings.adoc#config_server.cluster.system_database_mode[`server.cluster.system_database_mode`] setting in the _neo4j.conf_ file.
 This has to be done before starting the Neo4j process.
+For guidelines on how to choose the mode for the `system` database, see xref:clustering/introduction.adoc#primaries-secondaries-for-system-db[Introduction -> Primaries and secondaries for the `system` database].
 
 Deploying a cluster for the first time, consider configuring the xref:configuration/configuration-settings.adoc#config_dbms.cluster.minimum_initial_system_primaries_count[`dbms.cluster.minimum_initial_system_primaries_count`].
 This setting defaults to `3`.
@@ -28,13 +29,16 @@ See xref:clustering/setup/deploy.adoc[] for details.
 For information on how to recover the `system` database, refer to the xref:clustering/multi-region-deployment/disaster-recovery.adoc[Disaster recovery guide].
 
 
-
 [[create-database]]
-== `CREATE DATABASE`
+== Create databases
 
-The command to create a database in a cluster is not significantly different from the command to create a database in a non-clustered environment (see xref:database-administration/standard-databases/create-databases.adoc[Create, start, and stop databases] for more information on database management on single servers).
-The difference in a clustered environment is that the topology can be specified, i.e. how many primaries and secondaries are desired for the database.
-To create a database `foo` with 3 servers hosting the database in primary mode and 2 servers in secondary mode, run the following command:
+The command to create a standard database in a cluster is not significantly different from the command to create a database in a non-clustered environment.
+See xref:database-administration/standard-databases/create-databases.adoc[] for more information on database management in a non-clustered environments.
+
+The difference in a clustered environment is that the database topology can be specified, i.e. how many primaries and secondaries are desired for the database.
+For more details on how many primaries and  secondaries it is recommended to have, see xref:clustering/introduction.adoc[].
+
+To create a database `foo` with three primaries and two secondaries, run the following Cypher command:
 
 [source, cypher]
 ----
@@ -60,25 +64,24 @@ CREATE DATABASE $dbname TOPOLOGY $primary PRIMARIES $secondary SECONDARIES
 
 The command can only be executed successfully if the cluster's servers are able to satisfy the specified topology.
 If they are not, the command results in an error.
-For example, if the cluster's servers are set up with mode constraints to contain two primaries and three secondaries, or if only four servers exist, the command fails with an error.
+For example, if only four servers exist, the command fails with an error.
+Also, it fails if two servers are set up with a mode constraint of primary, and three servers are set up with a mode constraint of secondary.
 
-[NOTE]
-====
-If `TOPOLOGY` is not specified, the database is created according to `initial.dbms.default_primaries_count` and `initial.dbms.default_secondaries_count` specified in _neo4j.conf_.
-After cluster startup, you can overwrite these values using the `dbms.setDefaultAllocationNumbers()` procedure.
-====
+If `TOPOLOGY` is not specified, the database is created according to xref:configuration/configuration-settings.adoc#config_initial.dbms.default_primaries_count[`initial.dbms.default_primaries_count`] and xref:configuration/configuration-settings.adoc#config_initial.dbms.default_secondaries_count[`initial.dbms.default_secondaries_count`] specified in _neo4j.conf_.
+After cluster startup, you can overwrite these values using the xref:procedures.adoc#procedure_dbms_setDefaultAllocationNumbers[`dbms.setDefaultAllocationNumbers()`] procedure.
 
-[NOTE]
-====
-The `CREATE DATABASE` command allocates the database, therefore there is no requirement to execute `REALLOCATE DATABASES` (described in xref:clustering/servers.adoc#_hosting_databases_on_added_servers[Hosting databases on added servers]).
+A `CREATE DATABASE` command allocates the database, therefore there is no requirement to run `REALLOCATE DATABASES` (described in xref:clustering/servers.adoc#_hosting_databases_on_added_servers[Hosting databases on added servers]).
+
 However, over time, or after several `CREATE DATABASE` commands have been issued, the distribution of databases can become unbalanced.
 At this point you can run `REALLOCATE DATABASES` to make the cluster re-balance databases across all servers that are part of the cluster.
-====
+
 
 [[alter-database]]
-== `ALTER DATABASE`
+== Modify database topology and read/write access
 
-To alter the topology of or read/write access to a database after it has been created, use the command `ALTER DATABASE`.
+To alter the topology of or read/write access to a database after its creation, use the command `ALTER DATABASE`.
+
+For information about the command syntax, see xref:database-administration/standard-databases/alter-databases.adoc[].
 
 [[alter-topology]]
 === Alter database topology
@@ -91,6 +94,7 @@ ALTER DATABASE foo SET TOPOLOGY 2 PRIMARIES 1 SECONDARY
 ----
 
 Alternatively, starting from 5.26, you can use link:{neo4j-docs-base-uri}/cypher-manual/5/syntax/parameters[parameters] to provide the number of primaries and secondaries:
+
 
 .Parameters
 [source,javascript, indent=0]
@@ -108,7 +112,7 @@ Alternatively, starting from 5.26, you can use link:{neo4j-docs-base-uri}/cypher
 ALTER DATABASE $dbname SET TOPOLOGY $primary PRIMARIES $secondary SECONDARIES
 ----
 
-Like the `CREATE DATABASE` command, this command results in an error if the cluster does not contain sufficient servers to satisfy the requested topology.
+Like the `CREATE DATABASE` command, the `ALTER DATABASE` command results in an error if the cluster does not contain sufficient servers to satisfy the requested topology.
 
 Additionally, `ALTER DATABASE` is optionally idempotent and also results in an error if the database does not exist.
 It is possible to append the command with `IF EXISTS` to make sure that no error is returned if the database does not exist.
