@@ -2,39 +2,215 @@
 :description: Listing sharded property databases
 = Listing sharded property databases
 
-Sharded databases are listed as standard databases in the `type column` when you execute `SHOW DATABASES`.
-See xref:database-administration/standard-databases/listing-databases.adoc[List databases] for more information.
+The overall documentation of listing databases is listed in xref:database-administration/standard-databases/listing-databases.adoc[List databases].
 
-* The status is either:
+If the user has either `CREATE/DROP/ALTER DATABASE`,  `SET DATABASE ACCESS`, or `DATABASE MANAGEMENT` privileges, a sharded database is shown as a set of databases with different types:
+
+* A virtual sharded database aggregates the information of the underlying shards and has the type `standard`
+* A graph shard is listed with the type `graph shard` and shows the information of a graph shard allocation
+* A property shard is listed with the type `property shard` and shows the information of a property shard allocation
+
+Without those privileges, the user will only be able to see the virtual sharded database listed.
+
+== Listing virtual sharded database
+
+The virtual sharded database aggregates the information of the underlying shards. Some columns are empty for the virtual sharded database. The information for these rows can instead be found on the associated graph and property shards, e.g., `lastCommittedTxn` or `replicationLag`.
+
+.columns of note for the virtual sharded database
+[options="header", width="100%", cols="3m,6,2m,2a"]
+|===
+| Column | Description | Type | Default output
+
+| name
+| The name passed into the `CREATE DATABASE` command when creating the sharded property database
+| STRING
+| {check-mark}
+
+| type
+| The type of the virtual sharded database is `standard`
+| STRING
+| {check-mark}
+
+| role
+| The role of the virtual sharded database can be (`primary`, `secondary`, `unknown`).
+| STRING
+| {check-mark}
+
+| currentStatus
+a| The `currentStatus` is aggregated from the current status of the underlying shards. The status is either:
+
 ** Equal to the status shared by all shards.
 ** “Mixed”, if some shards have a different status.
-The `statusMessage` indicates the number of shards with different statuses, e.g., online (4) and starting (1).
-//To add an example table with a mixed status. Conor will provide an example output with mixed status.
-* The associated graph shard is listed as `graph shard` in the `type` column.
-* The associated property shards are listed as `property shard` in the `type` column.
+
+| STRING
+| {check-mark}
+
+| statusMessage
+| If the `currentStatus` is mixed, The `statusMessage` indicates the number of shards with different statuses, e.g., online (4) and starting (1).
+| STRING
+| {check-mark}
+
+|graphShards
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] The names of any graph shards the database may have. Applicable also for standard databases (non-sharded databases), which have a single graph shard with the same name as the database. Not applicable to composite databases.
+| LIST<STRING>
+|
+
+|propertyShards
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] The names of any property shards the database may have.
+| LIST<STRING>
+|
+|===
+
+== Listing graph shards
+
+.columns of note for the graph shards of a sharded property database
+[options="header", width="100%", cols="3m,6,2m,2a"]
+|===
+| Column | Description | Type | Default output
+
+| name
+| The name passed into the `CREATE DATABASE` command when creating the sharded property database appended with `-g000`
+| STRING
+| {check-mark}
+
+| type
+| The type of the virtual sharded database is `graph shard`
+| STRING
+| {check-mark}
+
+| role
+| The role of a graph shard can be (`primary`, `secondary`, `unknown`).
+| STRING
+| {check-mark}
+
+|shardTxnLag
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] The number of transactions the current shard is behind compared to the most up-to-date shard allocation of the sharded database.
+The lag is expressed in negative integers.
+| INTEGER
+|
+|===
+
+== Listing property shards
+.columns of note for the property shards of a sharded property database
+[options="header", width="100%", cols="3m,6,2m,2a"]
+|===
+| Column | Description | Type | Default output
+
+| name
+| The name passed into the `CREATE DATABASE` command when creating the sharded property database appended with `-p<index>`
+| STRING
+| {check-mark}
+
+| type
+| The type of the virtual sharded database is `property shard`
+| STRING
+| {check-mark}
+
+| role
+| The role of a property shard is `property shard replica`, `unknown`).
+| STRING
+| {check-mark}
+
+| `currentPropertyShardReplicas`
+| label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Number of property shard replicas for this database reported as running currently.
+It is the same as the number of rows where `role=property shard replica` and `name=this database`.
+| INTEGER
+|
+
+| `requestedPropertyShardReplicas`
+| label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] The requested number of property shard replicas for this database.
+May be lower than current if the DBMS is currently reducing the number of copies of the database, or higher if it is currently increasing the number of copies.
+| INTEGER
+|
+
+|shardTxnLag
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] The number of transactions the current shard is behind compared to the most up-to-date shard allocation of the sharded database.
+The lag is expressed in negative integers.
+| INTEGER
+|
+|===
+
+== Distinction between the columns `shardTxnLag` and `replicationLag`
 * The `shardTxnLag` column displays the number of transactions the current shard is behind compared to the most up-to-date shard allocation of the sharded database.
 The lag is expressed in negative integers.
+
 * The column `replicationLag` shows the number of transactions the current database is behind compared to the most up-to-date allocation of that database.
 
-.Command output
-[result]
+== Examples
+
+//To add an example table with a mixed status. Conor will provide an example output with mixed status.
+
+=== Example of a sharded database where all shards are online
+
+.Query
+[source, cypher, role=test-result-skip]
 ----
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| name       | type             | aliases | access       | address          | role                     | writer | requestedStatus | statusMessage | default | home  | constituents | shardTxnLag |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "foo"      | "standard"       | []      | "read-write" | "localhost:7687" | "primary"                | TRUE   | "online"        | ""            | FALSE   | FALSE | []           | NULL        |
-| "foo-g000" | "graph shard"    | []      | "read-write" | "localhost:7687" | "primary"                | TRUE   | "online"        | ""            | FALSE   | FALSE | []           | 0           |
-| "foo-p000" | "property shard" | []      | "read-write" | "localhost:7687" | "property shard replica" | FALSE  | "online"        | ""            | FALSE   | FALSE | []           | 0           |
-| "foo-p001" | "property shard" | []      | "read-write" | "localhost:7687" | "property shard replica" | FALSE  | "online"        | ""            | FALSE   | FALSE | []           | 0           |
-| "foo-p002" | "property shard" | []      | "read-write" | "localhost:7687" | "property shard replica" | FALSE  | "online"        | ""            | FALSE   | FALSE | []           | 0           |
-| "system"   | "system"         | []      | "read-write" | "localhost:7687" | "primary"                | TRUE   | "online"        | ""            | FALSE   | FALSE | []           | NULL        |
-+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+CYPHER 25 SHOW DATABASES YIELD name, type, role, currentStatus, statusMessage, graphShards, propertyShards, currentPropertyShardReplicas, requestedPropertyShardReplicas
 ----
 
-[NOTE]
-====
-Some columns are empty for the virtual sharded database (with the name passed into the `CREATE DATABASE` command) and can be found on the rows of the associated graph shard instead, e.g., `lastCommittedTxn` or `replicationLag`.
-These rows are only visible if the user has either `CREATE/DROP/ALTER DATABASE`,  `SET DATABASE ACCESS`, or `DATABASE MANAGEMENT` privileges.
-These rows can be distinguished by the type, which has values `graph shard` and `property shard`, respectively.
-====
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | currentStatus   | statusMessage | graphShards  | propertyShards                        | currentPropertyShardReplicas | requestedPropertyShardReplicas |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | "online"        | ""            | ["foo-g000"] | ["foo-p000", "foo-p001", "foo-p0002"] | NULL                         | NULL                           |
+| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""            | NULL         | NULL                                  | NULL                         | NULL                           |
+| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
+| "foo-p001" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
+| "foo-p002" | "property shard" | "property shard replica" | "online"        | ""            | NULL         | NULL                                  | 1                            | 0                              |
+| "system"   | "system"         | "primary"                | "online"        | ""            | NULL         | NULL                                  | NULL                         | NULL                           |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
 
+=== Example of a sharded database with a mixed status
+
+.Query
+[source, cypher, role=test-result-skip]
+----
+CYPHER 25 SHOW DATABASES YIELD name, type, role, currentStatus, statusMessage
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | currentStatus   | statusMessage                 |
++------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | "mixed"         | "online (4) and starting (1)" |
+| "foo-g000" | "graph shard"    | "primary"                | "online"        | ""                            |
+| "foo-p000" | "property shard" | "property shard replica" | "online"        | ""                            |
+| "foo-p001" | "property shard" | "property shard replica" | "online"        | ""                            |
+| "foo-p002" | "property shard" | "property shard replica" | "starting"      | ""                            |
+| "system"   | "system"         | "primary"                | "online"        | ""                            |
++------------------------------------------------------------------------------------------------------------+
+----
+
+=== Example of a sharded database with lag
+
+.Query
+[source, cypher, role=test-result-skip]
+----
+CYPHER 25 SHOW DATABASES YIELD name, type, role, lastCommittedTxn, replicationLag, shardTxnLag
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------------------------------------------------------------------------+
+| name       | type             | role                     | lastCommittedTxn   | replicationLag    | shardTxnLag |
++-----------------------------------------------------------------------------------------------------------------+
+| "foo"      | "standard"       | "primary"                | NULL               | NULL              | NULL        |
+| "foo"      | "standard"       | "primary"                | NULL               | NULL              | NULL        |
+| "foo-g000" | "graph shard"    | "primary"                | 42                 |  0                |  0          |
+| "foo-g000" | "graph shard"    | "priamry"                | 39                 | -3                | -3          |
+| "foo-p000" | "property shard" | "property shard replica" | 40                 | -1                | -2          |
+| "foo-p000" | "property shard" | "property shard replica" | 41                 |  0                | -1          |
+| "foo-p001" | "property shard" | "property shard replica" | 40                 |  0                | -2          |
+| "foo-p001" | "property shard" | "property shard replica" | 39                 | -1                | -3          |
+| "foo-p002" | "property shard" | "property shard replica" | 42                 |  0                |  0          |
+| "foo-p002" | "property shard" | "property shard replica" | 40                 | -2                | -2          |
++-----------------------------------------------------------------------------------------------------------------+
+----
+
+Since the information gathered from the shards is a snapshot of the underlying cluster and there may be delays in reporting, it is possible to observe that a property shard is ahead of the graph shard, even though that does not happen in practice.
