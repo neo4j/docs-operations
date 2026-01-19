@@ -14,7 +14,7 @@ CREATE ROLE countryAccessRole;
 [[attribute-based-access-control]]
 = Attribute-based access control
 
-Attribute-based access control, ABAC grants roles based on the evaluation of attributes (or claims) contained in a user's authentication token.
+Attribute-based access control (ABAC) grants roles based on the evaluation of attributes (or claims) contained in a user's authentication token.
 
 == Setup
 
@@ -37,7 +37,8 @@ CREATE AUTH RULE ruleName [IF NOT EXISTS]
 
 [NOTE]
 ====
-To be able to create auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege.
+To be able to create auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege,
+see xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-auth-rule-management[DBMS AUTH RULE MANAGEMENT privileges].
 ====
 
 The SET ENABLED clause is optional and can be used to enable or disable the rule upon creation. By default, the rule is enabled.
@@ -47,7 +48,8 @@ If specifying `IF NOT EXISTS`, no error is raised if a rule with the same name a
 The conditionExpression is a boolean cypher expression that evaluates user attributes (claims) contained in the authentication token.
 To access an attribute, use the syntax `abac.oidc.user_attribute('<claim_key>')`.
 
-The conditionExpression can use any valid Cypher expression that evaluates to a boolean value, including logical operators (AND, OR, NOT etc), comparison operators (=, <>, <, >, <=, >=) and functions (e.g. `IN`, `ANY`, `ALL`, etc). The expression can also use the following in-build Neo4j functions:
+The conditionExpression can use any valid Cypher expression that evaluates to a boolean value, including logical operators (AND, OR, NOT etc), comparison operators (=, <>, <, >, <=, >=) and functions (e.g. `IN`, `ANY`, `ALL`, etc).
+The expression can also use the following in-build Neo4j functions:
 
 [cols="1,3",options="header"]
 |===
@@ -94,7 +96,8 @@ If specifying `IF EXISTS`, no error is raised if the rule does not exist and the
 
 [NOTE]
 ====
-To be able to drop auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege.
+To be able to drop auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege,
+see xref:authentication-authorization/dbms-administration.adoc#access-control-dbms-administration-auth-rule-management[DBMS AUTH RULE MANAGEMENT privileges].
 ====
 
 [[assign-roles-auth-rules]]
@@ -180,10 +183,20 @@ CREATE AUTH RULE temporary_reader
 GRANT ROLE reader TO AUTH RULE temporary_reader;
 ----
 
+Revoking the `reader` role from auth rule `temporary_reader` and drop the auth rule can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE reader FROM AUTH RULE temporary_reader;
+DROP AUTH RULE temporary_reader;
+----
+
 == Caveats and limitations
 
 * When evaluating `abac.oidc.user_attribute('<claim_key>')`, if the claim does not exist in the authentication token, it will evaluate to `NULL`.
-* Newly created auth rules are applied to existing user sessions, but will only have access to the user claims which had rules containing them at the start of the session. Only user claims which are used in pre-existing auth rules at the start of a session are retained. Users must re-authenticate to have new rules applied if the new rules use new claims.
+* Newly created auth rules are applied to existing user sessions, but will only have access to the user claims which had rules containing them at the start of the session.
+Only user claims which are used in pre-existing auth rules at the start of a session are retained.
+Users must re-authenticate to have new rules applied if the new rules use new claims.
 * Attribute-based access control is only supported for OIDC authentication providers.
 * For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in `neo4j.conf`: `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`
 * Show commands for listing AUTH RULES are not supported yet.
