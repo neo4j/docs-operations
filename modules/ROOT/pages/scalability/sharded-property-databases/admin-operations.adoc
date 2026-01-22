@@ -129,24 +129,35 @@ Continuing with the example, the graph chain contains transactions from 11 to 36
 You then take a differential backup of the graph shard containing transactions 37 to 50.
 At restore time, all databases can be recovered up to transaction 50 and made consistent.
 
-== System failovers
+== Transaction log pruning and recovery
 
 In a sharded property database, property shards pull transaction log entries from the graph shard and apply them to their stores.
 Thus, it is required that the graph shard does not prune an entry from its transaction log until every replica of each property shard has pulled and applied that entry.
-Failure to meet this requirement will make a given replica of a property shard unusable.
+Otherwise, a property shard replica that has not yet applied the latest entry will be unable to do so and will be severed, leading to data inconsistency.
+If this happens to all replicas of a given property shard, then the whole sharded property database is in an unrecoverable state.
 
-If a property shard replica does fall behind the transaction log range available on the graph shard, you can recover it by:
+Starting from Neo4j 2026.01, to prevent property shard replicas from becoming severed and ensure all replicas of all property shards are up-to-date before pruning, the system automatically monitors the lag of property shard replicas and the graph shard's transaction log. +
+If any property shard replica falls behind the transaction log range available on the graph shard, the system puts the graph shard database into read-only mode to prevent it from pruning the transaction log and the server from running out of disk space, and persists this state until the issue with the lagging property shards is resolved.
 
-. Connecting to the `system` database on the server hosting the affected replica using the _bolt://_ scheme.
-. Quarantining the replica using xref:procedures.adoc#procedure_dbms_quarantineDatabase[`Cypher 5 CALL dbms.quarantineDatabase()`].
-. Unquarantining the replica using xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`Cypher 5 CALL dbms.unquarantineDatabase()`] with the `replaceStateReplaceStore` option.
+.Workaround in case of a system failover in 2025.12
+[IMPORTANT]
+====
+To ensure enough transaction logs are kept, you must set xref:configuration/configuration-settings.adoc#config_db.tx_log.rotation.retention_policy[`db.tx_log.rotation.retention_policy`] accordingly.
+A suitable heuristic is to ensure that the transaction log kept covers the transactions written between successive full backups of the sharded property database.
+It is also important to ensure that there is space for the transaction logs and that the server does not run out of disk space.
+
+If a property shard replica becomes severed, you can recover using one of the following options:
+
+* If only a subset of replicas of a property shard are severed, they can be recovered by quarantining the replica and then using `dbms.unquarantineDatabase` with the `replaceStateReplaceStore` option:
++
+. Connect to the `system` database on the server hosting the affected replica using the _bolt://_ scheme.
+. Quarantine the replica using xref:procedures.adoc#procedure_dbms_quarantineDatabase[`Cypher 5 CALL dbms.quarantineDatabase()`].
+. Unquarantine the replica using xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`Cypher 5 CALL dbms.unquarantineDatabase()`] with the `replaceStateReplaceStore` option.
 This will force the replica to copy the database store files from another replica of the property shard.
 
-If all replicas of a given property shard are behind, then the sharded property database as a whole becomes unusable.
-This is an irrecoverable state.
+* If all replicas of a given property shard are behind, then the sharded property database as a whole becomes unusable.
+This is an unrecoverable state.
 Up until this point, losing replicas reduces fault tolerance, but the database remains available.
-When a sharded property database becomes irrecoverable, it needs to be dropped and recreated from a backup.
+When a sharded property database becomes unrecoverable, it must be dropped and recreated from a backup.
 See <<backup-and-restore, Backup and restore>>.
-
-One mechanism to avoid property shards falling out of range of the graph shard’s transaction log is to set a sufficiently large transaction log prune time on the graph shard.
-See xref:scalability/sharded-property-databases/limitations-and-considerations.adoc#setting-suitable-tx-log-retention-policy[Setting a suitable transaction log retention policy].
+====
