@@ -136,28 +136,44 @@ Thus, it is required that the graph shard does not prune an entry from its trans
 Otherwise, a property shard replica that has not yet applied the latest entry will be unable to do so and will be severed, leading to data inconsistency.
 If this happens to all replicas of a given property shard, then the whole sharded property database is in an unrecoverable state.
 
-Starting from Neo4j 2026.01, to prevent property shard replicas from becoming severed and ensure all replicas of all property shards are up-to-date before pruning, the system automatically monitors the lag of property shard replicas and the graph shard's transaction log. +
-If any property shard replica falls behind the transaction log range available on the graph shard, the system puts the graph shard database into read-only mode to prevent it from pruning the transaction log and the server from running out of disk space, and persists this state until the issue with the lagging property shards is resolved.
-
-.Workaround in case of a system failover in 2025.12
-[IMPORTANT]
-====
 To ensure enough transaction logs are kept, you must set xref:configuration/configuration-settings.adoc#config_db.tx_log.rotation.retention_policy[`db.tx_log.rotation.retention_policy`] accordingly.
 A suitable heuristic is to ensure that the transaction log kept covers the transactions written between successive full backups of the sharded property database.
 It is also important to ensure that there is space for the transaction logs and that the server does not run out of disk space.
 
-If a property shard replica becomes severed, you can recover using one of the following options:
+Starting from Neo4j 2026.01, to prevent property shard replicas from becoming severed and ensure all replicas of all property shards are up-to-date before pruning, the system automatically monitors the lag of property shard replicas and the graph shard's transaction log. +
+If any property shard replica falls behind the transaction log range available on the graph shard, the system puts the sharded property database into read-only mode to prevent graph shard from pruning the transaction log and the server from running out of disk space.
+The state is persisted until the issue with the lagging property shards is resolved.
 
-* If only a subset of replicas of a property shard are severed, they can be recovered by quarantining the replica and then using `dbms.unquarantineDatabase` with the `replaceStateReplaceStore` option:
+If property shard replicas become severed, you can recover them using one of the following options:
+
+* If only a subset of replicas of a property shard are severed, you can recover them by quarantining the replica and then using `dbms.unquarantineDatabase` with the `replaceStateReplaceStore` option:
 +
 . Connect to the `system` database on the server hosting the affected replica using the _bolt://_ scheme.
 . Quarantine the replica using xref:procedures.adoc#procedure_dbms_quarantineDatabase[`Cypher 5 CALL dbms.quarantineDatabase()`].
 . Unquarantine the replica using xref:procedures.adoc#procedure_dbms_unquarantineDatabase[`Cypher 5 CALL dbms.unquarantineDatabase()`] with the `replaceStateReplaceStore` option.
 This will force the replica to copy the database store files from another replica of the property shard.
 
-* If all replicas of a given property shard are behind, then the sharded property database as a whole becomes unusable.
-This is an unrecoverable state.
-Up until this point, losing replicas reduces fault tolerance, but the database remains available.
-When a sharded property database becomes unrecoverable, it must be dropped and recreated from a backup.
+* If all property shard replicas fall behind the transaction log range available on the graph shard, it usually indicates a larger problem, either a property shard database replica has panicked, the pruning strategy on the graph shard could be too aggressive, or there could be network issues between the graph shard and one of the replicas.
+To resolve the issue, you need to identify and fix the underlying problem first.
+
+Once the underlying problem is fixed, you can bring the sharded property database back to read-write mode by performing the following steps:
+
+. Ensure that all replicas of all property shards are caught up with the graph shard's transaction log using the following query against the `system` database on the virtual shard:
++
+[source,cypher]
+----
+CYPHER 25
+SHOW DATABASES YIELD name, type, role, lastCommittedTxn, replicationLag, shardTxnLag
+----
++
+The `replicationLag` column shows how far behind each replica is from its primary, and the `shardTxnLag` column shows how far behind each property shard is from the graph shard. +
+If any replica shows a non-zero `replicationLag` or `shardTxnLag`, wait for it to catch up. +
+Once all replicas show zero `replicationLag` and `shardTxnLag`, the sharded property database is ready to be brought back to read-write mode.
+. Run the Cypher command `ALTER DATABASE <sharded-db-name> SET ACCESS READ WRITE` against the `system` database on the virtual shard to bring the sharded property database back to read-write mode.
+
+.System failover
+[IMPORTANT]
+====
+If for some reason the sharded property database becomes unrecoverable (for example, all replicas of a property shard become severed and the sharded property database is unavailable), the sharded property database must be dropped and recreated from a valid backup.
 See <<backup-and-restore, Backup and restore>>.
 ====
