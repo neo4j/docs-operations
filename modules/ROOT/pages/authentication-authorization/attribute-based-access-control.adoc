@@ -30,7 +30,7 @@ To create an authorization rule, use the following syntax:
 
 [source, cypher25, role="noheader"]
 ----
-CREATE AUTH RULE ruleName [IF NOT EXISTS]
+CREATE [OR REPLACE] AUTH RULE ruleName [IF NOT EXISTS]
     SET CONDITION conditionExpression
     [ SET ENABLED {true | false} ]
 ----
@@ -44,6 +44,9 @@ see xref:authentication-authorization/dbms-administration/dbms-auth-rule-managem
 The SET ENABLED clause is optional and can be used to enable or disable the rule upon creation. By default, the rule is enabled.
 
 If specifying `IF NOT EXISTS`, no error is raised if a rule with the same name already exists and the command has no effect.
+
+If specifying `OR REPLACE`, if an auth rule with the same name exists, it gets deleted and the new one created instead.
+Any assigned roles associated with the old auth rule will not be associated to the new auth rule.
 
 The conditionExpression is a boolean cypher expression that evaluates user attributes (claims) contained in the authentication token.
 To access an attribute, use the syntax `abac.oidc.user_attribute('<claim_key>')`.
@@ -82,6 +85,37 @@ The conditionExpression can use any valid Cypher expression that evaluates to a 
 The functions, `date`, `datetime`, `localdatetime`, `localtime` and `time` are only supported when an input argument is used.
 ====
 
+== Listing auth rules
+
+You can list all auth rules using the Cypher command `SHOW AUTH RULES`.
+It produces a table containing a single row per auth rule with the following columns:
+
+.`SHOW AUTH RULES` output
+[options="header", width="100%", cols="2a,4,2m"]
+|===
+| Column
+| Description
+| Type
+
+| name
+| The name of the auth rule as defined in the `CREATE` or `RENAME AUTH RULE` command.
+| STRING
+
+| condition
+| The cypher expression which will be evaluated when determining whether the user will be granted the roles.
+| STRING
+
+| enabled
+| Whether the auth rule is enabled or not.
+This column will have the value `true` when the auth rule is enabled, and `false` when it is not.
+When an auth rule is disabled it will not be evaluated and so users cannot receive its roles.
+| BOOLEAN
+
+| roles
+| The roles which have been granted to the auth rule via one or more `GRANT ROLE … TO AUTH RULE …` commands.
+This column will return `null` if the executing user is missing or denied the `SHOW ROLES` privilege.
+| LIST OF STRING
+|===
 
 == Drop auth rules
 To drop an existing authorization rule, use the following syntax:
@@ -190,6 +224,73 @@ REVOKE ROLE reader FROM AUTH RULE temporary_reader;
 DROP AUTH RULE temporary_reader;
 ----
 
+Listing the auth rules can be done as follows:
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULES
+----
+
+The table of results will show information about the auth rule and the roles assigned to the auth rule:
+
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m"]
+|===
+|name
+|condition
+|enabled
+|roles
+
+|"salesRule"
+|"abac.oidc.user_attribute('department') = 'sales'"
+|true
+|["salesTeam"]
+
+|"engineeringUKRule"
+|"abac.oidc.user_attribute('department') = 'engineering' AND abac.oidc.user_attribute('location') = 'UK'"
+|true
+|["engineeringTeamUK"]
+
+|"ruleset_countries"
+|"any(country IN abac.oidc.user_attribute('citizenshipCountries') WHERE country IN ['c1', 'c5'])"
+|true
+|["countryAccessRole"]
+
+4+a|Rows: 3
+|===
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULES YIELD name, roles
+ORDER BY name
+WHERE name ENDS WITH 'e'
+----
+
+In this example:
+
+* The results only return the columns `name` and `roles`.
+* The results are ordered by the `name` column using `ORDER BY`.
+* The results have been filtered to only return the auth rules with names ending in 'e'.
+
+It is also possible to use `SKIP` and `LIMIT` to paginate the results.
+
+.Result
+[options="header,footer", width="100%", cols="m,m"]
+|===
+|name
+|roles
+
+|"engineeringUKRule"
+|["engineeringTeamUK"]
+
+|"salesRule"
+|["salesTeam"]
+
+2+a|Rows: 2
+|===
+
 == Caveats and limitations
 
 * When evaluating `abac.oidc.user_attribute('<claim_key>')`, if the claim does not exist in the authentication token, it will evaluate to `NULL`.
@@ -198,5 +299,4 @@ Only user claims which are used in pre-existing auth rules at the start of a ses
 Users must re-authenticate to have new rules applied if the new rules use new claims.
 * Attribute-based access control is only supported for OIDC authentication providers.
 * For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in `neo4j.conf`: `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`
-* Show commands for listing AUTH RULES are not supported yet.
 * Altering existing auth rules is not supported yet.
