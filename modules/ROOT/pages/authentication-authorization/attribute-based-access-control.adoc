@@ -1,0 +1,302 @@
+:description: How to use Cypher to manage attribute-based access control on a graph.
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE ROLE salesTeam;
+CREATE ROLE engineeringTeamUK;
+CREATE ROLE countryAccessRole;
+----
+////
+
+:page-role: enterprise-edition aura-db-business-critical aura-db-dedicated
+
+[[attribute-based-access-control]]
+= Attribute-based access control
+
+Attribute-based access control (ABAC) grants roles based on the evaluation of attributes (or claims) contained in a user's authentication token.
+
+== Setup
+
+Use the following steps to set up attribute-based access control:
+
+1. Enable attribute-based access control in the `neo4j.conf` file by setting the `internal.dbms.feature_flag.attribute_based_access_control` setting to `true`.
+2. Specify which OIDC provider(s) will be used for attribute-based access control by setting the `internal.dbms.security.abac_enabled_authorization_providers` setting to the appropriate providers.
+3. Define the authorization rules that will be used to grant roles based on user attributes by using the Cypher command `CREATE AUTH RULE`, explained below.
+4. Specify which roles will be assigned when the authorization rules are fulfilled using the `GRANT ROLE` command, explained below.
+
+== Create auth rules
+To create an authorization rule, use the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+CREATE [OR REPLACE] AUTH RULE ruleName [IF NOT EXISTS]
+    SET CONDITION conditionExpression
+    [ SET ENABLED {true | false} ]
+----
+
+[NOTE]
+====
+To be able to create auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege,
+see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc[DBMS AUTH RULE MANAGEMENT privileges].
+====
+
+The SET ENABLED clause is optional and can be used to enable or disable the rule upon creation. By default, the rule is enabled.
+
+If specifying `IF NOT EXISTS`, no error is raised if a rule with the same name already exists and the command has no effect.
+
+If specifying `OR REPLACE`, if an auth rule with the same name exists, it gets deleted and the new one created instead.
+Any assigned roles associated with the old auth rule will not be associated to the new auth rule.
+
+The conditionExpression is a boolean cypher expression that evaluates user attributes (claims) contained in the authentication token.
+To access an attribute, use the syntax `abac.oidc.user_attribute('<claim_key>')`.
+
+The conditionExpression can use any valid Cypher expression that evaluates to a boolean value, including logical operators (AND, OR, NOT etc), comparison operators (=, <>, <, >, <=, >=) and the following in-build Neo4j functions:
+
+[cols="1,3",options="header"]
+|===
+| Function group | Functions
+
+| List functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-range[range()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-reduce[reduce()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-reverse[reverse()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tail[tail()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tobooleanlist[toBooleanList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tofloatlist[toFloatList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tointegerlist[toIntegerList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tostringlist[toStringList()]
+
+| Numeric functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-abs[abs()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-ceil[ceil()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-floor[floor()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-isnan[isNaN()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-round[round()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/mathematical-numeric/#functions-sign[sign()]
+
+| Predicate functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/predicate/#functions-all[all()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/predicate/#functions-any[any()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/predicate/#functions-isempty[isEmpty()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/predicate/#functions-none[none()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/predicate/#functions-single[single()]
+
+| Scalar functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-char_length[char_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-character_length[character_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-coalesce[coalesce()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-head[head()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-last[last()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-nullIf[nullIf()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-size[size()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-toboolean[toBoolean()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tobooleanornull[toBooleanOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloat[toFloat()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloatornull[toFloatOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointeger[toInteger()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointegerornull[toIntegerOrNull()]
+
+| String Functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-btrim[btrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-left[left()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-lower[lower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-ltrim[ltrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-replace[replace()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-reverse[reverse()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-right[right()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-rtrim[rtrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-split[split()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-substring[substring()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tolower[toLower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostring[toString()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostringornull[toStringOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-toupper[toUpper()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-trim[trim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-upper[upper()]
+
+| Temporal duration functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/duration/#functions-durations[duration()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/duration/#functions-duration-between[duration.between()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/duration/#functions-duration-indays[duration.inDays()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/duration/#functions-duration-inmonths[duration.inMonths()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/duration/#functions-duration-inseconds[duration.inSeconds()]
+
+| Temporal instant types functions
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-date[date([ input, pattern \])], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-date-transaction[date.transaction()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-date-truncate[date.truncate()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-datetime[datetime([ input, pattern \])], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-datetime-transaction[datetime.transaction()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-datetime-truncate[datetime.truncate()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localdatetime[localdatetime([ input, pattern \])], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localdatetime-transaction[localdatetime.transaction()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localdatetime-truncate[localdatetime.truncate()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localtime[localtime([ input, pattern \])], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localtime-transaction[localtime.transaction()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-localtime-truncate[localtime.truncate()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-time[time([ input, pattern \])], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-time-transaction[time.transaction()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/temporal/#functions-time-truncate[time.truncate()]
+
+|===
+
+[NOTE]
+====
+The functions, `date`, `datetime`, `localdatetime`, `localtime` and `time` are only supported when an input argument is used.
+====
+
+== Listing auth rules
+
+You can list all auth rules using the Cypher command `SHOW AUTH RULES`.
+It produces a table containing a single row per auth rule with the following columns:
+
+.`SHOW AUTH RULES` output
+[options="header", width="100%", cols="2a,4,2m"]
+|===
+| Column
+| Description
+| Type
+
+| name
+| The name of the auth rule as defined in the `CREATE` or `RENAME AUTH RULE` command.
+| STRING
+
+| condition
+| The cypher expression which will be evaluated when determining whether the user will be granted the roles.
+| STRING
+
+| enabled
+| Whether the auth rule is enabled or not.
+This column will have the value `true` when the auth rule is enabled, and `false` when it is not.
+When an auth rule is disabled it will not be evaluated and so users cannot receive its roles.
+| BOOLEAN
+
+| roles
+| The roles which have been granted to the auth rule via one or more `GRANT ROLE … TO AUTH RULE …` commands.
+This column will return `null` if the executing user is missing or denied the `SHOW ROLES` privilege.
+| LIST OF STRING
+|===
+
+== Drop auth rules
+To drop an existing authorization rule, use the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+DROP AUTH RULE ruleName [IF EXISTS]
+----
+
+If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+
+[NOTE]
+====
+To be able to drop auth rules, the user must have the `AUTH RULE MANAGEMENT` privilege,
+see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc[DBMS AUTH RULE MANAGEMENT privileges].
+====
+
+[[assign-roles-auth-rules]]
+== Assign roles to auth rules
+To specify which roles will be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+[NOTE]
+====
+No roles with associated deny privileges can be assigned to an auth rule. Also, deny privileges may not be subsequently assigned to a role once that role has been assigned to an auth rule. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
+====
+
+[NOTE]
+====
+To be able to grant roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[`ASSIGN ROLE`] privilege.
+====
+
+[NOTE]
+====
+OR semantics are used between roles granted via ABAC and those granted by RBAC mechanisms. For example, given an ABAC rule which grants the `admin` role between the hours of 1900 and 2000, then a user who receives the `admin` role because it appears in their JWT `groups` claim (RBAC) will always have the `admin` role, even outside the hours of 1900 and 2000.  
+====
+
+[[revoke-roles-auth-rules]]
+== Revoke roles from auth rules
+To revoke roles from an authorization rule, use the `REVOKE ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+[NOTE]
+====
+To be able to revoke roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[`REMOVE ROLE`] privilege.
+====
+
+== Examples
+
+An auth rule specifying that users with the attribute `department` equal to `sales` should be granted the `salesTeam` role can be created as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE salesRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'sales';
+GRANT ROLE salesTeam TO AUTH RULE salesRule;
+----
+
+Granting the role `engineeringTeamUK` to users with the attribute `department` equal to `engineering` and `location` equal to `UK` can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE engineeringUKRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'engineering'
+        AND abac.oidc.user_attribute('location') = 'UK';
+GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
+----
+
+Granting a role based on the presence of the allowed countries in a list of citizenship countries in the claims can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE ruleset_countries SET CONDITION
+  any(country IN abac.oidc.user_attribute('citizenshipCountries')
+    WHERE country IN ['c1', 'c5']);
+GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
+----
+
+Temporarily granting a role based on the value of a claim and the time being between 1900 and 2000 can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE temporary_reader
+    SET CONDITION abac.oidc.user_attribute('jobTitle') = 'cover'
+        AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20;
+GRANT ROLE reader TO AUTH RULE temporary_reader;
+----
+
+Revoking the `reader` role from auth rule `temporary_reader` and drop the auth rule can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE reader FROM AUTH RULE temporary_reader;
+DROP AUTH RULE temporary_reader;
+----
+
+Listing the auth rules can be done as follows:
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULES
+----
+
+The table of results will show information about the auth rule and the roles assigned to the auth rule:
+
+.Result
+[options="header,footer", width="100%", cols="m,m,m,m"]
+|===
+|name
+|condition
+|enabled
+|roles
+
+|"salesRule"
+|"abac.oidc.user_attribute('department') = 'sales'"
+|true
+|["salesTeam"]
+
+|"engineeringUKRule"
+|"abac.oidc.user_attribute('department') = 'engineering' AND abac.oidc.user_attribute('location') = 'UK'"
+|true
+|["engineeringTeamUK"]
+
+|"ruleset_countries"
+|"any(country IN abac.oidc.user_attribute('citizenshipCountries') WHERE country IN ['c1', 'c5'])"
+|true
+|["countryAccessRole"]
+
+4+a|Rows: 3
+|===
+
+It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULES YIELD name, roles
+ORDER BY name
+WHERE name ENDS WITH 'e'
+----
+
+In this example:
+
+* The results only return the columns `name` and `roles`.
+* The results are ordered by the `name` column using `ORDER BY`.
+* The results have been filtered to only return the auth rules with names ending in 'e'.
+
+It is also possible to use `SKIP` and `LIMIT` to paginate the results.
+
+.Result
+[options="header,footer", width="100%", cols="m,m"]
+|===
+|name
+|roles
+
+|"engineeringUKRule"
+|["engineeringTeamUK"]
+
+|"salesRule"
+|["salesTeam"]
+
+2+a|Rows: 2
+|===
+
+== Caveats and limitations
+
+* When evaluating `abac.oidc.user_attribute('<claim_key>')`, if the claim does not exist in the authentication token, it will evaluate to `NULL`.
+* Newly created auth rules are applied to existing user sessions, but will only have access to the user claims which had rules containing them at the start of the session.
+Only user claims which are used in pre-existing auth rules at the start of a session are retained.
+Users must re-authenticate to have new rules applied if the new rules use new claims.
+* Attribute-based access control is only supported for OIDC authentication providers.
+* For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in `neo4j.conf`: `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`
+* Altering existing auth rules is not supported yet.
