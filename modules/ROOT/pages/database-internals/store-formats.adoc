@@ -25,6 +25,7 @@ Here’s an overview of the available formats and their features:
 Block:: label:enterprise-edition[]+
 * Default format unless xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] is specified.
 * *Performance:* Fast queries; uses advanced data structures and inlining techniques for better data locality.
+Uses dynamic records and tree structures to handle "growing" data efficiently.
 * *Memory efficiency:* Optimized collocation of data, which allows more related data to be fetched by fewer read operations; enhancing resource utilization.
 Block format means a few pages need to be loaded to serve a query, i.e. fewer page faults and less IO.
 * *Property access:* Properties are stored in blocks with their nodes and relationships drastically reducing the amount of pointer chasing required to access properties.
@@ -543,3 +544,81 @@ For information on deprecation and eventual removal, see <<format-deprecations, 
 | Relationship groups
 | `2^50` (1 Quadrillion)
 |===
+
+== Stored data elements
+
+The Neo4j graph data model consists of nodes, relationships, properties, and their data.
+The following data is stored for each element:
+
+* Nodes: a unique ID, a collection of labels (a node can have many labels or no labels), a collection of properties, and a collection of relationships (a node can have many relationships or no relationships).
+* Relationships: a unique ID, one type, a source node, a target node, and a collection of properties.
+* Properties: key-value pairs.
+
+[[block-format-store-files]]
+== Block format store files
+
+The block format graph data files are stored under _$NEO4J_HOME/data/databases/databasename_.
+They are organized into a three-store logical structure that adapts to the amount of data stored for each node and relationship.
+The following is an overview of the most important store files, the store they belong to, data they contain, the size of each record, and what they are used for.
+
+=== Small store
+
+_block.x1.db_ ::
+The primary store file that holds the initial data for nodes and relationships.
+In many datasets, the majority of all nodes fit in this store.
+When a node is created, a static block of size 128 B is created in this file at _offset = 128 B * nodeId_.
+It constists of two 64 B records: the node-data record stores the labels and node properties, and the relationship-data record stores the relationships and relationship data connected to this node.
+The encoding attempts to fit as much data into this block as possible, typically up to 10 labels, 6-7 properties, and up to 5 relationships.
+The amount of data that fits depends heavily on the type and size of the data.
+If you have more labels, but no properties or small properties, more labels will fit, and vice versa.
+The same applies to relationships.
+You can fit more relationships if there are fewer properties, and vice versa.
+Keep in mind that if no data is present, the block still occupies 128 B.
+This block persists as long as the node exists.
+
+=== Dynamic stores
+
+Dynamic stores are used when the data connected to a node or relationship exceeds the capacity of the small store.
+Dynamic stores grow in units of 128 B blocks.
+The following dynamic store files exist:
+
+_block.node.xd.db_::
+This file stores dynamic records for nodes.
+When the label or property data of a node exceeds the 64 B capacity of the record in the _block.x1.db_ store, a record is allocated in this file.
+The size of the dynamic record is defined as _size = X * 128_, where X is chosen to be large enough to fit all labels and properties, with a maximum total size of 8192 B.
+The record in _block.x1.db_ stores a reference to this dynamic record.
+As node data is added or removed, this record adapts to the new size, possibly relocating in the process.
+This record can typically contain hundreds of labels or properties.
+
+_block.relationship.xd.db_::
+Similar to the node dynamic store, a record is allocated in this file when the relationship data exceeds the 64 B capacity of the record in the _block.x1.db_ store or a node has at least one dense relationship.
+The size of this record also adapts to the total size of the relationship data, with a maximum size of 2047 B.
+The record in _block.x1.db_ stores a reference to this dynamic record.
+This record can typically contain hundreds of relationships.
+
+=== Dense stores
+
+When the data connected to nodes, relationships, or properties exceeds the capacity of both the small and dynamic stores, the data is stored in the dense store files.
+It is based on a multi-root generational B+ tree structure that allows for efficient storage and retrieval of large amounts of data, where each node has a separate root.
+The following dense store files exist:
+
+_block.big_values.db_::
+All properties of total _size < ~31 B_ are inlined with the node and relationship data in the small or dynamic stores. +
+Properties exceeding 31 B when encoded, typically longer strings or arrays, are stored in this file, and a reference is placed in the value's stead.
+The size of these records adapts to the encoded size of the property value, where the _size = X * 64 B_, with a maximum record size of 8192 B.
+If the encoded size of a property exceeds the maximum record size, the data is split into multiple records and linked together as a linked list.
+See xref:performance/space-reuse.adoc#space-reuse-large-property-values[Reuse of space for large property values in block format] for more details.
+
+_block.relationship.dense.db_::
+Relationship dense store holds relationships for nodes with a large number of relationships.
+When the relationship data of a node exceeds the maximum size of the dynamic relationship record, the overflowing relationships are moved to this store.
+This utilizes a tree structure, sorted by relationship type and direction for any given node.
+A node can have some relationships in the _block.x1.db_ or _block.relationship.xd.db_ store and others in the dense store.
+All relationships of the same type will always reside in the same store.
+There is no upper limit on how many relationships can be placed in the dense store for any given node.
+
+_block.huge.db_::
+Huge store holds extremely large amounts of label or property data.
+When a node or relationship contains more label or property data than can fit in any other store, it ends up in the huge store.
+This typically occurs with entities containing thousands of properties.
+
