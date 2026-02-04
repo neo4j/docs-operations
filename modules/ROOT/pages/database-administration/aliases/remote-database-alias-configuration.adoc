@@ -4,66 +4,381 @@
 [[manage-remote-aliases]]
 = Configuring remote database aliases
 
-A remote database alias can be used to provide connection to one or more graphs, on one or more remote standalone servers or clusters.
+You can use a remote database alias to connect to a graph located on a remote standalone server or cluster.
 
 Although remote database aliases do not store any data, they enable users or applications to perform queries on remote databases as if they were on the local DBMS server.
 All configurations can be done using xref:database-administration/aliases/manage-aliases-standard-databases.adoc[administrative commands] on a running system.
-Any changes are automatically synchronized across all instances of a cluster.
+Any changes are automatically synchronized across all members of a cluster.
 
-The following steps describe the setup required to define a remote database alias both for local and remote DBMSs.
-They are also useful should there be any changes in the name of the databases or the location of standalone servers and cluster instances.
-Additionally, you will also find information here on best practices and additional guidance on any changes in the configuration.
+When creating the remote database alias, it can be configured to authenticate with either:
 
-== Setup example
+* `STORED NATIVE CREDENTIALS`, the credentials of a single native user on the remote DBMS.
+* label:new[Introduced in 2026.01] `OIDC CREDENTIAL FORWARDING`, forwarding the bearer authentication token from the logged-in user on the local DBMS.
+The user needs to be logged in with an identity provider supporting OIDC.
 
-In this example, _Alice_ is an administrator and _Carol_ is a user who needs access to a database managed by _Bob_:
+By creating a remote database alias, you define:
 
-image::remote-alias-overview.svg[title="Overview of the required remote database alias setup", role="middle"]
-
-A remote alias defines:
-
-* Which user of the remote **DBMS B** is used.
+* Which credentials to use to authenticate to the remote database.
 * Where the remote database is located.
 * How to connect to the remote database using driver settings.
 
 [NOTE]
 ====
-A remote database alias is only accessible to users with appropriate privileges.
-In the example above, _Bob_ is the administrator responsible for deciding which databases (`Db1` or `Db2`) the remote aliases can write and/or read.
-Meanwhile, _Alice_ is the administrator that assigns who has access to the privileges set by _Bob_.
-In the example, _Alice_ will assign that access to _Carol_.
+To manage remote database aliases, you must have either xref:authentication-authorization/dbms-administration/dbms-database-management-privileges.adoc[database management]
+or xref:authentication-authorization/dbms-administration/dbms-alias-management-privileges.adoc[alias management] privileges.
 
-See xref:authentication-authorization/dbms-administration/index.adoc[DBMS privileges] for more information.
+For example, the following command grants the permission to create an alias to the `administrator` role:
+
+[source, Cypher]
+----
+GRANT CREATE ALIAS ON DBMS TO administrator
+----
 ====
 
-_Carol_ can use her own regular credentials to access the remote database `Db1` in DBMS after _Alice_ assigns this privilege to her user profile.
-This configuration will also allow _Carol_ to access `Db2` in **DBMS B**.
-If the administrators decide this should not be the case, then _Bob_ must define the appropriate privileges.
-See xref:authentication-authorization/index.adoc[Authentication and authorization] for further information.
+By granting access to the remote database alias, you define which users can use it to connect to the database on the remote DBMS.
 
-== Configure a remote DBMS (_Bob_)
+[CAUTION]
+====
+Many of the xref:authentication-authorization/built-in-roles.adoc[built-in roles] that Neo4j provides have access to all databases, this includes any remote database alias.
+====
 
-In the suggested example, there are two administrators: _Alice_ and _Bob_.
-_Bob_ is the administrator responsible for the setup of the remote DBMS, which includes the following steps:
+The following examples describe how to set up access to a remote database via a remote database alias by using either stored native credentials, or OIDC credential forwarding.
+They assume that you have two separate DBMS instances: a local *DBMS A* and a remote *DBMS B*.
 
-. Create the user profile to share with _Alice_.
-Currently, only user and password-based authentication (e.g. native authentication) are supported.
-. Define the permissions for the user. If you don’t want this user to access `Db2`, here is where you set it.
-. Securely transmit the credentials to _Alice_, setting up the link to database `Db1`.
-It is recommended to create a custom role to track all users shared on a remote connection, so that they remain trackable.
+[[setup-example-stored-native-credentials]]
+== Setup example with stored native credentials
 
-[source, Example Setup Administrator B]
+In this example, _Alice_ is an administrator of *DBMS A*, _Bob_ is an administrator of *DBMS B*, and _Carol_ is a user who needs access to a database managed by _Bob_.
+
+image::remote-alias-overview.svg[title="Overview of the required remote database alias setup when using stored native credentials", role="middle"]
+
+A remote database alias is only accessible to users with appropriate privileges.
+In this example, _Bob_ is the administrator responsible for deciding which database (`db1` or `db2`) the remote database alias can write and/or read.
+Meanwhile, _Alice_ is the administrator that assigns who has access to the privileges set by _Bob_.
+In the example, _Alice_ assigns that access to _Carol_.
+See xref:authentication-authorization/dbms-administration/index.adoc[DBMS privileges] for more information.
+
+
+_Bob_ creates a user profile on *DBMS B*, grants it access to database `db1` and shares the credentials with _Alice_.
+Then, _Alice_ creates a remote database alias `db1-remote-alias` on *DBMS A* that connects to `db1` on *DBMS B* using the shared credentials.
+After _Alice_ grants _Carol_ access to the remote database alias, _Carol_ can log in to the local *DBMS A*, using her own credentials, and through the remote database alias connect to `db1` on *DBMS B*.
+//This configuration will also allow _Carol_ to access `db2` in *DBMS B*, if _Bob_ grants the necessary privileges to the user profile shared with _Alice_.
+//See xref:authentication-authorization/index.adoc[Authentication and authorization] for further information.
+
+[CAUTION]
+====
+All operations executed on the remote DBMS are performed under the identity of the user associated with the remote database alias.
+When using `STORED NATIVE CREDENTIALS`, the same credentials are used to connect to the remote DBMS regardless of which end-user made the query targeting the remote database alias.
+As a result, a user's roles and permissions on the local DBMS do not restrict the actions that are processed on the remote DBMS.
+Any local user who can access the remote database alias effectively inherits the permissions granted to the user configured for that alias.
+It is therefore essential to watch of any privilege mismatch that can result from this configuration (e.g., over-privileging or under-privileging).
+
+For example, suppose the shared user on *DBMS B*, who is shared and configured for the remote database alias on the *DBMS A*, is assigned the built-in role `editor`, allowing both read and write access.
+A local user on *DBMS A* may only have the `reader` role and therefore be limited to read-only operations locally.
+However, that user can access the remote database alias and thus operate on DBMS B using the alias’s credentials, and therefore gain the associated write privileges, enabling them to modify data on *DBMS B* despite their limited local role.
+====
+
+=== Configure the remote DBMS B (_Bob_)
+
+As _Bob_, you are responsible for the remote *DBMS B*.
+You can create and delete users and grant or deny privileges on the databases managed by *DBMS B*.
+
+In this example, you create a user called `remote_user`, which will be used by the remote database alias to connect to `db1`, and share the credentials with _Alice_.
+
+. Create the user profile to share with _Alice_:
++
+[source, Cypher]
 ----
-CREATE USER alice SET PASSWORD 'secretpassword'
-CREATE ROLE remote
-GRANT ACCESS ON DATABASE neo4j TO remote
-GRANT MATCH {*} ON GRAPH neo4j TO remote
-GRANT ROLE remote TO alice
+CREATE USER remote_user SET PASSWORD 'secretpassword'
+----
+. Create a custom role to track all users shared on a remote connection, so that they remain trackable:
++
+[source, Cypher]
+----
+CREATE ROLE shared_to_remote
+----
+. Grant the `shared_to_remote` role access to `db1` and assign the role to the user profile created for the remote database alias, `remote_user`:
++
+[source, Cypher]
+----
+GRANT ACCESS ON DATABASE db1 TO shared_to_remote
+GRANT MATCH {*} ON GRAPH db1 TO shared_to_remote
+GRANT ROLE shared_to_remote TO remote_user
+----
+. Set up the link:https://neo4j.com/docs/operations-manual/current/security/ssl-framework/[SSL framework] and check whether the database accepts non-local connections if required.
++
+[parameters]
+----
+# accept non-local connections
+server.default_listen_address=0.0.0.0
+
+# configure ssl for bolt
+dbms.ssl.policy.bolt.enabled=true
+dbms.ssl.policy.bolt.base_directory=certificates/bolt
+dbms.ssl.policy.bolt.private_key=private.key
+dbms.ssl.policy.bolt.public_certificate=public.crt
+dbms.ssl.policy.bolt.client_auth=NONE
+
+# enforcing ssl connection
+server.bolt.tls_level=REQUIRED
+----
+. Securely transmit the credentials to _Alice_, setting up the link to database `db1`.
+
+[[remote-alias-config-DBMS_admin-A]]
+=== Configure the local DBMS A and grant access to Carol (_Alice_)
+
+As _Alice_, you are responsible for setting up *DBMS А*.
+You can create and delete database aliases and grant or deny users' access to them.
+
+In this example, you create a remote database alias, called `db1-remote-alias`, which connects to `db1` on *DBMS B* using the credentials shared by _Bob_.
+
+==== Generate an encryption key
+
+First, you need to generate an encryption key.
+In this case, the credentials of the user `remote_user` of *DBMS B* are reversibly encrypted and stored in the `system` database of *DBMS A*.
+Since the algorithm used is AES/GCM, you must provide an AES encryption key of length 256 and store it in a password-protected keystore in the PKCS12 format.
+
+The key can be generated by using the following keytool command in your terminal, which is included in link:https://docs.oracle.com/en/java/javase/11/tools/keytool.html[Java Platform, Standard Edition]:
+
+[source]
+----
+keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12 -keystore [keystore-name] -alias [key-name] -storepass [keystore-password]
 ----
 
-In this case, _Bob_ must do the required setup for the link:https://neo4j.com/docs/operations-manual/current/security/ssl-framework/[SSL framework] and check whether the database accepts a non-local connection if required.
+[TIP]
+====
+It is recommended to generate the keystore using the same Java version as the one on which Neo4j is run, as the supported encryption algorithms may vary.
+For details on the version of Java required by Neo4j, see link:https://neo4j.com/docs/operations-manual/current/installation/requirements/#deployment-requirements-java[System requirements -> Java].
+====
 
-[source, Example of additional configuration]
+==== Configure the keystore settings
+
+After generating the keystore file, you need to configure *DBMS A* to use it by setting the following configuration parameters in the `neo4j.conf` file:
+
+[options="header" cols="m,a"]
+|===
+| Configuration | Description
+| xref:configuration/configuration-settings.adoc#config_dbms.security.keystore.path[`dbms.security.keystore.path`]
+| The absolute path to the keystore file, including the file name.
+| xref:configuration/configuration-settings.adoc#config_dbms.security.keystore.password[`dbms.security.keystore.password`] | The password to the keystore file. Use xref:configuration/command-expansion.adoc[Command expansion] to set the password.
+| xref:configuration/configuration-settings.adoc#config_dbms.security.key.name[`dbms.security.key.name`] | The name of the secret key.
+|===
+
+[CAUTION]
+====
+To prevent unauthorized access, you must store the keystore file in a trusted location.
+This is the main way to protect the encrypted passwords that will be stored in the `system` database.
+It must not be accessible to any user except for the administrator and `neo4j`, for whom the keystore file must be readable.
+====
+
+In a cluster, you must share the same keystore file among all servers.
+For example, these would be valid additions to the configuration when using the suggested keytool command:
+
+[parameters]
+----
+dbms.security.keystore.path=/home/secure-folder/keystore-name.pkcs12
+dbms.security.keystore.password=$(conf/password.sh)
+dbms.security.key.name=key-name
+----
+
+Where `password.sh` might look like this:
+
+[source, bash]
+----
+#!/bin/bash
+echo "$KEYSTORE_PASSWORD_ENVIRONMENT_VARIABLE"
+----
+
+Additionally, do not forget to change the permissions of the configuration file and start Neo4j with the command expansion flag:
+
+[source, bash]
+----
+chmod 640 conf/neo4j.conf
+bin/neo4j start --expand-commands
+----
+
+==== Create the remote database alias and grant access to Carol
+
+You create the remote database alias using xref:database-administration/aliases/manage-aliases-standard-databases.adoc[alias administrative commands] and grant _Carol_ access to it.
+
+[NOTE]
+====
+It is strongly recommended to connect to a remote database alias with a secured connection.
+Note that only client-side SSL is supported.
+By default, remote database aliases require a secured URI scheme such as `neo4j+s`.
+However, if you want to disable the secure URL scheme, you can set the driver setting `ssl_enforced` to `false`.
+====
+
+. Use the following command to create a remote database alias with the stored native credentials shared by _Bob_:
++
+[source, Cypher]
+----
+CREATE ALIAS `db1-remote-alias` FOR DATABASE `db1` AT "neo4j+s://location:7687" USER remote_user PASSWORD 'secretpassword'
+----
+
+. Create a custom role to track all users who have access to the remote database alias (or choose an already existing role):
+
++
+[source, Cypher]
+----
+CREATE ROLE remote_access
+----
+
+. Grant the `remote_access` role access to the remote database alias and assign it to _Carol_.
+See xref:authentication-authorization/database-administration.adoc#access-control-database-administration-access[`ACCESS` privileges] for more information.
++
+[source, Cypher]
+----
+GRANT ACCESS ON DATABASE `db1-remote-alias` TO remote_access
+GRANT ROLE remote_access TO carol
+----
+
+[NOTE]
+====
+If a transaction modifies an alias (e.g. changing the database targeted on *DBMS B*), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+This prevents issues such as a transaction executing against multiple target databases for the same alias.
+====
+
+==== Changing the encryption key
+
+If the encryption key in the keystore is changed, the encrypted credentials for all existing remote database aliases requires updating, as they will no longer be readable with the new key.
+
+[NOTE]
+====
+In case of a failure when reading the keystore file, investigate the `debug.log` to find out which parameter is the source of the problem.
+In case it is not possible to connect to the remote database alias after its creation, verify its settings by connecting to the remote database at https://browser.neo4j.io/ or at your local browser.
+====
+
+[role=label--new-2026.01]
+[[setup-example-credential-forwarding]]
+== Setup example with OIDC credential forwarding
+
+In order to use OIDC credential forwarding, both *DBMS A* and *DBMS B* must support the same OIDC identity provider.
+See the xref:authentication-authorization/sso-integration.adoc[SSO integration] on how to enable OIDC.
+
+In this example, _Alice_ is an administrator of *DBMS A*, _Bob_ is an administrator of *DBMS B*, and _Carol_ is a user who needs access to a database managed by _Bob_.
+
+image::remote-alias-credential-forwarding-overview.svg[title="Overview of the required remote database alias setup when using OIDC credential forwarding", role="middle"]
+
+_Carol_ logs into the local *DBMS A* through an OIDC-compliant identity provider by offering a token from the provider.
+The token is used to set the username and determine the identity provider groups to which the user belongs.
+
+_Alice_ is the administrator of the local *DBMS A* and sets up SSO for the identity provider and configures the mapping of the identity provider groups to the Neo4j roles, such that _Carol_ can use the remote database alias, `db1-remote-alias`, to connect to the remote database `db1`.
+
+_Bob_ configures the remote *DBMS B* to support SSO with the same identity provider used by _Carol_ to log in to *DBMS A*.
+He also configures the mapping of the identity provider groups to the Neo4j roles such that the _Carol's_ identity provider groups grant the appropriate privileges to access `db1` on the *DBMS B*.
+
+[CAUTION]
+====
+A user's effective permissions are not dictated by the identity provider groups alone, but by the mapping of those groups to roles defined within each Neo4j DBMS.
+See xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
+As a result, different OIDC configurations across distinct DBMS instances may lead to the same user having different effective privileges on those instances, (DBMS A and DBMS B in this example).
+While it is possible to use different OIDC configurations across DBMS instances, database administrators must be aware of any privilege disparity that may arise from this and ensure that group-to-role mappings intended to grant equivalent access remain consistent across DBMSs.
+This is to avoid privilege inconsistency, such as over-privileging or unexpected access denial.
+====
+
+=== Configure the local DBMS A and grant access to Carol (_Alice_)
+
+As _Alice_, you are responsible for setting up the local *DBMS A*.
+You can create and delete database aliases and grant or deny users' access to them.
+
+In this case, you need to set up a remote database alias that connects to `db1` on *DBMS B* using OIDC credential forwarding and grant _Carol_ access to it.
+
+==== Create the remote database alias and grant access to Carol
+
+You create the remote database alias using xref:database-administration/aliases/manage-aliases-standard-databases.adoc[alias administrative commands].
+
+[NOTE]
+====
+It is strongly recommended to connect to a remote database alias with a secured connection.
+Note that only client-side SSL is supported.
+By default, remote database aliases require a secured URI scheme such as `neo4j+s`.
+However, if you want to disable the secure URL scheme, you can set the driver setting `ssl_enforced` to `false`.
+====
+
+. Use the following command to create a remote database alias using OIDC credential forwarding:
++
+[source, Cypher]
+----
+CREATE ALIAS `db1-remote-alias` FOR DATABASE `db1` AT "neo4j+s://location:7687" OIDC CREDENTIAL FORWARDING
+----
+
+. Create a custom role to track all users who have access to the remote database alias (or choose an already existing role):
++
+[source, Cypher]
+----
+CREATE ROLE remote_access
+----
+. Grant the `remote_access` role access to the remote database alias.
+The role will be assigned to _Carol_ on login via the mapping of identity provider groups to the Neo4j roles:
++
+[source, Cypher]
+----
+GRANT ACCESS ON DATABASE `db1-remote-alias` TO remote_access
+----
++
+[NOTE]
+====
+If a transaction modifies an alias (e.g. changing the database targeted on *DBMS B*), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
+This prevents issues such as a transaction executing against multiple target databases for the same alias.
+====
+
+==== Set up SSO on the local DBMS and map the identity provider groups to the Neo4j roles
+
+In order for _Carol_ to get access to the remote database alias, she needs to be in an identity provider group that is mapped to a Neo4j role that is granted access to that alias.
+
+You set up SSO on the local *DBMS A* and map the identity provider groups to the Neo4j roles.
+For details, see the xref:tutorial/tutorial-sso-configuration.adoc[SSO configuration tutorial] and xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
+
+[parameters]
+----
+dbms.security.oidc.<provider>.well_known_discovery_uri=http://example.com/.well-known/discovery
+<...>
+dbms.security.oidc.<provider>.claims.groups=groups
+dbms.security.oidc.<provider>.authorization.group_to_role_mapping= "engineers" = admin; \
+                                                                   "collaborators" = reader; \
+                                                                   "remote_users" = remote_access
+----
+
+=== Configure the remote DBMS B (_Bob_)
+
+As _Bob_, you are responsible for setting up the remote *DBMS B*.
+You can create and delete users and grant or deny privileges on the databases managed by *DBMS B*.
+
+In this example, you need to ensure that _Carol_ can access `db1` on *DBMS B* using OIDC credential forwarding.
+
+. Create a custom role or choose an existing one.
+The roles will be assigned to the users on login via the mapping of identity provider groups to the Neo4j roles:
++
+[source, Cypher]
+----
+CREATE ROLE db1_access
+----
+. Grant the `db1_access` role access to `db1`:
++
+[source, Cypher]
+----
+GRANT ACCESS ON DATABASE db1 TO db1_access
+GRANT MATCH {*} ON GRAPH db1 TO db1_access
+----
+
+. Set up SSO on the remote *DBMS B* and map the identity provider groups to the Neo4j roles.
+For details, see the xref:tutorial/tutorial-sso-configuration.adoc[SSO configuration tutorial] and xref:authentication-authorization/sso-integration.adoc#auth-sso-map-idp-roles[Map the identity provider groups to the Neo4j roles].
+//If you do not want specific users to access `db2`, here is where you set it.
++
+[parameters]
+----
+dbms.security.oidc.<provider>.well_known_discovery_uri=http://example.com/.well-known/discovery
+<...>
+dbms.security.oidc.<provider>.claims.groups=groups
+dbms.security.oidc.<provider>.authorization.group_to_role_mapping= "engineers" = admin; \
+                                                                   "collaborators" = reader; \
+                                                                   "remote_users" = db1_access
+----
+
+. Set up the link:https://neo4j.com/docs/operations-manual/current/security/ssl-framework/[SSL framework] and check whether the database accepts non-local connections if required.
++
+[parameters]
 ----
 # accept non-local connections
 server.default_listen_address=0.0.0.0
@@ -79,145 +394,37 @@ dbms.ssl.policy.bolt.client_auth=NONE
 server.bolt.tls_level=REQUIRED
 ----
 
-[[remote-alias-config-DBMS_admin-A]]
-== Configure a DBMS with a remote database alias (_Alice_)
-
-As _Alice_, you need to generate an encryption key.
-In this case, the credentials of a user of **DBMS B** are reversibly encrypted and stored in the system database of **DBMS A**.
-
-Since the algorithm used is AES/GCM, an AES encryption key needs to be provided.
-It should have length 256, and be stored in a password-protected keystore, of format pkcs12.
-
-The key can be generated by using the following keytool command in your terminal, which is included in link:https://docs.oracle.com/en/java/javase/11/tools/keytool.html[Java Platform, Standard Edition]:
-
-[source]
-----
-keytool -genseckey -keyalg aes -keysize 256 -storetype pkcs12 -keystore [keystore-name] -alias [key-name] -storepass [keystore-password]
-----
-
-[NOTE]
-====
-It is recommended to generate the keystore on the same Java version on which Neo4j is run, as the supported encryption algorithms may vary.
-For details on the version of Java required by Neo4j, see link:https://neo4j.com/docs/operations-manual/current/installation/requirements/#deployment-requirements-java[System requirements -> Java].
-====
-
-The following configuration is necessary for creating a remote database alias:
-
-[options="header" cols="m,a"]
-|===
-| Configuration | Description
-| xref:configuration/configuration-settings.adoc#config_dbms.security.keystore.path[`dbms.security.keystore.path`]
-| The absolute path to the keystore file, including the file name.
-| xref:configuration/configuration-settings.adoc#config_dbms.security.keystore.password[`dbms.security.keystore.password`] | The password to the keystore file. Use xref:configuration/command-expansion.adoc[Command expansion] to set the password.
-| xref:configuration/configuration-settings.adoc#config_dbms.security.key.name[`dbms.security.key.name`] | The name of the secret key
-|===
-
-[CAUTION]
-====
-To prevent unauthorized access, the keystore file must be stored in a trusted location.
-This is the main way to protect the encrypted passwords which will be stored on the system database.
-It shouldn’t be accessible to any user except for the administrator and `neo4j`, for whom the keystore file must be readable.
-====
-
-In a cluster, _Alice_ needs to share the same keystore file over all instances.
-
-For example, these would be valid additions to the config when using the suggested keytool command:
-
-[source]
-----
-dbms.security.keystore.path=/home/secure-folder/keystore-name.pkcs12
-dbms.security.keystore.password=$(conf/password.sh)
-dbms.security.key.name=key-name
-----
-
-Where `password.sh` might look like this:
-
-[source, Password.sh]
-----
-#!/bin/bash
-echo "$KEYSTORE_PASSWORD_ENVIRONMENT_VARIABLE"
-----
-
-Additionally, don’t forget to change the permissions of the configuration file, and start Neo4j with the command expansion flag:
-
-[source]
-----
-chmod 640 conf/neo4j.conf
-bin/neo4j start --expand-commands
-----
-
-== Manage remote database aliases
-
-You can use the xref:database-administration/aliases/manage-aliases-standard-databases.adoc[alias commands] to manage remote database aliases.
-In this case, it is strongly recommended to connect to a remote database alias with a secured connection.
-
-Please note that only client-side SSL is supported.
-By default, remote aliases require a secured URI scheme such as `neo4j+s`.
-This can be disabled by setting the driver setting `ssl_enforced` to `false`.
-
-For example, the following command can be used to create a remote database alias:
-
-[source, Cypher]
-----
-CREATE ALIAS `remote-neo4j` FOR DATABASE `neo4j` AT "neo4j+s://location:7687" USER alice PASSWORD 'secretpassword'
-----
-
-In order to do so, either xref:authentication-authorization/dbms-administration/dbms-database-management-privileges.adoc[database management]
-or xref:authentication-authorization/dbms-administration/dbms-alias-management-privileges.adoc[alias management] privileges are required.
-The permission to create an alias can be granted using the following command:
-
-[source, Cypher]
-----
-GRANT CREATE ALIAS ON DBMS TO administrator
-----
-
-Here is how to grant the xref:authentication-authorization/database-administration.adoc#access-control-database-administration-access[`ACCESS` privileges] to use the remote database alias:
-
-[source, Cypher]
-----
-GRANT ACCESS ON DATABASE `remote-neo4j` TO role
-----
-
-[NOTE]
-====
-If a transaction modifies an alias (e.g. changing the database targeted on **DBMS B**), other transactions concurrently executing against that alias may be aborted and rolled back for safety.
-This prevents issues such as a transaction executing against multiple target databases for the same alias.
-====
-
-== Change the encryption key
-
-If the encryption key in the keystore is changed, the encrypted credentials for existing remote database aliases will need to be updated as they will no longer be readable.
-
-[NOTE]
-====
-If there is a failure when reading the keystore file, investigate the `debug.log` to find out which parameter is the source of the problem.
-In case it is not possible to connect to the remote alias after its creation, verify its settings by connecting to the remote database at https://browser.neo4j.io/ or at your local browser.
-====
-
 == Connect to remote database aliases
 
-A user can connect to a remote database alias the same way they would do to a database.
-This includes:
+You can connect to a remote database alias the same way as you would connect to a standard database using any of the following options:
 
 * Connecting directly to the remote database alias.
-* The Cypher link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/use[`USE` clause] enables a user to query a remote database alias that they are not directly connected to:
-
+* Querying a remote database alias that you are not directly connected to using the Cypher link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/use[`USE` clause]:
++
 [source, Cypher]
 ----
-USE `remote-neo4j` MATCH (n) RETURN *
+USE `db1-remote-alias` MATCH (n) RETURN *
 ----
 
 * Connecting to a remote database alias as a home database.
-This needs to be set by Administrator A.
-See more about xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[User Management].
-
+This needs to be set by an administrator, in this case _Alice_.
+See xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[User Management] for more information.
++
 [source, Cypher]
 ----
-ALTER USER alice SET HOME DATABASE `remote-neo4j`
+ALTER USER carol SET HOME DATABASE `db1-remote-alias`
 ----
 
-[NOTE]
-====
-Remote alias transactions will not be visible in `SHOW TRANSACTIONS` on **DBMS A**.
+== Important notes
+
+When using remote database aliases, keep in mind that:
+
+* Remote database alias transactions will not be visible in `SHOW TRANSACTIONS` on the local DBMS.
 However, they can be accessed and terminated on the remote database when connecting with the same user.
-====
+
+* Actions on the remote DBMS are all attributed to the user configured for the remote database alias.
+In the case of using `STORED NATIVE CREDENTIALS`, the same credentials are used to connect to the remote DBMS regardless of which end-user made the query targeting the remote database alias.
+This will result in the stored native user being logged in the audit trails on the remote DBMS for all queries using the remote database alias.
+When using `OIDC CREDENTIAL FORWARDING`, the actual end-user's credentials and permissions are used, resulting in per-user audit trails being logged on the remote DBMS.
+
+* When using a remote database alias with OIDC credential forwarding, the user needs to be logged into the local DBMS with OIDC, otherwise there is no token to forward, and the access to the remote database will be denied with GQLSTATUS link:https://neo4j.com/docs/status-codes/current/errors/gql-errors/42NFF/[`42NFF`].
