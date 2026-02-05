@@ -94,13 +94,14 @@ The syntax for importing a set of CSV files is:
 [source, syntax, role="nocopy"]
 ----
 neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers[=true|false]]
-                                 [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
-                                 [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
-                                 [--overwrite-destination[=true|false]] [--skip-bad-entries-logging[=true|false]]
-                                 [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict
-                                 [=true|false]] [--trim-strings[=true|false]] [--additional-config=<file>]
-                                 [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
-                                 [--format=<format>] [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+                                 [--dry-run[=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
+                                 [=true|false]] [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
+                                 [--overwrite-destination[=true|false]] [--profile[=<captureProfile>]]
+                                 [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships[=true|false]]
+                                 [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings
+                                 [=true|false]] [--additional-config=<file>] [--array-delimiter=<char>]
+                                 [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
+                                 [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
                                  [--input-encoding=<character-set>] [--input-type=csv|parquet]
                                  [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
                                  [--property-shard-count=<propertyShardCount>] [--quote=<char>]
@@ -209,6 +210,11 @@ Unicode character ID can be used if prepended by `\`.
 | {check-mark}
 |
 
+|--dry-run[=true\|false]footnote:[See <<import-full-dry-run>> for details.]
+|label:new[Introduced in 2026.02]Flag used to indicate that a dry run of the import should be performed, i.e. no data will actually be imported, only the validation of the various arguments and estimation of size of the import will be performed and reported.
+|false
+| {check-mark}
+| {check-mark}
 
 |--expand-commands
 |Allow command expansion in config value evaluation.
@@ -548,8 +554,6 @@ For more information, see <<import-files-from-cloud-storage>>.
 If importing to a database that has not explicitly been created before the import, it must be created subsequently in order to be used.
 ====
 
-==== Import data from CSV files
-
 Assume that you have formatted your data as per xref:import.adoc#import-tool-header-format[CSV header format] so that you have it in six different files:
 
 . `movies_header.csv`
@@ -558,6 +562,58 @@ Assume that you have formatted your data as per xref:import.adoc#import-tool-hea
 . `actors.csv`
 . `roles_header.csv`
 . `roles.csv`
+
+[[import-full-dry-run]]
+==== Perform a dry run before importing data
+
+Before performing the actual import, you can run a dry run to validate the input files and estimate the size of the import.
+The command does not write any data to the database.
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full --dry-run=true --nodes import/movies_header.csv,import/movies.csv \
+--nodes import/actors_header.csv,import/actors.csv \
+--relationships import/roles_header.csv,import/roles.csv
+----
+
+.Example output
+[result, subs="attributes+,+macros"]
+----
+Neo4j version: {neo4j-version-exact}
+Checking the contents of the following files:
+Nodes:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/actors_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/actors.csv
+
+Relationships:
+  null:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/roles_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/roles.csv
+
+
+Available resources:
+  Total machine memory: 32.00GiB
+  Free machine memory: 81.34MiB
+  Max heap memory : 7.111GiB
+  Max worker threads: 10
+  Configured max memory: 88.11MiB
+  High parallel IO: true
+
+Cypher type normalization is enabled (disable with --normalize-types=false):
+  Property type of 'year' normalized from 'int' --> 'long' in /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies_header.csv
+Estimated entity counts / sizes:
+  Nodes: 6
+    Labels: 8
+    Total property count: 15
+    Total properties size: 237B
+  Relationships: 9
+    Total property count: 9
+    Total properties size: 108B
+----
+
+==== Import data from multiple CSV files
 
 The following command imports the three datasets:
 
@@ -573,7 +629,7 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 
 Assume that you want to include a header and then multiple files that match a pattern, e.g. containing numbers.
 In this case, a regular expression can be used.
-It is guaranteed that groups of digits will be sorted in numerical order, as opposed to lexicograghic order.
+It is guaranteed that groups of digits will be sorted in numerical order, as opposed to lexicographic order.
 
 For example:
 
@@ -695,16 +751,17 @@ The syntax for importing a set of CSV files incrementally is:
 [source, syntax, role="nocopy"]
 ----
 neo4j-admin database import incremental [-h] [--expand-commands] --force [--update-all-matching-relationships]
-                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]]
-                                        [--ignore-empty-strings[=true|false]] [--ignore-extra-columns[=true|false]]
-                                        [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
-                                        [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships
-                                        [=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]]
-                                        [--trim-strings[=true|false]] [--additional-config=<file>]
-                                        [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
-                                        [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
-                                        [--input-encoding=<character-set>] [--input-type=csv|parquet]
-                                        [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
+                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]] [--dry-run
+                                        [=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
+                                        [=true|false]] [--legacy-style-quoting[=true|false]] [--normalize-types
+                                        [=true|false]] [--profile[=<captureProfile>]] [--skip-bad-entries-logging
+                                        [=true|false]] [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes
+                                        [=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
+                                        [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>]
+                                        [--delimiter=<char>] [--high-parallel-io=on|off|auto]
+                                        [--id-type=string|integer|actual] [--input-encoding=<character-set>]
+                                        [--input-type=csv|parquet] [--max-off-heap-memory=<size>]
+                                        [--path-pattern-style=regex|glob|none]
                                         [--property-shard-count=<propertyShardCount>] [--quote=<char>]
                                         [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
                                         [--stage=all|prepare|build|merge] [--target-format=<format>]
@@ -832,6 +889,12 @@ Unicode character ID can be used if prepended by `\`.
 |,
 | {check-mark}
 |
+
+|--dry-run[=true\|false]footnote:[See <<import-incremental-dry-run>> for details.]
+|label:new[Introduced in 2026.02]Flag used to indicate that a dry run of the import should be performed, i.e. no data will actually be imported, only the validation of the various arguments and estimation of size of the import will be performed and reported.
+|false
+| {check-mark}
+| {check-mark}
 
 |--expand-commands
 |Allow command expansion in config value evaluation.
@@ -1091,6 +1154,7 @@ If not specifically provided, the default temp path will be created inside the d
 
 |--update-all-matching-relationships
 |label:new[Introduced in 2025.01] Whether or not to update all existing relationships that match a relationship data entry. If disabled, the relationship data entry will be logged if it is within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+
 |false
 | {check-mark}
 | {check-mark}
@@ -1121,6 +1185,55 @@ For example, `nodes 0-nodes.csv -- mydatabase`.
 [[import-tool-incremental-examples]]
 === Examples
 
+[[import-incremental-dry-run]]
+==== Perform a dry run before importing data
+
+Before performing the actual import, you can run a dry run to validate the input files and estimate the size of the import.
+The command does not write any data to the database.
+
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE neo4j WAIT;
+...
+bin/neo4j-admin database import incremental --dry-run=true --nodes=N1=../../raw-data/incremental-import/nodes.csv --relationships=R1=../../raw-data/incremental-import/relationships.csv neo4j
+----
+
+.Example output
+[result, subs="attributes+,+macros"]
+----
+Neo4j version: {neo4j-version-exact}
+Checking the contents of the following files:
+Nodes:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/raw-data/incremental-import/nodes.csv
+Relationships:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/raw-data/incremental-import/relationships.csv
+
+Available resources:
+  Total machine memory: 64.00GiB
+  Free machine memory: 9.997GiB
+  Max heap memory : 14.22GiB
+  Max worker threads: 10
+  Configured max memory: 40.00GiB
+  High parallel IO: true
+
+Schema commands:
+  Indexes to be created: 3
+  Indexes to be dropped: 1
+  Constraints to be created: 2
+  Constraints to be dropped: 3
+
+Estimated entity counts / sizes:
+  Nodes: 2702496410
+    Includes updates: true
+    Labels: 2702496410
+    Property count: 16348903762
+    Property size: 253.6GiB
+  Relationships: 18094004256
+    Includes updates: false
+    Property count: 6076138797
+    Property size: 96.14GiB
+----
+
 There are two ways of importing data incrementally.
 
 ==== Incremental import in a single command
@@ -1128,38 +1241,35 @@ There are two ways of importing data incrementally.
 If downtime is not a concern, you can run a single command with the option `--stage=all`.
 This option requires the database to be stopped.
 
-====
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1 WAIT;
+neo4j@system> STOP DATABASE neo4j WAIT;
 ...
-bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-data/incremental-import/b.csv db1
+bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-data/incremental-import/nodes.csv --relationships=R1=../../raw-data/incremental-import/relationships.csv neo4j
 ----
-====
 
 [[incremental-import-stages]]
 ==== Incremental import in stages
 
 If you cannot afford a full downtime of your database, you can run the import in three stages.
 
-====
 . `prepare` stage:
 +
 During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
 The import command is run with the option `--stage=prepare` and the database must be stopped.
 +
-.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 The database must be stopped to run `--stage=prepare`.
 +
 [source, shell, role=noplay]
 ----
-STOP DATABASE db1 WAIT
+STOP DATABASE neo4j WAIT
 ----
 .. Run the incremental import command with the `--stage=prepare` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/c.csv db1
+bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/nodes.csv --relationships=R1=../../raw-data/incremental-import/relationships.csv neo4j
 ----
 . `build` stage:
 +
@@ -1171,13 +1281,13 @@ The import command is run with the option `--stage=build`.
 +
 [source, shell, role=noplay]
 ----
-ALTER DATABASE db1 SET ACCESS READ ONLY
+ALTER DATABASE neo4j SET ACCESS READ ONLY
 ----
 .. Run the incremental import command with the `--stage=build` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw-data/incremental-import/c.csv db1
+bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw-data/incremental-import/nodes.csv --relationships=R1=../../raw-data/incremental-import/relationships.csv neo4j
 ----
 . `merge` stage:
 +
@@ -1186,19 +1296,18 @@ It also updates the affected indexes and upholds the affected property uniquenes
 The import command is run with the option `--stage=merge` and the database must be stopped.
 It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
 +
-.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 +
 [source, shell, role=noplay]
 ----
-STOP DATABASE db1 WAIT
+STOP DATABASE neo4j WAIT
 ----
 .. Run the incremental import command with the `--stage=merge` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=merge db1
+bin/neo4j-admin database import incremental --stage=merge neo4j
 ----
-====
 
 [[import-tool-header-format]]
 == CSV header format
