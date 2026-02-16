@@ -1,33 +1,49 @@
 :description: Managing role-based access control for composite databases
 = Role-based access control (RBAC)
 
-== Database access control for composite databases
-Access to a composite database can be granted with the xref:authentication-authorization/database-administration#access-control-database-administration-access[database access privilege].
-If a user has access to the composite database, he does not automatically gain access to its constituents.
-Access to the constituents needs to be granted explicitly.
+You can manage access to composite databases and their constituents using the same RBAC features as for standard databases.
+However, there are some differences in how RBAC works for composite databases compared to standard databases.
 
-== Role-based access control for composite databases
-It is not supported to define role-based access control over all constituents of an composite database. Instead, the following is true:
+== Database access control
+
+Database access is defined for both the composite database and its constituents.
+Access to constituents must be explicitly granted.
+See xref:authentication-authorization/database-administration#access-control-database-administration-access[The database `ACCESS` privilege] for more information on granting database access.
+
+== Role-based access control
+
+It is not supported to define role-based access control over all constituents of a composite database.
+Instead, the following is true:
 
 * Privileges need to be defined for the databases targeted by a constituent.
-* If a constituent is a remote alias, the RBAC rules applied are those of the user connecting to the remote dbms.
+* If a constituent is a remote alias, the RBAC rules applied are those of the user connecting to the remote DBMS.
 
-== Examples
+== Example
 
-Consider the following setup:
+The following example illustrates how to manage access control and role-based access control for a composite database.
+You will create a composite database `cineasts` with two constituents: a local database `cineasts.latest`, and a remote database `cineasts.upcoming`.
+Then, you will create a user and define the necessary access privileges for that user to access both the local and remote constituents as a target of a `USE` clause.
+Finally, you will restrict access to movies with the label `PG18` for users with the role `minor` on the local constituent and for the user `remoteUser` on the remote constituent.
+
+=== Create the composite database and its constituents
+
+. Create the composite database `cineasts`:
++
 [source, cypher]
 ----
 CREATE COMPOSITE DATABASE cineasts
 ----
 
-.Create a constituent cineasts.latest for a local database
+. Create a constituent `cineasts.latest` for a local database:
++
 [source, cypher]
 ----
 CREATE ALIAS cineasts.latest
-  FOR DATABASE movies2022
+  FOR DATABASE movies2025
 ----
 
-.Create a constituent cineasts.upcoming for a remote database
+. Create a constituent `cineasts.upcoming` for a remote database:
++
 [source, cypher]
 ----
 CREATE ALIAS cineasts.upcoming
@@ -37,27 +53,30 @@ CREATE ALIAS cineasts.upcoming
   PASSWORD 'password'
 ----
 
-.Create a user to access the composite database and its constituents
+=== Create the user `alice` and grant access privileges
+
+Create a user and grant it the necessary roles to access the constituents as a target of a `USE` clause.
+
+. Create a user `alice` to access the composite database and its constituents:
++
 [source, cypher]
 ----
 CREATE USER alice SET PASSWORD 'password' CHANGE NOT REQUIRED;
 ----
 
-=== Access privileges
-
-The following cypher sections define the roles with the minimal privileges a user needs to access the constituents as a target of a USE clause:
-
-.Access rules required for accessing the local constituent cineasts.latest to new user alice
+. Create a role required for accessing the local constituent `cineasts.latest`, and grant it to the user `alice`:
++
 [source, cypher]
 ----
 CREATE ROLE localAccess;
 GRANT ROLE localAccess TO alice;
 
 GRANT ACCESS ON DATABASE cineasts TO localAccess;
-GRANT ACCESS ON DATABASE movies2022 TO localAccess;
+GRANT ACCESS ON DATABASE movies2025 TO localAccess;
 ----
 
-.Access rules required for accessing the remote constituent cineasts.upcoming to new user alice
+. Create a role required for accessing the remote constituent `cineasts.upcoming`, and grant it to the user `alice`:
++
 [source, cypher]
 ----
 CREATE ROLE remoteAccess;
@@ -67,29 +86,58 @@ GRANT ACCESS ON DATABASE cineasts TO remoteAccess;
 GRANT ACCESS ON DATABASE cineasts.upcoming TO remoteAccess;
 ----
 
-Additionally, the user defined on the remote constituent, `remoteUser`, needs to have access to the target database or database alias on the remote dbms.
+=== Create a user `remoteUser` on the remote DBMS and grant access privileges
 
-.Example user for remote constituent cineasts.upcoming, which needs to be executed on the remote DBMS located at `neo4j+s://location:7687`
+Additionally, create a different user on the remote constituent, and grant that user access to the target database or database alias on the remote DBMS.
+The following steps need to be performed on the remote DBMS located at `neo4j+s://location:7687`.
+
+. Create a user `remoteUser` on the remote DBMS:
++
 [source, cypher]
 ----
 CREATE USER remoteUser SET PASSWORD 'password' CHANGE NOT REQUIRED;
+----
+
+. Create a role required for accessing the remote constituent `cineasts.upcoming`, and grant it to the user `remoteUser` on the remote DBMS:
++
+[source, cypher]
+----
 CREATE ROLE remoteRole;
 GRANT ROLE remoteRole TO remoteUser;
 GRANT ACCESS ON DATABASE upcoming TO remoteRole;
 ----
 
-=== Restrict privileges on the constituents
+=== Restrict privileges on the constituents of the composite database
 
-.Restrict any user with the role `minor` to read movies with the label `PG18` define RBAC for the local constituent cineasts.latest
+Restrict any user with the role `localAccess` from reading movies with the label `PG18`:
+
 [source, cypher]
 ----
-DENY MATCH { descripton } ON GRAPH movies2022 NODES PG18 TO minor
+DENY MATCH { description } ON GRAPH movies2025 NODES PG18 TO localAccess
 ----
 
-Remote alias privileges need to be defined on the remote DBMS located at `neo4j+s://location:7687` for the user `remoteUser`. Let's assume that `remoteUser` has the role `remoteRole`. The rules applying to `remoteUser` will apply for any user accessing cineasts.upcoming on the local DBMS.
+=== Restrict privileges on the remote constituent of the composite database
 
-.Restrict the user `remoteUser` with the role `remoteRole` at the remote DBMS
+Restrict the user `remoteUser` from reading movies with the label `PG18` by restricting access of the role `remoteRole` on the remote database `upcoming`:
+
 [source, cypher]
 ----
-DENY MATCH { descripton } ON GRAPH upcoming NODES PG18 TO remoteRole
+DENY MATCH { description } ON GRAPH upcoming NODES PG18 TO remoteRole
+----
+
+The rules applying to `remoteUser` apply to any user accessing `cineasts.upcoming` on the local DBMS.
+
+=== Use the composite database
+
+Now, the user `alice` can access the composite database `cineasts` and its constituents `cineasts.latest` and `cineasts.upcoming` as a target of a `USE` clause.
+However, `alice` will not be able to read movies with the label `PG18` from both constituents due to the restrictions defined on the local and remote databases for the role `localAccess` and the user `remoteUser`, respectively.
+
+[source, cypher]
+----
+// Access the composite database
+USE cineasts;
+// Access the local constituent
+USE cineasts.latest;
+// Access the remote constituent
+USE cineasts.upcoming;
 ----
