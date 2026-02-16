@@ -39,7 +39,7 @@ CREATE COMPOSITE DATABASE cineasts
 [source, cypher]
 ----
 CREATE ALIAS cineasts.latest
-  FOR DATABASE movies2025
+  FOR DATABASE `movies-latest`
 ----
 
 . Create a constituent `cineasts.upcoming` for a remote database:
@@ -72,7 +72,7 @@ CREATE ROLE localAccess;
 GRANT ROLE localAccess TO alice;
 
 GRANT ACCESS ON DATABASE cineasts TO localAccess;
-GRANT ACCESS ON DATABASE movies2025 TO localAccess;
+GRANT ACCESS ON DATABASE `movies-latest` TO localAccess;
 ----
 
 . Create a role required for accessing the remote constituent `cineasts.upcoming`, and grant it to the user `alice`:
@@ -113,7 +113,7 @@ Restrict any user with the role `localAccess` from reading movies with the label
 
 [source, cypher]
 ----
-DENY MATCH { description } ON GRAPH movies2025 NODES PG18 TO localAccess
+DENY MATCH { description } ON GRAPH `movies-latest` NODES PG18 TO localAccess
 ----
 
 === Restrict privileges on the remote constituent of the composite database
@@ -134,10 +134,13 @@ However, `alice` will not be able to read movies with the label `PG18` from both
 
 [source, cypher]
 ----
-// Access the composite database
-USE cineasts;
-// Access the local constituent
-USE cineasts.latest;
-// Access the remote constituent
-USE cineasts.upcoming;
+USE cineasts.latest
+MATCH (movie:Movie)
+RETURN movie.title AS title
+  UNION
+USE cineasts.upcoming
+MATCH (movie:Movie)
+RETURN movie.title AS title
 ----
+
+The query above will return the titles of all movies from both constituents, except for movies with the label `PG18`.
