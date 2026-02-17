@@ -1,0 +1,109 @@
+:description: This section describes how to manage databases across clusters.
+[role=enterprise-edition]
+[[database-management]]
+= Managing databases across cluster [Early Access]
+
+In 2026.03, we introduced Cross Cluster Replication (CCR).
+This provides the functionality for one database in a cluster to be replicated over to another cluster.
+The terminology we will use for the original database is "upstream", while the database which is replicating data to is called the "replica".
+The replica will continuously poll the upstream database for new transactions and will apply them once new transactions are available.
+
+[[create-replica]]
+== Create replica
+
+Let's say we have two separate clusters currently running independently from one another: ClusterA and ClusterB.
+On ClusterA, we have database "foo" running.
+On ClusterB, we have database "bar" running.
+We now want to create a replica on ClusterB. This replica will replicate from the upstream database "foo" from Cluster A.
+
+On ClusterB, to create a replica database "fooreplica" with three primaries and two secondaries, we run the following Cypher command:
+
+[source, cypher]
+----
+CALL internal.dbms.createReplicaDatabase('fooreplica', 3, 2, {remote: 'foo', addresses:[<clusterA_server_cluster_ports>]});
+----
+
+[NOTE]
+====
+All replica databases are READ-ONLY.
+A replica database can have both primaries and secondaries which respect the mode constraints of the servers, but they are both read-only.
+
+
+The command can only be executed successfully if the replica database is able to contact the servers of ClusterA and if the upstream database "foo" exists and is running.
+If not, the command results in an error.
+
+Verify that the `fooreplica` database is online on the desired number of servers, in the desired roles. note that the type is labelled as 'replica'.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASE fooreplica;
+----
++
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name         | type      | aliases | access       | address          | role         | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "fooreplica" | "replica" | []      | "read-write" | "localhost:7687" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "replica" | []      | "read-write" | "localhost:7688" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "replica" | []      | "read-write" | "localhost:7689" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "replica" | []      | "read-write" | "localhost:7690" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "replica" | []      | "read-write" | "localhost:7691" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+5 rows available after 3 ms, consumed after another 1 ms
+----
+
+[[promote-replica]]
+== Promote replica
+
+In the event that we would like the replica to become it's own writable database, we can promote the replica.
+Note that this is a permanent operation as a promoted database can go back to being a replica.
+
+On ClusterB, we promote the replica database "fooreplica" with three primaries and two secondaries, we run the following Cypher command:
+
+[source, cypher]
+----
+CALL internal.dbms.promoteReplicaDatabase('fooreplica', 3, 2);
+----
+
+Note that we could have changed the number of primaries and secondaries during this promotion.
+We did not in this case and kept the same number of primaries and secondaries when creating the replica.
+
+Verify that the `fooreplica` database is online on the and has type 'standard'.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASE fooreplica;
+----
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name         | type       | aliases | access       | address          | role         | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "fooreplica" | "standard" | []      | "read-write" | "localhost:7687" | "primary"    | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "standard" | []      | "read-write" | "localhost:7688" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "standard" | []      | "read-write" | "localhost:7689" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "standard" | []      | "read-write" | "localhost:7690" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
+| "fooreplica" | "standard" | []      | "read-write" | "localhost:7691" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []           |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+5 rows available after 3 ms, consumed after another 1 ms
+----
+
+One of these primary databases is now also writeable as the we can see WRITER equals to TRUE.
+
+
+[[further-notes]]
+== Further Notes
+
+[[replication-semantics]]
+=== Replication Semantics
+Replicas are asynchronously replicating data from the upstream database.
+As such it's useful to track the replication lag between the upstream and replica database.
+In order to do this, plot the ``<prefix>.database.<db>.transaction.last_committed_tx_id` metric for both the upstrema and replica database.1
+The difference between them is a signal of how much replication lag there is.
+
+
+
