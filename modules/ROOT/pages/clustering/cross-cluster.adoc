@@ -3,6 +3,21 @@
 [[database-management]]
 = Managing databases across cluster [Early Access]
 
+Preview Feature
+[IMPORTANT]
+====
+The *property sharding feature is offered AS-IS* as described in your agreement with Neo4j and should only be used for internal development purposes.
+
+When this feature becomes generally available, you will need to upgrade to the latest Neo4j version (which may require downtime) to use the feature for non-development purposes.
+
+*Enabling the preview feature (internal parameter):* +
+By default, the sharded property database is disabled.
+Use the internal setting `internal.dbms.sharded_property_database.enabled=true` to enable it.
+
+During the Preview period, customers with active contracts may contact Neo4j Support through the standard support channels.
+Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
+====
+
 In 2026.03, we introduced Cross Cluster Replication (CCR).
 This provides the functionality for one database in a cluster to be replicated over to another cluster.
 The terminology we will use for the original database is "upstream", while the database which is replicating data to is called the "replica".
@@ -95,15 +110,36 @@ SHOW DATABASE fooreplica;
 One of these primary databases is now also writeable as the we can see WRITER equals to TRUE.
 
 
-[[further-notes]]
-== Further Notes
-
-[[replication-semantics]]
-=== Replication Semantics
+[[replication-metrics]]
+== Replication Metrics
 Replicas are asynchronously replicating data from the upstream database.
 As such it's useful to track the replication lag between the upstream and replica database.
 In order to do this, plot the ``<prefix>.database.<db>.transaction.last_committed_tx_id` metric for both the upstrema and replica database.1
 The difference between them is a signal of how much replication lag there is.
 
+[[DR scenario]]
+== DR scenario
+
+The primary use-case of Cross Cluster Replication is for disaster recovery.
+We would recommend users to set up the two clusters in two regions - the upstream should be in the main cluster, and the replica will be in a DR cluster in another region.
+In the case when the main region has gone done, users will have to promote the replicating database in the DR cluster and redirect traffic to this promoted database.
+
+[[Failback]]
+=== Failback
+Failback is the process of restoring the main cluster back into operation after a DR scenario.
+This is under the assumption that the promoted database is currently running in the DR cluster.
+To do so, we recommend the following steps:
+1. Create a replica database on the main cluster - this replica database's upstream is the promoted database in the DR cluster.
+2. Stop writes on the promoted database in the DR cluster.
+3. Check the metrics to ensure that tx_id is exactly the same for both the promoted and replicating database.
+4. Promote the replica database in the main cluster - this is now back in operation and is again the main database serving traffic.
+5. Stop the database in the DR cluster, and create a new replica with the upstream pointing to the main database in the main cluster.
+
+
+[[system-database]]
+== System database
+System database cannot be replicated by design.
+As such, permissions and RBAC have to be set up separately on both ClusterA and ClusterB as they cannot be copied over.
+We should treat the two clusters as independent entities, with a database replicating between them.
 
 
