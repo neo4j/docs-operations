@@ -142,14 +142,46 @@ Therefore, it is useful to track the replication lag between the upstream and re
 In order to do this, plot the `<prefix>.database.<db>.transaction.last_committed_tx_id` metric for both the upstrem and replica databases.
 The difference between them is a signal of how much replication lag there is.
 
+[[inter-cluster-encryption]]
+== Inter-cluster encryption
+Firstly, ensure that each cluster is encrypted using link:{neo4j-docs-base-uri}/operations-manual/current/clustering/setup/encryption[intra-cluster encryption].
+To ensure that both *ClusterA* and *ClusterB* can mutually authenticate, each cluster must trust the Certificate Authority (CA) that signs the other cluster’s certificates.
+
+If the clusters use different CAs, the CA certificate of *ClusterA* must be installed in the `trusted/` directory of *ClusterB*, and vice versa.
+
+For example, here is one possible cert folder configuration:
++
+[source, shell]
+----
+ClusterA
+
+cluster/
+├── private.key                 ← clusterA node private key
+├── public.crt                  ← clusterA node certificate
+├── trusted/
+│   └── clusterB-ca.crt         ← CA that signs ClusterB node certs
+└── revoked/
+
+
+ClusterB
+
+cluster/
+├── private.key                 ← ClusterB node private key
+├── public.crt                  ← ClusterB node certificate
+├── trusted/
+│   └── clusterA-ca.crt         ← CA that signs ClusterA node certs
+└── revoked/
+----
+
+
 [[dr-scenario]]
 == Disaster recovery scenario
 
 It is recommended to set up the two clusters in two cloud regions - the upstream should be in the main cluster, and the replica will be in a DR cluster in another region.
 In the case when the main region has gone done, you will have to promote the replicating database in the DR cluster and redirect traffic to this promoted database.
 
-[[Failback]]
-=== Failback
+[[failback]]
+== Failback
 
 Failback is the process of restoring the main cluster back into operation after a DR scenario.
 This is under the assumption that the promoted database is currently running in the DR cluster.
