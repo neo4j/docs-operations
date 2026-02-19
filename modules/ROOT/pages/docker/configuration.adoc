@@ -118,15 +118,67 @@ The Neo4j logging configuration is located in the _conf_ directory and consists 
 * _user-logs.xml_ -- provides configuration for _neo4j.log_.
 * _server-logs.xml_ -- provides configuration for _debug.log_, _http.log_, _query.log_, and _security.log_.
 
-Starting from Neo4j 2025.01, the default configuration files are located in the _server.directories.configuration=conf_ directory.
-Therefore, the default paths to the configuration files are _<home>/conf/user-logs.xml_ and _<home>/conf/server-logs.xml_.
+If you need to adjust the Neo4j logging configuration in the Docker container, follow the steps.
 
-If you use a custom directory for your Log4j configuration files, update the paths to your XML files in the _neo4j.conf_ file to depend on <conf> rather than <home>.
-For example, xref:configuration/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config=path/to/your/conf/user-logs.xml`] and xref:configuration/configuration-settings.adoc#config_server.logs.config[`server.logs.config=path/to/your/conf/server-logs.xml`].
+. You must set the `neo4j` user as the owner of _$HOME/neo4j/conf_ to allow _write_ access from the Neo4j Docker container:
++
+[source, shell, subs="attributes"]
+----
+sudo chown neo4j:neo4j $HOME/neo4j/conf
+----
 
-For details on how to configure _user-logs.xml_ and _server-logs.xml_ files, see xref:monitoring/logging.adoc#_default_logging_configuration[Configure Neo4j logging].
+.  Dump the default configuration by running the command:
++
+[source, shell, subs="attributes"]
+----
+docker run --rm \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact} dump-config
+----
 
-After adjusting _user-logs.xml_ and _server-logs.xml_ files, mount the _/conf_ volume into the Docker container.
+. Edit the _neo4j.conf_ file to ensure that you listen on all network interfaces:
++
+[shell]
+----
+# REQUIRED when mounting /conf in Docker
+server.default_listen_address=0.0.0.0
+----
+
+. Adjust the _user-logs.xml_ and _server-logs.xml_ files by following examples on the xref:monitoring/logging.adoc#_default_logging_configuration[Configure Neo4j logging].
+For example, you can modify xref:monitoring/logging.adoc#general-logging-loggers[`<Loggers>`] or xref:monitoring/logging.adoc#general-logging-appenders[`<Appenders>`].
+
+. Run the container:
++
+[source, shell, subs="attributes"]
+----
+docker run \
+    --detach \
+    --publish=7474:7474 --publish=7687:7687 \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/logs:/logs \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact}
+----
+
+. Finally, verify logging works by running the command after startup:
++
+[source, shell, attributes]
+----
+ls $HOME/neo4j/logs
+----
++
+Your output should be something like that:
++
+[source, shell, attributes]
+----
+neo4j.log
+debug.log
+query.log
+http.log
+security.log
+----
++
+Note that `query.log` and `security.log` are part of the Enterprise Edition.
 
 
 [[docker-new-image]]
