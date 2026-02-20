@@ -2039,24 +2039,15 @@ bin/neo4j-admin database import --nodes import/movies-header.csv,import/movies.c
 
 [role=label--enterprise-edition]
 [[indexes-constraints-import]]
-== Provide indexes and constraints during import
+== Create/Drop indexes and constraints during import
 
-You can use the `--schema` option to create and populate indexes/constraints during the import process.
-It works for the block format and both full and incremental import.
-For incremental import, this functionality is available from 2025.02.
+You can use the `--schema` option to create and populate indexes/constraints during full and incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands.
+During an incremental import, you can also use the same option to drop indexes/constraints, provided that the Cypher script contains `DROP INDEX|CONSTRAINT` commands.
 
-You should have a Cypher script containing only `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
-This file uses ';' as the separator.
+The `--schema` option works only for `block` store format.
+For incremental import, creating and dropping indexes and constraints are available from 2025.02.
 
-For example:
-
-[source, cypher, role=nocopy]
-----
-CREATE INDEX PersonNameIndex FOR (i:Person) ON (i.name);
-CREATE CONSTRAINT PersonAgeConstraint FOR (c:Person) REQUIRE c.age IS :: INTEGER
-----
-
-List of supported indexes and constraints that can be created by the import tool:
+The import tool supports the following indexes and constraints:
 
 * RANGE
 * LOOKUP
@@ -2065,26 +2056,66 @@ List of supported indexes and constraints that can be created by the import tool
 * FULL-TEXT
 * VECTOR
 
+=== Create indexes and constraints during full import
+
+You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
+
+[NOTE]
+====
+Full import does not support dropping indexes and constraints.
+====
+
 For example:
 
-.Create indexes and constraints during full import
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
+CREATE CONSTRAINT PersonAgeConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS :: INTEGER;
+----
+
+This file uses ';' as a separator.
+
+Then use the following example commands to run the import:
+
 [source, shell, role=noplay]
 ----
 bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
 ----
 
-.Create indexes and constraints during incremental import
+[role=label--new-2025.02]
+=== Create and drop indexes and constraints during incremental import
+
+You can use the `--schema` option to create and populate, and drop indexes/constraints during an incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` and `DROP INDEX|CONSTRAINT` commands to be parsed and executed.
+Note that you cannot drop indexes that are backing constraints.
+You must drop the constraints themselves, which will also drop the underlying indexes.
+
+[NOTE]
+====
+You must stop your database before performing an incremental import with a single command.
+If you cannot afford a full downtime of your database, split the operation into several stages.
+See <<incremental-import-stages>> for details.
+====
+
+For example:
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+DROP INDEX PersonNameIndex IF EXISTS;
+CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
+DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
+CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
+----
+
+This file uses ';' as a separator.
+
+Then use the following example commands to run the import:
+
 [source, shell, role=noplay]
 ----
 bin/neo4j-admin database import incremental --stage=all --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
 ----
-
-[NOTE]
-====
-You must stop your database, if you want to perform the incremental import within one command.
-If you cannot afford a full downtime of your database, split the operation into several stages.
-For details, see <<incremental-import-stages>>.
-====
 
 [role=label--enterprise-edition]
 [[import-tool-resume]]
