@@ -85,6 +85,47 @@ The conditionExpression can use any valid Cypher expression that evaluates to a 
 The functions, `date`, `datetime`, `localdatetime`, `localtime` and `time` are only supported when an input argument is used.
 ====
 
+=== Examples
+
+An auth rule specifying that users with the attribute `department` equal to `sales` should be granted the `salesTeam` role can be created as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE salesRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'sales';
+GRANT ROLE salesTeam TO AUTH RULE salesRule;
+----
+
+Granting the role `engineeringTeamUK` to users with the attribute `department` equal to `engineering` and `location` equal to `UK` can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE engineeringUKRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'engineering'
+        AND abac.oidc.user_attribute('location') = 'UK';
+GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
+----
+
+Granting a role based on the presence of the allowed countries in a list of citizenship countries in the claims can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE ruleset_countries SET CONDITION
+  any(country IN abac.oidc.user_attribute('citizenshipCountries')
+    WHERE country IN ['c1', 'c5']);
+GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
+----
+
+Temporarily granting a role based on the value of a claim and the time being between 1900 and 2000 can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE temporary_reader
+    SET CONDITION abac.oidc.user_attribute('jobTitle') = 'cover'
+        AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20;
+GRANT ROLE reader TO AUTH RULE temporary_reader;
+----
+
 == Listing auth rules
 
 You can list all auth rules using the Cypher command `SHOW AUTH RULES`.
@@ -143,147 +184,8 @@ To be able to list auth rules, the user must have the `SHOW AUTH RULE` privilege
 see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-list-auth-rule-privilege[DBMS SHOW AUTH RULE privilege].
 ====
 
-== Rename auth rules
-To rename an existing authorization rule, use the following syntax:
+=== Examples
 
-[source, cypher25, role="noheader"]
-----
-RENAME AUTH RULE ruleName [IF EXISTS] TO newRuleName
-----
-
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
-
-[NOTE]
-====
-To be able to rename auth rules, the user must have the `RENAME AUTH RULE` privilege,
-see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-rename-auth-rule-privilege[DBMS RENAME AUTH RULE privilege].
-====
-
-== Modify auth rules
-To modify an existing authorization rule, use the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-ALTER AUTH RULE ruleName [IF EXISTS]
-    [SET CONDITION conditionExpression]
-    [SET ENABLED {true | false}]
-----
-
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
-At least one of `SET CONDITION` and `SET ENABLED` must be specified.
-
-[NOTE]
-====
-To be able to modify auth rules, the user must have the `ALTER AUTH RULE` privilege,
-see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-alter-auth-rule-privilege[DBMS ALTER AUTH RULE privilege].
-====
-
-== Drop auth rules
-To drop an existing authorization rule, use the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-DROP AUTH RULE ruleName [IF EXISTS]
-----
-
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
-
-[NOTE]
-====
-To be able to drop auth rules, the user must have the `DROP AUTH RULE` privilege,
-see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-drop-auth-rule-privilege[DBMS DROP AUTH RULE privilege].
-====
-
-[[assign-roles-auth-rules]]
-== Assign roles to auth rules
-To specify which roles will be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command with the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
-----
-
-For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
-
-[NOTE]
-====
-No roles with associated deny privileges can be assigned to an auth rule. Also, deny privileges may not be subsequently assigned to a role once that role has been assigned to an auth rule. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
-====
-
-[NOTE]
-====
-To be able to grant roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[`ASSIGN ROLE`] privilege.
-====
-
-[NOTE]
-====
-OR semantics are used between roles granted via ABAC and those granted by RBAC mechanisms. For example, given an ABAC rule which grants the `admin` role between the hours of 1900 and 2000, then a user who receives the `admin` role because it appears in their JWT `groups` claim (RBAC) will always have the `admin` role, even outside the hours of 1900 and 2000.  
-====
-
-[[revoke-roles-auth-rules]]
-== Revoke roles from auth rules
-To revoke roles from an authorization rule, use the `REVOKE ROLE` command with the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
-----
-
-For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
-
-[NOTE]
-====
-To be able to revoke roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[`REMOVE ROLE`] privilege.
-====
-
-== Examples
-
-An auth rule specifying that users with the attribute `department` equal to `sales` should be granted the `salesTeam` role can be created as follows:
-
-[source, cypher25, role="noheader"]
-----
-CREATE AUTH RULE salesRule
-    SET CONDITION abac.oidc.user_attribute('department') = 'sales';
-GRANT ROLE salesTeam TO AUTH RULE salesRule;
-----
-
-Granting the role `engineeringTeamUK` to users with the attribute `department` equal to `engineering` and `location` equal to `UK` can be done as follows:
-
-[source, cypher25, role="noheader"]
-----
-CREATE AUTH RULE engineeringUKRule
-    SET CONDITION abac.oidc.user_attribute('department') = 'engineering'
-        AND abac.oidc.user_attribute('location') = 'UK';
-GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
-----
-
-Granting a role based on the presence of the allowed countries in a list of citizenship countries in the claims can be done as follows:
-
-[source, cypher25, role="noheader"]
-----
-CREATE AUTH RULE ruleset_countries SET CONDITION
-  any(country IN abac.oidc.user_attribute('citizenshipCountries')
-    WHERE country IN ['c1', 'c5']);
-GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
-----
-
-Temporarily granting a role based on the value of a claim and the time being between 1900 and 2000 can be done as follows:
-
-[source, cypher25, role="noheader"]
-----
-CREATE AUTH RULE temporary_reader
-    SET CONDITION abac.oidc.user_attribute('jobTitle') = 'cover'
-        AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20;
-GRANT ROLE reader TO AUTH RULE temporary_reader;
-----
-
-Revoking the `reader` role from auth rule `temporary_reader` and drop the auth rule can be done as follows:
-
-[source, cypher25, role="noheader"]
-----
-REVOKE ROLE reader FROM AUTH RULE temporary_reader;
-DROP AUTH RULE temporary_reader;
-----
 
 Listing the auth rules can be done as follows:
 
@@ -375,6 +277,52 @@ WHERE country IN ['c1', 'c5']) SET ENABLED true
 1+a|Rows: 3
 |===
 
+== Rename auth rules
+To rename an existing authorization rule, use the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+RENAME AUTH RULE ruleName [IF EXISTS] TO newRuleName
+----
+
+If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+
+[NOTE]
+====
+To be able to rename auth rules, the user must have the `RENAME AUTH RULE` privilege,
+see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-rename-auth-rule-privilege[DBMS RENAME AUTH RULE privilege].
+====
+
+=== Example
+
+To rename an auth rule the `RENAME AUTH RULE` command can be used:
+
+[source, cypher, role=noplay]
+----
+RENAME AUTH RULE ruleset_countries TO disabled_ruleset_countries
+----
+
+== Modify auth rules
+To modify an existing authorization rule, use the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+ALTER AUTH RULE ruleName [IF EXISTS]
+    [SET CONDITION conditionExpression]
+    [SET ENABLED {true | false}]
+----
+
+If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+At least one of `SET CONDITION` and `SET ENABLED` must be specified.
+
+[NOTE]
+====
+To be able to modify auth rules, the user must have the `ALTER AUTH RULE` privilege,
+see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-alter-auth-rule-privilege[DBMS ALTER AUTH RULE privilege].
+====
+
+=== Examples
+
 Modifying an auth rule can be done as follows:
 
 [source, cypher, role=noplay]
@@ -394,12 +342,73 @@ ALTER AUTH RULE ruleset_countries SET ENABLED false
 
 Which will turn of evaluation off the auth rule `ruleset_countries`.
 
-To rename an auth rule the `RENAME AUTH RULE` command can be used:
+== Drop auth rules
+To drop an existing authorization rule, use the following syntax:
 
-[source, cypher, role=noplay]
+[source, cypher25, role="noheader"]
 ----
-RENAME AUTH RULE ruleset_countries TO disabled_ruleset_countries
+DROP AUTH RULE ruleName [IF EXISTS]
 ----
+
+If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+
+[NOTE]
+====
+To be able to drop auth rules, the user must have the `DROP AUTH RULE` privilege,
+see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-drop-auth-rule-privilege[DBMS DROP AUTH RULE privilege].
+====
+
+=== Example
+
+Revoking the `reader` role from auth rule `temporary_reader` and drop the auth rule can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE reader FROM AUTH RULE temporary_reader;
+DROP AUTH RULE temporary_reader;
+----
+
+[[assign-roles-auth-rules]]
+== Assign roles to auth rules
+To specify which roles will be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+[NOTE]
+====
+No roles with associated deny privileges can be assigned to an auth rule. Also, deny privileges may not be subsequently assigned to a role once that role has been assigned to an auth rule. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
+====
+
+[NOTE]
+====
+To be able to grant roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[`ASSIGN ROLE`] privilege.
+====
+
+[NOTE]
+====
+OR semantics are used between roles granted via ABAC and those granted by RBAC mechanisms. For example, given an ABAC rule which grants the `admin` role between the hours of 1900 and 2000, then a user who receives the `admin` role because it appears in their JWT `groups` claim (RBAC) will always have the `admin` role, even outside the hours of 1900 and 2000.  
+====
+
+[[revoke-roles-auth-rules]]
+== Revoke roles from auth rules
+To revoke roles from an authorization rule, use the `REVOKE ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+[NOTE]
+====
+To be able to revoke roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[`REMOVE ROLE`] privilege.
+====
 
 == Caveats and limitations
 
