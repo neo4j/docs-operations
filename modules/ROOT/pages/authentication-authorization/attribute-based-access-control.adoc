@@ -87,43 +87,102 @@ The functions, `date`, `datetime`, `localdatetime`, `localtime` and `time` are o
 
 === Examples
 
-An auth rule specifying that users with the attribute `department` equal to `sales` should be granted the `salesTeam` role can be created as follows:
+An auth rule specifying that users with the attribute `department` equal to `sales` should be granted the associated roles can be created as follows:
 
 [source, cypher25, role="noheader"]
 ----
 CREATE AUTH RULE salesRule
     SET CONDITION abac.oidc.user_attribute('department') = 'sales';
-GRANT ROLE salesTeam TO AUTH RULE salesRule;
 ----
 
-Granting the role `engineeringTeamUK` to users with the attribute `department` equal to `engineering` and `location` equal to `UK` can be done as follows:
+Creating an auth rule specifying users with the attribute `department` equal to `engineering` and `location` equal to `UK` can be done as follows:
 
 [source, cypher25, role="noheader"]
 ----
 CREATE AUTH RULE engineeringUKRule
     SET CONDITION abac.oidc.user_attribute('department') = 'engineering'
         AND abac.oidc.user_attribute('location') = 'UK';
-GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
 ----
 
-Granting a role based on the presence of the allowed countries in a list of citizenship countries in the claims can be done as follows:
+Creating an auth rule with a condition based on the presence of the allowed countries in a list of citizenship countries in the claims can be done as follows:
 
 [source, cypher25, role="noheader"]
 ----
 CREATE AUTH RULE ruleset_countries SET CONDITION
   any(country IN abac.oidc.user_attribute('citizenshipCountries')
     WHERE country IN ['c1', 'c5']);
-GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
 ----
 
-Temporarily granting a role based on the value of a claim and the time being between 1900 and 2000 can be done as follows:
+Creating an auth rule that temporarily granting assigned roles based on the value of a claim and the time being between 1900 and 2000 can be done as follows:
 
 [source, cypher25, role="noheader"]
 ----
 CREATE AUTH RULE temporary_reader
     SET CONDITION abac.oidc.user_attribute('jobTitle') = 'cover'
         AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20;
+----
+
+[[assign-roles-auth-rules]]
+== Assign roles to auth rules
+To specify which roles will be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+[NOTE]
+====
+No roles with associated deny privileges can be assigned to an auth rule. Also, deny privileges may not be subsequently assigned to a role once that role has been assigned to an auth rule. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
+====
+
+[NOTE]
+====
+To be able to grant roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[`ASSIGN ROLE`] privilege.
+====
+
+[NOTE]
+====
+OR semantics are used between roles granted via ABAC and those granted by RBAC mechanisms. For example, given an ABAC rule which grants the `admin` role between the hours of 1900 and 2000, then a user who receives the `admin` role because it appears in their JWT `groups` claim (RBAC) will always have the `admin` role, even outside the hours of 1900 and 2000.
+====
+
+=== Example
+
+Assigning roles to the auth rules created in the examples above can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+GRANT ROLE salesTeam TO AUTH RULE salesRule;
+GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
+GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
 GRANT ROLE reader TO AUTH RULE temporary_reader;
+----
+
+[[revoke-roles-auth-rules]]
+== Revoke roles from auth rules
+To revoke roles from an authorization rule, use the `REVOKE ROLE` command with the following syntax:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
+----
+
+For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+[NOTE]
+====
+To be able to revoke roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[`REMOVE ROLE`] privilege.
+====
+
+=== Example
+
+Revoking the `reader` role from auth rule `temporary_reader` can be done as follows:
+
+[source, cypher25, role="noheader"]
+----
+REVOKE ROLE reader FROM AUTH RULE temporary_reader;
 ----
 
 == Listing auth rules
@@ -185,7 +244,6 @@ see xref:authentication-authorization/dbms-administration/dbms-auth-rule-managem
 ====
 
 === Examples
-
 
 Listing the auth rules can be done as follows:
 
@@ -360,55 +418,12 @@ see xref:authentication-authorization/dbms-administration/dbms-auth-rule-managem
 
 === Example
 
-Revoking the `reader` role from auth rule `temporary_reader` and drop the auth rule can be done as follows:
+Deleting the auth rule `temporary_reader` can be done as follows:
 
 [source, cypher25, role="noheader"]
 ----
-REVOKE ROLE reader FROM AUTH RULE temporary_reader;
 DROP AUTH RULE temporary_reader;
 ----
-
-[[assign-roles-auth-rules]]
-== Assign roles to auth rules
-To specify which roles will be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command with the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
-----
-
-For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
-
-[NOTE]
-====
-No roles with associated deny privileges can be assigned to an auth rule. Also, deny privileges may not be subsequently assigned to a role once that role has been assigned to an auth rule. This is to ensure that if a role is unexpectedly not fulfilled (e.g. because a claim is missing from the users auth token) then there can never be an escalation of privileges, only ever a reduction.
-====
-
-[NOTE]
-====
-To be able to grant roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[`ASSIGN ROLE`] privilege.
-====
-
-[NOTE]
-====
-OR semantics are used between roles granted via ABAC and those granted by RBAC mechanisms. For example, given an ABAC rule which grants the `admin` role between the hours of 1900 and 2000, then a user who receives the `admin` role because it appears in their JWT `groups` claim (RBAC) will always have the `admin` role, even outside the hours of 1900 and 2000.  
-====
-
-[[revoke-roles-auth-rules]]
-== Revoke roles from auth rules
-To revoke roles from an authorization rule, use the `REVOKE ROLE` command with the following syntax:
-
-[source, cypher25, role="noheader"]
-----
-REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
-----
-
-For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
-
-[NOTE]
-====
-To be able to revoke roles, the user must have the xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[`REMOVE ROLE`] privilege.
-====
 
 == Caveats and limitations
 
