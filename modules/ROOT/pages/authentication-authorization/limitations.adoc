@@ -14,15 +14,15 @@ CREATE ROLE unrestricted;
 [[access-control-limitations]]
 = Limitations
 
-Neo4j's role-based access control (RBAC) has some limitations that can lead to unexpected results if not carefully considered when designing the security model and writing Cypher queries.
+Neo4j’s role-based access control (RBAC) has limitations that can lead to unexpected results if not carefully considered during security model design and when writing Cypher queries.
 Depending on the restrictions applied to the role a user is assigned to, query results may differ in the following ways:
 
 * <<access-control-limitations-indexes, *Access control and indexes:*>> Indexes are used to speed up queries, but what they return to the user depends on the security model.
 If a user has restrictions on certain labels, relationship types, or properties, they will not see any results that contain those elements, regardless of the indexes used.
 
-* <<fail-open-deny-behavior, *Fail-open `DENY` behavior:*>> A `DENY` rule fails open when its criteria is not met, so Neo4j does not apply the restriction and it grants access by default if a broader `GRANT` exists. This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
+* <<fail-open-deny-behavior, *Fail-open `DENY` behavior:*>> A `DENY` rule fails open when its criteria are not met, so Neo4j does not apply the restriction, and it grants access by default if a broader `GRANT` exists. This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
 
-* <<access-control-limitations-labels, *Access control and labels:*>> Query results differ when nodes have multiple labels and the user has access to traverse on some of those labels but not others.
+* <<access-control-limitations-labels, *Access control and labels:*>> Query results differ when nodes have multiple labels, and the user has access to traverse on some of those labels but not others.
 This is because the user can see all labels attached to a node they have access to, even if they do not have access to traverse on all of those labels.
 
 * <<access-control-limitations-performance, *Access control and performance:*>> Complex security rules and large graphs with restrictive access can lead to significant performance degradation, especially for queries that would otherwise be efficient.
@@ -37,14 +37,14 @@ However, Neo4j’s security model still controls what results you see, regardles
 
 === Search-performance indexes (range, text, point, and token lookup)
 
-link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/search-performance-indexes/[Search-performance indexes] are used automatically by the Cypher planner when they are relevant to a query.
+link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/search-performance-indexes/[Search-performance indexes] are automatically used by the Cypher planner when they are relevant to a query.
 The results returned by these indexes are filtered by the security model, so that users only see results they have access to.
 If the security model causes fewer results to be returned due to restricted read access in xref:authentication-authorization/manage-privileges.adoc[graph and sub-graph access control],
 the index will also return the same fewer results.
 
 === Full-text and vector indexes
 
-link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Full-text indexes] and link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/[vector indexes] work differently compared to the search-performance indexes, because they are built on Lucene and are not used automatically by the Cypher planner.
+link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Full-text] and link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/[vector indexes] differ from search-performance indexes because they are built on Lucene and are not automatically used by the Cypher planner.
 
 Lucene implications::
 Lucene prevents Neo4j from checking the security rules for each specific entry returned from the index.
@@ -56,14 +56,14 @@ Usage implications::
 Cypher does not automatically use full-text or vector indexes.
 You must explicitly call procedures to use them, such as `db.index.fulltext.queryNodes` and `db.index.fulltext.queryRelationships` for full-text indexes, and `db.index.vector.queryNodes` and `db.index.vector.queryRelationships` for vector indexes.
 +
-Starting with Neo4j 2026.01, the preferred way of using vector indexes is by using the Cypher {neo4j-docs-base-uri}/cypher-manual/current/clauses/search/[SEARCH] clause.
-This avoids a situation where the same Cypher query returns different results because of an underlying index.
+Starting with Neo4j 2026.01, the preferred way to use vector indexes is via the Cypher {neo4j-docs-base-uri}/cypher-manual/current/clauses/search/[SEARCH] clause.
+This avoids a situation in which the same Cypher query returns different results because of an underlying index.
 The problem is that if you do not know this behavior, you might expect the full-text or vector index to return the same results that a different but semantically similar Cypher query does.
 
 The following examples illustrate the implications of using full-text indexes with different security rules, compared to using native indexes.
 The full-text index examples also apply to the vector indexes.
 Vector indexes with multiple labels, multiple relationship types, or additional properties are introduced in Neo4j 2026.01.
-In previous versions, they can only be on a single property and a single label or relationship type.
+In previous versions, they could only be on a single property and a single label or relationship type.
 
 [[denied-labels-index-multiple-properties]]
 ==== Example 1: Denied labels and index on multiple properties
@@ -85,13 +85,13 @@ Full-text indexes support multiple labels.
 See link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Cypher Manual -> Indexes for full-text search] for more details on creating and using full-text indexes.
 ====
 +
-After creating these indexes, it may look that the latter two indexes accomplish the same thing.
+After creating these indexes, it may appear that the latter two indexes accomplish the same thing.
 However, this is not completely accurate. +
-The composite and full-text indexes behave in different ways and are focused on different use cases.
-A key difference is that full-text indexes are backed by _Lucene_, and uses the _Lucene_ syntax for querying.
-This has consequences for users restricted on the labels or properties involved in the indexes.
+The composite and full-text indexes behave differently and are focused on different use cases.
+A key difference is that full-text indexes are backed by _Lucene_ and use the _Lucene_ syntax for querying.
+This has consequences for users restricted to the labels or properties involved in the indexes.
 Ideally, if the labels and properties in the index are denied, they can correctly return zero results from both native indexes and full-text indexes.
-However, there are borderline cases where this is not that simple.
+However, there are borderline cases where this is not as simple as it seems.
 
 . Let's add the following nodes to the database:
 +
@@ -129,9 +129,9 @@ This query performs several checks:
 
 * Scans the index to create a stream of results of nodes with the `name` property, which leads to five results.
 * Filters the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe`, which leads to three results.
-* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, which leads to two results.
+* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, leaving two results.
 
-Finally, the query returns two results and only one of them has the `surname` property.
+Finally, the query returns two results, but only one has the `surname` property.
 
 ======
 [role=include-with-composite]
@@ -209,7 +209,7 @@ This query operates exactly as before, except for the check on the `:Person` lab
 * Scans the index to create a stream of results of nodes with the `name` property, which leads to five results.
 * Filters the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe`, which leads to three results.
 
-Finally, the query returns three results with only one of them having the `surname` property.
+Finally, the query returns three results, only one of which has the `surname` property.
 ======
 
 [role=include-with-composite]
@@ -255,7 +255,7 @@ In the end, the query returns zero results rather than the expected results `And
 [[denied-properties-on-specific-label]]
 ==== Example 3: Denied properties on a specific label
 
-Instead of denying the `surname` property for all labels like the example in <<denied-properties-on-all-labels>>, consider denying reading it only for nodes with the `:Person` label.
+Instead of denying the `surname` property for all labels, like the example in <<denied-properties-on-all-labels>>, consider denying reading it only for nodes with the `:Person` label.
 
 . Deny read access to the `surname` property for nodes with the `:Person` label:
 +
@@ -332,13 +332,13 @@ In the end, the query returns three results rather than zero, as in <<denied-pro
 [[fail-open-deny-behavior]]
 == Fail-open `DENY` behavior
 
-A `DENY` rule fails open when its criteria is not met, so Neo4j does not apply the restriction and it grants access by default if a broader `GRANT` exists.
+A `DENY` rule fails open when its criteria are not met, so Neo4j does not apply the restriction, and it grants access by default if a broader `GRANT` exists.
 This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
-To avoid this, you can apply the principle of least privilege and allow access only to the specific data that the user should see.
+To avoid this, apply the principle of least privilege and grant access only to the specific data the user needs to see.
 
 For example, consider the following scenarios:
 
-=== An un-met `DENY` failing open with property-based RBAC
+=== An unmet `DENY` failing open with property-based RBAC
 
 You grant a user access to a property and try to restrict it with a `DENY` rule.
 However, if the `DENY` rule does not match any data, for example, if the property is null or misspelled, the `DENY` rule will not apply, and the user can still access the property.
@@ -391,7 +391,7 @@ CREATE CONSTRAINT ON (e:Employee) ASSERT e.position IS NOT NULL;
 This way, the `DENY` will never apply due to null values, and the user will not see the `salary` property for employees whose position is 'CEO'.
 ====
 
-=== An un-met `DENY` failing open with label-based RBAC
+=== An unmet `DENY` failing open with label-based RBAC
 
 A `DENY` rule does not apply when it is too broad and does not match the data.
 
@@ -426,7 +426,7 @@ A better way is to apply the principle of least privilege and only grant access 
 ----
 GRANT READ {salary} ON GRAPH * NODES IndividualContributor TO myRole;
 ----
-This way, the user only sees the `salary` property on nodes that have the `IndividualContributor` label, and not on any other nodes.
+This way, the user only sees the `salary` property on nodes with the `IndividualContributor` label, not on any other nodes.
 ====
 
 [[access-control-limitations-labels]]
@@ -442,7 +442,7 @@ For details on the general influence of access control privileges on graph trave
 
 === Traversing multi-labeled nodes with partial access to labels
 
-To get information about about labels attached to a node by calling the built-in `labels()` function, a user needs to have the privilege to traverse on one or multiple labels attached to that node using `GRANT TRAVERSE` or `GRANT MATCH`.
+To get information about labels attached to a node by calling the built-in `labels()` function, a user needs to have the privilege to traverse on one or multiple labels attached to that node using `GRANT TRAVERSE` or `GRANT MATCH`.
 In the case of nodes with multiple labels, the user will be able to see all labels attached to the node, even if they were not granted access to traverse on some of those labels.
 
 For example, let's assume that a graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B`.
@@ -490,8 +490,8 @@ Even though `:B` does not have access to traversals, there is one node with that
 
 === Traversing multi-labeled nodes with no access to some of the labels
 
-If a user is denied to traverse on a label, they will never get results from any node that has this label attached to it.
-Thus, the label name will never show up for them.
+If a user is denied access to a label, they will never get results from any node that has that label.
+Thus, the label name will never appear to them.
 
 For example, let's assume that a graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B`.
 
@@ -539,7 +539,7 @@ The query returns no nodes.
 
 === The db.labels() procedure
 
-In contrast to the normal graph traversal described in the previous section, the built-in `db.labels()` procedure is not processing the data graph itself, but the security rules defined on the system graph.
+In contrast to the normal graph traversal described in the previous section, the built-in `db.labels()` procedure does not process the data graph itself, but the security rules defined on the system graph.
 That means:
 
 * If a label is explicitly whitelisted (granted), it will be returned by this procedure.
@@ -562,34 +562,34 @@ CALL db.labels()
 ----
 The query returns only label `:A`, because the user does not have access to traverse on label `:B`.
 
-[[access-control-limitations-non-existing-labels]]
-=== Privileges for non-existing labels, relationship types, and property names
+[[access-control-limitations-nonexistent-labels]]
+=== Privileges for nonexistent labels, relationship types, and property names
 
-Privileges for non-existent labels, relationship types, and property names take effect only after they are created.
+Privileges for nonexistent labels, relationship types, and property names take effect only after they are created.
 In other words, when authorizing a user, only privileges for existing labels, relationship types, and property names are applied.
-This is because the graph elements must be resolved internally to check against privileges when users try to use them later.
+This is because the graph elements must be resolved internally to check against privileges when users later try to use them.
 If a label, relationship type, or property name does not yet exist, it will not resolve, and therefore, the privileges will not apply.
 
-A way around this is to create the label, relationship type, or property name using the `db.createLabel()`, `db.createRelationshipType()`, and `db.createProperty()` procedures on the relevant database when creating the privileges.
+A workaround is to create the label, relationship type, or property name using the `db.createLabel()`, `db.createRelationshipType()`, and `db.createProperty()` procedures in the relevant database when creating the privileges.
 
-Labels, relationship types, and property names are considered non-existent in a database if:
+Labels, relationship types, and property names are considered nonexistent in a database if:
 
 * There has never been a node with that label, a relationship with that relationship type, or a property with that name.
 * There has been no attempt to add a node with that label, a relationship with that relationship type, or a property with that name. +
-The attempted creation adds it to the known labels, relationship types, and property names even if the creation itself fails (unless it fails on missing or denied privileges to create new labels, relationship types, or property names).
+The attempted creation adds it to the known labels, relationship types, and property names, even if the creation itself fails (unless it fails on missing or denied privileges to create new labels, relationship types, or property names).
 * They have not been created using any of the `db.createLabel()`, `db.createRelationshipType()`, or `db.createProperty()` procedures.
 
 There is currently no way to remove a label, relationship type, or property name from the database.
-Once existent in the database, they cannot return to non-existent.
+Once existent in the database, they cannot return to nonexistent.
 
-For example, let's assume that you have a new, freshly-created empty database, called `testing`.
+For example, let’s assume you have a new, empty database called `testing`.
 
 [NOTE]
 =====
 The example focuses only on nodes and their labels, though the same principle applies to relationships and their relationship type, and properties (on both nodes and relationships) and their names.
 =====
 
-. Define some privileges to the `custom` role that include a non-existing label `:A`:
+. Define some privileges to the `custom` role that include a nonexistent label `:A`:
 +
 [source, cypher]
 ----
@@ -599,7 +599,7 @@ GRANT SET LABEL A ON GRAPH testing TO custom
 GRANT CREATE NEW NODE LABEL ON DATABASE testing TO custom
 ----
 
-. Then, connect as a user with the `custom` role, for example, `Alice`, and run the following query to create a node with the non-existing label `:A`:
+. Then, connect as a user with the `custom` role, for example, `Alice`, and run the following query to create a node with the nonexistent label `:A`:
 +
 [source, cypher]
 ----
@@ -616,10 +616,10 @@ Create node with labels 'A' on database 'testing' is not allowed for user 'Alice
 [IMPORTANT]
 ====
 However, rerunning the same query creates the node.
-This is because the failed creation still creates the label, making it no longer non-existent when the query is run a second time.
+This is because the failed creation still creates the label, making it no longer nonexistent when the query is run a second time.
 ====
 
-To ensure success on the first attempt, when setting up the privileges for the `custom` role, the administrator should run the `db.createLabel()` procedure on the affected databases for all non-existing labels that get assigned privileges.
+To ensure success on the first attempt, when setting up the privileges for the `custom` role, the administrator should run the `db.createLabel()` procedure on the affected databases for all nonexistent labels that get assigned privileges.
 In this example, when creating the custom role, connect to `testing` and run `CALL db.createLabel('A')` to ensure you create the node successfully on her first attempt.
 
 
@@ -627,12 +627,12 @@ In this example, when creating the custom role, connect to `testing` and run `CA
 == Access control and performance
 
 Neo4j's role-based access control can have performance implications, especially when security rules are complex or when querying large graphs with restrictive access.
-For example, security rules based on property or label combinations can lead to significant performance degradation, as Neo4j must check each node/relationship individually rather than using fast lookup structures like count stores or optimized index scans.
+For example, count store operations, which are usually fast lookups, may experience significant performance differences because the database must check each node or relationship against the security rules rather than simply retrieving counts from the count store.
 
 === Access control and performance of database operations
 
 When security rules that restrict access to certain nodes, relationships, or properties are in place, Neo4j must perform additional checks to ensure that the user only sees what they are allowed to see.
-For example, count store operations, which are usually fast lookups, may experience notable differences in performance, because the database needs to check each node or relationship against the security rules instead of simply retrieving counts from the count store.
+For example, count store operations, which are usually fast lookups, may experience notable differences in performance because the database needs to check each node or relationship against the security rules instead of simply retrieving counts from the count store.
 
 For example, consider a graph with nodes labeled `:Person` and `:Customer`, where some nodes have both labels.
 
@@ -678,16 +678,16 @@ However, the underlying operations can differ significantly due to the security 
 | User with `unrestricted` role
 | User with `restricted` role
 
-|The database accesses the count store to retrieves the total number of nodes with the label `:Person`, without needing to check each node against any security rules.
+|The database accesses the count store to retrieve the total number of nodes with the label `:Person`, without needing to check each node against any security rules.
 This is a very quick operation.
 
 |The database cannot access the count store because it must make sure that only traversable nodes with the desired label `:Person` are counted.
-It needs to check each node with the `:Person` label whether it also has the `:Customer` label to deny access to it.
-So due to the additional data access required by the security checks, this operation is slower compared to executing the query as an unrestricted user.
+It needs to check each node with the `:Person` label to see whether it also has the `:Customer` label, and deny access to it if it does.
+Therefore, due to the additional data access required by the security checks, this operation is slower compared to executing the query as an unrestricted user.
 |===
 
 [[property-based-access-control-limitations]]
-=== Access control based on properties rules
+=== Access control based on property rules
 
 Extra node or relationship-level security checks are necessary when adding security rules based on property rules, and these can have a significant performance impact.
 
@@ -730,9 +730,9 @@ However, the underlying operations can differ significantly due to the security 
 | User with `unrestricted` role
 | User with `restricted` role
 
-|The databases scans all nodes and quickly identifies accessible nodes based solely on the presence of the `:Customer` label.
+|The database scans all nodes and quickly identifies accessible nodes based solely on the presence of the `:Customer` label.
 This is a relatively quick operation.
 
-|The database scans all nodes, identifies potentially accessible nodes based on the presence of the specified label, and then also accesses the properties of each of those nodes and inspects their values to ensure the property rule criteria are met (i.e., that `secret` is not set to `true` in this case).
-So due to the additional data access required by the security checks, this operation is slower compared to executing the query as an unrestricted user.
+|The database scans all nodes, identifies potentially accessible nodes based on the presence of the specified label, then accesses the properties of those nodes and inspects their values to ensure the property rule criteria are met (i.e., that secret is not set to true in this case).
+Due to the additional data access required by the security checks, this operation is slower than executing the query as an unrestricted user.
 |===
