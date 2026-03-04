@@ -18,7 +18,9 @@ Neo4j’s role-based access control (RBAC) has limitations that can lead to unex
 Depending on the restrictions applied to the roles a user are assigned to, query results may differ in the following ways:
 
 * <<access-control-limitations-indexes, *Access control and indexes:*>> Indexes are used to speed up queries, but what they return to the user depends on the security model.
-If a user has restrictions on certain labels, relationship types, or properties, they will not see any results that contain those elements, regardless of the indexes used.
+If a user has restrictions on certain labels, relationship types, or properties, the system will not return any results that contain those elements, regardless of the indexes used.
+Also, full-text and vector indexes may return fewer results than expected because Lucene prevents Neo4j from checking security rules for each returned index entry.
+As a result, Neo4j only returns results it can guarantee do not violate security rules and excludes results that might violate security rules, even if they do not.
 
 * <<fail-open-deny-behavior, *Fail-open `DENY` behavior:*>> A `DENY` rule fails open when its criteria are not met, so Neo4j does not apply the restriction, and it grants access by default if a broader `GRANT` exists.
 This can lead to unintended data exposure if the `DENY` rule is not carefully crafted.
@@ -109,7 +111,7 @@ CREATE (:User:Person {name: 'Joe', surname: 'Andy'});
 +
 [source, cypher]
 ----
-DENY TRAVERSE ON GRAPH * NODES Person TO users
+DENY TRAVERSE ON GRAPH * NODES Person TO users;
 ----
 . Now run a query that uses one of the indexes:
 +
@@ -117,7 +119,7 @@ DENY TRAVERSE ON GRAPH * NODES Person TO users
 =====
 [role=include-with-singleProp]
 ======
-Run a query that uses the native single property index on `name`:
+Run a query that uses the single property range index on `name`:
 
 [source, cypher]
 ----
@@ -137,7 +139,7 @@ Finally, the query returns two results, but only one has the `surname` property.
 ======
 [role=include-with-composite]
 ======
-Run a query that uses the native composite index on `name` and `surname`.
+Run a query that uses the composite range index on `name` and `surname`.
 To use the native composite index on `name` and `surname`, the query needs to include a predicate on the `surname` property as well:
 
 [source, cypher]
@@ -151,7 +153,7 @@ This query performs several checks, which are almost identical to the single pro
 
 * Scans the index to create a stream of results of nodes with the `name` and `surname` property, which leads to four results.
 * Filters the results to include only nodes where `n.name CONTAINS 'ndy'`, filtering out `Mark` and `Joe`, which leads to two results.
-* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, which leads to only one result.
+* Filters the results to exclude nodes that also have the denied label `:Person`, filtering out `Mandy`, leaving only one result.
 
 However, in the end, it returns only one result.
 
@@ -187,7 +189,7 @@ The example uses the same database as in <<denied-labels-index-multiple-properti
 +
 [source, cypher]
 ----
-DENY READ {surname} ON GRAPH * TO users
+DENY READ {surname} ON GRAPH * TO users;
 ----
 . Run the same queries as in the previous example using one of the indexes:
 +
@@ -196,7 +198,7 @@ DENY READ {surname} ON GRAPH * TO users
 [role=include-with-singleProp]
 ======
 
-Run a query that uses the native single property index on `name`:
+Run a query that uses the single property range index on `name`:
 
 [source, cypher]
 ----
@@ -215,7 +217,7 @@ Finally, the query returns three results, only one of which has the `surname` pr
 
 [role=include-with-composite]
 ======
-Run a query that uses the native composite index on `name` and `surname`:
+Run a query that uses the composite range index on `name` and `surname`:
 
 [source, cypher]
 ----
@@ -262,7 +264,7 @@ Instead of denying the `surname` property for all labels, like the example in <<
 +
 [source, cypher]
 ----
-DENY READ {surname} ON GRAPH * NODES Person TO users
+DENY READ {surname} ON GRAPH * NODES Person TO users;
 ----
 
 . Run the same queries as in the previous examples using one of the indexes:
@@ -272,7 +274,7 @@ DENY READ {surname} ON GRAPH * NODES Person TO users
 [role=include-with-singleProp]
 ======
 
-Run a query that uses the native single property index on `name`:
+Run a query that uses the single property range index on `name`:
 
 [source, cypher]
 ----
@@ -287,7 +289,7 @@ The query operates exactly as in <<denied-properties-on-all-labels>>, returning 
 [role=include-with-composite]
 ======
 
-Run a query that uses the native composite index on `name` and `surname`:
+Run a query that uses the composite range index on `name` and `surname`:
 
 [source, cypher]
 ----
@@ -350,8 +352,8 @@ Let's take a few examples:
 ====
 [source, cypher]
 ----
-GRANT READ {salary} ON GRAPH * NODES Employee TO myRole
-DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position = 'CEO' TO myRole
+GRANT READ {salary} ON GRAPH * NODES Employee TO myRole;
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position = 'CEO' TO myRole;
 ----
 In this case, if the `e.position` property is null or misspelled, the `DENY` rule will not apply, and `myRole` will see the `salary` property.
 ====
@@ -363,7 +365,7 @@ A better way is to apply the principle of least privilege and only grant access 
 ====
 [source, cypher]
 ----
-GRANT READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position <> 'CEO' TO myRole
+GRANT READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position <> 'CEO' TO myRole;
 ----
 In this way, if `e.position` is null or misspelled, the user will not see the `salary` property, and the `DENY` will not be needed.
 
@@ -376,7 +378,7 @@ Or, if for some reason using `DENY` is unavoidable, the problem can be mitigated
 ====
 [source, cypher]
 ----
-DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position IS NULL TO myRole
+DENY READ {salary} ON GRAPH * FOR (e:Employee) WHERE e.position IS NULL TO myRole;
 ----
 This way, if `e.position` is null, the user will not see the `salary` property, and the `DENY` will not apply.
 ====
@@ -387,7 +389,7 @@ Alternatively, you can add a constraint to ensure that the `e.position` property
 ====
 [source, cypher]
 ----
-CREATE CONSTRAINT ON (e:Employee) ASSERT e.position IS NOT NULL;
+CREATE CONSTRAINT FOR (e:Employee) REQUIRE e.position IS NOT NULL;
 ----
 This way, the `DENY` will never apply due to null values, and the user will not see the `salary` property for employees whose position is 'CEO'.
 ====
@@ -452,7 +454,7 @@ For example, let's assume that a graph contains three nodes: one labeled `:A`, a
 +
 [source, cypher]
 ----
-GRANT TRAVERSE ON GRAPH * NODES A TO custom
+GRANT TRAVERSE ON GRAPH * NODES A TO custom;
 ----
 
 . Then, run one of the following queries and see the results:
@@ -489,18 +491,19 @@ Even though `:B` does not have access to traversals, there is one node with that
 ======
 =====
 
-=== Traversing multi-labeled nodes with no access to some of the labels
+=== Traversing multi-labeled nodes with denied access to some of the labels
 
 If a user is denied access to a label, they will never get results from any node with that label.
 Thus, the label name will never appear to them.
 
-For example, let's assume that a graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B`.
+For example, let's assume that a graph contains three nodes: one labeled `:A`, another labeled `:B`, and one with both labels `:A` and `:B` and that the user has access to traverse on label `:A` but not on label `:B`.
 
-. Deny traversal access to nodes with the label `:B` to the `custom` role:
+. Grant traversal access to nodes with the label `:A` to the `custom` role, but deny traversal access to nodes with the label `:B`:
 +
 [source, cypher]
 ----
-DENY TRAVERSE ON GRAPH * NODES B TO custom
+GRANT TRAVERSE ON GRAPH * NODES A TO custom;
+DENY TRAVERSE ON GRAPH * NODES B TO custom;
 ----
 
 . Then, run one of the following queries and see the results:
@@ -518,8 +521,8 @@ MATCH (n:A)
 RETURN n, labels(n)
 ----
 
-The query returns only nodes that have the `:A` label.
-It does not turn the node with label `:B`, because the user does not have access to traverse on it, even though it also has the label `:A` that is allow-listed:
+The query returns the node that only has the `:A` label.
+It does not return the node with both labels `:A` and `:B`, because the user does not have access to traverse on it because of `:B`, even though it also has the label `:A` that is allow-listed.
 ======
 
 [role=include-with-label-B]
@@ -552,7 +555,7 @@ For example, let's assume that a graph contains three nodes: one labeled `:A`, a
 +
 [source, cypher]
 ----
-GRANT TRAVERSE ON GRAPH * NODES A TO custom
+GRANT TRAVERSE ON GRAPH * NODES A TO custom;
 ----
 
 . Then, run the following query:
@@ -576,8 +579,8 @@ A workaround is to create the label, relationship type, or property name using t
 Labels, relationship types, and property names are considered nonexistent in a database if:
 
 * There has never been a node with that label, a relationship with that relationship type, or a property with that name.
-* There has been no attempt to add a node with that label, a relationship with that relationship type, or a property with that name. +
-The attempted creation adds it to the known labels, relationship types, and property names, even if the creation itself fails (unless it fails on missing or denied privileges to create new labels, relationship types, or property names).
+* There has been no attempt to add a node with that label, a relationship with that relationship type, or a property with that name, or create an index or constraint on that label, relationship type, or property name.
+The attempted creation adds it to the known labels, relationship types, and property names, even if the creation itself fails (unless it fails on missing or denied privileges to create new labels, relationship types, or property names, indexes, or constraints).
 * They have not been created using any of the `db.createLabel()`, `db.createRelationshipType()`, or `db.createProperty()` procedures.
 
 There is currently no way to remove a label, relationship type, or property name from the database.
@@ -594,10 +597,10 @@ The example focuses only on nodes and their labels, though the same principle ap
 +
 [source, cypher]
 ----
-GRANT MATCH {*} ON GRAPH testing NODES * TO custom
-GRANT CREATE ON GRAPH testing NODES A TO custom
-GRANT SET LABEL A ON GRAPH testing TO custom
-GRANT CREATE NEW NODE LABEL ON DATABASE testing TO custom
+GRANT MATCH {*} ON GRAPH testing NODES * TO custom;
+GRANT CREATE ON GRAPH testing NODES A TO custom;
+GRANT SET LABEL A ON GRAPH testing TO custom;
+GRANT CREATE NEW NODE LABEL ON DATABASE testing TO custom;
 ----
 
 . Then, connect as a user with the `custom` role, for example, `Alice`, and run the following query to create a node with the nonexistent label `:A`:
@@ -633,7 +636,6 @@ For example, count store operations, which are usually fast lookups, may experie
 === Access control and performance of database operations
 
 When security rules that restrict access to certain nodes, relationships, or properties are in place, Neo4j must perform additional checks to ensure that the user only sees what they are allowed to see.
-For example, count store operations, which are usually fast lookups, may experience notable differences in performance because the database needs to check each node or relationship against the security rules instead of simply retrieving counts from the count store.
 
 For example, consider a graph with nodes labeled `:Person` and `:Customer`, where some nodes have both labels.
 
@@ -688,7 +690,7 @@ Therefore, due to the additional data access required by the security checks, th
 |===
 
 [[property-based-access-control-limitations]]
-=== Access control based on property rules
+=== Access control and performance of property rules
 
 Extra node or relationship-level security checks are necessary when adding security rules based on property rules, and these can have a significant performance impact.
 
