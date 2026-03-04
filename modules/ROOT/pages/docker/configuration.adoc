@@ -62,6 +62,7 @@ For example:
 Docker additional configuration settings via an environment variable for JVM do not override the default JVM configurations but are appended to them.
 ====
 
+
 [[docker-conf-volume]]
 == Mounting the _/conf_ volume
 
@@ -80,6 +81,7 @@ docker run \
 
 The configuration files in the _/conf_ volume override the files provided by the image.
 So if you want to change one value in a file, you must ensure that the rest of the file is complete and correct.
+
 Environment variables passed to the container by Docker override the values in configuration files in _/conf_ volume.
 
 [NOTE]
@@ -106,6 +108,78 @@ Processes in the Neo4j docker container run under the `neo4j` user by default.
 docker run --rm \
     --volume=$HOME/neo4j/conf:/conf \
     neo4j:{neo4j-version-exact} dump-config
+----
+
+
+[[configure-logging-files]]
+=== Configuring logging files
+
+The Neo4j logging configuration is located in the _conf_ directory and consists of two files:
+
+* _user-logs.xml_ -- provides configuration for _neo4j.log_.
+* _server-logs.xml_ -- provides configuration for _debug.log_, _http.log_, _query.log_, and _security.log_.
+Note that _query.log_ and _security.log_ are part of the Enterprise Edition.
+
+If you need to adjust the Neo4j logging configuration when running Neo4j in Docker, follow the steps.
+
+. Set the `neo4j` user as the owner of _$HOME/neo4j/conf_ to allow _write_ access from the Neo4j Docker container:
++
+[source, shell, subs="attributes"]
+----
+sudo chown neo4j:neo4j $HOME/neo4j/conf
+----
+
+.  Dump the default configuration by running the command:
++
+[source, shell, subs="attributes"]
+----
+docker run --rm \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact} dump-config
+----
++
+This generates the default _neo4j.conf_ and logging configuration files into the mounted _/conf_ directory so you can modify them.
+
+. Edit the _neo4j.conf_ file to ensure that you listen on all network interfaces:
++
+[shell]
+----
+# Required when mounting /conf in Docker
+server.default_listen_address=0.0.0.0
+----
+
+. Adjust the _user-logs.xml_ and _server-logs.xml_ files by following examples on the xref:monitoring/logging.adoc#_default_logging_configuration[Configure Neo4j logging].
+For example, you can modify xref:monitoring/logging.adoc#general-logging-loggers[`<Loggers>`] or xref:monitoring/logging.adoc#general-logging-appenders[`<Appenders>`].
+
+. Run the container:
++
+[source, shell, subs="attributes"]
+----
+docker run \
+    --detach \
+    --publish=7474:7474 --publish=7687:7687 \
+    --volume=$HOME/neo4j/data:/data \
+    --volume=$HOME/neo4j/logs:/logs \
+    --volume=$HOME/neo4j/conf:/conf \
+    neo4j:{neo4j-version-exact}
+----
+
+. Finally, verify logging works by running the command after startup:
++
+[source, shell, attributes]
+----
+ls $HOME/neo4j/logs
+----
++
+Your output should be something like that:
++
+[source, shell, attributes]
+----
+neo4j.log
+debug.log
+query.log
+http.log
+security.log
 ----
 
 
