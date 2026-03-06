@@ -108,6 +108,48 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
+[cols="<15s,<85"]
+|===
+
+| Command
+m| SHOW ROLES WITH AUTH RULES
+
+| Syntax
+a|
+[source, syntax, role="noheader"]
+----
+SHOW [ALL\|POPULATED] ROLE[S] WITH AUTH RULE[S]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+a|
+Lists roles and auth rules assigned to them.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-list-roles[Listing roles].
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW ROLE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc[DBMS ROLE MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW AUTH RULE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc[DBMS AUTH RULE MANAGEMENT privileges].
+
+|===
+
 
 [cols="<15s,<85"]
 |===
@@ -283,14 +325,17 @@ m| GRANT ROLE TO
 a|
 [source, syntax, role="noheader"]
 ----
-GRANT ROLE[S] name[, ...] TO user[, ...]
+GRANT ROLE[S] name[, ...]
+TO {AUTH RULE[S] authrule[, ...] \| [USER[S]] user[, ...]}
 ----
 
 | Description
 a|
-Assigns roles to users.
+Assigns roles directly to users or indirectly through attribute-based access control auth rules.
 
-For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+For more information on assigning roles to users, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assigning roles to auth rules].
 
 | Required privilege
 a|
@@ -314,14 +359,17 @@ m| REVOKE ROLE
 a|
 [source, syntax, role="noheader"]
 ----
-REVOKE ROLE[S] name[, ...] FROM user[, ...]
+REVOKE ROLE[S] name[, ...]
+FROM {AUTH RULE[S] authrule[, ...] \| [USER[S]] user[, ...]}
 ----
 
 | Description
 a|
-Removes roles from users.
+Removes roles from users or attribute-based access control auth rules.
 
-For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+For more information on revoking roles from users, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+For more information on revoking roles from auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#revoke-roles-auth-rules[Revoking roles from auth rules].
 
 | Required privilege
 a|
@@ -397,11 +445,13 @@ By default it gives access to the home database and to execute privileges for pr
 More information about the built-in roles and their privileges can be found in xref:authentication-authorization/built-in-roles.adoc[].
 
 There are multiple versions of this command, the default being `SHOW ALL ROLES`.
-To only show roles that are assigned to users, the command is `SHOW POPULATED ROLES`.
+To only show roles that are assigned to users or auth rules, the command is `SHOW POPULATED ROLES`.
+This returns the same output columns as `SHOW ROLES`.
+
 To see which users are assigned to which roles, `WITH USERS` can be added to the command.
 The command produces a row per role per user and yields the following column in addition to the one output by `SHOW ROLES`:
 
-.`SHOW POPULATED ROLES WITH USERS` output
+.`SHOW ROLES WITH USERS` output
 [options="header", width="100%", cols="2a,4,2m"]
 |===
 | Column
@@ -409,7 +459,7 @@ The command produces a row per role per user and yields the following column in 
 | Type
 
 | member
-| User name
+| User name, or null if the role is not assigned to any users.
 | STRING
 |===
 
@@ -422,7 +472,7 @@ Since this gives a result with one row for each user, it shows up twice if a rol
 SHOW POPULATED ROLES WITH USERS
 ----
 
-The table of results will show information about the role and what database it belongs to:
+The table of results will show information about the role and what user it is assigned to:
 
 .Result
 [options="header,footer", width="100%", cols="m,m"]
@@ -447,6 +497,48 @@ The table of results will show information about the role and what database it b
 
 |"admin"
 |"neo4j"
+
+2+a|Rows: 6
+|===
+====
+
+To see which auth rules are assigned to which roles, `WITH AUTH RULES` can be added to the command.
+The command produces a row per role per auth rule and yields the following column in addition to the one output by `SHOW ROLES`:
+
+.`SHOW ROLES WITH AUTH RULES` output
+[options="header", width="100%", cols="2a,4,2m"]
+|===
+| Column
+| Description
+| Type
+
+| authRule
+| Auth rule name, or null if the role is not assigned to any auth rules.
+| STRING
+|===
+
+Since this gives a result with one row for each auth rule, it shows up twice if a role is assigned to two auth rules.
+
+.Show roles with auth rule
+====
+[source, cypher, role=noplay]
+----
+SHOW POPULATED ROLES WITH AUTH RULES
+----
+
+The table of results will show information about the role and what auth rule it is assigned to:
+
+.Result
+[options="header,footer", width="100%", cols="m,m"]
+|===
+|role
+|authRule
+
+|"PUBLIC"
+|null
+
+|"admin"
+|"adminRule"
 
 2+a|Rows: 6
 |===
@@ -633,6 +725,9 @@ The `RENAME ROLE` command is only available when using native authentication and
 [[access-control-assign-roles]]
 == Assigning roles to users
 
+This section explains how roles can be directly granted to users.
+For information on how roles can be assigned to users based on attribute-based rules, see xref:authentication-authorization/attribute-based-access-control.adoc[].
+
 Users can be given access rights by assigning them roles using `GRANT ROLE`:
 
 [source, cypher, role=noplay]
@@ -749,6 +844,9 @@ See link:https://neo4j.com/docs/status-codes/current/notifications/all-notificat
 
 [[access-control-revoke-roles]]
 == Revoking roles from users
+
+This section explains how roles can be directly revoked from users.
+For information on how roles can be revoked from users based on attribute-based rules, see xref:authentication-authorization/attribute-based-access-control.adoc[].
 
 Users can lose access rights by revoking their role using `REVOKE ROLE`:
 
