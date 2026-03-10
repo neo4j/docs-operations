@@ -85,6 +85,55 @@ SHOW DATABASE foo-replica;
 5 rows available after 3 ms, consumed after another 1 ms
 ----
 
+[[drivers-and-cypher-shell]]
+== Drivers and cypher-shell
+
+Given that replica databases are read-only, we must ensure that the drivers either have "AccessMode" set to "READ", or are only doing `executeRead`.
+Attempts to write to the replica database will fail.
+
+Furthermore, when accessing the database via cypher-shell, ensure that access-mode is also set to read when connecting, i.e
+[source, shell]
+----
+cypher-shell --access-mode=read -a neo4j://localhost:7684 -d foo-replica
+----
+This is necessary because all our replicas are read-only.
+Failure to do so would result in failure to find WRITE server.
+
+
+When accessing the database via the neo4j browser, ensure that the "Access Mode" is again set to "Read".
+This can be found in the browser settings.
+
+[[routing]]
+== Routing
+Replicas respect the link:{neo4j-docs-base-uri}/operations-manual/current/clustering/multi-region-deployment/multi-data-center-routing/#builtin-routing-policies[routing policies].
+
+For example, if we have no routing policies, querying the `CALL dbms.routing.getRoutingTable({}, "foo-replica");` would return all five servers we have today as readers and no writers:
+[source, shell]
+----
++-------------------------------------------------------------------------------------------------------------------------------+
+| ttl | servers                                                                                                                 |
++-------------------------------------------------------------------------------------------------------------------------------+
+| 300 | [{addresses: ["localhost:7687", "localhost:7688", "localhost:7689", "localhost:7690", "localhost:7691"], role: "READ"}  |
++-------------------------------------------------------------------------------------------------------------------------------+
+----
+
+If we have the following setting in the _neo4j.conf_ file to disable reads on primaries for example:
+[source, properties]
+----
+dbms.routing.reads_on_primaries_enabled=false
+----
+
+The routing policy would result in the following routing table where only the two replicas with secondary role will be readers.
+[source, shell]
+----
++-------------------------------------------------------------------------+
+| ttl | servers                                                           |
++-------------------------------------------------------------------------+
+| 300 | [{addresses: ["localhost:7690", "localhost:7691"], role: "READ"}  |
++-------------------------------------------------------------------------+
+----
+
+
 [[promote-replica]]
 == Promote a replica database
 
@@ -158,7 +207,7 @@ SHOW DATABASE foo-replica;
 ----
 
 One of these primary databases is now also write-available as the `WRITER` equals to `TRUE`.
-
+At this point, our routing tables will return both writers and readers as per a standard database.
 
 [[replication-metrics]]
 == Replication metrics
