@@ -47,7 +47,7 @@ the index will also return the same fewer results.
 
 === Semantic index (full-text)
 
-link:{neo4j-docs-base-uri}/cypher-manual/5/indexes/semantic-indexes/full-text-indexes/[Full-text index] differs from search-performance indexes because it is built on Lucene and is not automatically used by the Cypher planner.
+link:{neo4j-docs-base-uri}/cypher-manual/5/indexes/semantic-indexes/full-text-indexes/[Full-text indexes] differ from search-performance indexes because they are built on Lucene and are not automatically used by the Cypher planner.
 
 Lucene implications::
 Lucene prevents Neo4j from checking the security rules for each specific entry returned from the index.
@@ -251,82 +251,82 @@ In the end, the query returns zero results rather than the expected results `And
 ======
 =====
 
-// [[denied-properties-on-specific-label]]
-// ==== Example 3: Denied properties on a specific label
+[[denied-properties-on-specific-label]]
+==== Example 3: Denied properties on a specific label
 
-// Instead of denying the `surname` property for all labels, like the example in <<denied-properties-on-all-labels>>, consider denying reading it only for nodes with the `:Person` label.
+Instead of denying the `surname` property for all labels, like the example in <<denied-properties-on-all-labels>>, consider denying reading it only for nodes with the `:Person` label.
 
-// . Deny read access to the `surname` property for nodes with the `:Person` label:
-// +
-// [source, cypher]
-// ----
-// DENY READ {surname} ON GRAPH * NODES Person TO users;
-// ----
+. Deny read access to the `surname` property for nodes with the `:Person` label:
++
+[source, cypher]
+----
+DENY READ {surname} ON GRAPH * NODES Person TO users;
+----
 
-// . Run the same queries as in the previous examples using one of the indexes:
-// +
-// [.tabbed-example]
-// =====
-// [role=include-with-singleProp]
-// ======
+. Run the same queries as in the previous examples using one of the indexes:
++
+[.tabbed-example]
+=====
+[role=include-with-singleProp]
+======
 
-// Run a query that uses the single property range index on `name`:
+Run a query that uses the single property range index on `name`:
 
-// [source, cypher]
-// ----
-// MATCH (n:User)
-// WHERE n.name CONTAINS 'ndy'
-// RETURN n.name
-// ----
+[source, cypher]
+----
+MATCH (n:User)
+WHERE n.name CONTAINS 'ndy'
+RETURN n.name
+----
 
-// The query operates exactly as in <<denied-properties-on-all-labels>>, returning the same three results, because nothing in it relates to the denied property.
-// ======
+The query operates exactly as in <<denied-properties-on-all-labels>>, returning the same three results, because nothing in it relates to the denied property.
+======
 
-// [role=include-with-composite]
-// ======
+[role=include-with-composite]
+======
 
-// Run a query that uses the composite range index on `name` and `surname`:
+Run a query that uses the composite range index on `name` and `surname`:
 
-// [source, cypher]
-// ----
-// MATCH (n:User)
-// WHERE n.name CONTAINS 'ndy' AND n.surname IS NOT NULL
-// RETURN n.name
-// ----
+[source, cypher]
+----
+MATCH (n:User)
+WHERE n.name CONTAINS 'ndy' AND n.surname IS NOT NULL
+RETURN n.name
+----
 
-// Since the `surname` property is denied only for nodes with the label `:Person`, it appears to be `null` only for those nodes, and the composite index does not contain them.
-// The composite index still contains the remaining `:User` nodes that have both properties.
-// Therefore, the query returns only one result.
+Since the `surname` property is denied only for nodes with the label `:Person`, it appears to be `null` only for those nodes, and the composite index does not contain them.
+The composite index still contains the remaining `:User` nodes that have both properties.
+Therefore, the query returns only one result.
 
-// ======
+======
 
-// [role=include-with-fulltext]
-// ======
+[role=include-with-fulltext]
+======
 
-// Run a query that uses the full-text index on `name` and `surname`:
+Run a query that uses the full-text index on `name` and `surname`:
 
-// [source, cypher]
-// ----
-// CALL db.index.fulltext.queryNodes("userNames", "ndy") YIELD node, score
-// RETURN node.name
-// ----
+[source, cypher]
+----
+CALL db.index.fulltext.queryNodes("userNames", "ndy") YIELD node, score
+RETURN node.name
+----
 
-// The problem now is that it is not clear whether the results provided by the index are achieved due to a match to the `name` or the `surname` property.
-// However, the impact is lessened, as only nodes with the label `:Person` need to exclude the results from the `surname` property.
-// Nodes without the `:Person` label can read the `surname` property and do not need to be excluded.
+The problem now is that it is not clear whether the results provided by the index are achieved due to a match to the `name` or the `surname` property.
+However, the impact is lessened, as only nodes with the label `:Person` need to exclude the results from the `surname` property.
+Nodes without the `:Person` label can read the `surname` property and do not need to be excluded.
 
-// However, the security model cannot introspect the _Lucene_ query to determine what it will actually do, whether it works only on the allowed `name` property or also on the disallowed `surname` property.
-// Therefore, to prevent the index from returning results that the user should not see, the index treats all properties of nodes with the label `:Person` as denied, rather than just the `surname` property.
-// Since the `surname` property is denied only for nodes with the label `:Person`, the index can safely return any nodes that do not have that label.
+However, the security model cannot introspect the _Lucene_ query to determine what it will actually do, whether it works only on the allowed `name` property or also on the disallowed `surname` property.
+Therefore, to prevent the index from returning results that the user should not see, the index treats all properties of nodes with the label `:Person` as denied, rather than just the `surname` property.
+Since the `surname` property is denied only for nodes with the label `:Person`, the index can safely return any nodes that do not have that label.
 
-// The query performs the following steps:
+The query performs the following steps:
 
-// * Run a _Lucene_ query on the full-text index to return results containing `ndy` in either property, leading to five results.
-// * Filter the results to exclude nodes that also have the label `:Person`, filtering out `Mandy` and `Joe`, leading to three results.
+* Run a _Lucene_ query on the full-text index to return results containing `ndy` in either property, leading to five results.
+* Filter the results to exclude nodes that also have the label `:Person`, filtering out `Mandy` and `Joe`, leading to three results.
 
-// In the end, the query returns three results rather than zero, as in <<denied-properties-on-all-labels>>, because the security model can still allow results from nodes that do not have the `:Person` label, even if they match on the denied `surname` property.
-// ======
-// =====
+In the end, the query returns three results rather than zero, as in <<denied-properties-on-all-labels>>, because the security model can still allow results from nodes that do not have the `:Person` label, even if they match on the denied `surname` property.
+======
+=====
 
 [[fail-open-deny-behavior]]
 == Fail-open `DENY` behavior
