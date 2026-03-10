@@ -28,7 +28,7 @@ The following procedure can be used to create a replica.
 
 |===
 | *Syntax* 3+m| internal.dbms.createReplicaDatabase(databaseName, numPrimaries, numSecondaries, {remote: upstreamDatabaseName, addresses: remoteAddresses})
-| *Description* 3+a| Retrieve all available statistical data about the current database, in an anonymized form.
+| *Description* 3+a| Create a replica database with a topology of primaries and secondaries.
 .6+| *Input arguments* | *Name* | *Type* | *Description*
 | `databaseName` | `STRING` | The name of the replica in the current cluster. Note that the databaseName can be the same as that of the upstreamDatabaseName.
 | `numPrimaries` | `INTEGER` | The number of replica primaries. These primaries will align with the mode constraints set on the server, but will not be writable because they are still replicas.
@@ -90,16 +90,26 @@ SHOW DATABASE foo-replica;
 
 A replica database can be promoted to become a write-available database.
 This can be useful in disaster recovery (DR) scenarios when the source cluster becomes unavailable.
+There are two ways to promote a replica:
 
 |===
 | *Syntax* 3+m| internal.dbms.promoteReplicaDatabase(replicaDatabaseName, numPrimaries, numSecondaries)
-| *Description* 3+a| Retrieve all available statistical data about the current database, in an anonymized form.
+| *Description* 3+a| Convert a replica database to a standard database while keeping the data and topology it currently has.
 .4+| *Input arguments* | *Name* | *Type* | *Description*
 | `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
-| `numPrimaries` | `INTEGER` | The number of primaries. These primaries will align with the mode constraints set on the server, and will become writable.
-| `numSecondaries` | `INTEGER` | The number of  replica secondaries.
 | *Mode* 3+| WRITE
 |===
+
+|===
+| *Syntax* 3+m| internal.dbms.promoteReplicaDatabaseWithTopology(replicaDatabaseName, numPrimaries, numSecondaries)
+| *Description* 3+a| Convert a replica database to a standard database with new topology while keeping the data it currently has.
+.4+| *Input arguments* | *Name* | *Type* | *Description*
+| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
+| `numPrimaries` | `INTEGER` | The new number of primaries. These primaries will align with the mode constraints set on the server, and will become writable.
+| `numSecondaries` | `INTEGER` | The new number of replica secondaries.
+| *Mode* 3+| WRITE
+|===
+
 
 [IMPORTANT]
 ====
@@ -112,11 +122,18 @@ On *Cluster B*, to promote the replica database `foo-replica` with three primari
 
 [source, cypher]
 ----
-CALL internal.dbms.promoteReplicaDatabase('foo-replica', 3, 2);
+CALL internal.dbms.promoteReplicaDatabase('foo-replica');
 ----
 
-Note that you can change the number of primaries and secondaries during this promotion.
-In the current example, you kept the same number of primaries and secondaries when creating the replica.
+This will promote the replica database with three primaries and two secondaries.
+The database is now writeable to.
+
+Alternatively we could also alter topology during the promote process
+[source, cypher]
+----
+CALL internal.dbms.promoteReplicaDatabase('foo-replica', 3, 3);
+----
+This will promote the replica database with three primaries and three secondaries.
 
 Verify that the `foo-replica` database is online on the desired number of servers and has type `standard`.
 
