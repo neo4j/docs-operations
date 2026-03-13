@@ -7,9 +7,27 @@ When you have a vector index, you must ensure that there is sufficient memory fo
 If insufficient RAM remains available for that filesystem cache, the OS will read data from disk more often and vector search performance will degrade. Under broader memory pressure, the OS may also start swapping.
 Tools like IOTOP can assist in understanding disk I/O usage.
 
-== Optimal Neo4j memory configuration for vector indexes
+== Optimal memory configuration for Neo4j with vector indexes
 
-The memory configuration recommendations are _Heap + Neo4j PageCache + .25(Vector Index Size) + Additional OS Managed Memory_.
+To estimate the OS filesystem cache requirements of a vector index, we first need to know the amount of vector data in the index. 
+We will talk about either:
+* logical vector data - the bytes of vector data being loaded, independent of the storage and indexing overheads.
+* physical vector index size - the size on disk of the vector index, once it has been fully populated with logical vector data.
+Either can be used to esimate the memory requirements.
+
+Logical vector data = dimension precision (currently always 4 bytes in Lucene) x dimension count x vector count
+So for example 1 million 768 vectors has a logical vector data size of 3.072 GiB.
+
+The physical vector size can either be observed by building the index and checking its size on disk, or estimated from the logical vector data size.
+The formula depends on whether the index has quanitzation enabled, it is on by default.
+
+physical vector index size with quantization = approximately 1.1 x ((logical vector data size x 1.25) + (8 * HNSW_M))
+physical vector index size without quantization = approximately 1.1 x (logical vector data size + (8 * HNSW_M))
+
+For a quantized index, you need about 40% of the physical vector index size available to the OS filesystem cache.
+For an unquantized index, you need about 100% of the physical vector index size available.
+
+The memory configuration recommendations are _Heap + Neo4j PageCache + vector index requirements + Additional OS Managed Memory_.
 
 === Considerations and caveats
 
