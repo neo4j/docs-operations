@@ -29,15 +29,15 @@ Quantization is enabled by default; see link:{neo4j-docs-base-uri}/cypher-manual
 
 The following estimates are per vector, where `HNSW_M` is the configured link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/#config-vector.hsnw.m[`vector.hnsw.m`] value (default `16`):
 
-* with quantization: approximately `1.1 x (1.25 x dimension count + 8 x HNSW_M)` bytes
-* without quantization: approximately `1.1 x (4 x dimension count + 8 x HNSW_M)` bytes
+* with quantization: approximately `1.1 x (1.25 x dimension precision x dimension count + 8 x HNSW_M)` bytes
+* without quantization: approximately `1.1 x (dimension precision x dimension count + 8 x HNSW_M)` bytes
 
 To estimate the full physical vector index size, multiply the per-vector estimate by the vector count.
 
 As a starting point, allow about `40%` of the physical vector index size for the operating system filesystem cache for a quantized index.
 For an unquantized index, allow about `100%` of the physical vector index size.
 
-The memory configuration recommendation is _Heap + Neo4j PageCache + vector index requirements + Additional OS Managed Memory_.
+The overall memory configuration needs to account for Neo4j heap, Neo4j page cache, OS filesystem cache for vector indexes, and other OS memory.
 
 === Neo4j page cache depends on vector access pattern
 
@@ -56,46 +56,54 @@ Size the page cache allocation accordingly.
 
 === Example calculations
 
-The following examples show how to calculate the memory requirements when:
+The following example shows how to estimate the vector-specific storage and memory requirements for:
 
 * 10 million vectors with 768 float32 dimensions
-* default vector index setting, IE quantized and HNSW_M = 16
-* vectors are only used for searching and will not be returned to the user or application.
+* default vector index settings, with quantization enabled and `vector.hnsw.m = 16`
+* vectors are indexed and searched, but are not returned or reused after the index lookup.
+
+This example calculates the vector-specific disk footprint and the OS filesystem cache for the index.
+Neo4j heap, Neo4j page cache, and other OS memory still depend on the rest of the graph and the query workload.
 
 .Disk storage requirements
-[cols="h,1,1"]
+[options="header", cols="1,1,1"]
 |===
-| Neo4j DB
-| Logical vector data size + overheads of adding nodes to the graph
+| Component | Formula | Value
+
+| Logical vector data size
+| 10M vectors x 4 bytes per dimension x 768 dimensions / 1,000,000,000
 | 30.72GB
 
-| Vector Index (single index)
-| (10M * 1.1 * ((1.25 * 4 * 768) + (8 * 16)))/1,000,000,000
+| Physical vector index size (single index)
+| (10M vectors x 1.1 x (1.25 x 4 bytes per dimension x 768 dimensions + 8 bytes x 16)) / 1,000,000,000
 | 43.648GB
 
-| Total DB Size
-| Neo4j DB size + Physical vector index size
+| Total vector-related footprint
+| logical vector data size + physical vector index size
 | 74.368GB
 |===
 
-.Memory requirements
-[cols="h,1,1"]
+.Memory allocation components
+[options="header", cols="1,1,1"]
 |===
-| Neo4j Heap
-| ??
-| ??
+| Component | Estimate | Notes
 
-| Neo4j Page Cache
-| DB Size * 1.2 - logical vector data size
-| 6.144GB
+| Neo4j heap
+| Workload dependent
+| Use xref:configuration/neo4j-admin-memrec.adoc[`neo4j-admin server memory-recommendation`] for an initial recommendation, then adjust based on query concurrency and application behavior.
 
-| OS pagecache Memory for Index
-| 0.4 of Physical Vector Index size
+| Neo4j page cache
+| Workload dependent
+| Use xref:performance/memory-configuration.adoc#memory-configuration-capacity-planning[page cache capacity planning] and xref:configuration/neo4j-admin-memrec.adoc[`neo4j-admin server memory-recommendation`] as starting points, then account for the rest of the graph and any non-vector properties that the workload reads.
+
+| OS filesystem cache for the index
+| 40% of physical vector index size
 | 17.46GB
 
-| Total
-|
-| ??
+| Other OS memory
+| Workload dependent
+| Reserve memory for the operating system and other processes
+
 |===
 
 .Aura vector specified cluster memory configurations
