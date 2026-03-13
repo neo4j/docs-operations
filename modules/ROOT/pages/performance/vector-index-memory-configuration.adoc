@@ -112,8 +112,23 @@ For AuraDB-specific vector sizing and vector-optimized instance guidance, see li
 
 == Warming up the vector index
 
-The Neo4j vector index is only loaded into memory when it is accessed.
-Ideally, the Lucene vector index is preloaded into OS-managed memory before quering the index.
-However, you can also warm up the index by running a few random queries to help the OS load the index into memory.
-The number of queries required to warm up the index depends on the size of the index and the amount of memory available.
-For a smaller index (up to 1M entries), five queries should be sufficient to load the index into memory.
+The vector index is loaded into the operating system's filesystem cache as it is queried.
+The first queries may need to read more of the Lucene index from disk.
+As more of the index becomes resident in the filesystem cache, later queries avoid more disk reads and performance becomes more consistent.
+
+Warm-up can therefore be done by issuing random queries against the index before serving production traffic.
+The number of queries required depends on the size of the index, the amount of RAM available, and how representative the warm-up queries are.
+
+As a starting point:
+
+* for a smaller index (up to 1M entries), around five random queries have worked well in testing
+* for a larger index, start with around 100 random queries and adjust based on observed disk I/O and latency on the target system
+
+Use representative queries and monitor disk read activity during warm-up.
+Tools like IOTOP can help show whether the operating system is still reading heavily from disk.
+
+[NOTE]
+====
+Because Lucene-backed vector index files rely on the operating system's filesystem cache, a server restart clears that cache.
+After a restart, rolling restart, patch, or upgrade, the index may need to be warmed up again.
+====
