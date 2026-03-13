@@ -9,25 +9,35 @@ Tools like IOTOP can assist in understanding disk I/O usage.
 
 == Optimal memory configuration for Neo4j with vector indexes
 
-To estimate the OS filesystem cache requirements of a vector index, we first need to know the amount of vector data in the index. 
-We will talk about either:
-* logical vector data - the bytes of vector data being loaded, independent of the storage and indexing overheads.
-* physical vector index size - the size on disk of the vector index, once it has been fully populated with logical vector data.
-Either can be used to esimate the memory requirements.
+To estimate the operating system filesystem cache requirements of a vector index, it is useful to distinguish between two quantities:
 
-Logical vector data = dimension precision (currently always 4 bytes in Lucene) x dimension count x vector count
-So for example 1 million 768 vectors has a logical vector data size of 3.072 GiB.
+* logical vector data size: the bytes of vector data being indexed, independent of storage and indexing overhead.
+* physical vector index size: the size on disk of the populated vector index.
 
-The physical vector size can either be observed by building the index and checking its size on disk, or estimated from the logical vector data size.
-The formula depends on whether the index has quanitzation enabled, it is on by default.
+Either can be used as the starting point for estimating the memory requirements for vector search.
 
-physical vector index size with quantization = approximately 1.1 x ((logical vector data size x 1.25) + (8 * HNSW_M))
-physical vector index size without quantization = approximately 1.1 x (logical vector data size + (8 * HNSW_M))
+The logical vector data size is:
 
-For a quantized index, you need about 40% of the physical vector index size available to the OS filesystem cache.
-For an unquantized index, you need about 100% of the physical vector index size available.
+`dimension precision x dimension count x vector count`
 
-The memory configuration recommendations are _Heap + Neo4j PageCache + vector index requirements + Additional OS Managed Memory_.
+For Lucene vector indexes, the current dimension precision is `4 bytes`.
+For example, `1,000,000` vectors with `768` dimensions have a logical vector data size of `3.072 GB`.
+
+The physical vector index size can either be measured after the index is built by checking its size on disk, or estimated in advance.
+The estimate depends on whether quantization is enabled.
+Quantization is enabled by default; see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/#config-vector.quantization.enabled[`vector.quantization.enabled`].
+
+The following estimates are per vector, where `HNSW_M` is the configured link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/#config-vector.hsnw.m[`vector.hnsw.m`] value (default `16`):
+
+* with quantization: approximately `1.1 x (1.25 x dimension count + 8 x HNSW_M)` bytes
+* without quantization: approximately `1.1 x (4 x dimension count + 8 x HNSW_M)` bytes
+
+To estimate the full physical vector index size, multiply the per-vector estimate by the vector count.
+
+As a starting point, allow about `40%` of the physical vector index size for the operating system filesystem cache for a quantized index.
+For an unquantized index, allow about `100%` of the physical vector index size.
+
+The memory configuration recommendation is _Heap + Neo4j PageCache + vector index requirements + Additional OS Managed Memory_.
 
 === Considerations and caveats
 
