@@ -39,56 +39,63 @@ For an unquantized index, allow about `100%` of the physical vector index size.
 
 The memory configuration recommendation is _Heap + Neo4j PageCache + vector index requirements + Additional OS Managed Memory_.
 
-=== Considerations and caveats
+=== Neo4j page cache depends on vector access pattern
 
-You can reduce the Neo4j page cache if you plan not to return vectors to the user or calling application, as the vectors are not needed and should not be loaded into memory.
-For example, the vector storage in a database with a total size of 459 GB is 402 GB.
-By setting the page cache to 100 GB, the important part of the graph is still in memory, and the server requirements are reduced.
-The ratio of memory to storage will be high, but Neo4j will still be able to maintain its performance.
-A 1:4 ratio should perform well.
+[cols="1,2"]
+|===
+| Access pattern | Page cache guidance
 
-You must increase the memory if you plan to return vectors to the user or call the application and use them for a refined search.
-If you use the vectors for further searching or refining search results, the page cache memory allocation must also be increased.
+| Vectors are indexed and searched, but not returned or reused
+| Neo4j page cache can be sized mainly for the rest of the graph and any other accessed properties.
+The vector property values do not need to stay hot in Neo4j page cache if the query does not read them back from the graph store.
+
+| Vectors are returned, re-ranked, or reused after the index lookup
+| Neo4j page cache must also account for reading vector property values from the graph store.
+Size the page cache allocation accordingly.
+|===
 
 === Example calculations
 
-The following examples show how to calculate the memory requirements when vectors are only used for searching and will not be returned to the user or application.
-The memory example below uses the same `.25(Vector Index Size)` starting point as the recommendation above.
+The following examples show how to calculate the memory requirements when:
+
+* 10 million vectors with 768 float32 dimensions
+* default vector index setting, IE quantized and HNSW_M = 16
+* vectors are only used for searching and will not be returned to the user or application.
 
 .Disk storage requirements
 [cols="h,1,1"]
 |===
 | Neo4j DB
-| 10M
-| ~40GB
+| Logical vector data size + overheads of adding nodes to the graph
+| 30.72GB
 
 | Vector Index (single index)
-| (1.1 * (4 * 768 + 8 * 16) * 10M)/1048576000
-| 33.5GB
+| (10M * 1.1 * ((1.25 * 4 * 768) + (8 * 16)))/1,000,000,000
+| 43.648GB
 
 | Total DB Size
-|
-| 73.5GB
+| Neo4j DB size + Physical vector index size
+| 74.368GB
 |===
 
 .Memory requirements
 [cols="h,1,1"]
 |===
-| Heap
-| 10-20GB
-| 20GB
+| Neo4j Heap
+| ??
+| ??
 
-| Page Cache
-| DB Size * 1.2
-| 50GB
+| Neo4j Page Cache
+| DB Size * 1.2 - logical vector data size
+| 6.144GB
 
-| OS Memory for Index
-| .25 of the Vector Index
-| ~8.5GB
+| OS pagecache Memory for Index
+| 0.4 of Physical Vector Index size
+| 17.46GB
 
 | Total
 |
-| ~78.5GB
+| ??
 |===
 
 .Aura vector specified cluster memory configurations
