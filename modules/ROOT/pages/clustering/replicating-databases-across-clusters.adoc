@@ -24,8 +24,9 @@ image::replication.svg[title="Schema of replicating a database across clusters",
 [[create-replica]]
 == Create a replica database
 
-The following procedure can be used to create a replica.
+Use the following procedure to create a replica database.
 
+.internal.dbms.createReplicaDatabase()
 |===
 | *Syntax* 3+m| internal.dbms.createReplicaDatabase(databaseName, numPrimaries, numSecondaries, {remote: upstreamDatabaseName, addresses: remoteAddresses})
 | *Description* 3+a| Create a replica database with a topology of primaries and secondaries.
@@ -49,6 +50,7 @@ On *Cluster A*, the database `foo` is running and has three servers with cluster
 
 To create a replica database `foo-replica` with three primaries and two secondaries on *Cluster B* that will replicate from the upstream database `foo` from *Cluster A*, run the following Cypher command:
 
+[[create-replica-db-example]]
 [source, cypher]
 ----
 CALL internal.dbms.createReplicaDatabase("foo-replica", 3, 2, {remote: "foo", addresses:["server01.example.com:6000","server02.example.com:6000","server03.example.com:6000"]});
@@ -86,25 +88,27 @@ SHOW DATABASE foo-replica;
 ----
 
 [[drivers-and-cypher-shell]]
-== Drivers and cypher-shell
+== Using drivers or Cypher Shell
 
-Given that replica databases are read-only, we must ensure that the drivers either have "AccessMode" set to "READ", or are only doing `executeRead`.
+Given that replica databases are read-only, you must ensure that the drivers either have "AccessMode" set to "READ", or are only doing `executeRead`.
 Attempts to write to the replica database will fail.
 
-Furthermore, when accessing the database via cypher-shell, ensure that access-mode is also set to read when connecting, i.e
+Furthermore, when accessing the database via Cypher Shell, ensure that xref:cypher-shell.adoc#cypher-shell-access-mode[`--access-mode`] is also set to `read` when connecting.
+
 [source, shell]
 ----
-cypher-shell --access-mode=read -a neo4j://localhost:7684 -d foo-replica
+bin/cypher-shell --access-mode=read -a neo4j://localhost:7684 -d foo-replica
 ----
+
 This is necessary because all our replicas are read-only.
-Failure to do so would result in failure to find WRITE server.
+Failure to do so would result in failure to find a `WRITE` server.
 
-
-When accessing the database via the neo4j browser, ensure that the "Access Mode" is again set to "Read".
-This can be found in the browser settings.
+When accessing the database via the Neo4j Browser, ensure that the **Access mode** is set to **Read**.
+This can be found in the link:https://neo4j.com/docs/browser/visual-tour/#_settings[Browser **Settings** drawer].
 
 [[routing]]
 == Routing
+
 Replicas respect the link:{neo4j-docs-base-uri}/operations-manual/current/clustering/multi-region-deployment/multi-data-center-routing/#builtin-routing-policies[routing policies].
 
 For example, if we have no routing policies, querying the `CALL dbms.routing.getRoutingTable({}, "foo-replica");` would return all five servers we have today as readers and no writers:
@@ -118,6 +122,7 @@ For example, if we have no routing policies, querying the `CALL dbms.routing.get
 ----
 
 If we have the following setting in the _neo4j.conf_ file to disable reads on primaries for example:
+
 [source, properties]
 ----
 dbms.routing.reads_on_primaries_enabled=false
@@ -141,6 +146,7 @@ A replica database can be promoted to become a write-available database.
 This can be useful in disaster recovery (DR) scenarios when the source cluster becomes unavailable.
 There are two ways to promote a replica:
 
+.internal.dbms.promoteReplicaDatabase() 
 |===
 | *Syntax* 3+m| internal.dbms.promoteReplicaDatabase(replicaDatabaseName)
 | *Description* 3+a| Convert a replica database to a standard database while keeping the data and topology it currently has.
@@ -149,6 +155,8 @@ There are two ways to promote a replica:
 | *Mode* 3+| WRITE
 |===
 
+
+.internal.dbms.promoteReplicaDatabaseWithTopology()
 |===
 | *Syntax* 3+m| internal.dbms.promoteReplicaDatabaseWithTopology(replicaDatabaseName, numPrimaries, numSecondaries)
 | *Description* 3+a| Convert a replica database to a standard database with new topology while keeping the data it currently has.
@@ -167,22 +175,26 @@ Once a replica is promoted, it cannot be re-attached to the original source.
 To resume replication, you need to create a new replica.
 ====
 
-On *Cluster B*, to promote the replica database `foo-replica` with three primaries and two secondaries, run the following Cypher command:
+On *Cluster B*, to promote the replica database `foo-replica` with the <<create-replica-db-example, existing topology which is three primaries and two secondaries>>, call the procedure:
 
 [source, cypher]
 ----
 CALL internal.dbms.promoteReplicaDatabase('foo-replica');
 ----
 
-This will promote the replica database with three primaries and two secondaries.
-The database is now writeable to.
+The database becomes write-available.
 
-Alternatively we could also alter topology during the promote process
+[TIP]
+====
+Alternatively, you can alter replica's topology during the promote process by running another procedure and specifying a different number of primaries or secondaries:
+
 [source, cypher]
 ----
-CALL internal.dbms.promoteReplicaDatabaseWithTopology('foo-replica', 3, 2);
+CALL internal.dbms.promoteReplicaDatabaseWithTopology('foo-replica', 3, 4);
 ----
-This will promote the replica database with three primaries and two secondaries.
+
+This will promote the replica database with three primaries and four secondaries.
+====
 
 Verify that the `foo-replica` database is online on the desired number of servers and has type `standard`.
 
@@ -206,7 +218,7 @@ SHOW DATABASE foo-replica;
 5 rows available after 3 ms, consumed after another 1 ms
 ----
 
-One of these primary databases is now also write-available as the `WRITER` equals to `TRUE`.
+One of the primary databases is now write-available as the `writer` equals to `TRUE`.
 At this point, our routing tables will return both writers and readers as per a standard database.
 
 [[replication-metrics]]
@@ -294,7 +306,8 @@ image::recovery.svg[width=350, title="Recovery after a disaster"]
 . Stop write operations on the promoted database `foo-replica` in *Cluster B*.
 . Check the metrics to ensure that `tx_id` is exactly the same for both the promoted and replicating databases.
 . Promote the replica database `foo` in *Cluster A*, meaning that this database starts serving write operations and becomes again the main database serving traffic.
-. Stop the database `foo-replica` in the DR-cluster, and create a new replica `foo-new-replica` with the upstream pointing to the main database `foo` in the main cluster (see _Figure 5_).
+. Stop and drop the database `foo-replica` in the DR-cluster.
+Create a new replica `foo-new-replica` with the upstream pointing to the main database `foo` in the main cluster (see _Figure 5_).
 +
 image::replication-restored.svg[width=350, title="Restoring the upstream database in the main cluster"]
 
