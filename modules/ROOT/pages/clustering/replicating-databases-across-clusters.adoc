@@ -14,15 +14,59 @@ During the Preview period, customers with active contracts may contact Neo4j Sup
 Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
 ====
 
+
+[[ccr-overview]]
+== Overview
+
 In 2026.03, cross-cluster database replication (CCDR) is introduced.
 This provides the functionality for one database in a cluster to be replicated over to another cluster.
-The original database is called _upstream_, while the database that replicates data is called the _replica_.
-The replica continuously polls the upstream database for new transactions and applies them as soon as new transactions become available.
+The original database is called _upstream_ or _source_, while the database that replicates data is called the _replica_.
+The replica continuously polls the upstream database for new transactions and applies them as soon as new transactions become available (see _Figure 1_).
 
 image::replication.svg[title="Schema of replicating a database across clusters", width="300"]
 
+
+== Prerequisites for creating a replica database
+
+Let's assume you have two separate clusters running independently from each other: *Cluster A* and *Cluster B*. +
+
+Ensure that clusters are on the same Neo4j version.
+
+[[inter-cluster-encryption]]
+=== Configuring inter-cluster encryption
+
+Firstly, ensure that each cluster is encrypted using link:{neo4j-docs-base-uri}/operations-manual/current/clustering/setup/encryption[intra-cluster encryption].
+To ensure that both *Cluster A* and *Cluster B* can mutually authenticate, each cluster must trust the Certificate Authority (CA) that signs the other cluster’s certificates.
+
+If clusters use different CAs, the CA certificate of *Cluster A* must be installed in the `trusted/` directory of *Cluster B*, and vice versa.
+
+For example, here is one possible certificate folder configuration:
+
+[source, shell]
+----
+ClusterA
+
+cluster/
+├── private.key                 ← clusterA node private key
+├── public.crt                  ← clusterA node certificate
+├── trusted/
+│   └── clusterB-ca.crt         ← CA that signs ClusterB node certs
+└── revoked/
+
+
+ClusterB
+
+cluster/
+├── private.key                 ← ClusterB node private key
+├── public.crt                  ← ClusterB node certificate
+├── trusted/
+│   └── clusterA-ca.crt         ← CA that signs ClusterA node certs
+└── revoked/
+----
+
+
 [[create-replica]]
-== Create a replica database
+=== Creating a replica database
 
 Use the following procedure to create a replica database.
 
@@ -44,11 +88,9 @@ Use the following procedure to create a replica database.
 In the preview version, the `block` store format is only supported for the upstream and replica databases.
 ====
 
-Let's assume you have two separate clusters running independently from each other: *Cluster A* and *Cluster B*. +
 On *Cluster A*, the database `foo` is running and has three servers with cluster addresses: `server01.example.com:6000`, `server02.example.com:6000`, `server03.example.com:6000`.
-// On *ClusterB*, the database `bar` is running.
 
-To create a replica database `foo-replica` with three primaries and two secondaries on *Cluster B* that will replicate from the upstream database `foo` from *Cluster A*, run the following Cypher command:
+To create a replica database `foo-replica` with three primaries and two secondaries on *Cluster B* that will replicate from the upstream database `foo` from *Cluster A*, run the following procedure:
 
 [[create-replica-db-example]]
 [source, cypher]
@@ -88,7 +130,7 @@ SHOW DATABASE foo-replica;
 ----
 
 [[drivers-and-cypher-shell]]
-== Using drivers or Cypher Shell
+== Accessing replica databases via drivers or Cypher Shell
 
 Given that replica databases are read-only, you must ensure that the drivers either have "AccessMode" set to "READ", or are only doing `executeRead`.
 Attempts to write to the replica database will fail.
@@ -106,12 +148,17 @@ Failure to do so would result in failure to find a `WRITE` server.
 When accessing the database via the Neo4j Browser, ensure that the **Access mode** is set to **Read**.
 This can be found in the link:https://neo4j.com/docs/browser/visual-tour/#_settings[Browser **Settings** drawer].
 
+
 [[routing]]
-== Routing
+== Setting up routing policies
 
-Replicas respect the link:{neo4j-docs-base-uri}/operations-manual/current/clustering/multi-region-deployment/multi-data-center-routing/#builtin-routing-policies[routing policies].
+Replica databases respect the built-in link:{neo4j-docs-base-uri}/operations-manual/current/clustering/multi-region-deployment/multi-data-center-routing/#builtin-routing-policies[routing policies].
 
-For example, if we have no routing policies, querying the `CALL dbms.routing.getRoutingTable({}, "foo-replica");` would return all five servers we have today as readers and no writers:
+
+Example 1::
++
+For example, if you have no routing policies, querying the `CALL dbms.routing.getRoutingTable({}, "foo-replica");` returns all five servers you have as readers and no writers:
++
 [source, shell]
 ----
 +-------------------------------------------------------------------------------------------------------------------------------+
@@ -121,14 +168,10 @@ For example, if we have no routing policies, querying the `CALL dbms.routing.get
 +-------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-If we have the following setting in the _neo4j.conf_ file to disable reads on primaries for example:
-
-[source, properties]
-----
-dbms.routing.reads_on_primaries_enabled=false
-----
-
-The routing policy would result in the following routing table where only the two replicas with secondary role will be readers.
+Example2::
++
+If you set `dbms.routing.reads_on_primaries_enabled=false` in the _neo4j.conf_ file to disable reads on primaries, the routing policy results in the following routing table where only the two replicas with secondary role are readers:
++
 [source, shell]
 ----
 +-------------------------------------------------------------------------+
@@ -139,34 +182,46 @@ The routing policy would result in the following routing table where only the tw
 ----
 
 
+[[roles-and-permissions]]
+== Managing user roles and privileges
+
+[IMPORTANT]
+====
+User privileges and roles are not copied over when replicating a database.
+====
+
+Permissions and role-based access control have to be set up separately on *Cluster A* and *Cluster B* as they cannot be copied over.
+You should treat the two clusters as independent entities, with a standard database replicating between them.
+Furthermore, the `system` database cannot be replicated.
+
+
+[[replication-metrics]]
+== Monitoring replica databases
+
+Replicas are asynchronously replicating data from the upstream database.
+Therefore, it is useful to track the replication lag between the upstream and replica database.
+In order to do this, plot the xref:monitoring/metrics/reference.adoc#db-tx-metrics[`<prefix>.database.<db>.transaction.last_committed_tx_id`] metric for both the upstream and replica databases.
+The difference between them is a signal of how much replication lag there is.
+
+
+[[dr-scenario]]
+== Disaster recovery scenario
+
+It is recommended to set up two independent clusters in two different cloud regions.
+If the main region has gone down, you can promote the replicating database in the DR-cluster and redirect data traffic to the promoted database.
+
+[cols="a,a,a", grid=none, frame=none]
+|===
+|image::disaster-step-1.svg[width="250", title="Disaster"]
+|image::disaster-step-2.svg[width="250", title="Promoting the replica database"]
+|image::disaster-step-3.svg[width="250", title="Redirecting data traffic"]
+|===
+
+
 [[promote-replica]]
-== Promote a replica database
+=== Promoting a replica database
 
-A replica database can be promoted to become a write-available database.
-This can be useful in disaster recovery (DR) scenarios when the source cluster becomes unavailable.
-There are two ways to promote a replica:
-
-.internal.dbms.promoteReplicaDatabase() 
-|===
-| *Syntax* 3+m| internal.dbms.promoteReplicaDatabase(replicaDatabaseName)
-| *Description* 3+a| Convert a replica database to a standard database while keeping the data and topology it currently has.
-.2+| *Input arguments* | *Name* | *Type* | *Description*
-| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
-| *Mode* 3+| WRITE
-|===
-
-
-.internal.dbms.promoteReplicaDatabaseWithTopology()
-|===
-| *Syntax* 3+m| internal.dbms.promoteReplicaDatabaseWithTopology(replicaDatabaseName, numPrimaries, numSecondaries)
-| *Description* 3+a| Convert a replica database to a standard database with new topology while keeping the data it currently has.
-.4+| *Input arguments* | *Name* | *Type* | *Description*
-| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
-| `numPrimaries` | `INTEGER` | The new number of primaries. These primaries will align with the mode constraints set on the server, and will become writable.
-| `numSecondaries` | `INTEGER` | The new number of replica secondaries.
-| *Mode* 3+| WRITE
-|===
-
+If the the source cluster becomes unavailable, you can promote a replica database to make it a write-available database.
 
 [IMPORTANT]
 ====
@@ -175,34 +230,36 @@ Once a replica is promoted, it cannot be re-attached to the original source.
 To resume replication, you need to create a new replica.
 ====
 
-On *Cluster B*, to promote the replica database `foo-replica` with the <<create-replica-db-example, existing topology which is three primaries and two secondaries>>, call the procedure:
+A replica can be promoted in two ways: by retaining its topology or by modifying it.
 
+
+Promote a replica database without modifying its topology::
++
+.internal.dbms.promoteReplicaDatabase() 
+|===
+| *Syntax* 3+m| internal.dbms.promoteReplicaDatabase(replicaDatabaseName)
+| *Description* 3+a| Convert a replica database to a standard database while keeping the data and topology it currently has.
+.2+| *Input arguments* | *Name* | *Type* | *Description*
+| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
+| *Mode* 3+| WRITE
+|===
++
+On *Cluster B*, to promote the replica database `foo-replica` with the <<create-replica-db-example, existing topology which is three primaries and two secondaries>>, call the procedure:
++
 [source, cypher]
 ----
 CALL internal.dbms.promoteReplicaDatabase('foo-replica');
 ----
-
++
 The database becomes write-available.
-
-[TIP]
-====
-Alternatively, you can alter replica's topology during the promote process by running another procedure and specifying a different number of primaries or secondaries:
-
-[source, cypher]
-----
-CALL internal.dbms.promoteReplicaDatabaseWithTopology('foo-replica', 3, 4);
-----
-
-This will promote the replica database with three primaries and four secondaries.
-====
-
++
 Verify that the `foo-replica` database is online on the desired number of servers and has type `standard`.
-
++
 [source, cypher, role=noplay]
 ----
 SHOW DATABASE foo-replica;
 ----
-
++
 [queryresult]
 ----
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -217,81 +274,38 @@ SHOW DATABASE foo-replica;
 
 5 rows available after 3 ms, consumed after another 1 ms
 ----
-
++
 One of the primary databases is now write-available as the `writer` equals to `TRUE`.
 At this point, our routing tables will return both writers and readers as per a standard database.
 
-[[replication-metrics]]
-== Replication metrics
 
-Replicas are asynchronously replicating data from the upstream database.
-Therefore, it is useful to track the replication lag between the upstream and replica database.
-In order to do this, plot the xref:monitoring/metrics/reference.adoc#db-tx-metrics[`<prefix>.database.<db>.transaction.last_committed_tx_id`] metric for both the upstream and replica databases.
-The difference between them is a signal of how much replication lag there is.
-
-[[roles-and-permissions]]
-== Roles and permissions
-
-[IMPORTANT]
-====
-Permissions and roles are not copied over when replicating a database.
-====
-
-Permissions and role-based access control have to be set up separately on *Cluster A* and *Cluster B* as they cannot be copied over.
-You should treat the two clusters as independent entities, with a database replicating between them.
-Furthermore, the `system` database cannot be replicated.
-
-Ensure that clusters are on the same Neo4j version.
-
-[[inter-cluster-encryption]]
-== Inter-cluster encryption
-
-Firstly, ensure that each cluster is encrypted using link:{neo4j-docs-base-uri}/operations-manual/current/clustering/setup/encryption[intra-cluster encryption].
-To ensure that both *Cluster A* and *Cluster B* can mutually authenticate, each cluster must trust the Certificate Authority (CA) that signs the other cluster’s certificates.
-
-If clusters use different CAs, the CA certificate of *Cluster A* must be installed in the `trusted/` directory of *Cluster B*, and vice versa.
-
-For example, here is one possible cert folder configuration:
-
-[source, shell]
-----
-ClusterA
-
-cluster/
-├── private.key                 ← clusterA node private key
-├── public.crt                  ← clusterA node certificate
-├── trusted/
-│   └── clusterB-ca.crt         ← CA that signs ClusterB node certs
-└── revoked/
-
-
-ClusterB
-
-cluster/
-├── private.key                 ← ClusterB node private key
-├── public.crt                  ← ClusterB node certificate
-├── trusted/
-│   └── clusterA-ca.crt         ← CA that signs ClusterA node certs
-└── revoked/
-----
-
-
-[[dr-scenario]]
-== Disaster recovery scenario
-
-It is recommended to set up two independent clusters in two different cloud regions.
-The upstream database should be in the main cluster, and the replica database will be in a DR-cluster in another region.
-If the main region has gone down, you can promote the replicating database in the DR-cluster and redirect data traffic to the promoted database.
-
-[cols="a,a,a", grid=none, frame=none]
+Promote a replica database while modifying its topology::
++
+You can alter replica's topology during the promote process by using the following procedure:
++
+.internal.dbms.promoteReplicaDatabaseWithTopology()
 |===
-|image::disaster-step-1.svg[width="250", title="Disaster"]
-|image::disaster-step-2.svg[width="250", title="Promoting the replica database"]
-|image::disaster-step-3.svg[width="250", title="Redirecting data traffic"]
+| *Syntax* 3+m| internal.dbms.promoteReplicaDatabaseWithTopology(replicaDatabaseName, numPrimaries, numSecondaries)
+| *Description* 3+a| Convert a replica database to a standard database with new topology while keeping the data it currently has.
+.4+| *Input arguments* | *Name* | *Type* | *Description*
+| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
+| `numPrimaries` | `INTEGER` | The new number of primaries. These primaries will align with the mode constraints set on the server, and will become writable.
+| `numSecondaries` | `INTEGER` | The new number of replica secondaries.
+| *Mode* 3+| WRITE
 |===
++
+You have to specify a number of primaries or secondaries:
++
+[source, cypher]
+----
+CALL internal.dbms.promoteReplicaDatabaseWithTopology('foo-replica', 3, 4);
+----
++
+This will promote the replica database with three primaries and four secondaries.
+
 
 [[failback]]
-== Failback
+=== Failback
 
 Failback is the process of restoring the main cluster back into operation after a DR scenario.
 This is under the assumption that the promoted database is currently running in the DR-cluster.
