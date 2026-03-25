@@ -1,0 +1,294 @@
+:page-role: new-2025.12 infinigraph not-on-aura
+:description: This page describes how to create a sharded property database by splitting an existing Neo4j database.
+:keywords: sharded property database, resharding, reshard, split, existing database, data migration, data redistribution
+= Resharding a database
+
+Neo4j supports several methods for resharding a database, depending on your specific requirements and constraints:
+
+* <<scaling-by-adding-removing-servers, Server resharding (online)>> Scaling in or out a sharded property database by adding or removing servers from the cluster to adjust the number of property shards.
+* <<database-resharding, Database resharding (offline)>> Copying an existing database to create a new sharded property database with the desired number of property shards.
+** <<splitting-existing-db-into-shards, Split an existing database into shards>> by copying a standard database or an existing sharded property database to create a new sharded property database with the desired number of property shards.
+** label:new[Introduced in 2026.03] <<creating-sharded-db-from-standard-db-backup, Create a sharded property database from a backup of a standard database>> by copying a backup of a standard database to create a sharded property database with the desired number of property shards.
+** label:new[Introduced in 2026.03] <<creating-sharded-db-from-shared-property-db-backup, Create a sharded property database from a backup of a sharded property database>> by copying a backup of a sharded property database to create a new sharded property database with the desired number of property shards.
+
+[[scaling-by-adding-removing-servers]]
+== Server resharding (online)
+
+You can add or remove servers from the cluster to change the number of property shards in a sharded property database.
+The cluster automatically redistributes data across its servers when you add or remove servers, so you do not need to move any data manually.
+This method allows you to reshard a sharded property database without downtime, as the cluster continues to serve requests while the data is being redistributed.
+
+Alternatively, you can select more property shards than needed at creation time and allow space for their data to grow, as the Neo4j cluster allows databases to be moved based on server availability.
+For example, six property shards can be initially hosted across three servers (two shards per server), with additional servers added as needed.
+
+.Creating a sharded property database with more shards than needed at creation time
+[source, cypher]
+----
+CREATE DATABASE neo4j
+GRAPH SHARD     { TOPOLOGY 1 PRIMARY 0 SECONDARIES }
+PROPERTY SHARDS { COUNT 6 TOPOLOGY 1 REPLICA }
+----
+
+For details on managing databases and servers in a cluster, see xref:clustering/databases.adoc[Managing databases in a cluster] and xref:clustering/servers.adoc[Managing servers in a cluster].
+
+[[database-resharding]]
+== Database resharding (offline)
+
+You can create a new sharded property database with the desired number of property shards by copying an existing database, which can be either a standard or sharded property database, or starting with Neo4j 2026.03, a backup of an existing standard or sharded property database.
+
+[[splitting-existing-db-into-shards]]
+=== Split an existing database into shards (offline)
+
+You can use the `neo4j-admin database copy` command to create a sharded property database from a standard database or to create a new sharded property database from an existing sharded property database, specifying a different number of property shards for the new database.
+
+The existing database must be stopped during the copying process.
+
+The following options should be specified for the `neo4j-admin database copy` command:
+
+* `--copy-schema` -- to copy the schema of the existing database if needed.
+* `--property-shard-count` -- the number of property shards to create for the new database, which must be more than 0.
+* `--target-location` -- a path to the folder where the new database will be created.
+* `--target-format=backup` -- the format of the output data.
+
+If `--to-format` is specified, a warning will be printed in the log, and the given format will be ignored.
+
+The following examples show how to create a new sharded property database in a cluster deployment from an existing standard database and an existing sharded property database, respectively.
+
+. On one of the servers, run the `neo4j-admin database copy` command to copy the data from the existing database into a new sharded property database:
++
+[.tabbed-example]
+=====
+[.include-with-from-standard-database]
+======
+
+Copy the data from the `foo` database into the database `foo-sharded`, creating one graph shard and three property shards.
+The `foo` database must be stopped.
+
+[source, shell]
+----
+neo4j-admin database copy foo foo-sharded --copy-schema --property-shard-count 3 --target-location=s3://bucket/folder/ --target-format=backup
+----
+======
+[.include-with-from-sharded-property-database]
+======
+
+Copy the data from the `foo-sharded` database into the database `foo-sharded-new`, creating one graph shard and six property shards.
+The `foo-sharded` database must be stopped.
+
+[source, shell]
+----
+neo4j-admin database copy foo-sharded foo-sharded-new --copy-schema --property-shard-count 6 --target-location=s3://bucket/folder/ --target-format=backup
+----
+======
+=====
++
+For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Create the database `foo-sharded` or `foo-sharded-new`, depending on which example you followed, as a sharded property database by seeding it from your backup folder in the AWS S3 bucket:
++
+[.tabbed-example]
+=====
+[.include-with-from-standard-database]
+======
+[source, cypher]
+----
+CREATE DATABASE `foo-sharded`
+DEFAULT LANGUAGE CYPHER 25
+PROPERTY SHARDS { COUNT 3 }
+OPTIONS {
+ seedUri: `s3://bucket/folder/`
+};
+----
+======
+[.include-with-from-sharded-property-database]
+======
+[source, cypher]
+----
+CREATE DATABASE `foo-sharded-new`
+DEFAULT LANGUAGE CYPHER 25
+PROPERTY SHARDS { COUNT 6 }
+OPTIONS {
+    seedUri: `s3://bucket/folder/`
+};
+----
+======
+=====
++
+The cluster automatically distributes the data across its servers.
+For more information on seed providers, see xref:scalability/sharded-property-databases/creating-sharded-databases.adoc#creating-sharded-db-from-uri[Creating a sharded database from a URI (online)].
+. Verify that the new database is online by running the following command on one of the servers:
++
+[source, shell]
+----
+SHOW DATABASES;
+----
+
+[role=label--new-2026.03]
+[[creating-sharded-db-from-standard-db-backup]]
+=== Create a sharded property database from a backup of a standard database (online)
+
+You can use the `neo4j-admin database copy` command to create a sharded property database from a backup of a standard database.
+The process is similar to resharding a database by splitting an existing database into shards, but instead of using a standard database as the source, you use a backup of a standard database.
+
+The following options should be specified for the `neo4j-admin database copy` command:
+
+* `--source-location` -- a path to the full backup of an existing database or the last diff backup in the chain.
+This folder can be located locally or remotely (e.g., an S3 bucket) and must contain the full backup and all the diff backups in the chain, if any.
+* `--source-format=backup` -- the format of the source backup.
+* `--copy-schema` -- to copy the schema of the existing database if needed.
+* `--property-shard-count` -- the number of property shards to create for the new database, which must be more than 0.
+* `--target-location` -- a path to the folder where the new database will be created.
+* `--target-format=backup` -- the format of the output data.
+
+`--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once. +
+If `--to-format` is specified, a warning will be printed to the log, and the specified format will be ignored.
+
+The following example shows how to create a sharded property database, called `foo-sharded`, with 3 property shards, from a backup of the existing database `foo`, in a cluster deployment.
+It assumes that you have a backup of your existing database `foo` in an AWS S3 bucket.
+If you do not have a backup of your database or you want to create an exact copy of your database, follow steps 1 and 2.
+Otherwise, proceed directly to step 3.
+
+. On one of the servers, run the following command to put the database `foo` into read-only mode to ensure your sharded version of `foo` will have all the data after copying as the old database.
++
+[source, shell]
+----
+ALTER DATABASE foo SET ACCESS READ ONLY;
+----
+. Back up the database `foo` to a location that is accessible by the cluster, such as an AWS S3 bucket, using the `neo4j-admin database backup` command.
+The `--type=full` option forces the creation of a full backup of the database even if there are existing full backups in the specified location.
++
+[source, shell]
+----
+bin/neo4j-admin database backup --type=full --to-path=s3://bucket/folder/foo foo
+----
++
+For more information about the syntax and options of the `neo4j-admin database backup` command, see xref:backup-restore/online-backup.adoc[Back up an online database].
+
+. On one of the servers, copy the data from a backup of your database `foo` into the database `foo-sharded`, creating one graph shard and three property shards.
++
+[source, shell]
+----
+neo4j-admin copy foo foo-sharded --source-location=s3://bucket/folder/foo.backup
+--source-format=backup --copy-schema --property-shard-count 3 --target-location=s3://bucket/folder/ --target-format=backup
+----
++
+For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Create the database `foo-sharded` as a sharded property database by seeding it from your backup folder in the AWS S3 bucket:
++
+[source, cypher]
+----
+CREATE DATABASE `foo-sharded`
+DEFAULT LANGUAGE CYPHER 25
+PROPERTY SHARDS { COUNT 3 }
+OPTIONS {
+ seedUri: `s3://bucket/folder/`
+};
+----
++
+The cluster automatically distributes the data across its servers.
+For more information on seed providers, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+. Verify that the new database is online by running the following command on one of the servers:
++
+[source, shell]
+----
+SHOW DATABASES;
+----
+. After the new database is online, you can drop the old database `foo` if it is no longer needed, or put it into read-write mode if you want to keep it for other purposes.
++
+[.tabbed-example]
+=====
+[.include-with-drop-database]
+======
+
+Dropping the old database `foo`:
+
+[source, shell]
+----
+DROP DATABASE foo;
+----
+======
+[.include-with-change-access-mode]
+======
+
+Changing the access mode of the old database `foo` to read-write:
+
+[source, shell]
+----
+ALTER DATABASE foo SET ACCESS READ WRITE;
+----
+======
+=====
+
+[role=label--new-2026.03]
+[[creating-sharded-db-from-shared-property-db-backup]]
+=== Create a sharded property database from a backup of a sharded property database (online)
+
+You can use the `neo4j-admin database copy` command to create a new sharded property database from a backup of an existing sharded property database and specify a different number of property shards for the new database.
+The process is similar to creating a sharded property database from a backup of a standard database, but instead of using a backup file as the source, you specify the folder containing all backups of an existing sharded property database as the source.
+
+[NOTE]
+====
+Keep in mind that this process can take a long time to complete, especially if the existing database is large, as it involves copying all data from all the shards and redistributing it across the new shards.
+====
+
+The following options should be specified for the `neo4j-admin database copy` command:
+
+* `--source-location` -- a path to a folder containing all backups of an existing sharded property database, including the full backup and all the diff backups in the chain of the graph shard and the last full backup for each property shard.
+This folder can be located locally or remotely (e.g., an S3 bucket).
+* `--source-format=backup` -- the format of the source backup.
+* `--copy-schema` -- to copy the schema of the existing database if needed.
+* `--property-shard-count` -- the number of property shards to create for the new database, which must be more than 0.
+* `--target-location` -- a path to the folder where the new database will be created.
+* `--target-format=backup` -- the format of the output data.
+* The name of the database to copy from must be the name of the virtual database.
+
+
+`--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once. +
+If `--to-format` is specified, a warning will be printed to the log, and the specified format will be ignored.
+
+The following example shows how to create a sharded property database, called `foo-sharded-new`, with 5 property shards, from a backup of the existing sharded property database, `foo-sharded`, in a cluster deployment.
+It assumes that you have a backup of your existing sharded property database `foo-sharded` in an AWS S3 bucket. +
+If you do not have a backup of your database or you want to create an exact copy of your database, see xref:scalability/sharded-property-databases/admin-operations.adoc#backup-and-restore[Backup and restore].
+To be completely sure that all backups are on the same transaction, it is recommended to put the database into read-only mode, running `ALTER DATABASE foo-sharded SET ACCESS READ ONLY` on one of the servers.
+Copy works even if the shards backups have different last applied transactions but there might be some data lost due to one shard not having all information from the last transactions.
+
+. On one of the servers, copy the data from a backup of your database `foo` into the database `foo-sharded`, creating one graph shard and three property shards.
++
+[source, shell]
+----
+neo4j-admin copy foo-sharded foo-sharded-new --source-location=s3://bucket/folder --source-format=backup
+--property-shard-count 5 --copy-schema --property-shard-count 5 --target-location=s3://bucket/folder/ --target-format=backup
+----
++
+For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Create the database `foo-sharded` as a sharded property database by seeding it from your backup folder in AWS S3 bucket:
+
+[source, cypher]
+----
+CREATE DATABASE `foo-sharded-new`
+DEFAULT LANGUAGE CYPHER 25
+PROPERTY SHARDS { COUNT 5 }
+OPTIONS {
+ seedUri: `s3://bucket/folder/`
+};
+----
++
+The cluster automatically distributes the data across its servers.
+For more information on seed providers, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+. Verify that the new database is online by running the following command on one of the servers:
++
+[source, shell]
+----
+SHOW DATABASES;
+----
