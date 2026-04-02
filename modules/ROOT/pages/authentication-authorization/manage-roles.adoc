@@ -30,6 +30,7 @@ When connected to the DBMS over `bolt`, administration commands are automaticall
 For more details about the syntax descriptions, see xref:database-administration/syntax.adoc[].
 ====
 
+.`SHOW ROLES` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -65,7 +66,7 @@ GRANT SHOW ROLE
 See xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc[DBMS ROLE MANAGEMENT privileges].
 |===
 
-
+.`SHOW ROLES WITH USERS` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -108,7 +109,51 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
+[role=label--new-2026.03]
+.`SHOW ROLES WITH AUTH RULES` command syntax
+[cols="<15s,<85"]
+|===
 
+| Command
+m| SHOW ROLES WITH AUTH RULES
+
+| Syntax
+a|
+[source, syntax, role="noheader"]
+----
+SHOW [ALL\|POPULATED] ROLE[S] WITH AUTH RULE[S]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+a|
+Lists roles and auth rules assigned to them.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-list-roles[Listing roles].
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW ROLE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc[DBMS ROLE MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW AUTH RULE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc[DBMS AUTH RULE MANAGEMENT privileges].
+
+|===
+
+.`SHOW ROLE PRIVILEGES` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -144,7 +189,7 @@ See xref:authentication-authorization/dbms-administration/dbms-privilege-managem
 
 |===
 
-
+.`CREATE [IMMUTABLE] ROLE` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -176,16 +221,17 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
+.`CREATE OR REPLACE [IMMUTABLE] ROLE` command syntax
 [cols="<15s,<85"]
 |===
 | Command
-m| CREATE OR REPLACE ROLE
+m| CREATE OR REPLACE [IMMUTABLE] ROLE
 
 | Syntax
 a|
 [source, syntax, role="noheader"]
 ----
-CREATE OR REPLACE ROLE name [AS COPY OF otherName]
+CREATE OR REPLACE [IMMUTABLE] ROLE name [AS COPY OF otherName]
 ----
 
 | Description
@@ -210,7 +256,7 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
-
+.`RENAME ROLE` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -241,7 +287,7 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
-
+.`DROP ROLE` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -272,7 +318,7 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
-
+.`GRANT ROLE TO` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -283,14 +329,17 @@ m| GRANT ROLE TO
 a|
 [source, syntax, role="noheader"]
 ----
-GRANT ROLE[S] name[, ...] TO user[, ...]
+GRANT ROLE[S] name[, ...]
+TO {AUTH RULE[S] authrule[, ...] \| [USER[S]] user[, ...]}
 ----
 
 | Description
 a|
-Assigns roles to users.
+Assigns roles directly to users or indirectly through attribute-based access control auth rules.
 
-For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+For more information on assigning roles to users, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assigning roles to auth rules].
 
 | Required privilege
 a|
@@ -303,7 +352,7 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
-
+.`REVOKE ROLE` command syntax
 [cols="<15s,<85"]
 |===
 
@@ -314,14 +363,17 @@ m| REVOKE ROLE
 a|
 [source, syntax, role="noheader"]
 ----
-REVOKE ROLE[S] name[, ...] FROM user[, ...]
+REVOKE ROLE[S] name[, ...]
+FROM {AUTH RULE[S] authrule[, ...] \| [USER[S]] user[, ...]}
 ----
 
 | Description
 a|
-Removes roles from users.
+Removes roles from users or attribute-based access control auth rules.
 
-For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+For more information on revoking roles from users, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+For more information on revoking roles from auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#revoke-roles-auth-rules[Revoking roles from auth rules].
 
 | Required privilege
 a|
@@ -359,8 +411,10 @@ See <<access-control-immutable-roles, Immutable roles>> for more information.
 | BOOLEAN
 |===
 
-.List all roles
-====
+=== Listing all roles
+
+To list all roles, use the `SHOW ROLES` command:
+
 [source, cypher, role=noplay]
 ----
 SHOW ROLES
@@ -382,7 +436,6 @@ This is the same command as `SHOW ALL ROLES`.
 
 1+a|Rows: 6
 |===
-====
 
 When first starting a Neo4j DBMS, there are a number of built-in roles:
 
@@ -397,32 +450,20 @@ By default it gives access to the home database and to execute privileges for pr
 More information about the built-in roles and their privileges can be found in xref:authentication-authorization/built-in-roles.adoc[].
 
 There are multiple versions of this command, the default being `SHOW ALL ROLES`.
-To only show roles that are assigned to users, the command is `SHOW POPULATED ROLES`.
-To see which users are assigned to which roles, `WITH USERS` can be added to the command.
-The command produces a row per role per user and yields the following column in addition to the one output by `SHOW ROLES`:
+To only show roles that are assigned to users or auth rules, the command is `SHOW POPULATED ROLES`.
+This returns the same output columns as `SHOW ROLES`.
 
-.`SHOW POPULATED ROLES WITH USERS` output
-[options="header", width="100%", cols="2a,4,2m"]
-|===
-| Column
-| Description
-| Type
+=== Listing users assigned to roles
 
-| member
-| User name
-| STRING
-|===
+To see which users are assigned to which roles, you can add `WITH USERS` to the command.
 
-Since this gives a result with one row for each user, it shows up twice if a role is assigned to two users.
-
-.Show roles with users
-====
 [source, cypher, role=noplay]
 ----
 SHOW POPULATED ROLES WITH USERS
 ----
 
-The table of results will show information about the role and what database it belongs to:
+The command produces a row per role per user and yields a `member` column, in addition to the one returned by `SHOW ROLES`, containing the name of the user assigned to the role, or null if the role is not assigned to any users.
+If a role is assigned to multiple users, it will appear once for each user.
 
 .Result
 [options="header,footer", width="100%", cols="m,m"]
@@ -450,12 +491,39 @@ The table of results will show information about the role and what database it b
 
 2+a|Rows: 6
 |===
-====
 
-It is also possible to filter and sort the results by using `YIELD`, `ORDER BY` and `WHERE`.
+[role=label--new-2026.03]
+=== Listing auth rules assigned to roles
 
-.Show roles with ordering and filtering
-====
+To see which auth rules are assigned to which roles, add `WITH AUTH RULES` to the command:
+
+[source, cypher, role=noplay]
+----
+SHOW POPULATED ROLES WITH AUTH RULES
+----
+
+The command produces a row per role per auth rule and yields an `authRule` column, in addition to the one returned by `SHOW ROLES`, containing the name of the auth rule assigned to the role, or null if the role is not assigned to any auth rules.
+If a role is assigned to multiple auth rules, it will appear once for each auth rule.
+
+.Result
+[options="header,footer", width="100%", cols="m,m"]
+|===
+|role
+|authRule
+
+|"PUBLIC"
+|null
+
+|"admin"
+|"adminRule"
+
+2+a|Rows: 6
+|===
+
+=== Filtering and ordering roles results
+
+You can filter and sort the results by using `YIELD`, `ORDER BY`, and `WHERE`:
+
 [source, cypher, role=noplay]
 ----
 SHOW ROLES YIELD role
@@ -465,8 +533,8 @@ WHERE role ENDS WITH 'r'
 
 In this example:
 
-* The results have been filtered to only return the roles ending in 'r'.
-* The results are ordered by the `action` column using `ORDER BY`.
+* The results are filtered to return only roles ending in 'r'.
+* The results are ordered by the `role` column using `ORDER BY`.
 
 It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
@@ -481,49 +549,46 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
 1+a|Rows: 3
 |===
-====
-
 
 [[access-control-create-roles]]
 == Creating roles
 
-Roles can be created using `CREATE [IMMUTABLE] ROLE`:
+There are different ways to create roles, depending on your needs.
+
+The following naming rules apply to all roles created in Neo4j:
+
+* The first character must be an ASCII alphabetic character.
+* Subsequent characters can be ASCII alphabetic, numeric characters, and underscore.
+* Role names are case sensitive.
+
+=== Creating new roles
+
+You can create roles using `CREATE [IMMUTABLE] ROLE`:
 
 [source, syntax]
 ----
 CREATE [IMMUTABLE] ROLE name [IF NOT EXISTS] [AS COPY OF otherName]
 ----
 
-Roles can be created or replaced by using `CREATE OR REPLACE [IMMUTABLE] ROLE`:
+The `CREATE ROLE` command is optionally idempotent, with the default behavior to throw an exception if the role already exists.
+Adding `IF NOT EXISTS` to the `CREATE ROLE` command ensures that no exception is thrown and nothing happens should the role already exist.
 
-[source, syntax]
+[source, cypher, role=noplay]
 ----
-CREATE OR REPLACE [IMMUTABLE] ROLE name [AS COPY OF otherName]
+CREATE ROLE myrole IF NOT EXISTS
 ----
 
-[NOTE]
-====
-The following naming rules apply:
+=== Creating new roles with the same privileges as existing roles
 
-* The first character must be an ASCII alphabetic character.
-* Subsequent characters can be ASCII alphabetic, numeric characters, and underscore.
-* Role names are case sensitive.
-====
+You can copy a role, keeping its privileges, using `CREATE [IMMUTABLE] ROLE name AS COPY OF otherName`:
 
-A role can be copied, keeping its privileges, using `CREATE [IMMUTABLE] ROLE name AS COPY OF otherName`.
-
-.Copy a role
-======
 [source, cypher, role=noplay]
 ----
 CREATE ROLE mysecondrole AS COPY OF myrole
 ----
-======
 
-Created roles will appear on the list provided by `SHOW ROLES`.
+The created roles appear on the list provided by `SHOW ROLES`:
 
-.List roles
-======
 [source, cypher, role=noplay]
 ----
 SHOW ROLES
@@ -545,37 +610,26 @@ SHOW ROLES
 
 1+a|Rows: 8
 |===
-======
 
-The `CREATE ROLE` command is optionally idempotent, with the default behavior to throw an exception if the role already exists.
-Adding `IF NOT EXISTS` to the `CREATE ROLE` command will ensure that no exception is thrown and nothing happens should the role already exist.
+=== Creating new roles or replacing existing roles
 
-.Create role if not exists
-======
+You can create or replace roles by using `CREATE OR REPLACE [IMMUTABLE] ROLE`:
 
-[source, cypher, role=noplay]
+[source, syntax]
 ----
-CREATE ROLE myrole IF NOT EXISTS
+CREATE OR REPLACE [IMMUTABLE] ROLE name [AS COPY OF otherName]
 ----
 
-======
-
-
-The `CREATE OR REPLACE ROLE` command will result in any existing role being deleted and a new one created.
-
-
-.Create or replace role
-======
+The `CREATE OR REPLACE ROLE` command results in any existing role being deleted and a new one created. +
+For example:
 
 [source, cypher, role=noplay]
 ----
 CREATE OR REPLACE ROLE myrole
 ----
 
+The command `CREATE OR REPLACE ROLE myrole` will delete the existing `myrole` and create a new one with the same name.
 This is equivalent to running `DROP ROLE myrole IF EXISTS` followed by `CREATE ROLE myrole`.
-
-======
-
 
 [NOTE]
 ====
@@ -585,7 +639,7 @@ The `CREATE OR REPLACE ROLE` command does not allow you to use the `IF NOT EXIST
 [[access-control-immutable-roles]]
 == Immutable roles
 
-Immutable roles are those that cannot be modified in the usual way.
+Immutable roles are roles that cannot be modified in the usual way.
 This means they cannot be created, renamed, dropped, or have privileges granted to or revoked from them under normal operating conditions.
 See xref:authentication-authorization/immutable-roles-privileges.adoc[Immutable roles and privileges] for details of when and how the `IMMUTABLE` keyword may be used.
 
@@ -595,12 +649,14 @@ They are useful in cases where you need a permanent built-in system role that ca
 [[access-control-rename-roles]]
 == Renaming roles
 
-Roles can be renamed using `RENAME ROLE` command:
+You can rename a role using `RENAME ROLE` command:
 
 [source, cypher, role=noplay]
 ----
 RENAME ROLE mysecondrole TO mythirdrole
 ----
+
+After renaming a role, the new name will appear on the list provided by `SHOW ROLES`:
 
 [source, cypher, role=noplay]
 ----
@@ -632,6 +688,11 @@ The `RENAME ROLE` command is only available when using native authentication and
 
 [[access-control-assign-roles]]
 == Assigning roles to users
+
+This section explains how roles can be directly granted to users.
+For information on how roles can be assigned to users based on attribute-based rules, see xref:authentication-authorization/attribute-based-access-control.adoc[].
+
+=== Assigning a role to a user
 
 Users can be given access rights by assigning them roles using `GRANT ROLE`:
 
@@ -689,7 +750,9 @@ SHOW USERS
 5+a|Rows: 5
 |===
 
-It is possible to assign multiple roles to multiple users in one command:
+=== Assigning multiple roles to multiple users
+
+You can assign multiple roles to multiple users in one command:
 
 [source, cypher, role=noplay]
 ----
@@ -750,6 +813,11 @@ See link:https://neo4j.com/docs/status-codes/current/notifications/all-notificat
 [[access-control-revoke-roles]]
 == Revoking roles from users
 
+This section explains how roles can be directly revoked from users.
+For information on how roles can be revoked from users based on attribute-based rules, see xref:authentication-authorization/attribute-based-access-control.adoc[].
+
+=== Revoking a role from a user
+
 Users can lose access rights by revoking their role using `REVOKE ROLE`:
 
 [source, cypher, role=noplay]
@@ -806,7 +874,9 @@ SHOW USERS
 5+a|Rows: 5
 |===
 
-It is possible to revoke multiple roles from multiple users in one command:
+=== Revoking multiple roles from multiple users
+
+You can revoke multiple roles from multiple users in one command:
 
 [source, cypher, role=noplay]
 ----
@@ -820,14 +890,14 @@ See link:https://neo4j.com/docs/status-codes/current/notifications/all-notificat
 [[access-control-drop-roles]]
 == Deleting roles
 
-Roles can be deleted using `DROP ROLE` command:
+You can delete roles that are no longer needed using the `DROP ROLE` command:
 
 [source, cypher, role=noplay]
 ----
 DROP ROLE mythirdrole
 ----
 
-When a role has been deleted, it will no longer appear on the list provided by `SHOW ROLES`:
+Deleting a role removes it from the list provided by `SHOW ROLES`:
 
 [source, cypher, role=noplay]
 ----
