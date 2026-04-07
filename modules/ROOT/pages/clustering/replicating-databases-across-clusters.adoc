@@ -1,0 +1,331 @@
+:description: This section describes how to manage databases across clusters.
+:page-role: new-2026.03 enterprise-edition not-on-aura
+[[database-management]]
+= Replicating databases across clusters
+
+Preview Feature
+[IMPORTANT]
+====
+The *cross-cluster database replication feature is offered AS-IS* as described in your agreement with Neo4j and should only be used for internal development purposes.
+
+When this feature becomes generally available, you will need to upgrade to the latest Neo4j version (which may require downtime) to use the feature for non-development purposes.
+
+During the Preview period, customers with active contracts may contact Neo4j Support through the standard support channels.
+Please note that any cases related to the Preview feature will be classified as Severity 4 by default, in accordance with the link:https://neo4j.com/terms/support-terms/[Support Terms].
+====
+
+
+[[ccr-overview]]
+== Overview
+
+In 2026.03, cross-cluster database replication (CCDR) is introduced.
+This provides the functionality for one database in a cluster to be replicated over to another cluster.
+The original database is called _upstream_ or _source_, while the database that replicates data is called the _replica_.
+The replica continuously polls the upstream database for new transactions and applies them as soon as new transactions become available (see _Figure 1_).
+
+image::replication.svg[title="Schema of replicating a database across clusters", width="300"]
+
+
+== Prerequisites for creating a replica database
+
+Let's assume you have two separate clusters running independently from each other: *Cluster A* and *Cluster B*. +
+
+Ensure that clusters run the same Neo4j version, and that version must be 2026.03 or later.
+
+The procedures for creating and promoting replica databases are supported by both versions of Cypher: Cypher 5 and Cypher 25.
+
+[NOTE]
+====
+In the preview version, the `block` store format is only supported for the upstream and replica databases.
+====
+
+[[inter-cluster-encryption]]
+=== Configuring inter-cluster encryption
+
+Firstly, ensure that each cluster is encrypted using link:{neo4j-docs-base-uri}/operations-manual/current/clustering/setup/encryption[intra-cluster encryption].
+To ensure that both *Cluster A* and *Cluster B* can mutually authenticate, each cluster must trust the Certificate Authority (CA) that signs the other cluster’s certificates.
+
+If clusters use different CAs, the CA certificate of *Cluster A* must be installed in the `trusted/` directory of *Cluster B*, and vice versa.
+
+For example, here is one possible certificate folder configuration:
+
+[source, shell]
+----
+ClusterA
+
+cluster/
+├── private.key                 ← clusterA node private key
+├── public.crt                  ← clusterA node certificate
+├── trusted/
+│   └── clusterB-ca.crt         ← CA that signs ClusterB node certs
+└── revoked/
+
+
+ClusterB
+
+cluster/
+├── private.key                 ← ClusterB node private key
+├── public.crt                  ← ClusterB node certificate
+├── trusted/
+│   └── clusterA-ca.crt         ← CA that signs ClusterA node certs
+└── revoked/
+----
+
+
+[[create-replica]]
+=== Creating a replica database
+
+Use the following procedure to create a replica database.
+
+.internal.dbms.createReplicaDatabase()
+|===
+| *Syntax* 3+m| internal.dbms.createReplicaDatabase(databaseName, numPrimaries, numSecondaries, {remote: upstreamDatabaseName, addresses: remoteAddresses})
+| *Description* 3+a| Create a replica database with a topology of primaries and secondaries.
+.6+| *Input arguments* | *Name* | *Type* | *Description*
+| `databaseName` | `STRING` | The name of the replica in the current cluster. Note that the databaseName can be the same as that of the upstreamDatabaseName.
+| `numPrimaries` | `INTEGER` | The number of replica primaries. These primaries will align with the mode constraints set on the server, but will not be writable because they are still replicas.
+| `numSecondaries` | `INTEGER` | The number of replica secondaries.
+| `upstreamDatabaseName` | `STRING` | The name of the upstream database in the remote cluster.
+| `remoteAddresses` | `LIST<STRING>` | A list of the link:{neo4j-docs-base-uri}/operations-manual/current/configuration/configuration-settings/#config_dbms.cluster.endpoints[cluster endpoints] of the servers in the remote cluster.
+| *Mode* 3+| WRITE
+|===
+
+On *Cluster A*, the database `foo` is running and has three servers with cluster addresses: `server01.example.com:6000`, `server02.example.com:6000`, `server03.example.com:6000`.
+
+To create a replica database `foo-replica` with three primaries and two secondaries on *Cluster B* that will replicate from the upstream database `foo` from *Cluster A*, run the following procedure:
+
+[[create-replica-db-example]]
+[source, cypher]
+----
+CALL internal.dbms.createReplicaDatabase("foo-replica", 3, 2, {remote: "foo", addresses:["server01.example.com:6000","server02.example.com:6000","server03.example.com:6000"]});
+----
+
+All replica databases are *read-only*.
+A replica database can have topology with primary and secondary copies that follow the servers' mode constraints.
+However, both primaries and secondaries remain read-only.
+//However, neither primaries nor secondaries accept write operations.
+
+The command can only be executed successfully if the replica database is able to contact the servers of *Cluster A* and if the upstream database `foo` exists and is running.
+If not, the command results in an error.
+
+Verify that the `foo-replica` database is online on the desired number of servers, in the desired roles.
+Note that the type is labelled as `replica`.
+
+[source, cypher, role=noplay]
+----
+SHOW DATABASE foo-replica;
+----
+
+[queryresult]
+----
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name          | type      | aliases | access       | address          | role         | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents|
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo-replica" | "replica" | []      | "read-write" | "localhost:7687" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "replica" | []      | "read-write" | "localhost:7688" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "replica" | []      | "read-write" | "localhost:7689" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "replica" | []      | "read-write" | "localhost:7690" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "replica" | []      | "read-write" | "localhost:7691" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
++---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+5 rows available after 3 ms, consumed after another 1 ms
+----
+
+[[drivers-and-cypher-shell]]
+== Accessing replica databases via drivers or Cypher Shell
+
+Given that replica databases are read-only, you must ensure that the drivers either have "AccessMode" set to "READ", or are only doing `executeRead`.
+Attempts to write to the replica database will fail.
+
+Furthermore, when accessing the database via Cypher Shell, ensure that xref:cypher-shell.adoc#cypher-shell-access-mode[`--access-mode`] is also set to `read` when connecting.
+
+[source, shell]
+----
+bin/cypher-shell --access-mode=read -a neo4j://localhost:7684 -d foo-replica
+----
+
+This is necessary because all our replicas are read-only.
+Failure to do so would result in failure to find a `WRITE` server.
+
+When accessing the database via the Neo4j Browser, ensure that the **Access mode** is set to **Read**.
+This can be found in the link:https://neo4j.com/docs/browser/visual-tour/#_settings[Browser **Settings** drawer].
+
+
+[[routing]]
+== Setting up routing policies
+
+Replica databases respect the built-in link:{neo4j-docs-base-uri}/operations-manual/current/clustering/multi-region-deployment/multi-data-center-routing/#builtin-routing-policies[routing policies].
+
+
+Example 1::
++
+For example, if you have no routing policies, querying the `CALL dbms.routing.getRoutingTable({}, "foo-replica");` returns all five servers you have as readers and no writers:
++
+[source, shell]
+----
++-------------------------------------------------------------------------------------------------------------------------------+
+| ttl | servers                                                                                                                 |
++-------------------------------------------------------------------------------------------------------------------------------+
+| 300 | [{addresses: ["localhost:7687", "localhost:7688", "localhost:7689", "localhost:7690", "localhost:7691"], role: "READ"}  |
++-------------------------------------------------------------------------------------------------------------------------------+
+----
+
+Example2::
++
+If you set `dbms.routing.reads_on_primaries_enabled=false` in the _neo4j.conf_ file to disable reads on primaries, the routing policy results in the following routing table where only the two replicas with secondary role are readers:
++
+[source, shell]
+----
++-------------------------------------------------------------------------+
+| ttl | servers                                                           |
++-------------------------------------------------------------------------+
+| 300 | [{addresses: ["localhost:7690", "localhost:7691"], role: "READ"}  |
++-------------------------------------------------------------------------+
+----
+
+
+[[roles-and-permissions]]
+== Managing user roles and privileges
+
+[IMPORTANT]
+====
+User privileges and roles are not copied over when replicating a database.
+====
+
+Permissions and role-based access control have to be set up separately on *Cluster A* and *Cluster B* as they cannot be copied over.
+You should treat the two clusters as independent entities, with a standard database replicating between them.
+Furthermore, the `system` database cannot be replicated.
+
+
+[[replication-metrics]]
+== Monitoring replica databases
+
+Replicas asynchronously replicate data from the upstream database.
+Therefore, it is important to track the replication lag between the upstream and the replica databases.
+In order to do this, plot the xref:monitoring/metrics/reference.adoc#db-tx-metrics[`<prefix>.database.<db>.transaction.last_committed_tx_id`] metric for both the upstream and replica databases.
+This difference effectively captures the lag between the upstream and the replica.
+
+
+[[dr-scenario]]
+== Disaster recovery scenario
+
+It is recommended to set up two independent clusters in two different cloud regions.
+If the main region has gone down, you can promote the replicating database in the disaster recovery cluster (DR-cluster) and redirect data traffic to the promoted database.
+
+[cols="a,a,a", grid=none, frame=none]
+|===
+|image::disaster-step-1.svg[width="250", title="Disaster"]
+|image::disaster-step-2.svg[width="250", title="Promoting the replica database"]
+|image::disaster-step-3.svg[width="250", title="Redirecting data traffic"]
+|===
+
+
+[[promote-replica]]
+=== Promoting a replica database
+
+If the source cluster becomes unavailable, you can promote a replica database to accept writes.
+
+[IMPORTANT]
+====
+Promotion is a one-way operation.
+Once a replica is promoted, it cannot be re-attached to the original source.
+To resume replication, you need to create a new replica.
+====
+
+A replica can be promoted in two ways: by retaining its topology or by modifying it.
+
+
+Promote a replica database without modifying its topology::
++
+.internal.dbms.promoteReplicaDatabase() 
+|===
+| *Syntax* 3+m| internal.dbms.promoteReplicaDatabase(replicaDatabaseName)
+| *Description* 3+a| Convert a replica database to a standard database while keeping the data and topology it currently has.
+.2+| *Input arguments* | *Name* | *Type* | *Description*
+| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
+| *Mode* 3+| WRITE
+|===
++
+On *Cluster B*, to promote the replica database `foo-replica` with the <<create-replica-db-example, existing topology which is three primaries and two secondaries>>, call the procedure:
++
+[source, cypher]
+----
+CALL internal.dbms.promoteReplicaDatabase('foo-replica');
+----
++
+The database becomes write-available.
++
+Verify that the `foo-replica` database is online on the desired number of servers and has type `standard`.
++
+[source, cypher, role=noplay]
+----
+SHOW DATABASE foo-replica;
+----
++
+[queryresult]
+----
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| name          | type       | aliases | access       | address          | role         | writer | requestedStatus | currentStatus | statusMessage | default | home  | constituents|
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "foo-replica" | "standard" | []      | "read-write" | "localhost:7687" | "primary"    | TRUE   | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "standard" | []      | "read-write" | "localhost:7688" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "standard" | []      | "read-write" | "localhost:7689" | "primary"    | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "standard" | []      | "read-write" | "localhost:7690" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
+| "foo-replica" | "standard" | []      | "read-write" | "localhost:7691" | "secondary"  | FALSE  | "online"        | "online"      | ""            | FALSE   | FALSE | []          |
++----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+5 rows available after 3 ms, consumed after another 1 ms
+----
++
+One of the primary databases is now write-available as the `writer` equals to `TRUE`.
+At this point, our routing tables will return both writers and readers as per a standard database.
+
+
+Promote a replica database while modifying its topology::
++
+You can alter replica's topology during the promote process by using the following procedure:
++
+.internal.dbms.promoteReplicaDatabaseWithTopology()
+|===
+| *Syntax* 3+m| internal.dbms.promoteReplicaDatabaseWithTopology(replicaDatabaseName, numPrimaries, numSecondaries)
+| *Description* 3+a| Convert a replica database to a standard database with new topology while keeping the data it currently has.
+.4+| *Input arguments* | *Name* | *Type* | *Description*
+| `replicaDatabaseName` | `STRING` | The name of the replica in the current cluster which is going to be promoted.
+| `numPrimaries` | `INTEGER` | The new number of primaries. These primaries will align with the mode constraints set on the server, and will become writable.
+| `numSecondaries` | `INTEGER` | The new number of replica secondaries.
+| *Mode* 3+| WRITE
+|===
++
+You have to specify a number of primaries or secondaries:
++
+[source, cypher]
+----
+CALL internal.dbms.promoteReplicaDatabaseWithTopology('foo-replica', 3, 4);
+----
++
+This will promote the replica database with three primaries and four secondaries.
+
+
+[[failback]]
+=== Failback
+
+Failback is the process of restoring the main cluster back into operation after a DR scenario.
+This is under the assumption that the promoted database is currently running in the DR-cluster.
+
+To restore the previous source database, follow the steps:
+
+. In the current example, the replica database's upstream is the promoted database `foo-replica` in the DR-cluster, *Cluster B* (see _Figure 3_). +
+Create a replica database `foo` in the main cluster which is *Cluster A*.
++
+image::recovery.svg[width=350, title="Recovery after a disaster"]
++
+. Stop write operations on the promoted database `foo-replica` in *Cluster B*.
+. Check the metrics to ensure that `tx_id` is exactly the same for both the promoted and replicating databases.
+. Promote the replica database `foo` in *Cluster A*, meaning that this database starts serving write operations and becomes again the main database serving traffic.
+. Stop and drop the database `foo-replica` in the DR-cluster.
+Create a new replica `foo-new-replica` with the upstream pointing to the main database `foo` in the main cluster (see _Figure 5_).
++
+image::replication-restored.svg[width=350, title="Restoring the upstream database in the main cluster"]
+
+
+
