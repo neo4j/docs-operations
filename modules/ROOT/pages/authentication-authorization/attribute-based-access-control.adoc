@@ -92,6 +92,23 @@ The `conditionExpression` can use any valid Cypher expression that evaluates to 
 The functions, `date`, `datetime`, `localdatetime`, `localtime`, and `time` are only supported when you use an input argument.
 ====
 
+[NOTE]
+====
+Transaction time functions such as `datetime.transaction()` always reflect the server's clock time.
+In a cluster, it is important to keep the system clocks synchronized across all nodes to ensure consistent auth rule evaluation.
+====
+
+[WARNING]
+====
+Avoid using `localtime` and `localdatetime` without specifying a timezone, as these functions rely on the server's default timezone.
+====
+
+[WARNING]
+====
+Avoid mixing time values from authentication token claims (via `abac.oidc.user_attribute()`) with server time functions such as `datetime.transaction()` or `time()`.
+Token timestamps are fixed at the time of issuance and may use different formats or timezones, which can lead to unexpected comparison results.
+====
+
 <4> (Optional) The `SET ENABLED` clause allows you to enable or disable the rule upon creation.
 By default, the rule is enabled.
 
@@ -137,6 +154,15 @@ The following example creates an auth rule that temporarily grants the assigned 
 CREATE AUTH RULE temporary_reader
     SET CONDITION abac.oidc.user_attribute('jobTitle') = 'developer'
         AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20;
+----
+
+The following example uses zoned time anchored to UTC to avoid dependency on the server's default timezone, granting access to users in the `EMEA` region during European working hours (06:00–18:00 UTC):
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE emea_working_hours
+    SET CONDITION abac.oidc.user_attribute('region') = 'EMEA'
+        AND time({timezone: 'UTC'}).hour >= 6 AND time({timezone: 'UTC'}).hour < 18;
 ----
 
 [[assign-roles-auth-rules]]
