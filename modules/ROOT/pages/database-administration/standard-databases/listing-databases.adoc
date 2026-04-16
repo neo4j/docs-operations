@@ -28,6 +28,10 @@ YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
 
 |===
 
+From 2026.XX, it is possible to combine the `SHOW DATABASES` command with regular Cypher syntax.
+However, since `SHOW DATABASES` still need to be run against the system database, all parts of the query must be allowed on the system database.
+This means that clauses like `MATCH` or `SHOW INDEXES` are not allowed, as those are not allowed on the system database, but procedure calls of system-allowed procedures are allowed.
+If the `SHOW DATABASES` is combined with other clauses the automatic re-routing of the command to the system database is disabled and explicit connection or routing is required.
 
 == `SHOW DATABASES` output
 
@@ -147,7 +151,7 @@ Not returned by `SHOW HOME DATABASE` or `SHOW DEFAULT DATABASE`.
 | Number of primaries for this database reported as running currently.
 It is the same as the number of rows where `role=primary` and `name=this database`.
 
-Not applicable to composite databasesfootnote:compositeDb[The change for composite databases applies to versions 2025.04 and later and 5.26.5 and later.], virtual sharded databases, and property shards. (the value is `NULL`).
+Not applicable to composite databasesfootnote:compositeDb[The change for composite databases applies to versions 2025.04 and later and 5.26.5 and later.], virtual sharded databases, and property shards (the value is `NULL`).
 | INTEGER
 |
 
@@ -211,7 +215,7 @@ The value is a string formatted as `{storage engine}-{store format}-{major versi
 Only available for `online` or `deallocating` databases.
 For other database states the value will be `NULL`.
 
-Not applicable to composite databasesfootnote:compositeDb[] and virtual sharded databases. (the value is `NULL`).
+Not applicable to composite databasesfootnote:compositeDb[] and virtual sharded databases (the value is `NULL`).
 | STRING
 |
 
@@ -393,6 +397,9 @@ SHOW DATABASE movies YIELD *
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+From 2026.XX, if the given database is a parameter that evaluates to null the command will no longer fail on wrong type but instead return nothing.
+This is consistent with how nothing is returned when the given database name doesn't exist.
+
 == Show the number of databases
 
 The number of distinct databases can be seen using `YIELD` and a `count()` function in the `RETURN` clause.
@@ -506,3 +513,21 @@ include::partial$/view-cypher-version.adoc[]
 
 2+d|Rows: 3
 |===
+
+[role=label--new-2026.XX]
+== Show databases with quarantined status and unquarantine them
+
+The `SHOW DATABASES` command can be combined with procedure calls.
+Since it is not the only clause in the query it will not be automatically routed to the system database so we add the `USE` clause to ensure we're executing on there.
+
+.Query
+[source, cypher]
+----
+USE system
+SHOW DATABASES
+YIELD name, serverID, currentStatus
+WHERE currentStatus='quarantined'
+CALL dbms.unquarantineDatabase(serverID, name)
+----
+
+Nothing is returned from the query as it ends with a procedure call of a procedure that doesn't return anything.
