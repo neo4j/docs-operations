@@ -35,20 +35,25 @@ For example, the following query must fetch each `[k:KNOWS]` relationship betwee
 
 [source, cypher]
 ----
-MATCH (n:Person)[k:KNOWS*1..]>(m:Person)
-WHERE k.creationDate=1268465841718
-RETURN n,k,m
+MATCH (n:Person)-[k:KNOWS*1..]->(m:Person)
+WHERE any(rel IN k WHERE rel.creationDate = 1268465841718)
+RETURN n, k, m
 ----
 
-This could be rewritten to be to perform better as follows:
+A more performant version would be:
 
 [source, cypher]
 ----
-MATCH (n:Person)[k:KNOWS{creationDate=1268465841718}]>+(m:Person)
+MATCH (n:Person)-[k:KNOWS {creationDate: 1268465841718}]->+(m:Person)
 RETURN n,k,m
 ----
 
-However, not all queries can be rewritten in this way.
+The more performant version uses a link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/variable-length-patterns/#quantified-relationships[quantified relationship] (`-[]\->+`), which enables batching relationships into sets and then fetching their properties from the different shards, and this is not possible when using the old link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/reference/#variable-length-relationships[variable-length relationship syntax] (`-[*1..]\->`).
+
+[NOTE]
+====
+Property filtering on queries matching for link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/shortest-paths[shortest paths] (with or without quantified path patterns) may not yet be fully optimized for performance.
+====
 
 === Call in transactions for batch write operations
 
