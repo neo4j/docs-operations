@@ -51,14 +51,20 @@ The count property in `SET PROPERTY SHARDS` specifies the number of property sha
 [[create-sharded-property-database-options]]
 == Options
 
-The `CREATE DATABASE` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
-For sharded databases, only the options `seedURI`,  `seedConfig`, `seedSourceDatabase`, `seedRestoreUntil`, and `txLogEnrichment` are supported.
-For details see xref:database-administration/standard-databases/create-databases.adoc#manage-databases-create-database-options[Create databases -> Options].
+The `CREATE DATABASE` command supports only the options `seedURI`,  `seedConfig`, `seedSourceDatabase`, `seedRestoreUntil`, and `txLogEnrichment` when creating a sharded property database.
+
+When using with `seedURI`, you can specify the seed URI in different ways, depending on how your seed data is organized and where it is stored:
+
+* A path to folder containing a data seed, e.g., `OPTIONS {seedURI: "s3://bucket/folder/"}`, where the folder contains the backup for each shard.
+The folder notation only works for backups, not dumps, because the DBMS relies on the metadata in the backup files to allocate the data to the correct databases.
+* A map of shard names to data seed URIs, e.g., `OPTIONS {key: 'value'}`.
+Because the DBMS relies on the provided key-value pairs to allocate the data to the correct databases, the seed data can be in either backup or dump format.
+* label:new[Introduced in 2026.04] A list of server URIs, e.g., `OPTIONS {seedURI: ["server://server0/seeds/", "server://server1/seeds/"]}`.
+This allows seed data to be distributed across multiple servers, which is useful when the data cannot fit on a single server or is already stored across several locations.
+Does not support dumps, use URI map approach instead.
 
 [NOTE]
 ====
-The folder notation for `seedURI` only works for backups, not dumps.
-
 When specifying each artifact manually the key of the map is the name of the shard, where the graph shard name = `databaseName-g000` and the property shards = `databaseName-p000` with the last property shard name being `databaseName-px` where `x = numShards -1`.
 ====
 
@@ -98,16 +104,14 @@ You can create an empty sharded database using the `CREATE DATABASE` command.
 The command allows you to specify the number of property shards and the topology of the graph shard.
 The following examples show how to create an empty sharded database with different configurations.
 
-===  Example 1: Create an empty sharded database with the default topology (1 primary, no secondaries, and 1 replica per property shard)
-
+.Create an empty sharded database with the default topology (1 primary, no secondaries, and 1 replica per property shard)
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
 PROPERTY SHARDS { COUNT 3 };
 ----
 
-=== Example 2: Create an empty sharded database with a custom topology
-
+.Create an empty sharded database with a custom topology
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -115,8 +119,7 @@ CYPHER 25 CREATE DATABASE `foo-sharded`
  SET PROPERTY SHARDS { COUNT 3 TOPOLOGY 1 REPLICAS };
 ----
 
-=== Example 3: Create an empty sharded database with a custom high-availability topology
-
+.Create an empty sharded database with a custom high-availability topology
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -125,19 +128,22 @@ CYPHER 25 CREATE DATABASE `foo-sharded`
 ----
 
 [[creating-sharded-db-from-uri]]
-== Creating a sharded database from a URI (online)
+== Creating a sharded property database from a URI (online)
 
-You can create a new sharded property database from an existing sharded property database by seeding it with data from one or more URIs.
-This is useful when you want to create a new database as a copy of an existing one, when the data is from another source, or when your seed data is spread across multiple locations, or when your seed data is in dump form, not backup form.
+You can create a sharded property database from an existing sharded property database by seeding it with data from one or more URIs.
+This is useful when you want to create a sharded property database as a copy of an existing database, for example, for testing or staging purposes, or your seed data is from another source, for example, a backup with a different name, or when your seed data is in a dump format, or already stored across several locations.
+
 For more information on how seed from a URI works, see the xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
-The following examples show how to create a sharded property database by seeding data from one or multiple URIs.
+The following examples show how to create a sharded property database by seeding data from one URI, multiple URIs, and multiple server URIs.
 
-=== Example 1: Create a sharded database by seeding from one URI
+=== Create a sharded property database by seeding from a single URI
 
-When seeding from a single URI (a path to a folder), the DBMS uses metadata to allocate the data to the correct databases.
-This requires seed data to be in a backup form, and the DBMS will look for `foo-sharded-g000.backup`, `foo-sharded-p001.backup`, `foo-sharded-p002.backup`, and so on at the specified location.
+Create a sharded property database by seeding from a single URI, which is a path to a folder containing the backup files for each shard.
+This approach relies on the metadata in the backup files to allocate the data to the correct databases.
+Therefore, the seed data must be in backup format, and the DBMS looks for `foo-sharded-g000.backup`, `foo-sharded-p001.backup`, `foo-sharded-p002.backup`, and so on at the specified location.
 
+.Create a sharded database by seeding from single URI, which is a folder containing the backup files for each shard
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -145,10 +151,7 @@ PROPERTY SHARDS { COUNT 3 }
 OPTIONS { seedURI: “s3://bucket/folder/” };
 ----
 
-=== Example 2: Create a sharded database by seeding data from a backup with a different name
-
-This one is similar to Example 1, but the DBMS looks for `other-database-g000`, etc.
-
+.Create a sharded database by seeding data from a backup with a different name
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -156,11 +159,13 @@ PROPERTY SHARDS { COUNT 3 }
 OPTIONS { seedURI: “s3://bucket/folder/”, seedSourceDatabase: “other-database” };
 ----
 
-=== Example 3: Create a sharded database by seeding data from dumps
+=== Create a sharded property database by seeding from multiple URIs
 
-When seeding from dumps, the URIs need to be keyed by the shard name they should be used to seed, because there is no metadata to indicate which data belongs to which shard.
-In this example, the shard names will be `foo-sharded-g000` and `foo-sharded-p000` to `foo-sharded-px`, where `x` is the number of property shards `-1`.
+When seeding from multiple URIs, you specify different URIs for each shard, by using a map where the key is the shard name and the value is the URI where the seed for that shard can be found.
+The DBMS looks for the seeds at the specified locations for each shard, and all seeds can be in the same location or spread across multiple locations.
+Because the DBMS relies on the provided key-value pairs to allocate the data to the correct databases, the seed data can be in either backup or dump format.
 
+.Create a sharded database by seeding data from dumps
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -173,10 +178,7 @@ OPTIONS { seedUri: {
  } };
 ----
 
-=== Example 4: Create a sharded database by seeding data that is spread across multiple locations
-
-When seeding from backups stored in multiple locations, you specify different URIs for each shard.
-
+.Create a sharded database by seeding data that is spread across multiple locations
 [source, cypher]
 ----
 CYPHER 25 CREATE DATABASE `foo-sharded`
@@ -190,3 +192,36 @@ OPTIONS {
   }
  };
 ----
+
+[role=label--new-2026.04]
+=== Seeding from multiple server URIs
+
+You can specify multiple server URIs as a list in the `seedUri` options when creating a sharded property database.
+This allows seed data to be distributed across multiple servers, which is useful when the data cannot fit on a single server or is already stored across several locations.
+For each shard, the DBMS selects a suitable seed from the provided URIs.
+Only one URI is expected to contain the required artefact for a given seed.
+When using a backup chain to create a database, all backups in the same chain must be located within a single directory, i.e., the backup chain for `foo-p000` cannot be spread across `server-0` and `server-1`.
+There can only be one backup chain per-shard existing across the directories.
+This approach also does not support specifying artefact names, for example,`[“server://server-0/seeds/foo-g000.backup”,“server://server-2/seeds/foo-p000.backup”]`, or mixing URI formats, for example, `[“server://server-0/seeds/”,“s3://bucket/folder/”]`.
+Dumps are not supported, use URI map approach instead.
+
+.Create a sharded database by seeding data from multiple server URIs
+[source, cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+SET GRAPH SHARD { TOPOLOGY 1 PRIMARIES 0 SECONDARIES }
+SET PROPERTY SHARDS { COUNT 2 TOPOLOGY 1 REPLICA }
+OPTIONS {
+  seedUri: ["server://server0/seeds/", "server://server1/seeds/"] };
+----
+
+.Create a sharded database without specifying server URIs
+[source, cypher]
+----
+CREATE DATABASE spd
+SET GRAPH SHARD { TOPOLOGY 1 PRIMARIES 0 SECONDARIES }
+SET PROPERTY SHARDS { COUNT 2 TOPOLOGY 1 REPLICA }
+OPTIONS { seedUri: [] }
+----
+
+In this case, the DBMS looks for seeds on all known servers in the cluster.
