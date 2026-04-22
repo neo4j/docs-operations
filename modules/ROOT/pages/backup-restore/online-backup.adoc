@@ -39,6 +39,15 @@ On the other hand, differential backup artifacts are produced by the subsequent 
 
 A _backup chain_ consists of a full backup optionally followed by a sequence of n contiguous differential backups.
 
+[NOTE]
+====
+Starting in 2026.02, the first differential backup in a chain may _overlap_ with the full backup -- that is, its lowest transaction ID may be less than or equal to the full backup's highest transaction ID.
+Subsequent differential backups must still be contiguous with their parent.
+
+This allows full and differential backups to be scheduled on independent cadences.
+See xref:backup-restore/online-backup.adoc#backup-scheduling-rpo-rto[Scheduling for RPO and RTO].
+====
+
 image::backup-chain.png[title="Backup chain",role="middle"]
 
 [[backup-command-usage]]
@@ -417,6 +426,36 @@ Starting from 2025.11, the `--parallel-download` option is available.
 When enabled, the backup process pulls data from multiple servers which have been either defined in the `--from` option or determined from `--remote-address-resolution`.
 
 Note that this will speed up the backup process if sufficient throughput is provisioned for both the backup process and the source servers from which data is being pulled.
+
+[role=label--new-2026.02]
+[[backup-scheduling-rpo-rto]]
+=== Scheduling for RPO and RTO
+
+Starting in 2026.02, the first differential backup in a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] may overlap with its parent full backup.
+This allows you to schedule full and differential backups independently, tuning each cadence to a different recovery objective:
+
+Recovery Point Objective (RPO)::
+The maximum amount of data loss you can tolerate, measured in time.
+Drive RPO with the *differential* backup schedule -- a diff every 15 minutes yields an RPO of roughly 15 minutes.
+
+Recovery Time Objective (RTO)::
+The maximum time a restore is allowed to take.
+Drive RTO with the *full* backup schedule -- a more recent full means a shorter diff chain to replay at restore time, which means a faster restore.
+
+Before 2026.02, a full backup taken between two scheduled differential backups would break the diff chain, because the next diff had to start exactly where the new full ended.
+In practice this forced the two schedules to be coupled, and a full backup would interrupt the diff cadence, degrading RPO.
+
+With overlap allowed, two independent processes can run safely:
+
+* A differential schedule set to the desired RPO (for example, every 15 minutes).
+* A full schedule set to the desired RTO (for example, daily or weekly).
+
+The first differential backup after each full will naturally overlap the full; the chain remains restorable.
+
+[TIP]
+====
+Consider also running xref:backup-restore/aggregate.adoc[`neo4j-admin backup aggregate`] to collapse a chain into a single recovered full artifact when restore time matters most.
+====
 
 [[online-backup-example]]
 == Examples
