@@ -1,0 +1,1391 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?asciidoc-toc?>
+<?asciidoc-numbered?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xl="http://www.w3.org/1999/xlink" version="5.0" xml:lang="en" xml:id="ssl-framework">
+<info>
+<title>SSL framework</title>
+<date>2026-04-27</date>
+</info>
+<simpara>The SSL framework provides support for securing the following Neo4j communication channels using standard SSL/TLS technology:</simpara>
+<itemizedlist>
+<listitem>
+<simpara><literal>bolt</literal> (port - <literal>7687</literal>)</simpara>
+</listitem>
+<listitem>
+<simpara><literal>https</literal> (port - <literal>7473</literal>)</simpara>
+</listitem>
+<listitem>
+<simpara><literal>cluster</literal> (ports - <literal>6000</literal>, <literal>7000</literal>, and <literal>7688</literal>)<?asciidoc-br?>
+Note that port <literal>5000</literal> is no longer used from Neo4j 2025.01 onwards.</simpara>
+</listitem>
+<listitem>
+<simpara><literal>backups</literal> (port - <literal>6362</literal>)</simpara>
+</listitem>
+</itemizedlist>
+<simpara>This page describes how to set up SSL within your environment, how to view, validate, and test the certificates.</simpara>
+<section xml:id="ssl-providers">
+<title>SSL Providers</title>
+<simpara>The secure networking in Neo4j is provided through the Netty library, which supports both the native JDK SSL provider as well as Netty-supported OpenSSL derivatives.
+Each version of Neo4j ships with a version of Netty and Netty requires a specific version of the <literal>netty-tcnative</literal> library for compatibility, which can be found in the <literal>lib/</literal> directory of the Neo4j installation.
+2025.01.0 ships with <emphasis>Netty 2.0.69.Final</emphasis> and requires <emphasis>netty-tcnative-boringssl-static-2.0.69.Final</emphasis>.</simpara>
+<note>
+<simpara>Using dynamic versions of tcnative requires installation of platform-specific dependency libraries as described in <link xl:href="https://netty.io/wiki/forked-tomcat-native.html">https://netty.io/wiki/forked-tomcat-native.html</link>.</simpara>
+<simpara>In most use cases, the statically linked <literal>boringssl</literal> variant of <literal>netty-tcnative</literal> is sufficient to enable SSL encryption.</simpara>
+</note>
+<simpara>Follow these steps to use OpenSSL:</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Install a suitable <literal>netty-tcnative</literal> dependency into the <literal>plugins/</literal> directory of Neo4j.
+Which <literal>netty-tcnative</literal> version you need depends on your OS and architecture.</simpara>
+</listitem>
+<listitem>
+<simpara>Set <literal><link xl:href="../configuration/configuration-settings.xml#config_dbms.netty.ssl.provider">dbms.netty.ssl.provider</link>=OPENSSL</literal>.
+Using OpenSSL can significantly improve performance, especially for AES-GCM-cryptos, e.g. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256.</simpara>
+</listitem>
+<listitem>
+<simpara>Restart Neo4j.</simpara>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="ssl-certificates">
+<title>Certificates and private keys</title>
+<section xml:id="_certificates">
+<title>Certificates</title>
+<simpara>The SSL configuration requires SSL <link xl:href="ssl-framework.xml#term-ssl-certificate">certificates</link> to be issued by a Certificate Authority (CA).
+All certificates must follow the <link xl:href="ssl-framework.xml#term-ssl-x509">X.509</link> standard and be saved in a <literal>PEM-encoded</literal> file.</simpara>
+<tip>
+<simpara>Valid trusted certificates can be generated for free using non-profit CAs such as Let&#8217;s Encrypt.</simpara>
+</tip>
+<formalpara>
+<title>Example public.crt file</title>
+<para>
+<programlisting language="text" linenumbering="unnumbered">-----BEGIN CERTIFICATE-----
+MIIDojCCAoqgAwIBAgIBATANBgkqhkiG9w0BAQsFADBhMQswCQYDVQQGEwJTRTEQ
+     ...
+xsUBvcQuyxewlvWRS18YB51J+yu0Xg==
+-----END CERTIFICATE-----</programlisting>
+</para>
+</formalpara>
+<simpara>The instructions on this page assume that you have already obtained the required certificates from the CA and added them to the <emphasis>public.crt</emphasis> file.
+To achieve this, you should concatenate each PEM-encoded certificate, starting from the leaf certificate and moving up the chain toward the root.</simpara>
+<tip>
+<simpara>If the same certificates are used across all instances of the cluster, ensure that the DNS names of all cluster instances are included in the certificates when generating them.
+Multi-host and wildcard certificates are also supported.</simpara>
+</tip>
+<tip>
+<simpara>If setting up intra-cluster encryption as part of a cluster configuration, ensure that the certificates used on the cluster endpoint support server and client usage.
+This is because when connecting the servers for clustering, each server uses its own certificate to authenticate as a client on the connection to another server.</simpara>
+<simpara>This could be verified from within the certificate details:</simpara>
+<screen>openssl x509 -in public.crt -noout -text</screen>
+<simpara>You should see that the X509v3 Extended Key Usage section shows both the usages listed:</simpara>
+<screen>X509v3 Extended Key Usage:
+    TLS Web Server Authentication, TLS Web Client Authentication</screen>
+</tip>
+<section xml:id="_transformations">
+<title>Transformations</title>
+<simpara>Neo4j requires all SSL certificates to be in the <literal>PEM</literal> format.
+If your certificate is in the binary <literal>DER</literal> format, you must transform it into <literal>PEM</literal> format.</simpara>
+<formalpara>
+<title>Transform <literal>DER</literal> format certificate to <literal>PEM</literal> format</title>
+<para>
+<programlisting language="shell" linenumbering="unnumbered">openssl x509 -in cert.der -inform der -outform pem -out cert.crt</programlisting>
+</para>
+</formalpara>
+</section>
+</section>
+<section xml:id="_private_keys">
+<title>Private keys</title>
+<simpara>Private keys must be in the standard format <link xl:href="ssl-framework.xml#term-ssl-pkcs8">PKCS #8</link> and saved as a <literal>PEM-encoded</literal> file.</simpara>
+<formalpara>
+<title>Example private.key file</title>
+<para>
+<programlisting language="text" linenumbering="unnumbered">-----BEGIN PRIVATE KEY-----
+MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAN5D0I4bgdQK4In6
+     ...
+oaMe91ZPQ1JI
+-----END PRIVATE KEY-----</programlisting>
+</para>
+</formalpara>
+<simpara>Private keys can also be encrypted with a passphrase according to the <link xl:href="ssl-framework.xml#term-ssl-pkcs5">PKCS #5</link> standard.</simpara>
+<formalpara>
+<title>Example private.key file with passphrase encryption</title>
+<para>
+<programlisting language="text" linenumbering="unnumbered">-----BEGIN ENCRYPTED PRIVATE KEY-----
+MIICojAcBgoqhkiG9w0BDAEEMA4ECL3eSAoRlJ18AgIIAASCAoCj7WDyjsgcawdv
+     ...
+lYeSjVah
+-----END ENCRYPTED PRIVATE KEY-----</programlisting>
+</para>
+</formalpara>
+<section xml:id="_transformation">
+<title>Transformation</title>
+<simpara>If the private key is encoded with the old <link xl:href="ssl-framework.xml#term-ssl-pkcs1">PKCS #1</link> format, the file will typically start with the line:</simpara>
+<programlisting language="text" linenumbering="unnumbered">-----BEGIN RSA PRIVATE KEY-----</programlisting>
+<simpara>You can convert it to PKCS #8 format with the following command:</simpara>
+<formalpara>
+<title>Convert a PKCS #1 key to a PKCS #8 key</title>
+<para>
+<programlisting language="shell" linenumbering="unnumbered">openssl pkcs8 -topk8 -in pkcs1.key -out pkcs8.key</programlisting>
+</para>
+</formalpara>
+<simpara>An unencrypted private key could be PKCS #1 or PKCS #8.
+It can be encrypted with the following command:</simpara>
+<formalpara>
+<title>Convert an unencrypted key to an encrypted PKCS #8 key using 256bit AES in cipher-block-chaining (CBC) mode</title>
+<para>
+<programlisting language="shell" linenumbering="unnumbered">openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA512 -in pkcs1or8.key -out pkcs8.encrypted.key</programlisting>
+</para>
+</formalpara>
+<itemizedlist>
+<title>Supported encryption arguments to openssl are:</title>
+<listitem>
+<simpara><literal>-v2 aes-128-cbc -v2prf hmacWithSHA1</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-128-cbc -v2prf hmacWithSHA224</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-128-cbc -v2prf hmacWithSHA256</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-128-cbc -v2prf hmacWithSHA384</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-128-cbc -v2prf hmacWithSHA512</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-256-cbc -v2prf hmacWithSHA224</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-256-cbc -v2prf hmacWithSHA256</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-256-cbc -v2prf hmacWithSHA384</literal></simpara>
+</listitem>
+<listitem>
+<simpara><literal>-v2 aes-256-cbc -v2prf hmacWithSHA512</literal></simpara>
+</listitem>
+</itemizedlist>
+<note>
+<simpara>Versions before Neo4j 5.0 allow keys to be stored with the old PKCS #1 standard.
+You can identify them by the line <literal>-----BEGIN RSA PRIVATE KEY-----</literal> at the beginning of the file.
+While you can load and use those keys, they are considered deprecated and will be removed in a future version.</simpara>
+</note>
+</section>
+</section>
+<section xml:id="ssl-validate-certs">
+<title>Validate the key and the certificate</title>
+<simpara>If you need, you can validate the key file and the certificate as follows:</simpara>
+<formalpara>
+<title>Validate the key</title>
+<para>
+<programlisting language="shell" linenumbering="unnumbered">openssl rsa -in private.key -check</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>Validate certificate in the PEM format</title>
+<para>
+<programlisting language="shell" linenumbering="unnumbered">openssl x509 -in public.crt –text –noout</programlisting>
+</para>
+</formalpara>
+</section>
+</section>
+<section xml:id="ssl-connectors">
+<title>Network connectors</title>
+<simpara>Before enabling SSL support, you must ensure the following network connector configurations to avoid errors:</simpara>
+<itemizedlist>
+<listitem>
+<simpara>Set <literal>server.https.enabled</literal> to <literal>true</literal> when using HTTPS.</simpara>
+</listitem>
+<listitem>
+<simpara>Set <literal>server.bolt.tls_level</literal> to <literal>REQUIRED</literal> or <literal>OPTIONAL</literal> when using Bolt.</simpara>
+</listitem>
+</itemizedlist>
+<simpara>For more information on configuring network connectors, see <link xl:href="../configuration/connectors.xml">Configure network connectors</link>.</simpara>
+</section>
+<section xml:id="ssl-configuration">
+<title>Configuration</title>
+<simpara>The SSL policies are configured by assigning values to parameters of the following format:</simpara>
+<simpara><literal>dbms.ssl.policy.&lt;scope&gt;.&lt;setting-suffix&gt;</literal></simpara>
+<itemizedlist>
+<listitem>
+<simpara><literal>scope</literal> is the name of the communication channel, such as <literal>bolt</literal>, <literal>https</literal>, <literal>cluster</literal>, and <literal>backup</literal>.</simpara>
+</listitem>
+<listitem>
+<simpara><literal>setting-suffix</literal> can be any of the following:</simpara>
+<note>
+<simpara>Neo4j does not validate the <literal>setting-suffix</literal> and if it is misspelled or incorrectly set, it will be ignored.</simpara>
+</note>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="3">
+<colspec colname="col_1" colwidth="33.3333*"/>
+<colspec colname="col_2" colwidth="33.3333*"/>
+<colspec colname="col_3" colwidth="33.3334*"/>
+<thead>
+<row>
+<entry align="left" valign="top">Setting suffix</entry>
+<entry align="left" valign="top">Description</entry>
+<entry align="left" valign="top">Default value</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="center" valign="middle" namest="col_1" nameend="col_3"><simpara><emphasis role="strong">Basic</emphasis></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>enabled</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Setting this to <literal>true</literal> enables this policy.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>false</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>base_directory</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>The base directory under which <link linkend="term-ssl-cryptographic-objects">cryptographic objects</link> are searched for by default.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>certificates/&lt;scope&gt;</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>private_key</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>The private key used for authenticating and securing this instance.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>private.key</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>private_key_password</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>The passphrase to decode the private key.
+                           Only applicable for encrypted private keys.</simpara></entry>
+<entry align="left" valign="top"></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>public_certificate</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>A public certificate matching the private key signed by a CA.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>public.crt</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>trusted_dir</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>A directory populated with certificates of trusted parties.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>trusted/</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>revoked_dir</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>A directory populated with certificate revocation lists (CRLs).</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>revoked/</literal></simpara></entry>
+</row>
+<row>
+<entry align="center" valign="middle" namest="col_1" nameend="col_3"><simpara><emphasis role="strong">Advanced</emphasis></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>verify_hostname</literal> <footnote><simpara>In Neo4j 2025.01, the default value is changed  from <literal>false</literal> to <literal>true</literal>.</simpara></footnote></simpara></entry>
+<entry align="left" valign="top"><simpara>This setting turns on client-side hostname verification.
+                           After receiving the server&#8217;s public certificate, the client compares the
+                           address it uses against the certificate Common Name (CN) and Subject Alternative
+                           Names (SAN) fields.
+                           If the address does not match those fields, the client disconnects.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>true</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>ciphers</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>A comma-separated list of ciphers suites allowed during cipher negotiation.
+                           Valid values depend on the current JRE, SSL provider, and TLS version.
+                           For Ciphers supported by the Oracle JRE, see the <link xl:href="https://docs.oracle.com/en/java/javase/17/docs/specs/security/standard-names.html#jsse-cipher-suite-names">Oracle official documentation</link>.</simpara></entry>
+<entry align="left" valign="top"><simpara>Java platform default allowed cipher suites.</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>tls_versions</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>A comma-separated list of allowed TLS versions. By default only TLSv1.2 and TLSv1.3 are allowed.
+                           To use both TLSv1.2 and TLSv1.3 versions, you must specify which ciphers to be enforced for each version.
+                           Otherwise, Neo4j could use every possible cipher in the JVM for those versions, leading to a less secure configuration.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>TLSv1.2</literal><?asciidoc-br?>
+                               <literal>TLSv1.3</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>client_auth</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Whether or not clients must be authenticated.
+                           Setting this to <literal>REQUIRE</literal> enables mutual authentication for servers.
+                           Other possible values are <literal>NONE</literal> and <literal>OPTIONAL</literal>.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>OPTIONAL</literal> for <literal>bolt</literal> and <literal>https</literal>;<?asciidoc-br?>
+                            <literal>REQUIRE</literal> for <literal>cluster</literal> and <literal>backup</literal>.</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>trust_all</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Setting this to <literal>true</literal> results in all clients and servers to be trusted and the content of the <literal>trusted_dir</literal> directory to be ignored.
+                           Use this only as a mean of debugging, since it does not offer security.</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>false</literal></simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+</listitem>
+</itemizedlist>
+<note>
+<simpara>For security reasons, Neo4j does not automatically create any of these directories.
+Therefore, the creation of an SSL policy requires the appropriate file system structure to be set up manually.
+Note that the existence of the directories, the certificate file, and the private key are mandatory.
+Ensure that only the Neo4j user can read the private key.</simpara>
+</note>
+<simpara>Each policy needs to be explicitly enabled by setting <literal>dbms.ssl.policy.&lt;scope&gt;.enabled=true</literal>.</simpara>
+<section xml:id="ssl-bolt-config">
+<title>Configure SSL over Bolt</title>
+<simpara>Bolt protocol is based on the <link xl:href="https://neo4j.com/docs/bolt/current/packstream/">PackStream serialization</link> and supports the Cypher type system, protocol versioning, authentication, and TLS via certificates.
+For Neo4j clusters, Bolt provides smart client routing with load balancing and failover.
+When server side routing is enabled, an additional Bolt port is open on <literal>7688</literal>.
+It can be used only within the cluster and with all the same settings as the external Bolt port.</simpara>
+<simpara>Bolt connector is used by Cypher Shell, Neo4j Browser, and by the officially supported language drivers.
+Bolt connector is enabled by default but its encryption is disabled.
+To enable the encryption over Bolt, create the folder structure and place the key file and the certificates under those.
+Then, you need to configure the SSL Bolt policies in the <emphasis>neo4j.conf</emphasis> file.</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Enable the Bolt connector to enable SSL over Bolt:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.bolt.enabled=true (default is true)</programlisting>
+</listitem>
+<listitem>
+<simpara>Set up the <emphasis>bolt</emphasis> folder under <emphasis>certificates</emphasis>.</simpara>
+<orderedlist numeration="loweralpha">
+<listitem>
+<simpara>Create a directory <emphasis>bolt</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/bolt</programlisting>
+</listitem>
+<listitem>
+<simpara>Create a directory <emphasis>trusted</emphasis> and <emphasis>revoked</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates/bolt</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/bolt/trusted
+mkdir certificates/bolt/revoked</programlisting>
+</listitem>
+</orderedlist>
+</listitem>
+<listitem>
+<simpara>Place the certificates <emphasis>private.key</emphasis> and the <emphasis>public.crt</emphasis> files under <emphasis>&lt;NEO4J_HOME&gt;/certificates/bolt</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/private.key certificates/bolt
+cp /path/to/certs/public.crt certificates/bolt</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the <emphasis>public.crt</emphasis> file under the <emphasis>&lt;NEO4J_HOME&gt;/certificates/bolt/trusted</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/bolt/trusted</programlisting>
+</listitem>
+<listitem>
+<simpara>(Optional) If a particular certificate is revoked, then place it under <emphasis>&lt;NEO4J_HOME&gt;/certificates/bolt/revoked</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/bolt/revoked</programlisting>
+<simpara>The folder structure should look like this with the right file permissions and the groups and ownerships:</simpara>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="6">
+<colspec colname="col_1" colwidth="37.5*"/>
+<colspec colname="col_2" colwidth="12.5*"/>
+<colspec colname="col_3" colwidth="12.5*"/>
+<colspec colname="col_4" colwidth="12.5*"/>
+<colspec colname="col_5" colwidth="12.5*"/>
+<colspec colname="col_6" colwidth="12.5*"/>
+<thead>
+<row>
+<entry align="left" valign="top">Path</entry>
+<entry align="left" valign="top">Directory/File</entry>
+<entry align="left" valign="top">Owner</entry>
+<entry align="left" valign="top">Group</entry>
+<entry align="left" valign="top">Permission</entry>
+<entry align="left" valign="top">Unix/Linux View</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt/private.key</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0400</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-r--------</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt/trusted</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt/trusted/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/bolt/revoked</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+<tip>
+<simpara>The owner/group should be configured to the user/group that will be running the <literal>neo4j</literal> service.
+Default user/group is neo4j/neo4j.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the Bolt SSL configuration in <emphasis>neo4j.conf</emphasis>.</simpara>
+<orderedlist numeration="loweralpha">
+<listitem>
+<simpara>Set the SSL Bolt policy to <literal>true</literal>:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.enabled=true</programlisting>
+</listitem>
+<listitem>
+<simpara>Set the appropriate certificates path and the right key and cert files:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.base_directory=certificates/bolt
+dbms.ssl.policy.bolt.private_key=private.key
+dbms.ssl.policy.bolt.public_certificate=public.crt</programlisting>
+<tip>
+<simpara>If the certificate is located outside of <literal>NEO4J_HOME</literal>, then set the absolute path for the certificates directory.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the Bolt client authentication to <literal>NONE</literal> to disable the mutual authentication:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.client_auth=NONE</programlisting>
+</listitem>
+<listitem>
+<simpara>Set the Bolt TLS level to allow the connector to accept encrypted and/or unencrypted connections:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.bolt.tls_level=REQUIRED (default is DISABLED)</programlisting>
+<tip>
+<simpara><literal>REQUIRED</literal> means the connector accepts only encrypted client connections and reject the unencrypted ones.
+<literal>OPTIONAL</literal> means the connector accepts either encrypted or unencrypted client connections.</simpara>
+</tip>
+</listitem>
+</orderedlist>
+</listitem>
+<listitem>
+<simpara>Test the SSL connection to the specified host and Bolt port and view the certificate:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">openssl s_client -connect my_domain.com:7687</programlisting>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="ssl-bolt-connect">
+<title>Connect with SSL over Bolt</title>
+<simpara>Each of the <literal>neo4j</literal> and <literal>bolt</literal> URI schemes permit variants that contain extra encryption and trust information.
+The <literal>+s</literal> variants enable encryption with a full certificate check.
+The <literal>+ssc</literal> variants enable encryption with no certificate check.
+This latter variant is designed specifically for use with self-signed certificates.</simpara>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="3">
+<colspec colname="col_1" colwidth="20*"/>
+<colspec colname="col_2" colwidth="20*"/>
+<colspec colname="col_3" colwidth="60*"/>
+<thead>
+<row>
+<entry align="left" valign="top">URI Scheme</entry>
+<entry align="left" valign="top">Routing</entry>
+<entry align="left" valign="top">Description</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Yes</simpara></entry>
+<entry align="left" valign="top"><simpara>Unsecured</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>neo4j+s</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Yes</simpara></entry>
+<entry align="left" valign="top"><simpara>Secured with full certificate</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>neo4j+ssc</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>Yes</simpara></entry>
+<entry align="left" valign="top"><simpara>Secured with self-signed certificate</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>bolt</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>No</simpara></entry>
+<entry align="left" valign="top"><simpara>Unsecured</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>bolt+s</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>No</simpara></entry>
+<entry align="left" valign="top"><simpara>Secured with full certificate</simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara><literal>bolt+ssc</literal></simpara></entry>
+<entry align="left" valign="top"><simpara>No</simpara></entry>
+<entry align="left" valign="top"><simpara>Secured with self-signed certificate</simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+<simpara>Once SSL is enabled over Bolt, you can connect to the Neo4j DBMS using <literal>neo4j+s</literal> or <literal>bolt+s</literal>:</simpara>
+<variablelist>
+<varlistentry>
+<term>Cypher Shell</term>
+<listitem>
+</listitem>
+</varlistentry>
+</variablelist>
+<programlisting language="shell" linenumbering="unnumbered">cypher-shell -a neo4j+s://&lt;Server DNS or IP&gt;:&lt;Bolt port&gt;
+
+or
+
+cypher-shell -a bolt+s://&lt;Server DNS or IP&gt;:&lt;Bolt port&gt;</programlisting>
+</section>
+<section xml:id="ssl-https-config">
+<title>Configure SSL over HTTPS</title>
+<simpara>HTTP(s) is used by the Neo4j Browser and the HTTP API.
+HTTPS (secure HTTP) is set to encrypt network communications.
+To enable the encryption over HTTPS, create the folder structure and place the key file and the certificates under those.
+Then, you need to configure the SSL HTTPS policies in the <emphasis>neo4j.conf</emphasis> file and disable the HTTP connector.</simpara>
+<note>
+<simpara>The HTTPS configuration requires that Bolt is also set.
+Refer to <link xl:href="ssl-framework.xml#ssl-bolt-config">Configure SSL over Bolt</link> for more instructions.</simpara>
+</note>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Enable the HTTPS connector to enable SSL over HTTPS:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.https.enabled=true (default is false)</programlisting>
+</listitem>
+<listitem>
+<simpara>Set up the <emphasis>https</emphasis> folder under <emphasis>certificates</emphasis>.</simpara>
+<orderedlist numeration="loweralpha">
+<listitem>
+<simpara>Create a directory <emphasis>https</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/https</programlisting>
+</listitem>
+<listitem>
+<simpara>Create a directory <emphasis>trusted</emphasis> and <emphasis>revoked</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates/https</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/https/trusted
+mkdir certificates/https/revoked</programlisting>
+</listitem>
+</orderedlist>
+</listitem>
+<listitem>
+<simpara>Place the certificates <emphasis>private.key</emphasis> and the <emphasis>public.crt</emphasis> files under <emphasis>&lt;NEO4J_HOME&gt;/certificates/https</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/private.key certificates/https
+cp /path/to/certs/public.crt certificates/https</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the <emphasis>public.crt</emphasis> file under the <emphasis>&lt;NEO4J_HOME&gt;/certificates/https/trusted</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/https/trusted</programlisting>
+</listitem>
+<listitem>
+<simpara>(Optional) If a particular certificate is revoked, then place it under <emphasis>&lt;NEO4J_HOME&gt;/certificates/https/revoked</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/https/revoked</programlisting>
+<simpara>The folder structure should look like this with the right file permissions and the groups and ownerships:</simpara>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="6">
+<colspec colname="col_1" colwidth="37.5*"/>
+<colspec colname="col_2" colwidth="12.5*"/>
+<colspec colname="col_3" colwidth="12.5*"/>
+<colspec colname="col_4" colwidth="12.5*"/>
+<colspec colname="col_5" colwidth="12.5*"/>
+<colspec colname="col_6" colwidth="12.5*"/>
+<thead>
+<row>
+<entry align="left" valign="top">Path</entry>
+<entry align="left" valign="top">Directory/File</entry>
+<entry align="left" valign="top">Owner</entry>
+<entry align="left" valign="top">Group</entry>
+<entry align="left" valign="top">Permission</entry>
+<entry align="left" valign="top">Unix/Linux View</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https/private.key</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0400</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-r--------</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https/trusted</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https/trusted/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/https/revoked</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+<tip>
+<simpara>The owner/group should be configured to the user/group that will be running the <literal>neo4j</literal> service.
+Default user/group is neo4j/neo4j.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the HTTPS SSL configuration in <emphasis>neo4j.conf</emphasis>.</simpara>
+<orderedlist numeration="loweralpha">
+<listitem>
+<simpara>Set the SSL HTTPS policy to <literal>true</literal>:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.https.enabled=true</programlisting>
+</listitem>
+<listitem>
+<simpara>Set the appropriate certificates path and the right key and cert files:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.https.base_directory=certificates/https
+dbms.ssl.policy.https.private_key=private.key
+dbms.ssl.policy.https.public_certificate=public.crt</programlisting>
+<tip>
+<simpara>If the certificate is located outside of <literal>NEO4J_HOME</literal>, then set the absolute path for the certificates directory.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the HTTPS client authentication to <literal>NONE</literal> to disable the mutual authentication:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.https.client_auth=NONE</programlisting>
+</listitem>
+<listitem>
+<simpara>Disable HTTP connector:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.http.enabled=false</programlisting>
+</listitem>
+</orderedlist>
+</listitem>
+<listitem>
+<simpara>Test the SSL connection to the specified host and HTTPS port and view the certificate:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">openssl s_client -connect my_domain.com:7473</programlisting>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="ssl-cluster-config">
+<title>Configure SSL for intra-cluster communications</title>
+<simpara>Intra-cluster encryption is the security solution for the cluster communication.
+The Neo4j cluster communicates on 3 ports:</simpara>
+<itemizedlist>
+<listitem>
+<simpara><literal>6000</literal> - Transactions</simpara>
+</listitem>
+<listitem>
+<simpara><literal>7000</literal> - Raft communications</simpara>
+</listitem>
+<listitem>
+<simpara><literal>7688</literal> - Server side routing</simpara>
+</listitem>
+</itemizedlist>
+<simpara>To configure SSL for intra-cluster communication, create the folder structure and place the key and certificate files under it.
+Then, configure the SSL cluster policies in the <emphasis>neo4j.conf</emphasis> file and test that the intra-cluster communication is encrypted.</simpara>
+<section xml:id="_set_up_ssl_certificates_for_intra_cluster_communications">
+<title>Set up SSL certificates for intra-cluster communications</title>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Create a directory <emphasis>cluster</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/cluster</programlisting>
+</listitem>
+<listitem>
+<simpara>Create a directory <emphasis>trusted</emphasis> and <emphasis>revoked</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates/cluster</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/cluster/trusted
+mkdir certificates/cluster/revoked</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the certificates <emphasis>private.key</emphasis> and the <emphasis>public.crt</emphasis> files under <emphasis>&lt;NEO4J_HOME&gt;/certificates/cluster</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/private.key certificates/cluster
+cp /path/to/certs/public.crt certificates/cluster</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the <emphasis>public.crt</emphasis> file under the <emphasis>&lt;NEO4J_HOME&gt;/certificates/cluster/trusted</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/cluster/trusted</programlisting>
+<tip>
+<simpara>If each server has a certificate of its own, signed by a CA, then each server&#8217;s public certificate has to be put in the <emphasis>trusted</emphasis> folder on each instance of the cluster.
+Thus, the servers are able to establish trust relationships with each other.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>(Optional) If a particular certificate is revoked, then place it under <emphasis>&lt;NEO4J_HOME&gt;/certificates/cluster/revoked</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/cluster/revoked</programlisting>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="_verify_the_folder_structure_and_permissions">
+<title>Verify the folder structure and permissions</title>
+<simpara>The folder structure should look like this with the right file permissions and the groups and ownerships:</simpara>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="6">
+<colspec colname="col_1" colwidth="37.5*"/>
+<colspec colname="col_2" colwidth="12.5*"/>
+<colspec colname="col_3" colwidth="12.5*"/>
+<colspec colname="col_4" colwidth="12.5*"/>
+<colspec colname="col_5" colwidth="12.5*"/>
+<colspec colname="col_6" colwidth="12.5*"/>
+<thead>
+<row>
+<entry align="left" valign="top">Path</entry>
+<entry align="left" valign="top">Directory/File</entry>
+<entry align="left" valign="top">Owner</entry>
+<entry align="left" valign="top">Group</entry>
+<entry align="left" valign="top">Permission</entry>
+<entry align="left" valign="top">Unix/Linux View</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster/private.key</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0400</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-r--------</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster/trusted</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster/trusted/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/cluster/revoked</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+<tip>
+<simpara>The owner/group should be configured to the user/group that will be running the <literal>neo4j</literal> service.
+Default user/group is neo4j/neo4j.</simpara>
+</tip>
+</section>
+<section xml:id="_set_the_cluster_ssl_configuration_in_neo4j_conf">
+<title>Set the cluster SSL configuration in <emphasis>neo4j.conf</emphasis></title>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Set the cluster SSL policy to <literal>true</literal>:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.cluster.enabled=true</programlisting>
+</listitem>
+<listitem>
+<simpara>Set the appropriate certificates path and the right key and cert files:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.cluster.base_directory=certificates/cluster
+dbms.ssl.policy.cluster.private_key=private.key
+dbms.ssl.policy.cluster.public_certificate=public.crt</programlisting>
+<tip>
+<simpara>If the certificate is located outside of <literal>NEO4J_HOME</literal>, then set the absolute path for the certificates directory.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the cluster client authentication to <literal>REQUIRE</literal> to enable the mutual authentication, which means that both ends of a channel have to authenticate:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.cluster.client_auth=REQUIRE</programlisting>
+<note>
+<simpara>The policy must be configured on every server with the same settings.
+The actual <link xl:href="ssl-framework.xml#term-ssl-cryptographic-objects">cryptographic objects</link> installed will mostly be different since they do not share the same private keys and corresponding certificates.
+The trusted CA certificate will be shared however.</simpara>
+</note>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="_verify_that_the_intra_cluster_communication_is_encrypted">
+<title>Verify that the intra-cluster communication is encrypted</title>
+<simpara>Once the intra-cluster encryption is enabled, you can verify that the communication is encrypted.
+You may use an external tooling, such as Nmap (<link xl:href="https://nmap.org/download.html">https://nmap.org/download.html</link>):</simpara>
+<programlisting language="shell" linenumbering="unnumbered">nmap --script ssl-enum-ciphers -p &lt;port&gt; &lt;hostname&gt;</programlisting>
+<note>
+<simpara>The hostname and port have to be adjusted according to your configuration.
+This can prove that TLS is enabled and that only the intended cipher suites are enabled.
+All servers and all applicable ports should be tested.
+If the intra-cluster encryption is enabled, the output should indicate the port is open and it is using TLS with the ciphers used.</simpara>
+</note>
+<tip>
+<simpara>For more details on securing the comunication between the cluster servers, see <link xl:href="../clustering/setup/encryption.xml">Intra-cluster encryption</link>.</simpara>
+</tip>
+</section>
+</section>
+<section xml:id="ssl-backup-config">
+<title>Configure SSL for backup communication</title>
+<simpara>In a single instance, the backup communication happens on port <literal>6362</literal> by default.<?asciidoc-br?>
+In a cluster topology, it is possible to take a backup from any server, and each server has two configurable ports capable of serving a backup:</simpara>
+<itemizedlist>
+<listitem>
+<simpara><literal>dbms.backup.listen.address</literal> (port <literal>6362</literal>)</simpara>
+</listitem>
+<listitem>
+<simpara><literal>server.cluster.listen_address</literal> (port <literal>6000</literal>)</simpara>
+</listitem>
+</itemizedlist>
+<simpara>If the <link linkend="ssl-cluster-config">intra-cluster encryption</link> is enabled and the backup communication uses port <literal>6000</literal>, then the communication channels are already encrypted.</simpara>
+<simpara>However, if your backup communication uses a different port, you need to enable SSL for it by creating a separate SSL policy.</simpara>
+<simpara>When setting up SSL for backup communication, you can choose between two options for certificates:</simpara>
+<itemizedlist>
+<listitem>
+<simpara>self-signed certificates&#8201;&#8212;&#8201;This is typically the case where you control both ends of the connection, and the distribution of certificates can be automated and secured.
+However, self-signed certificates do not verify the identity of the server, so they cannot be trusted by clients and are vulnerable to man-in-the-middle attacks.</simpara>
+</listitem>
+<listitem>
+<simpara>certificates signed by a certificate authority (CA)&#8201;&#8212;&#8201;more secure option, because a known trusted authority verifies the identity of the server, ensuring authenticity and preventing impersonation.</simpara>
+</listitem>
+</itemizedlist>
+<simpara>You can configure SSL for backup communication in one of the following ways:</simpara>
+<itemizedlist>
+<listitem>
+<simpara>Use the same certificates in the <emphasis>trusted_dir</emphasis> on both the backup server and client.<?asciidoc-br?>
+This approach is simpler to configure but less secure, as both ends share the same identity and trust the same certificate.</simpara>
+</listitem>
+<listitem>
+<simpara>Mirror the certificates on the backup server and client to achieve mutual authentication.<?asciidoc-br?>
+Add the server certificate to the client&#8217;s <emphasis>trusted_dir</emphasis> and the client certificate to the server&#8217;s <emphasis>trusted_dir</emphasis>.
+This way, the server validates the client&#8217;s certificate in addition to the typical normal TLS where only the client validates the server&#8217;s certificate.</simpara>
+</listitem>
+<listitem>
+<simpara>Use a certificate authority (CA) to sign both the client&#8217;s and server&#8217;s certificates.
+In this case, the <emphasis>trusted_dir</emphasis> must contain only the CA or intermediate certificates.</simpara>
+</listitem>
+</itemizedlist>
+<section xml:id="_set_up_ssl_certificates_for_backup">
+<title>Set up SSL certificates for backup</title>
+<simpara>Create the folder structure and place the key and certificate files under it.</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Create a directory <emphasis>backup</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/backup</programlisting>
+</listitem>
+<listitem>
+<simpara>Create a directory <emphasis>trusted</emphasis> and <emphasis>revoked</emphasis> under <emphasis>&lt;NEO4J_HOME&gt;/certificates/backup</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">mkdir certificates/backup/trusted
+mkdir certificates/backup/revoked</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the certificates <emphasis>private.key</emphasis> and the <emphasis>public.crt</emphasis> files under <emphasis>&lt;NEO4J_HOME&gt;/certificates/backup</emphasis> folder:</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/private.key certificates/backup
+cp /path/to/certs/public.crt certificates/backup</programlisting>
+</listitem>
+<listitem>
+<simpara>Place the <emphasis>public.crt</emphasis> file under the <emphasis>&lt;NEO4J_HOME&gt;/certificates/backup/trusted</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/backup/trusted</programlisting>
+</listitem>
+<listitem>
+<simpara>(Optional) If a particular certificate is revoked, then place it under <emphasis>&lt;NEO4J_HOME&gt;/certificates/backup/revoked</emphasis> folder.</simpara>
+<programlisting language="shell" linenumbering="unnumbered">cp /path/to/certs/public.crt certificates/backup/revoked</programlisting>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="_verify_the_backup_folder_structure_and_permissions">
+<title>Verify the backup folder structure and permissions</title>
+<simpara>The folder structure should look like this with the right file permissions and the groups and ownerships, assuming the <literal>neo4j</literal> user runs the service:</simpara>
+<informaltable frame="all" rowsep="1" colsep="1">
+<tgroup cols="6">
+<colspec colname="col_1" colwidth="37.5*"/>
+<colspec colname="col_2" colwidth="12.5*"/>
+<colspec colname="col_3" colwidth="12.5*"/>
+<colspec colname="col_4" colwidth="12.5*"/>
+<colspec colname="col_5" colwidth="12.5*"/>
+<colspec colname="col_6" colwidth="12.5*"/>
+<thead>
+<row>
+<entry align="left" valign="top">Path</entry>
+<entry align="left" valign="top">Directory/File</entry>
+<entry align="left" valign="top">Owner</entry>
+<entry align="left" valign="top">Group</entry>
+<entry align="left" valign="top">Permission</entry>
+<entry align="left" valign="top">Unix/Linux View</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup/private.key</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0400</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-r--------</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup/trusted</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup/trusted/public.crt</simpara></entry>
+<entry align="left" valign="top"><simpara>File</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0644</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>-rw-r&#8212;&#8203;r--</literal></simpara></entry>
+</row>
+<row>
+<entry align="left" valign="top"><simpara>/data/neo4j/certificates/backup/revoked</simpara></entry>
+<entry align="left" valign="top"><simpara>Directory</simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>neo4j</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>0755</literal></simpara></entry>
+<entry align="left" valign="top"><simpara><literal>drwxr-xr-x</literal></simpara></entry>
+</row>
+</tbody>
+</tgroup>
+</informaltable>
+<tip>
+<simpara>The owner/group should be configured to the user/group that will be running the <literal>neo4j</literal> service.
+Default user/group is neo4j/neo4j.</simpara>
+</tip>
+</section>
+<ssl-backup-server-config xml:id="_set_the_backup_ssl_configuration_in_the_neo4j_conf_file">
+<title>Set the backup SSL configuration in the <emphasis>neo4j.conf</emphasis> file.</title>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Set the backup SSL policy to <literal>true</literal>:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.enabled=true</programlisting>
+</listitem>
+<listitem>
+<simpara>Set the appropriate certificates path and the right key and cert files:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.base_directory=certificates/backup
+dbms.ssl.policy.backup.private_key=private.key
+dbms.ssl.policy.backup.public_certificate=public.crt</programlisting>
+<tip>
+<simpara>If the certificate is located outside of <literal>NEO4J_HOME</literal>, then set the absolute path for the certificates directory.</simpara>
+</tip>
+</listitem>
+<listitem>
+<simpara>Set the backup client authentication to <literal>REQUIRE</literal> to enable the mutual authentication, which means that both ends of a channel have to authenticate:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.client_auth=REQUIRE</programlisting>
+</listitem>
+</orderedlist>
+<note>
+<simpara>Neo4j does not validate the <literal>setting-suffix</literal> and if it is misspelled or incorrect, it will be ignored.
+See <link linkend="ssl-configuration">Configuration</link> for more details.</simpara>
+</note>
+</ssl-backup-server-config>
+</section>
+<ssl-backup-client-config xml:id="_configure_the_backup_client_for_ssl">
+<title>Configure the backup client for SSL</title>
+<simpara>When using <literal>neo4j-admin backup</literal> command, the backup client needs to be configured to use SSL as well.
+Regardless of which backup port you are targeting (see <xref linkend="ssl-backup-config"/>), the backup client uses the SSL policy specified in <literal>dbms.ssl.policy.backup.*</literal>, given the same SSL policy name matches between server and client.</simpara>
+<simpara>If the backup client is on a different machine from the backup server, you must install SSL certificates and keys on the backup client machine as well, so that the backup client can authenticate the server and vice versa.</simpara>
+<simpara>The following steps assume that you have already set up the SSL certificates and keys on the backup server machine and you are using the self-signed certificates.</simpara>
+<simpara>For example, if you have set up the backup SSL policy described in section <xref linkend="ssl-backup-config"/>, then you need to set the following in the <emphasis>neo4j-admin.conf</emphasis> file on the backup client machine:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.enabled=true
+dbms.ssl.policy.backup.base_directory=certificates/backup
+dbms.ssl.policy.backup.private_key=private.key
+dbms.ssl.policy.backup.public_certificate=public.crt
+dbms.ssl.policy.backup.client_auth=REQUIRE
+dbms.ssl.policy.backup.tls_versions=TLSv1.2,TLSv1.3
+dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384</programlisting>
+</ssl-backup-client-config>
+<section xml:id="ssl-other-configs">
+<title>Other configurations for SSL</title>
+<section xml:id="ssl-config-private-key">
+<title>Using encrypted private key</title>
+<simpara>To use an encrypted private key, configure the following settings.
+The private key password must be clear text format without any quotes.</simpara>
+<formalpara>
+<title>Bolt</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.private_key_password=&lt;clear text password&gt;</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>HTTPS</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.https.private_key_password=&lt;password&gt;</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>Intra-cluster encryption</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.cluster.private_key_password=&lt;password&gt;</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>Backup</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.private_key_password=&lt;password&gt;</programlisting>
+</para>
+</formalpara>
+<simpara>If hardcoding of clear text private key password is not feasible due to security constraints, it can be set up to use dynamic password pickup by following these steps:</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Create a file containing the <literal>cleartext</literal> password for the private key password and encrypt it with the certificate (assuming private key for cert has password set and certificate is in <literal>pwd</literal>):</simpara>
+<screen linenumbering="unnumbered">echo "password123" &gt; passwordfile
+
+base64 -w 0 certificate.crt | openssl aes-256-cbc -a -salt -in passwordfile -out password.enc -pass stdin</screen>
+<note>
+<simpara>Delete the password file and set file permissions for <literal>password.enc</literal> to <literal>400</literal> (e.g. <literal>chmod 400 password.enc</literal>).</simpara>
+</note>
+</listitem>
+<listitem>
+<simpara>Verify that encrypted password can be read from password.enc:</simpara>
+<screen linenumbering="unnumbered">base64 -w 0 certificate.crt | openssl aes-256-cbc -a -d -in password.enc -pass stdin</screen>
+</listitem>
+<listitem>
+<simpara>Set the neo4j.conf <literal>dbms.ssl.policy.&lt;type&gt;.private_key_password</literal> to be able to read out encrypted password.
+To adjust paths to cert and encrypted password file, use full paths:</simpara>
+<screen linenumbering="unnumbered">dbms.ssl.policy.bolt.private_key_password=$(base64 -w 0 certificate.crt | openssl aes-256-cbc -a -d -in password.enc -pass stdin)</screen>
+</listitem>
+</orderedlist>
+<note>
+<simpara>Using a dynamic command requires Neo4j to be started with the <literal>--expand-commands</literal> option.
+For more information, see <link xl:href="../configuration/command-expansion.xml">Command expansion</link>.</simpara>
+</note>
+</section>
+<section xml:id="_using_specific_cipher">
+<title>Using specific cipher</title>
+<simpara>There are cases where Neo4j Enterprise requires the use of specific ciphers for encryptions.
+One can set up a Neo4j configuration by specifying the list of cipher suites that will be allowed during cipher negotiation.
+Valid values depend on the current JRE and SSL provider.
+For Oracle JRE here is the list of supported ones - <link xl:href="https://docs.oracle.com/en/java/javase/21/docs/specs/security/standard-names.html#jsse-cipher-suite-names">https://docs.oracle.com/en/java/javase/21/docs/specs/security/standard-names.html#jsse-cipher-suite-names</link>.</simpara>
+<simpara>Note that CBC (cipher block chaining)-based ciphers (RFC 8447), used in TLS v1.2 network encryption, are not supported from 2025.01 onwards.
+See <link xl:href="../breaking-changes.xml#ssl-framework-breaking-changes">Breaking changes in SSL framework</link> for more information.</simpara>
+<caution>
+<simpara>Starting from 2025.10, the Java 21 default cipher suites that use insecure CBC-based ciphers are removed from Neo4j:</simpara>
+<itemizedlist>
+<listitem>
+<simpara>TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384</simpara>
+</listitem>
+<listitem>
+<simpara>TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256</simpara>
+</listitem>
+<listitem>
+<simpara>TLS_DHE_RSA_WITH_AES_256_CBC_SHA256</simpara>
+</listitem>
+<listitem>
+<simpara>TLS_DHE_RSA_WITH_AES_128_CBC_SHA256</simpara>
+</listitem>
+</itemizedlist>
+<simpara>However, you still can use them by explicitly specifying their configuration and referencing them in your setup.</simpara>
+</caution>
+<formalpara>
+<title>Bolt</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>HTTPS</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.https.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>Intra-cluster encryption</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.cluster.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844</programlisting>
+</para>
+</formalpara>
+<formalpara>
+<title>Backup</title>
+<para>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.backup.ciphers=TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA3844</programlisting>
+</para>
+</formalpara>
+</section>
+</section>
+<section xml:id="ssl-ocsp-config">
+<title>Using OCSP stapling</title>
+<simpara>Neo4j supports OCSP stapling, which is implemented on the server side, and can be configured in the <emphasis>neo4j.config</emphasis> file.
+OCSP stapling is also available for Java Bolt driver and HTTP API.</simpara>
+<simpara>On the server side in the <emphasis>neo4j.conf</emphasis> file, configure the following settings:</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Set the SSL Bolt policy to <literal>true</literal>:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.ssl.policy.bolt.enabled=true</programlisting>
+</listitem>
+<listitem>
+<simpara>Enable the OCSP stapling for Bolt:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.bolt.ocsp_stapling_enabled=true (default = false)</programlisting>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="ssl-post-quantum">
+<title>Post-quantum cryptography</title>
+<simpara>Neo4j supports Post-quantum cryptographic encryption over Bolt when using the openssl provider [Link].</simpara>
+<simpara>Post-quantum for other interfaces which rely on native Java cryptogrophy is current unsupported pending
+backporting of post-quantum cryptographic features to LTS versions of the JVM.</simpara>
+</section>
+</section>
+<section xml:id="ssl-logging">
+<title>SSL logs</title>
+<simpara>All information related to SSL can be found in the <emphasis>debug.log</emphasis> file.
+You can also enable additional debug logging for SSL by adding the following configuration to the <emphasis>neo4j.conf</emphasis> file and restarting Neo4j.</simpara>
+<programlisting language="properties" linenumbering="unnumbered">server.jvm.additional=-Djavax.net.debug=ssl:handshake</programlisting>
+<simpara>This logs additional information in the <emphasis>neo4j.log</emphasis> file.
+In some installations, for example, RPM-based installs, <emphasis>neo4j.log</emphasis> is not created.
+To get the contents of this, since <emphasis>neo4j.log</emphasis> just contains <literal>STDOUT</literal> content, look for the <literal>neo4j</literal> service log contents using <literal>journalctl</literal>:</simpara>
+<screen linenumbering="unnumbered">neo4j@ubuntu:/var/log/neo4j$ journalctl -u neo4j -b &gt; neo4j.log
+neo4j@ubuntu:/var/log/neo4j$ vi neo4j.log</screen>
+<warning>
+<simpara>Beware that the SSL debug option logs a new statement every time a client connects over SSL, which can make <emphasis>neo4j.log</emphasis> grow large reasonably quickly.
+To avoid that scenario, make sure this setting is only enabled for a short term duration.</simpara>
+</warning>
+</section>
+<section xml:id="certificate-rotation" role="label--new-2025.03">
+<title>Certificates rotation</title>
+<simpara>It is considered best practice to use certificates with reasonably short duration.
+This, however, requires the periodic rotation of certificates whereby old certificates are removed and the new ones are installed.
+Previous versions of Neo4j required a database restart for changes to be applied.
+Starting from 2025.03, new certificates can be rotated in, and SSL configuration can be updated without requiring a restart.
+This reduces undesirable effects of transient loss of cluster members.</simpara>
+<simpara>The following steps outline the process for certificates rotation.</simpara>
+<orderedlist numeration="arabic">
+<listitem>
+<simpara>Enable the dynamic reloading of certificates on all cluster members.
+It is best to do this when the cluster is deployed as changing this configuration requires a restart:</simpara>
+<programlisting language="properties" linenumbering="unnumbered">dbms.security.tls_reload_enabled=true (default is false)</programlisting>
+</listitem>
+<listitem>
+<simpara>Replace old certificates either by overwriting them on the filesystem or by copying them to a new location.</simpara>
+<simpara>Keep in mind that if you choose to copy the certificates to a new directory or use different filenames, you must dynamically update the SSL policy settings.
+If you are overwriting the certificates in place and not changing anything else, there is no need to dynamically update the SSL policy settings.</simpara>
+<simpara>New and old certificates may co-exist on the filesystem, but only one can be referenced in the configuration.<?asciidoc-br?>
+It is required to copy new certificates to all cluster members.</simpara>
+</listitem>
+<listitem>
+<simpara>Make necessary changes to any of the SSL configuration and/or replace certificates for affected scopes.</simpara>
+</listitem>
+<listitem>
+<simpara>Connect to each cluster member in turn with Cypher Shell using a <link linkend="ssl-bolt-connect"><literal>bolt</literal> URI scheme</link> and run the reload procedure:</simpara>
+<screen linenumbering="unnumbered">dbms.security.reloadTLS()</screen>
+</listitem>
+<listitem>
+<simpara>New settings will take effect immediately; however, existing connections will not be preemptively terminated.
+This means that while new connections will use new certificates, the existing connections (established before the update) will continue using the old certificates.
+Even if a certificate expires, active connections remain unaffected because the certificates are only used during the initial connection handshake.</simpara>
+</listitem>
+<listitem>
+<simpara>Verify that the intra-cluster communication is still encrypted using external tooling, such as Nmap, described in <link linkend="ssl-cluster-config">Configuring SSL for intra-cluster communications</link>.</simpara>
+</listitem>
+</orderedlist>
+</section>
+<section xml:id="ssl-terminology">
+<title>Terminology</title>
+<simpara>The following terms are relevant to SSL support within Neo4j:</simpara>
+<variablelist role="compact">
+<varlistentry>
+<term><anchor xml:id="term-ssl-certificate-authority" xreflabel="[term-ssl-certificate-authority]"/>Certificate Authority (<emphasis>CA</emphasis>)</term>
+<listitem>
+<simpara>A trusted entity that issues electronic documents that can verify the identity of a digital entity.
+The term commonly refers to globally recognized CAs, but can also include internal CAs that are trusted inside of an organization.
+The electronic documents are digital <link xl:href="ssl-framework.xml#term-ssl-certificate">certificates</link>.
+They are an essential part of secure communication, and play an important part in the <link xl:href="ssl-framework.xml#term-ssl-pki">Public Key Infrastructure</link>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-certificate-revocation-list" xreflabel="[term-ssl-certificate-revocation-list]"/>Certificate Revocation List (<emphasis>CRL</emphasis>)</term>
+<listitem>
+<simpara>In the event of a certificate being compromised, that certificate can be revoked.
+This is done by means of a list (located in one or several files) spelling out which certificates are revoked.
+The CRL is always issued by the <link xl:href="ssl-framework.xml#term-ssl-certificate-authority">CA</link> which issues the corresponding certificates.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-cipher" xreflabel="[term-ssl-cipher]"/>cipher</term>
+<listitem>
+<simpara>An algorithm for performing encryption or decryption.
+In the most general implementation of encrypted communications, Neo4j makes implicit use of ciphers that are included as part of the Java platform.
+The configuration of the SSL framework also allows for the explicit declaration of allowed ciphers.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-channel" xreflabel="[term-ssl-channel]"/>communication channel</term>
+<listitem>
+<simpara>A means for communicating with the Neo4j database.
+Available channels are:</simpara>
+<itemizedlist>
+<listitem>
+<simpara>Bolt client traffic</simpara>
+</listitem>
+<listitem>
+<simpara>HTTPS client traffic</simpara>
+</listitem>
+<listitem>
+<simpara>intra-cluster communication</simpara>
+</listitem>
+<listitem>
+<simpara>backup traffic</simpara>
+</listitem>
+</itemizedlist>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-cryptographic-objects" xreflabel="[term-ssl-cryptographic-objects]"/>cryptographic objects</term>
+<listitem>
+<simpara>A term denoting the artifacts <link xl:href="ssl-framework.xml#term-ssl-private-key">private keys</link>, <link xl:href="ssl-framework.xml#term-ssl-certificate">certificates</link> and <link xl:href="ssl-framework.xml#term-ssl-certificate-revocation-list">CRLs</link>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-configuration-parameters" xreflabel="[term-ssl-configuration-parameters]"/>configuration parameters</term>
+<listitem>
+<simpara>These are the parameters defined for a certain <link xl:href="ssl-framework.xml#term-ssl-policy">ssl policy</link> in <emphasis>neo4j.conf</emphasis>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-certificate" xreflabel="[term-ssl-certificate]"/>certificate</term>
+<listitem>
+<simpara>SSL certificates are issued by a trusted <link xl:href="ssl-framework.xml#term-ssl-certificate-authority">certificate authority (<emphasis>CA</emphasis>)</link>.
+The public key can be obtained and used by anyone to encrypt messages intended for a particular recipient.
+The certificate is commonly stored in a file named <emphasis>&lt;file name&gt;.crt</emphasis>.
+This is also referred to as the <link xl:href="ssl-framework.xml#term-ssl-public-key">public key</link>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-san" xreflabel="[term-ssl-san]"/>SAN</term>
+<listitem>
+<simpara>SAN is an acronym for <emphasis>Subject Alternative Names</emphasis>.
+It is an extension to certificates that one can include optionally.
+When presented with a certificate that includes SAN entries, it is recommended that the address of the host is checked against this field.
+Verifying that the hostname matches the certificate SAN helps prevent attacks where a rogue machine has access to a valid key pair.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl" xreflabel="[term-ssl]"/>SSL</term>
+<listitem>
+<simpara>SSL is an acronym for <emphasis>Secure Sockets Layer</emphasis>, and is the predecessor of <link xl:href="ssl-framework.xml#term-ssl-tls-protocol">TLS</link>.
+It is common to refer to SSL/TLS as just SSL.
+However, the modern and secure version is TLS, which is also the default in Neo4j.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-policy" xreflabel="[term-ssl-policy]"/>SSL policy</term>
+<listitem>
+<simpara>An SSL policy in Neo4j consists of a <link xl:href="ssl-framework.xml#term-ssl-certificate">a digital certificate</link> and a set of configuration parameters defined in <emphasis>neo4j.conf</emphasis>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-pkcs1" xreflabel="[term-ssl-pkcs1]"/>PKCS #1</term>
+<listitem>
+<simpara>PKCS #1 is the first family of standards called Public-Key Cryptography Standards (PKCS).
+It provides the basic definitions and recommendations for implementing the RSA algorithm for public-key cryptography.
+It defines the mathematical properties of public and private keys, primitive operations for encryption and signatures, secure cryptographic schemes, and related ASN.1 syntax representations.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-pkcs5" xreflabel="[term-ssl-pkcs5]"/>PKCS #5</term>
+<listitem>
+<simpara>PKCS #5 contains recommendations for implementating password-based cryptography, covering key derivation functions, encryption schemes, message authentication schemes, and <emphasis>ASN.1</emphasis> syntax, identifying the techniques.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-pkcs8" xreflabel="[term-ssl-pkcs8]"/>PKCS #8</term>
+<listitem>
+<simpara>PKCS #8 is a standard syntax for storing private key information.
+The PKCS #8 private key may be encrypted with a passphrase using the PKCS #5 standards, which support multiple ciphers.
+The main difference from <link xl:href="ssl-framework.xml#term-ssl-pkcs1">PKCS #1</link> is that it allows more algorithms than RSA and supports stronger encryption of the private key.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-private-key" xreflabel="[term-ssl-private-key]"/>private key</term>
+<listitem>
+<simpara>The private key ensures that encrypted messages can be deciphered only by the intended recipient.
+The private key is commonly stored in a file named <emphasis>&lt;file name&gt;.key</emphasis>.
+It is important to protect the private key to ensure the integrity of encrypted communication.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-pki" xreflabel="[term-ssl-pki]"/>Public Key Infrastructure (<emphasis>PKI</emphasis>)</term>
+<listitem>
+<simpara>A set of roles, policies, and procedures needed to create, manage, distribute, use, store, and revoke <link xl:href="ssl-framework.xml#term-ssl-certificate">digital certificates</link> and manage <link xl:href="ssl-framework.xml#term-ssl-public-key">public-key</link> encryption.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-public-key" xreflabel="[term-ssl-public-key]"/>public key</term>
+<listitem>
+<simpara>The public key can be obtained and used by anyone to encrypt messages intended for a particular recipient.
+This is also referred to as the <link xl:href="ssl-framework.xml#term-ssl-certificate">certificate</link>.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-tls-protocol" xreflabel="[term-ssl-tls-protocol]"/>TLS protocol</term>
+<listitem>
+<simpara>The cryptographic protocol that provides communications security over a computer network.
+The Transport Layer Security (TLS) protocol and its predecessor, the Secure Sockets Layer (SSL) protocol, are both frequently referred to as "SSL".</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-TLS-version" xreflabel="[term-ssl-TLS-version]"/>TLS version</term>
+<listitem>
+<simpara>A version of the TLS protocol.</simpara>
+</listitem>
+</varlistentry>
+<varlistentry>
+<term><anchor xml:id="term-ssl-x509" xreflabel="[term-ssl-x509]"/>X.509</term>
+<listitem>
+<simpara>X.509 is an International Telecommunication Union (ITU) standard defining the format of <link xl:href="ssl-framework.xml#term-ssl-public-key">public key</link> certificates.</simpara>
+</listitem>
+</varlistentry>
+</variablelist>
+</section>
+</article>
