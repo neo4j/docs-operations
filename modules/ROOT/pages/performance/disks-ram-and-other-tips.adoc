@@ -25,6 +25,54 @@ In this case, database access can have high latencies.
 To achieve maximum performance, it is recommended to provide Neo4j with as much RAM as possible to avoid hitting the disk.
 ====
 
+[role=label--enterprise-edition label--new-2026.04]
+[[asynchronous-io-in-Neo4j]]
+== Asynchronous I/O in Neo4j using io_uring
+
+Neo4j supports asynchronous I/O using io_uring available on Linux.
+This enables Neo4j to issue multiple requests concurrently without blocking the main thread and to be notified when the requests are completed.
+For workloads that perform large numbers of I/O operations and do not need to wait for each individual operation to complete, this approach can deliver substantial performance improvements.
+
+This initial delivery enables the background page evictor and checkpointer to take advantage of async I/O when available and configured, representing a limited initial set of components that will expand over time.
+While still in its early stages, these components demonstrate the potential of non-blocking execution to improve database performance, particularly in cloud and high-latency environments.
+
+=== Enabling asynchronous I/O
+
+Asynchronous I/O *is not enabled* by default.
+To enable it, set xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.async[`server.memory.pagecache.async=true`] in the `neo4j.conf` file.
+
+The following prerequisites must be met to use asynchronous I/O in Neo4j:
+
+* Linux operating system
+* liburing library installed
+* JDK 25 or later
+
+To verify whether Neo4j asynchronous I/O is active and ready for use in your environment, check the diagnostics in the debug logs for the following message:
+
+[source, shell]
+----
+Native async IO provider: IOUring based async provider is available.
+----
+Now you are ready to take advantage of asynchronous I/O in Neo4j.
+
+=== Configuration options
+
+While asynchronous I/O is enabled, you can also experiment with the I/O bandwidth used by the checkpoint process, using xref:configuration/configuration-settings.adoc#config_db.checkpoint.iops.limit[`db.checkpoint.iops.limit`] and xref:configuration/configuration-settings.adoc#config_db.checkpoint.throughput.limit[`db.checkpoint.throughput.limit`].
+These settings are still respected when asynchronous I/O is enabled, and can be used to fine-tune the performance of the checkpoint process in your specific environment.
+
+Another setting to consider with asynchronous I/O is xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.directio[`server.memory.pagecache.directio`], which enables Direct I/O for the page cache.
+Direct I/O allows the database to bypass the operating system’s page cache and read/write data directly to the storage device, reducing latency and improving performance for certain workloads.
+Even though Direct I/O may not be suitable for all workloads, if your Neo4j page cache is large enough to cover the entire database store, it may be a good time to revisit this option and evaluate potential performance improvements.
+
+=== Metrics
+
+When asynchronous I/O is enabled, you can monitor its performance using the following metrics:
+
+* `<prefix>.page_cache.async_submit` - The total number of page async I/O submit operations that have occurred in the page cache.
+* `<prefix>.page_cache.async_complete` - The total number of page async I/O complete operations that have occurred in the page cache.
+* `<prefix>.page_cache.async_failure` - The total number of page async I/O failure operations that have occurred in the page cache.
+
+All other metrics remain available and can be used to monitor the database's overall performance, including page cache hit and usage ratios, checkpoint duration, and other relevant metrics.
 
 [[performance-page-cache]]
 == Page cache

@@ -96,8 +96,16 @@ Indexes and constraints are not created during the import.
 Instead, you have to add these afterward (see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Cypher Manual -> Indexes]).
 
 You can use the `--schema` option to create and populate indexes and constraints during the import process.
-The option is available in the Enterprise Edition and works only for the block format.
+The option is available in the Enterprise Edition and works only for the `block` format.
 See <<indexes-constraints-import, Provide indexes and constraints during import>> for more information.
+
+Vector indexes can take advantage of the incubated Java Vector API for noticeable speed improvements.
+If you are using a compatible version of Java, you can uncomment the following value of the xref:configuration/configuration-settings.adoc#config_server.jvm.additional[`server.jvm.additional`] setting in the _neo4j-admin.conf_ file:
+
+[source,properties]
+----
+server.jvm.additional=--add-modules=jdk.incubator.vector
+----
 ====
 
 [[import-tool-full]]
@@ -111,14 +119,14 @@ The syntax for importing a set of CSV files is:
 [source, syntax, role="nocopy"]
 ----
 neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers[=true|false]]
-                                 [--dry-run[=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
-                                 [=true|false]] [--legacy-style-quoting[=true|false]] [--normalize-types[=true|false]]
-                                 [--overwrite-destination[=true|false]] [--profile[=true|false]]
-                                 [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships[=true|false]]
-                                 [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]] [--trim-strings
-                                 [=true|false]] [--additional-config=<file>] [--array-delimiter=<char>]
-                                 [--bad-tolerance=<num>] [--delimiter=<char>] [--format=<format>]
-                                 [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+                                 [--compress[=true|false]] [--dry-run[=true|false]] [--ignore-empty-strings
+                                 [=true|false]] [--ignore-extra-columns[=true|false]] [--legacy-style-quoting
+                                 [=true|false]] [--normalize-types[=true|false]] [--overwrite-destination[=true|false]]
+                                 [--profile[=true|false]] [--skip-bad-entries-logging[=true|false]]
+                                 [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict
+                                 [=true|false]] [--trim-strings[=true|false]] [--additional-config=<file>]
+                                 [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                 [--format=<format>] [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
                                  [--input-encoding=<character-set>] [--input-type=csv|parquet]
                                  [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
                                  [--profile-results-path=<path>] [--property-shard-count=<propertyShardCount>]
@@ -207,6 +215,12 @@ Unicode character ID can be used if prepended by `\`.
 |--bad-tolerance=<num>
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
 |-1 label:changed[Changed in 2025.12]
+| {check-mark}
+| {check-mark}
+
+|--compress[=true\|false]footnote:shardedDb1[For using this option with sharded property databases, see xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data import].]
+|label:new[Introduced in 2026.04] Request backup artifact to be compressed. Compression can yield a backup artefact many times smaller, but the exact reduction depends upon many factors, including the database format and the kind of data stored. If disabled, the size of the produced artifact will be approximately equal to the size of the backed-up database. The speed of the import operation is affected by compression, but which is faster depends upon the relative performance of CPU and storage. If import speed is important, consider evaluating both options - with compression enabled and disabled.
+|false
 | {check-mark}
 | {check-mark}
 
@@ -374,7 +388,7 @@ Possible values are:
 | {check-mark}
 | {check-mark}
 
-|--property-shard-count=<propertyShardCount>footnote:shardedDb1[See xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data ingestion] for details.]
+|--property-shard-count=<propertyShardCount>footnote:shardedDb1[]
 |label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Number of shards of property data that will be created, each shard will be its own database. When this value is `0`, it is the equivalent of running just a `FULL` import.
 |0
 | {check-mark}
@@ -783,20 +797,20 @@ The syntax for importing a set of CSV files incrementally is:
 [source, syntax, role="nocopy"]
 ----
 neo4j-admin database import incremental [-h] [--expand-commands] [--force] [--update-all-matching-relationships]
-                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]] [--dry-run
-                                        [=true|false]] [--ignore-empty-strings[=true|false]] [--ignore-extra-columns
-                                        [=true|false]] [--legacy-style-quoting[=true|false]] [--normalize-types
-                                        [=true|false]] [--profile[=true|false]] [--skip-bad-entries-logging
-                                        [=true|false]] [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes
-                                        [=true|false]] [--strict[=true|false]] [--trim-strings[=true|false]]
-                                        [--additional-config=<file>] [--array-delimiter=<char>] [--bad-tolerance=<num>]
-                                        [--delimiter=<char>] [--high-parallel-io=on|off|auto]
-                                        [--id-type=string|integer|actual] [--input-encoding=<character-set>]
-                                        [--input-type=csv|parquet] [--max-off-heap-memory=<size>]
-                                        [--path-pattern-style=regex|glob|none] [--profile-results-path=<path>]
-                                        [--property-shard-count=<propertyShardCount>] [--quote=<char>]
-                                        [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
-                                        [--stage=all|prepare|build|merge] [--target-format=<format>]
+                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]] [--compress
+                                        [=true|false]] [--dry-run[=true|false]] [--ignore-empty-strings[=true|false]]
+                                        [--ignore-extra-columns[=true|false]] [--legacy-style-quoting[=true|false]]
+                                        [--normalize-types[=true|false]] [--profile[=true|false]]
+                                        [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships
+                                        [=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]]
+                                        [--trim-strings[=true|false]] [--additional-config=<file>]
+                                        [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                        [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+                                        [--input-encoding=<character-set>] [--input-type=csv|parquet]
+                                        [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
+                                        [--profile-results-path=<path>] [--property-shard-count=<propertyShardCount>]
+                                        [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>]
+                                        [--schema=<path>] [--stage=all|prepare|build|merge] [--target-format=<format>]
                                         [--target-location=<path>] [--temp-path=<path>] [--threads=<num>]
                                         [--vector-delimiter=<char>] [--nodes=[<label>[:<label>]...=]<files>...]...
                                         [--relationships=[<type>=]<files>...]... [--multiline-fields=true|false|<path>[,
@@ -902,6 +916,12 @@ Unicode character ID can be used if prepended by `\`.
 |--bad-tolerance=<num>
 |Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
 |-1 label:changed[Changed in 2025.12]
+| {check-mark}
+| {check-mark}
+
+|--compress[=true\|false]footnote:shardedDb2[For using this option with sharded property databases, see xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data import].]
+|label:new[Introduced in 2026.04] Request backup artifact to be compressed. Compression can yield a backup artefact many times smaller, but the exact reduction depends upon many factors, including the database format and the kind of data stored. If disabled, the size of the produced artifact will be approximately equal to the size of the backed-up database. The speed of the import operation is affected by compression, but which is faster depends upon the relative performance of CPU and storage. If import speed is important, consider evaluating both options - with compression enabled and disabled.
+|false
 | {check-mark}
 | {check-mark}
 
@@ -1061,7 +1081,7 @@ Possible values are:
 | {check-mark}
 | {check-mark}
 
-|--property-shard-count=<propertyShardCount>footnote:shardedDb2[See xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data ingestion] for details.]
+|--property-shard-count=<propertyShardCount>footnote:shardedDb2[]
 |label:new[Introduced in 2025.12] label:enterprise[Enterprise edition] (advanced) Number of shards of property data that will be created, each shard will be its own database. Typically this option doesn't need to be set at all, since the number of shards has already been decided during initial import.
 |0
 | {check-mark}
@@ -2308,18 +2328,15 @@ bin/neo4j-admin database import full --nodes import/movies_header.csv,import/mov
 Optionally, you can specify a path where to store the generated Java flight recording using the `--profile-results-path` option.
 If not specified, the recording will be stored in the _logs_ folder.
 
-
-
 [role=label--new-2026.03]
 [[import-logs]]
 == Import progress reporting
 
-Starting with 2026.03, the `neo4j-admin database import` command has a context directory used to capture information about the import process.
-
-When starting the import, a new directory is created in the form of `server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss`.
-
-This contains the verbose logging, the detailed progress, the bad collector information (see the `--bad-tolerance` option), and profiling (Java flight recording) if enabled.
+When starting the import, the `neo4j-admin database import` command creates a directory where it stores information about the import process, such as verbose logging, detailed progress, bad collector information (see the `--bad-tolerance` option), and profiling (Java flight recording) if enabled.
 If the `--profile-results-path` option is provided, then this path is used instead for Java flight records.
+
+The directory is created with a unique name that includes the database name and the timestamp of when the import started, in the form of _server/data/imports/dbname-yyyy-MM-dd.HH.mm.ss_.
+In 2026.04, the directory location is changed from _server/data/imports_ to _server/logs/_.
 
 The directory is removed at the end of the import job, except in the following cases:
 
