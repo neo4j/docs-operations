@@ -41,7 +41,7 @@ A _backup chain_ consists of a full backup optionally followed by a sequence of 
 
 [NOTE]
 ====
-Starting in 2026.02, the first differential backup in a chain may _overlap_ with the full backup -- that is, its lowest transaction ID may be less than or equal to the full backup's highest transaction ID.
+Starting with 2026.02, the first differential backup in a chain may _overlap_ with the previous full backup, meaning its lowest transaction ID may be less than or equal to the full backup's highest transaction ID.
 Subsequent differential backups must still be contiguous with their parent.
 
 This allows full and differential backups to be scheduled on independent cadences.
@@ -431,26 +431,26 @@ Note that this will speed up the backup process if sufficient throughput is prov
 [[backup-scheduling-rpo-rto]]
 === Scheduling for RPO and RTO
 
-Starting in 2026.02, the first differential backup in a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] may overlap with its parent full backup.
+Starting with 2026.02, the first differential backup in a xref:backup-restore/online-backup.adoc#backup-chain[backup chain] may overlap with its parent full backup.
 This allows you to schedule full and differential backups independently, tuning each cadence to a different recovery objective:
 
 Recovery Point Objective (RPO)::
 The maximum amount of data loss you can tolerate, measured in time.
-Drive RPO with the *differential* backup schedule -- a diff every 15 minutes yields an RPO of roughly 15 minutes.
+Drive RPO with the *differential* backup schedule -- a differential backup every 15 minutes yields an RPO of roughly 15 minutes.
 
 Recovery Time Objective (RTO)::
 The maximum time a restore is allowed to take.
-Drive RTO with the *full* backup schedule -- a more recent full means a shorter diff chain to replay at restore time, which means a faster restore.
+Drive RTO with the *full* backup schedule -- a more recent full backup shortens a differential chain that must be replayed at restore time, enabling faster recovery.
 
-Before 2026.02, a full backup taken between two scheduled differential backups would break the diff chain, because the next diff had to start exactly where the new full ended.
-In practice this forced the two schedules to be coupled, and a full backup would interrupt the diff cadence, degrading RPO.
+Before 2026.02, a full backup taken between two scheduled differential backups would break the differential chain, because the next differential backup had to start exactly where the new full backup ended.
+In practice this forced the two schedules to be coupled, and a full backup would interrupt the differential cadence, degrading RPO.
 
 With overlap allowed, two independent processes can run safely:
 
 * A differential schedule set to the desired RPO (for example, every 15 minutes).
 * A full schedule set to the desired RTO (for example, daily or weekly).
 
-The first differential backup after each full will naturally overlap the full; the chain remains restorable.
+The first differential backup after each full backup naturally overlaps with it; the chain remains restorable.
 
 [NOTE]
 ====
@@ -460,7 +460,8 @@ You have two options when setting up the schedules:
 
 * Seed the target location with an initial full backup (or ensure the full schedule has produced one) before the differential schedule starts running.
 * Run the differential schedule with `--type=AUTO` (the default) instead of `--type=DIFF`.
-With `AUTO`, the backup client falls back to a full backup when no chain is present, so the first run will produce a full and subsequent runs will produce diffs.
+With `AUTO`, the backup client falls back to a full backup when no chain is present.
+Therefore, the first run produces a full backup and subsequent runs produce differential backups.
 ====
 
 [TIP]
