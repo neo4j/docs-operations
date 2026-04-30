@@ -1,0 +1,199 @@
+:description: This section explains the `SHOW PROCEDURES` command.
+= List procedures
+
+Listing the available procedures can be done with `SHOW PROCEDURES`.
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/clauses/show/[Cypher Manual -> SHOW].
+// Link will not work yet.
+
+== Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax/#administration-syntax-reading[Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| List all procedures
+|
+[source, syntax, role="noheader"]
+----
+SHOW PROCEDURE[S]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| List procedures executable by the current user
+|
+[source, syntax, role="noheader"]
+----
+SHOW PROCEDURE[S] EXECUTABLE [BY CURRENT USER]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+a| List procedures executable by a specified user
+
+|
+[source, syntax, role="noheader", indent=0]
+----
+SHOW PROCEDURE[S] EXECUTABLE BY username
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+[NOTE]
+====
+Requires the xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[`SHOW USER`] privilege.
+This command cannot be used for LDAP users.
+====
+
+|===
+
+[NOTE]
+====
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+====
+
+== Return columns
+
+`SHOW PROCEDURES` will produce a table with the following columns:
+
+.List procedures output
+[options="header", cols="4,6,2"]
+|===
+| Column | Description | Type
+
+m| name
+a| The name of the procedure. label:default-output[]
+m| STRING
+
+m| description
+a| The procedure description. label:default-output[]
+m| STRING
+
+m| mode
+a| The procedure mode, for example `READ` or `WRITE`. label:default-output[]
+m| STRING
+
+m| worksOnSystem
+a| Whether the procedure can be run on the `system` database or not. label:default-output[]
+m| BOOLEAN
+
+m| signature
+a| The signature of the procedure.
+m| STRING
+
+m| argumentDescription
+a| List of the arguments for the procedure, as map of strings and booleans with `name`, `type`, `default`, `isDeprecated`, and `description`.
+m| LIST<MAP>
+
+m| returnDescription
+a| List of the returned values for the procedure, as map of strings and booleans with `name`, `type`, `isDeprecated`, and `description`.
+m| LIST<MAP>
+
+m| admin
+a| `true` if this procedure is an admin procedure.
+m| BOOLEAN
+
+m| rolesExecution
+a|
+List of roles permitted to execute this procedure.
+Is `null` without the link:https://neo4j.com/docs/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+m| LIST<STRING>
+
+m| rolesBoostedExecution
+a|
+List of roles permitted to use boosted mode when executing this procedure.
+Is `null` without the link:https://neo4j.com/docs/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+m| LIST<STRING>
+
+m| isDeprecated
+a| Whether the procedure is deprecated.
+
+m| BOOLEAN
+
+m| deprecatedBy
+a| The replacement procedure to use in case of deprecation; otherwise `null`.
+
+m| STRING
+
+m| option
+a| Map of extra output, e.g. if the procedure is deprecated.
+m| MAP
+
+|===
+
+The deprecation information for procedures is returned both in the `isDeprecated` and `option` columns.
+
+[[examples]]
+== Examples
+
+.List all procedures and return only default columns
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES
+----
+
+.List all procedures and return all columns
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES YIELD *
+----
+
+.List all procedures and return specific columns only
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES YIELD name, admin
+----
+
+.Filter `SHOW PROCEDURES` using `WHERE`
+[source, cypher]
+----
+SHOW PROCEDURES YIELD name, worksOnSystem
+WHERE worksOnSystem = TRUE
+RETURN name
+----
+
+.List procedures executable by the current user
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES EXECUTABLE BY CURRENT USER YIELD *
+----
+
+The second option for using the `EXECUTABLE` clause is to filter the list to only contain procedures executable by a specific user.
+The below example shows the procedures available to the user `jake`, who has been granted the `EXECUTE PROCEDURE dbms.*` privilege by the `admin` of the database.
+(More information about `DBMS EXECUTE` privilege administration can be found in the xref:authentication-authorization/dbms-administration/dbms-execute-privileges.adoc[The `DBMS EXECUTE` privileges]).
+
+.List procedures executable by specific user
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES EXECUTABLE BY jake
+----
+
+[role=label--new-2026.05 label--cypher-25-only]
+== Combine `SHOW PROCEDURES` with other Cypher commands
+
+`SHOW PROCEDURES` can be combined with other Cypher commands to form a single query.
+
+[NOTE]
+====
+When combining a `SHOW` command with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+In addition, `YIELD *` is not permitted.
+Instead, the `YIELD` clause needs to explicitly list the yielded columns.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
+
+.Return all functions and procedures
+[source, cypher]
+----
+SHOW PROCEDURES
+YIELD name, signature
+RETURN name, signature, 'procedure' AS type
+UNION
+SHOW FUNCTIONS
+YIELD name, signature
+RETURN name, signature, 'function' AS type
+----
