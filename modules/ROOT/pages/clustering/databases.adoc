@@ -275,22 +275,27 @@ neo4j@neo4j> DRYRUN REALLOCATE DATABASES;
 
 
 [[cluster-seed]]
-== Seed a cluster
+== Restore a clustered database from a `.backup`/`.dump`
 
-There are two different ways to seed a cluster with data:
+To restore a clustered database from a backup, or to seed a cluster with data:
 
-* The first option is to use a _designated seeder_, where a designated server is used to create a backed-up database on other servers in the cluster.
-* The other option is to seed the cluster from a URI, where all servers to host the database are seeded with an identical seed from an external source specified by that URI.
+* You can use a _designated seeder_, where a designated server is used to create a backed-up database on other servers in the cluster.
+* You can seed the cluster from a URI, where all servers to host the database are seeded with an identical seed from an external source specified by that URI.
 For more details, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+* You can use the `dbms.recreateDatabase()` procedure.
+* You can also use the `neo4j-admin database copy` command.
 
+[NOTE]
+====
 Keep in mind that using a designated seeder can be problematic in some situations as it is not known in advance how a database is going to be allocated to the servers in a cluster.
 Also, this method relies on the seed already existing on one of the servers.
+====
 
 
 [[cluster-designated-seeder]]
-=== Designated seeder
+=== Restore a database using a designated seeder
 
-In order to designate a server in the cluster as a seeder, a database backup is transferred to that server using the xref:backup-restore/restore-backup.adoc[`neo4j-admin database restore`] command.
+In order to designate a server in the cluster as _a seeder_, a database backup is transferred to that server using the xref:backup-restore/restore-backup.adoc[`neo4j-admin database restore`] command.
 Subsequently, that server is used as the source for other cluster members to copy the backed-up database from.
 
 This example creates a user database called `foo`, hosted on three servers in primary mode.
@@ -332,7 +337,7 @@ This may be different from the topology of `foo` when it was backed up.
 If you want to ensure a certain allocation across the cluster, you can specify the desired topology with the `TOPOLOGY` clause in the `CREATE DATABASE` command.
 See <<create-database, `CREATE DATABASE`>> for more information.
 +
-[source, cypher, role=noplay]
+[source, cypher5, role=noplay]
 ----
 CREATE DATABASE foo
 TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
@@ -359,6 +364,193 @@ SHOW DATABASE foo;
 9 rows available after 3 ms, consumed after another 1 ms
 ----
 
+
+[[restore-database-using-uri-approach]]
+=== Restore a database from a URI
+
+Before restoring a database, you have to take its backup and drop the database on all servers.
+If you have not dropped the database before restoring it, use `CREATE OR REPLACE DATABASE` instead of the `CREATE DATABASE` command.
+
+The seed can be a full backup, a differential backup, or a dump from an existing database.
+When using `CloudSeedProvider`, the URI can point also to a folder which contains a backup chain.
+The sources of seeds are called _seed providers_. +
+For detailed information about seed providers in Neo4j, see xref:database-administration/standard-databases/seed-from-uri.adoc[].
+
+Remember that the dump file created with the xref:backup-restore/offline-backup.adoc#offline-backup-command[`neo4j-admin database dump`] command contains only the database data.
+The associated users and roles metadata are not included and must be recreated manually after restore.
+
+When restoring a database from a backup seed in a cluster, you have to define the database topology.
+You have the opportunity to create a topology that will differ from an original one.
+
+The new allocations can be put on any available server in the cluster.
+
+On one of the servers, run the command:
+
+[.tabbed-example]
+=====
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
+[source, cypher25]
+----
+CREATE DATABASE foo
+TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
+OPTIONS { seedURI: 's3://myBucket/myBackup.backup' }
+----
+
+======
+[role=include-with-Cypher-5]
+======
+
+[source, cypher5]
+----
+CREATE DATABASE foo
+TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
+OPTIONS { existingData: 'use', seedURI: 's3://myBucket/myBackup.backup' }
+----
+======
+=====
+
+Number of primaries and secondaries must respect the number of available servers and their mode constraints.
+The `CREATE DATABASE` command automatically allocates the database.
+
+If you restore your database from a backup file created with the xref:backup-restore/online-backup.adoc[`neo4j-admin database backup`] command, users and roles metadata is backed up by default unless you have changed the default value of the `--include-metadata` option.
+As a final step, you can xref:backup-restore/restore-backup.adoc#_restore_users_and_roles_metadata[restore users and roles metadata].
+This step is optional.
+
+Verify that the restored database is online on the desired number of servers, in the desired roles by running the `SHOW DATABASES` command.
+
+Starting with 2026.04, you can also restore a database from a server URI using the `server://` scheme.
+See xref:database-administration/standard-databases/seed-from-uri.adoc#server-seed-provider[Create a database from a URI -> `ServerSeedProvider`] for details.
+
+
+[[restore-database-using-recreate-procedure]]
+=== Restore a database using the `dbms.recreateDatabase()` procedure
+
+For detailed information on the recreate procedure, its options and limitations, see xref:database-administration/standard-databases/recreate-database.adoc[].
+
+You need xref:authentication-authorization/dbms-administration/dbms-database-management-privileges.adoc[the `CREATE DATABASE` and `DROP DATABASE` privileges] to run the recreate procedure.
+
+If you provide a URI to a backup or a dump, the stores on all servers will be replaced by the backup or the dump at the given URI.
+The new database allocations can be put on any `ENABLED` server in the cluster.
+
+To restore a database using backup as a seed and keeping the original database topology, run the command:
+
+[source, shell]
+----
+CALL dbms.recreateDatabase("foo", {seedURI: "s3://myBucket/myBackup.backup",});
+----
+
+Starting with 2026.04, you can also use server URI to recreate a database from a backup/dump located on a server in the cluster's file system:
+
+[source, shell]
+----
+CALL dbms.recreateDatabase("foo", {seedURI: "server://server-id/myBackup.backup"});
+----
+
+If a database is restored using `dbms.recreateDatabase()`, all previously granted user and role privileges on that database are preserved.
+
+Verify that the restored database is online on the desired number of servers, in the desired roles by running the `SHOW DATABASES` command.
+
+
+[role=label--new-2026.03]
+[[restore-database-using-copy-command]]
+=== Restore a database backup using the `neo4j-admin database copy` command
+
+See xref:backup-restore/copy-database.adoc#neo4j-admin-copy-command-limitations[Command limitations] before using this option.
+
+The following example assumes that you have a backup of your existing database `foo` in an AWS S3 bucket.
+Before restoring a database, you do not need to stop or drop the database `foo`.
+
+The following options can be specified for the `neo4j-admin database copy` command:
+
+* `--source-location` -- a path to the full backup of an existing database or the last differential backup in the chain.
+This folder can be located locally or remotely (e.g., an S3 bucket) and must contain the full backup and all the differential backups in the chain, if any.
+* `--source-format=backup` -- the format of the source backup.
+* `--copy-schema` -- (optional) to copy the schema of the existing database if needed.
+* `--target-location` -- a path to a folder for target backup artifact data. Used together with `--target-format=backup`.
+* `--target-format` -- the format of the output data.
+Possible values are `backup` and `database` (default).
+* `--compress` -- label:new[Introduced in 2026.04] (optional) produces compressed backup artifacts.
+See xref:backup-restore/copy-database.adoc#copy-database-command-options[Copy a database store] for more information.
+
+`--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once.
+
+. Copy the data from a backup of your standard database `foo` into the database `foo-restored`.
++
+[source, shell]
+----
+neo4j-admin database copy foo foo-restored --source-location=s3://bucket/folder/foo.backup --source-format=backup --copy-schema --target-location=s3://bucket/folder --target-format=backup
+----
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Run the following command to create the database `foo-restored` by seeding it from your backup folder in the AWS S3 bucket:
++
+[.tabbed-example]
+=====
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
+[source, cypher]
+----
+CREATE DATABASE `foo-restored`
+TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
+OPTIONS {seedUri: “s3://bucket/folder/”};
+----
+
+======
+[role=include-with-Cypher-5]
+======
+
+[source, cypher]
+----
+CREATE DATABASE foo-restored
+TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
+OPTIONS {existingData: 'use', seedUri: “s3://bucket/folder/”};
+----
+======
+=====
++
+Number of primaries and secondaries must respect the number of available servers and their mode constraints.
+
+. Wait until the last committed transaction ID is the same for all allocations of the database and then verify that the new database is online by running the following command:
++
+[source, cypher]
+----
+SHOW DATABASES;
+----
+. After the new database is online, you can drop the old database `foo` if it is no longer needed, or put it into read-write mode if you want to keep it for other purposes.
++
+[.tabbed-example]
+=====
+[.include-with-drop-database]
+======
+
+Run the following command to drop the old database `foo`:
+
+[source, cypher]
+----
+DROP DATABASE foo;
+----
+======
+[.include-with-change-access-mode]
+======
+
+Change the access mode of the old database `foo` to read-write:
+
+[source, cypher]
+----
+ALTER DATABASE foo SET ACCESS READ WRITE;
+----
+======
+=====
+
+
+
+
+
 [[cluster-allow-deny-db]]
 == Controlling locations with allowed/denied databases
 
@@ -373,6 +565,7 @@ Allowed and denied are mutually exclusive.
 Note that starting from 2025.12, database name patterns (wildcards) are supported, and the minimum number of characters is reduced from `3` to `1`.
 ** `modeConstraint` - controls in what mode (primary, secondary, or none) databases can be hosted on a server.
 If not set, there are no mode constraints on the server.
+
 
 [[cluster-default-database]]
 == Default database in a cluster
