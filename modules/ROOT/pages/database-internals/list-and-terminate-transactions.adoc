@@ -11,8 +11,13 @@ For general information about the `SHOW` command, see the link:{neo4j-docs-base-
 The `SHOW TRANSACTIONS` command displays currently running transactions across the instance.
 To track transactions on remote database aliases, run `SHOW TRANSACTIONS` while connected to the remote database alias.
 
+A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`SHOW TRANSACTION`] privilege can view currently executing transactions, but only to the extent allowed by their granted permissions. 
+All users can always view their own active transactions.
+
 [[list-transactions-syntax]]
 === Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
 
 [options="header", width="100%", cols="1,5a"]
 |===
@@ -43,9 +48,6 @@ This is consistent with returning no results when the specified transaction ID d
 ====
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
 ====
-
-A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`SHOW TRANSACTION`] privilege can view currently executing transactions, but only to the extent allowed by their granted permissions. 
-All users can always view their own active transactions.
 
 [[list-transactions-return-columns]]
 === Return columns
@@ -308,8 +310,7 @@ SHOW TRANSACTIONS YIELD database, currentQuery
 WHERE currentQuery contains 'Mark'
 ----
 
-
-.Return renamed `SHOW TRANSACTIONS` columns
+.Return durations in milliseconds, microseconds, and seconds
 [source, cypher]
 ----
 SHOW TRANSACTIONS
@@ -332,8 +333,13 @@ RETURN
 
 The `TERMINATE TRANSACTIONS` command is used to terminate running transactions by their IDs.
 
+A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`TERMINATE TRANSACTION`] privilege can terminate transactions, subject to the scope of their granted permissions.
+All users may terminate their own currently executing transactions.
+
 [[terminate-transactions-syntax]]
 === Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
 
 [options="header", width="100%", cols="1,5a"]
 |===
@@ -358,8 +364,8 @@ TERMINATE TRANSACTION[S] transaction_id[, ...]
 ====
 The format of `transaction-id` is `<databaseName>-transaction-<id>`.
 Transaction IDs must be supplied as one or more comma-separated quoted `STRING` values, or as an expression resolving to a `STRING` or a `LIST<STRING>`.
-As of Neo4j 2026.06, using Cypher 25, any transaction IDs that resolve to `null` are ignored instead of causing a type error exception.
-This is consistent with returning no results when the specified transaction ID does not exist.
+As of Neo4j 2026.05, using Cypher 25, any transaction IDs that resolves to `null` will no longer throw an exception on wrong type.
+Instead, they will return a row similar to the row returned when the given transaction ID does not exist.
 ====
 |===
 
@@ -368,15 +374,11 @@ This is consistent with returning no results when the specified transaction ID d
 When using the `WHERE` or `RETURN` clauses, the `YIELD` clause is mandatory and must not be omitted.
 ====
 
-A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`TERMINATE TRANSACTION`] privilege can terminate transactions, subject to the scope of their granted permissions.
-All users may terminate their own currently executing transactions.
-
 [[terminate-transactions-return-columns]]
 === Return columns
 
 All columns are returned by default for `TERMINATE TRANSACTIONS`.
 As a result, appending `YIELD *` to `TERMINATE TRANSACTIONS` does not return any additional information.
-
 
 `TERMINATE TRANSACTIONS` returns the following columns:
 
@@ -426,6 +428,7 @@ Unlike the `SHOW` commands, `TERMINATE TRANSACTIONS` does not allow `WHERE` with
 == Combine transaction commands
 
 `SHOW TRANSACTIONS` can be combined with `TERMINATE TRANSACTIONS` to identify and terminate transactions in the same statement.
+Multiple `SHOW` and `TERMINATE` transactions can be included in a single statement.
 
 [NOTE]
 ====
@@ -487,7 +490,7 @@ RETURN txId, newUser AS user, database, currentQuery, status
 
 [NOTE]
 ====
-When combining a `SHOW` command with other clauses, the `YIELD` clause is mandatory and must not be omitted.
+When combining a `SHOW` or `TERMINATE` command with other clauses, the `YIELD` clause is mandatory and must not be omitted.
 In addition, `YIELD *` is not permitted.
 Instead, the `YIELD` clause needs to explicitly list the yielded columns.
 The query must also end with a valid last clause (like a `RETURN` or an updating clause).
@@ -506,4 +509,4 @@ WHERE showUser = terminatedUser AND NOT txId IN idsToTerminate
 RETURN txId, showUser AS user, database, currentQuery
 ----
 
-<1> `WITH` is used here to remove any duplicate users and transaction IDs and to bind those values to new variables, `terminatedUser` and `idsToTerminate`.
+<1> `WITH DISTINCT` is used to remove any duplicate users and transaction IDs.
