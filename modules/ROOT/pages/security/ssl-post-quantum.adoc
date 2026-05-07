@@ -1,49 +1,51 @@
 [[ssl-post-quantum]]
-= Configuring SSL for Post-Quantum/Hybrid Key Exchange
+= Configuring SSL for post-quantum hybrid key exchange
 :description: How to configure Neo4j to use post-quantum cryptographic key exchange.
 :keywords: ssl, tls, authentication, encryption, encrypted, security, post-quantum
 
-Neo4j can be configured to use post-quantum/hybrid key exchange when using the OpenSSL provider.
+Neo4j can be configured to use post-quantum hybrid key exchange when using the OpenSSL provider.
 This makes Neo4j more resilient to post-quantum attacks.
 
-This guide helps configure Neo4j to use post-quantum/hybrid key exchange. It is provided in addition to the documentation
-provided by xref:security/ssl-framework.adoc[] where further configuration is detailed.
+== Using post-quantum hybrid key exchange
 
-[[ssl-post-quantum-prerequisites]]
-== Prerequisites
+You can enable post-quantum hybrid key exchange by configuring Neo4j to use the OpenSSL provider and ensuring that https://openssl-library.org/[OpenSSL] 3.5 or later is installed on the machine running Neo4j.
+With this configuration, Neo4j automatically negotiates the use of post-quantum hybrid key exchange with clients that support it, while still maintaining compatibility with clients that do not.
+For details on configuring Neo4j to use the OpenSSL provider, see xref:security/ssl-framework.adoc#ssl-providers[SSL Providers].
 
-* Verify that the machine running Neo4j has https://openssl-library.org/[OpenSSL] 3.5 or later.
-* Neo4j has been configured with OpenSSL being the xref:security/ssl-framework.adoc#ssl-providers[SSL Provider].
+[NOTE]
+====
+Keep in mind that using post-quantum hybrid key exchange key will be available on the server but there
+will also be a fallback to other key exchange algorithms if the client does not support it.
+If you want to require the use of post-quantum hybrid key exchange, you can configure OpenSSL on the host machine to only allow post-quantum hybrid key exchange groups.
+See <<using-only-post-quantum-hybrid-key-exchange,Using only post-quantum hybrid key exchange>> for instructions.
+====
 
-[[ssl-post-quantum-verify]]
-== Verifying Post-quantum/hybrid key exchange
+To verify that the post-quantum hybrid key exchange is working correctly open a connection to the database with `openssl s_client` by restricting the key exchange algorithm to the post-quantum hybrid exchange group `X25519MLKEM768`:
 
-No further configuration is needed to enable post-quantum/hybrid key exchange. To verify that it has been
-enabled successfully you can use OpenSSL client to check whether a post-quantum algorithm has been used in the
-key exchange.
-
-To do this we will open a connection to the database with `openssl s_client` by restricting the key exchange
-algorithm to the post-quantum/hybrid exchange group `X25519MLKEM768`
-
-[source, console, subs="attributes"]
-.Check whether post-quantum key exchange is supported
+[.tabbed-example]
+=====
+[role=include-with-no-self-signed-certificates]
+======
+[source, shell]
 ----
 openssl s_client -connect localhost:7687 -groups X25519MLKEM768
 ----
+======
 
-Note: If you are using self-signed certificates, you may need to also provide `openssl` with the certificate file. For example:
+[role=include-with-with-self-signed-certificates]
+======
+If you are using self-signed certificates, you may need to also provide `openssl` with the certificate file. For example:
 
-[source, console, subs="attributes"]
-.Check whether post-quantum key exchange is supported with self-signed certificate
+[source, shell]
 ----
 openssl s_client -connect localhost:7687 -groups X25519MLKEM768 -CAfile "path_to_self_signed_cert"
 ----
+======
+=====
 
-If configuration has been successful, you should see a connection being opened and within the `openssl` output
-a reference to the `X25519MLKEM768` group being used during connection establishment. For example:
+The openssl console output should indicate that the connection is successful and that post-quantum hybrid exchange group `X25519MLKEM768` is being used in the connection.
 
-[source, console, subs="attributes"]
-.Verify openssl console output
+[result]
 ----
 No client certificate CA names sent
 Peer signing digest: SHA256
@@ -51,18 +53,15 @@ Peer signature type: rsa_pss_rsae_sha256
 Negotiated TLS1.3 group: X25519MLKEM768
 ----
 
-== Only using post-quantum/hybrid key exchange
+[[using-only-post-quantum-hybrid-key-exchange]]
+== Using only post-quantum hybrid key exchange
 
-With the above configuration, `X25519MLKEM768` will be available on the server but there
-will also be a fallback to other key exchange algorithms should the client not supprot it.
-To require the use of `X25519MLKEM768`,
-https://docs.openssl.org/3.6/man5/config/[configure OpenSSL] on the host machine so that only post-quantum/hybrid
-key exchange is possible.
+You can require the use of `X25519MLKEM768`, https://docs.openssl.org/3.6/man5/config/[configure OpenSSL] on the host machine so that only post-quantum hybrid key exchange is possible.
 
 For example, in your OpenSSL configuration file `openssl.conf`:
 
+.OpenSSL configuration requiring post-quantum hybrid key exchange
 [source, text]
-.OpenSSL Configuration – Requiring post-quantum/hybrid key exchange
 ----
 openssl_conf = default_conf
 
@@ -76,14 +75,13 @@ system_default = system_default_sect
 Groups = X25519MLKEM768
 ----
 
+== Client configuration
 
-== Client Configuration
-
-Neo4j support a wide range of clients which may also need configuration. Please see the various manuals for instructions
-if required.
+Neo4j support a wide range of clients which may also need configuration.
+Please see the various manuals for instructions if required.
 
 == Limitation
 
-Currently only Bolt supports post-quantum/hybrid key exchange via the OpenSSL provider. The HTTP server does not currently support
- post-quantum/hybrid key exchange. Support depends on the Java ecosystem backporting post-quantum/hybrid
-key exchange features to LTS versions of the JDK.
+Currently only Bolt supports post-quantum hybrid key exchange via the OpenSSL provider.
+The HTTP server does not currently support post-quantum hybrid key exchange.
+Post-quantum hybrid key exchange for other interfaces that rely on native Java cryptographic libraries, such as the HTTP server, is currently unsupported, pending backporting of these features to the LTS versions of the JVM.
