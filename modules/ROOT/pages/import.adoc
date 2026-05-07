@@ -2195,21 +2195,30 @@ actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-heade
 
 [source, sh]
 ----
-bin/neo4j-admin database import --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
+bin/neo4j-admin database import full --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
 ----
 ====
 
 [role=label--enterprise-edition]
 [[indexes-constraints-import]]
 == Create/Drop indexes and constraints during import
+[NOTE]
+====
+The ability to specify indexes and constraints is not supported by `aligned` format.
+====
 
 You can use the `--schema` option to create and populate indexes/constraints during full and incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands.
 During an incremental import, you can also use the same option to drop indexes/constraints, provided that the Cypher script contains `DROP INDEX|CONSTRAINT` commands.
 
-The `--schema` option works only for `block` store format.
 For incremental import, creating and dropping indexes and constraints are available from 2025.02.
+Starting with 2026.05, the `--schema` option allows you specify a graph type, using a `ALTER CURRENT GRAPH TYPE` statement instead of individual constraints.
+// TODO: (For the full importer only SET is supported)
+// TODO: As of 2026.06: For incremental import the option becomes available as of 2026.06, limited to operations ADD, DROP, ALTER. Here you are allowed multiples of these operations.
+You have to specify your constraints either as a single graph type statement, or as multiple individual constraint statements.
 
-The import tool supports the following indexes and constraints:
+See link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`] for more information on graph types.
+
+The import tool supports the following index types:
 
 * RANGE
 * LOOKUP
@@ -2218,25 +2227,64 @@ The import tool supports the following indexes and constraints:
 * FULL-TEXT
 * VECTOR
 
+// TODO: Verify the official constraint names.
+The import tool supports the following constraint types in addition to setting graph type:
+
+* NODE PROPERTY EXISTENCE
+* NODE PROPERTY UNIQUENESS
+* NODE PROPERTY KEY
+* NODE PROPERTY TYPE
+* RELATIONSHIP PROPERTY EXISTENCE
+* RELATIONSHIP PROPERTY UNIQUENESS
+* RELATIONSHIP PROPERTY KEY
+* RELATIONSHIP PROPERTY TYPE
+
+The following constraint types are supported via graph types:
+* NODE LABEL EXISTENCE
+* RELATIONSHIP ENDPOINT LABEL
+
 === Create indexes and constraints during full import
 
 You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
 
 [NOTE]
 ====
-Full import does not support dropping indexes and constraints.
+Full import does not support dropping indexes and constraints. For graph type it supports SET operations.
 ====
 
 For example:
+
+[.tabbed-example]
+=====
+[role=constraint-statements]
+======
 
 ._schema.cypher_ script
 [source, cypher, role=nocopy]
 ----
 CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
 CREATE CONSTRAINT PersonAgeConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS :: INTEGER;
+CREATE CONSTRAINT PersonAgeRequiredConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS NOT NULL;
+----
+This file uses ';' as a separator.
+======
+[role=graph-type-statement]
+======
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
+CYPHER 25 ALTER CURRENT GRAPH TYPE SET {
+    (p: person => { age :: INTEGER NOT NULL }
+};
 ----
 
 This file uses ';' as a separator.
+Note: only SET is supported by the full importer.
+
+======
+=====
 
 Then use the following example commands to run the import:
 
@@ -2259,6 +2307,7 @@ If you cannot afford a full downtime of your database, split the operation into 
 See <<incremental-import-stages>> for details.
 ====
 
+
 For example:
 
 ._schema.cypher_ script
@@ -2269,8 +2318,43 @@ CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNI
 DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
 CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
 ----
-
 This file uses ';' as a separator.
+
+// TODO: As of 2026.06:
+// [.tabbed-example]
+// =====
+// [role=constraint-statements]
+// ======
+//
+// ._schema.cypher_ script
+// [source, cypher, role=nocopy]
+// ----
+// DROP INDEX PersonNameIndex IF EXISTS;
+// CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
+// DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
+// CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
+// ----
+// This file uses ';' as a separator.
+// ======
+// [role=graph-type-statement]
+// ======
+//
+// ._schema.cypher_ script
+// [source, cypher, role=nocopy]
+// ----
+// DROP INDEX PersonNameIndex IF EXISTS;
+// CYPHER 25 ALTER CURRENT GRAPH TYPE DROP {
+//     (p: person => {age :: INTEGER NOT NULL)
+// };
+// CYPHER 25 ALTER CURRENT GRAPH TYPE ADD {
+//     CONSTRAINT FOR (p:Person) REQUIRE p.name IS UNIQUE
+// };
+// ----
+// This file uses ';' as a separator.
+// Note: Only ADD, DROP, ALTER is supported by the incremental importer.
+//
+// ======
+// =====
 
 Then use the following example commands to run the import:
 
