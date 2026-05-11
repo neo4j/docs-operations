@@ -385,6 +385,95 @@ START DATABASE neo4j
 For a detailed example of how to reclaim unused space, see xref:performance/space-reuse.adoc#space-reuse-reclaim-space[Reclaim unused space].
 ====
 
+[role=label--new-2026.03]
+[[copy-data-store-from-backup]]
+=== Copy the data store from a backup
+
+The following example assumes that you have a backup of your existing database `foo` in an AWS S3 bucket.
+Before restoring a database, you do not need to stop or drop the database `foo`.
+
+The following options can be specified for the `neo4j-admin database copy` command:
+
+* `--source-location` -- a path to the full backup of an existing database or the last differential backup in the chain.
+This folder can be located locally or remotely (e.g., an S3 bucket) and must contain the full backup and all the differential backups in the chain, if any.
+* `--source-format=backup` -- the format of the source backup.
+* `--copy-schema` -- (optional) to copy the schema of the existing database if needed.
+* `--target-location` -- a path to a folder for target backup artifact data. Used together with `--target-format=backup`.
+* `--target-format` -- the format of the output data.
+Possible values are `backup` and `database` (default).
+* `--compress` -- label:new[Introduced in 2026.04] (optional) produces compressed backup artifacts.
+See xref:backup-restore/copy-database.adoc#copy-database-command-options[Copy a database store] for more information.
+
+`--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once.
+
+. Copy the data from a backup of your standard database `foo` into the database `foo-restored`.
++
+[source, shell]
+----
+neo4j-admin database copy foo foo-restored --source-location=s3://bucket/folder/foo.backup --source-format=backup --copy-schema --target-location=s3://bucket/folder --target-format=backup
+----
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Run the following command to create the database `foo-restored` by seeding it from your backup folder in the AWS S3 bucket:
++
+[.tabbed-example]
+=====
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
+[source, cypher]
+----
+CREATE DATABASE foo-restored
+OPTIONS {seedUri: “s3://bucket/folder/”};
+----
+
+======
+[role=include-with-Cypher-5]
+======
+
+[source, cypher]
+----
+CREATE DATABASE foo-restored
+OPTIONS {existingData: 'use', seedUri: “s3://bucket/folder/”};
+----
+======
+=====
+
+. Verify that the new database is online by running the following command:
++
+[source, cypher]
+----
+SHOW DATABASES;
+----
+. After the new database is online, you can drop the old database `foo` if it is no longer needed, or put it into read-write mode if you want to keep it for other purposes.
++
+[.tabbed-example]
+=====
+[.include-with-drop-database]
+======
+
+Run the following command to drop the old database `foo`:
+
+[source, cypher]
+----
+DROP DATABASE foo;
+----
+======
+[.include-with-change-access-mode]
+======
+
+Change the access mode of the old database `foo` to read-write:
+
+[source, cypher]
+----
+ALTER DATABASE foo SET ACCESS READ WRITE;
+----
+======
+=====
+
+
 [[copy-estimating-iops]]
 == Estimating the processing time
 
