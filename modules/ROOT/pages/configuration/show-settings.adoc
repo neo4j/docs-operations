@@ -143,3 +143,48 @@ SHOW SETTINGS YIELD name, value, description
 WHERE name STARTS WITH 'server'
 RETURN name, value, description
 ----
+
+[role=label--cypher-25 label--new-Neo4j-2026.05]
+[[combine-show-settings-with-general-cypher]]
+=== Combine `SHOW SETTINGS` with general Cypher clauses
+
+The `SHOW SETTINGS` command can be combined with general Cypher clauses in a single query.
+
+For example, checking that the current value of a setting is valid.
+
+.Check if the current values of settings starting with `db.checkpoint` are valid
+[source, cypher]
+----
+SHOW SETTINGS
+YIELD name, value
+WHERE name STARTS WITH 'db.checkpoint'
+CALL dbms.checkConfigValue(name, value)
+YIELD valid, message
+RETURN name, value, valid, message;
+----
+
+.Example output
+[result]
+----
++-----------------------------------------------------------------------------+
+| name                             | value       | valid | message            |
++-----------------------------------------------------------------------------+
+| "db.checkpoint"                  | "PERIODIC"  | TRUE  | "requires restart" |
+| "db.checkpoint.interval.time"    | "15m"       | TRUE  | "requires restart" |
+| "db.checkpoint.interval.tx"      | "100000"    | TRUE  | "requires restart" |
+| "db.checkpoint.interval.volume"  | "250.00MiB" | TRUE  | "requires restart" |
+| "db.checkpoint.iops.limit"       | "600"       | TRUE  | ""                 |
+| "db.checkpoint.throughput.limit" | NULL        | TRUE  | ""                 |
++-----------------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 46 ms, results consumed after another 13 ms
+----
+
+[NOTE]
+====
+When combining `SHOW SETTINGS` with other clauses,  the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
