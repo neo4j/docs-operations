@@ -1,7 +1,7 @@
 :page-role: new-2025.12 infinigraph not-on-aura
-:description: This page describes how to create a sharded property database by splitting an existing Neo4j database.
-:keywords: sharded property database, resharding, reshard, split, existing database, data migration, data redistribution
-= Resharding databases
+:description: This page describes how to reshard an existing database into a new sharded property database, as well as how to consolidate a sharded property database into a standard database.
+:keywords: sharded property database, resharding, reshard, split, server resharding, database resharding, data redistribution, consolidating, scale-in, scale-out, server consolidation, database consolidation
+= Resharding and consolidating databases
 
 Neo4j supports several methods for resharding a database, depending on your specific requirements and constraints:
 
@@ -262,6 +262,140 @@ OPTIONS {seedUri: “s3://bucket/folder/”};
 The cluster automatically distributes the data across its servers.
 For other seed data options, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 . Wait until the last committed transaction ID is the same for all allocations of the database and then verify that the new database is online by running the following command:
++
+[source, cypher]
+----
+SHOW DATABASES;
+----
+. After the new database is online, you can drop the old database `foo-sharded` if it is no longer needed, or put it into read-write mode if you want to keep it for other purposes.
++
+[.tabbed-example]
+=====
+[.include-with-drop-database]
+======
+
+Run the following command to drop the old database `foo-sharded`:
+
+[source, cypher]
+----
+DROP DATABASE foo-sharded;
+----
+======
+[.include-with-change-access-mode]
+======
+
+Change the access mode of the old database `foo-sharded` to read-write:
+
+[source, cypher]
+----
+ALTER DATABASE foo-sharded SET ACCESS READ WRITE;
+----
+======
+=====
+
+== Database consolidation
+
+You can consolidate a sharded property database into a standard database by copying the data from the sharded property database into a new standard database, or by creating a new standard database from a backup of the sharded property database.
+
+=== Consolidating a sharded property database into a standard database
+
+To consolidate a sharded property database into a standard database, you can use the `neo4j-admin database copy` command to create a new standard database from an existing sharded property database.
+The existing sharded property database must be stopped during the copying process.
+
+The following options can be specified for the `neo4j-admin database copy` command:
+
+* `--copy-schema` -- (optional) to copy the schema of the existing database if needed.
+* `--target-location` -- a path to a folder for target backup artifact data. Used together with `--target-format=backup`.
+* `--target-format` -- the format of the output data.
+Possible values are `backup` and `database` (default).
+* `--to-format=block` -- the store format of the output data, which must be `block` for standard databases.
+* `--compress` -- label:new[Introduced in 2026.04] (optional) produces compressed backup artifacts.
+See xref:backup-restore/copy-database.adoc#copy-database-command-options[Copy a database store] for more information.
+
+The following example shows how to create a new standard database, called `foo`, in a cluster deployment, from the existing sharded property database `foo-sharded`.
+The `foo-sharded` database must be stopped during the copying process.
+
+. Copy the data from the existing database `foo-sharded` into the database `foo`, creating a standard database with no property shards:
++
+[source, shell]
+----
+neo4j-admin database copy foo-sharded foo --copy-schema --to-format=block --target-location=s3://bucket/folder/ --target-format=backup
+----
++
+For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Connect to the DBMS either via the driver or Cypher Shell, and run the following command to create the database `foo`, as a standard database by seeding it from your backup folder in the AWS S3 bucket:
++
+[source, cypher]
+----
+CREATE DATABASE `foo`
+DEFAULT LANGUAGE CYPHER 25
+OPTIONS {seedUri: “s3://bucket/folder/”};
+----
++
+The cluster automatically distributes the data across its servers.
+For other seed data options, see xref:scalability/sharded-property-databases/creating-sharded-databases.adoc#creating-sharded-db-from-uri[Creating a sharded database from a URI (online)].
+. Verify that the new database is online by running the following command:
++
+[source, cypher]
+----
+SHOW DATABASES;
+----
+
+=== Consolidating a sharded property database into a standard database by using a backup of the sharded property database
+
+To consolidate a sharded property database into a standard database, you can use the `neo4j-admin database copy` command to create a new standard database from a backup of an existing sharded property database.
+The process is similar to creating a standard database from a sharded property database, but instead of using a sharded property database as the source, you use a backup of an existing sharded property database as the source.
+
+The following options can be specified for the `neo4j-admin database copy` command:
+
+* `--source-location` -- a path to a folder containing all backups of an existing sharded property database, including the full backup and all the diff backups in the chain of the graph shard and the last full backup for each property shard.
+This folder can be located locally or remotely (e.g., an S3 bucket).
+* `--source-format=backup` -- the format of the source backup.
+* `--copy-schema` -- (optional) to copy the schema of the existing database if needed.
+* `--target-location` -- a path to a folder for target backup artifact data. Used together with `--target-format=backup`.
+* `--target-format` -- the format of the output data.
+Possible values are `backup` and `database` (default).
+* `--to-format=block` -- the store format of the output data, which must be `block` for standard databases.
+* `--compress` -- label:new[Introduced in 2026.04] (optional) produces compressed backup artifacts.
+See xref:backup-restore/copy-database.adoc#copy-database-command-options[Copy a database store] for more information.
+* The name of the database to copy from must be the name of the virtual database.
+
+`--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once.
+
+The following example shows how to create a standard database, called `foo` from a backup of the existing sharded property database, `foo-sharded`, in a cluster deployment.
+It assumes that you have a backup of your existing sharded property database `foo-sharded` in an AWS S3 bucket. +
+If you do not have a backup of your database or you are unsure whether you have a current backup, see xref:scalability/sharded-property-databases/admin-operations.adoc#backup-and-restore[Backup and restore] for instructions on how to back up your database.
+To be completely sure that all backups are on the same transaction, it is recommended to put the database into read-only mode, running `ALTER DATABASE foo-sharded SET ACCESS READ ONLY` using Cypher Shell or the driver.
+Copy works even if the backups of the shards have different last applied transactions but there might be some data loss due to one shard not having all information from the last transactions.
+
+. Copy the data from a backup of your sharded property database `foo-sharded` into a standard database `foo`:
++
+[source, shell]
+----
+neo4j-admin database copy foo-sharded foo --to-format=block --source-location=s3://bucket/folder --source-format=backup --copy-schema --target-location=s3://bucket/folder/ --target-format=backup
+----
++
+For more information about the syntax and options of the `neo4j-admin database copy` command, see xref:backup-restore/copy-database.adoc[Copy a database store].
++
+Copying a database does not automatically create it.
+Therefore, it will not be visible if you do `SHOW DATABASES` at this point.
+
+. Connect to the DBMS either via the driver or Cypher Shell, and run the following command to create the database `foo` as a standard database by seeding it from your backup folder in the AWS S3 bucket:
++
+[source, cypher]
+----
+CREATE DATABASE `foo`
+DEFAULT LANGUAGE CYPHER 25
+OPTIONS {seedUri: “s3://bucket/folder/”};
+----
++
+The cluster automatically distributes the data across its servers.
+For other seed data options, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
+. Verify that the new database is online by running the following command:
 +
 [source, cypher]
 ----
