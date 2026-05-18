@@ -1,0 +1,295 @@
+:description: Information about how to use Neo4j procedures using Cypher's `CALL` clause.
+= Call procedures
+
+The `CALL` clause is used to call a procedure deployed in the database.
+Neo4j comes with a number of xref:procedures/built-in-procedures.adoc[built-in procedures].
+Users can also develop custom procedures and deploy to the database.
+For more details, see link:{neo4j-docs-base-uri}/java-reference/current/extending-neo4j/procedures/[Java Reference -> User-defined procedures].
+
+[NOTE]
+====
+The `CALL` clause is also used to evaluate a subquery.
+For more information about the `CALL` clause in this context, refer to the link:{neo4j-docs-base-uri}/cypher-manual/subqueries/call-subquery/[Cypher Manual -> `CALL` subquery].
+====
+
+[[example-graph]]
+== Example graph
+
+The examples on this page use the following graph:
+
+image::call-procedure.svg[Example graph connecting people in the roles of developer and administrator,role=popup,width=400]
+
+To recreate it, run the following statement against an empty Neo4j database:
+
+[source, cypher, role=test-setup]
+----
+CREATE (andy:Developer {name: 'Andy', born: 1991}),
+       (beatrice:Developer {name: 'Beatrice', born: 1985}),
+       (charlotte:Administrator {name: 'Charlotte', born: 1990}),
+       (david:Administrator {name: 'David', born: 1994, nationality: 'Swedish'}),
+       (andy)-[:KNOWS]->(beatrice),
+       (beatrice)-[:KNOWS]->(charlotte),
+       (andy)-[:KNOWS]->(david)
+----
+
+[[standalone-procedure-calls]]
+== Standalone procedure calls
+
+A Cypher statement made up of only a single `CALL` clause is known as a standalone procedure call.
+
+=== Call a procedure without arguments
+
+This example calls the built-in procedure xref:procedures/built-in-procedures.adoc#procedure_db_labels[`db.labels()`], which lists all labels used in the database.
+
+.Procedure call
+[source, cypher]
+----
+CALL db.labels()
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1*<m"]
+|===
+| label
+
+| "Developer"
+| "Administrator"
+
+1+d|Rows: 2
+|===
+
+[NOTE]
+====
+It is best practice to use parentheses when calling procedures, although Cypher allows for their omission when calling procedures of arity-0 (no arguments).
+Omission of parentheses is available only in a so-called standalone procedure call.
+====
+
+=== Call a procedure using literal arguments
+
+This example calls the procedure xref:procedures/built-in-procedures.adoc#procedure_dbms_checkConfigValue[`dbms.checkConfigValue()`], which checks the validity of a configuration setting value, using literal arguments.
+
+.Query
+[source, cypher]
+----
+CALL dbms.checkConfigValue('server.bolt.enabled', 'true')
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| "valid" | "message"
+| true | "requires restart"
+
+2+d|Rows: 1
+|===
+
+=== Call a procedure using parameters
+
+This example calls the procedure `dbms.checkConfigValue()` using parameters as arguments.
+Each procedure argument is taken to be the value of a corresponding statement parameter with the same name (or `null` if no such parameter has been given).
+
+[NOTE]
+====
+The below example shows the given parameters in JSON format; the exact manner in which they are to be submitted depends on the driver being used.
+For more information, see the link:{neo4j-docs-base-uri}/cypher-manual/current/syntax/parameters/[Cypher Manual -> Parameters].
+====
+
+.Parameters
+[source, parameters]
+----
+{
+  "setting": "server.bolt.enabled",
+  "value": "true"
+}
+----
+
+.Procedure call
+[source, cypher]
+----
+CALL dbms.checkConfigValue($setting, $value)
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| "valid" | "message"
+| true | "requires restart"
+
+2+d|Rows: 1
+|===
+
+=== Call a procedure using both literal and parameter arguments
+
+This example calls the procedure `dbms.checkConfigValue()` using both literal and parameter arguments.
+
+.Parameters
+[source, parameters]
+----
+{
+  "setting": "server.bolt.enabled"
+}
+----
+
+.Procedure call
+[source, cypher]
+----
+CALL dbms.checkConfigValue($setting, 'true')
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| "valid" | "message"
+| true | "requires restart"
+
+2+d|Rows: 1
+|===
+
+
+[[using-yield]]
+== Using `YIELD` to specify return columns and filter data
+
+The `YIELD` keyword is used to specify which procedure columns to return, allowing for the selection and filtering of the displayed information.
+`YIELD` is necessary if the procedure call is part of a larger Cypher statement (i.e. not a standalone procedure call).
+
+`YIELD *` is only valid in standalone procedure calls and only adds the ability to show deprecated return columns (there are no non-default return columns for called procedures).
+
+When `YIELD` is used outside of a standalone procedure call, variables must be explicitly named.
+This restriction simplifies query logic and protects against output variables from the procedure accidentally clashing with other query variables.
+For example, the following is not valid:
+
+.Not allowed
+[source, cypher, role=test-fail]
+----
+CALL db.labels() YIELD *
+RETURN count(*) AS results
+----
+
+=== Yield specific return columns and filter on them
+
+`YIELD` can be used to filter for specific results.
+This requires knowing the names of the arguments within a procedure's signature, which can either be found on the xref:procedures/built-in-procedures.adoc[built-in procedures page] or in the `signature` column returned by a xref:procedures/show-procedures.adoc[`SHOW PROCEDURES`] command.
+
+.Find the argument names of `db.propertyKeys()`
+[source, cypher]
+----
+SHOW PROCEDURES YIELD name, signature
+WHERE name = 'db.propertyKeys'
+RETURN signature
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="1m"]
+|===
+| signature
+
+| "db.propertyKeys() :: (propertyKey :: STRING)"
+
+1+d|Rows: 1
+|===
+
+It is then possible to use these argument names for further query filtering.
+Note that if the procedure call is part of a larger query, its output must be named explicitly.
+In the following example, `propertyKey` is aliased as `prop` and then used later in the query to link:{neo4j-docs-base-uri}/cypher-manual/current/functions/aggregating/#functions-count[count] the occurrence of each property in the graph.
+
+
+.Filter on specific argument
+[source, cypher]
+----
+CALL db.propertyKeys() YIELD propertyKey AS prop
+MATCH (n)
+WHERE n[prop] IS NOT NULL
+RETURN prop, count(n) AS numNodes
+----
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| prop | numNodes
+
+| "name" | 4
+| "born" | 4
+| "nationality" | 1
+
+2+d|Rows: 3
+|===
+
+[[void-procedures]]
+=== Note on VOID procedures
+
+Neo4j supports the notion of `VOID` procedures.
+A `VOID` procedure is a procedure that does not declare any result fields and returns no result records.
+`VOID` procedure only produces side-effects and does not allow for the use of `YIELD`.
+
+Calling a `VOID` procedure in the middle of a larger query simply passes on each input record (i.e., it acts like link:{neo4j-docs-base-uri}/cypher-manual/clauses/with/[`WITH *`] in terms of the record stream).
+
+[[call-vs-optional-call]]
+== `CALL` vs. `OPTIONAL CALL`
+
+Regular procedure calls using `CALL` only return rows for which the procedure produces results.
+`OPTIONAL CALL` allows for an optional procedure call.
+Similar to link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/optional-match/[`OPTIONAL MATCH`], any empty rows produced by `OPTIONAL CALL` return `null`.
+
+=== Regular procedure call
+
+This following query uses the link:{neo4j-docs-base-uri}/apoc/current/overview/apoc.neighbors/apoc.neighbors.tohop[`apoc.neighbors.tohop()`] procedure (part of Neo4j's link:{neo4j-docs-base-uri}/apoc/current/[APOC Core library]), which returns all nodes connected by the given relationship type within the specified distance (1 hop, in this case) and direction.
+
+.Regular procedure call
+[source, cypher]
+----
+MATCH (n)
+CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
+----
+
+The result includes only the nodes with outgoing `KNOWS` relationships and their connections.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | connections
+
+| "Andy"
+| ["Beatrice", "David"]
+
+| "Beatrice"
+| ["Charlotte"]
+
+2+d|Rows: 2
+|===
+
+=== Optional procedure call
+
+The same query is used in the following example, but `CALL` is replaced with `OPTIONAL CALL`.
+
+.Optional procedure call
+[source, cypher]
+----
+MATCH (n)
+OPTIONAL CALL apoc.neighbors.tohop(n, "KNOWS>", 1)
+YIELD node
+RETURN n.name AS name, collect(node.name) AS connections
+----
+
+The result includes the two nodes without any outgoing `KNOWS` relationships connected to them.
+
+.Result
+[role="queryresult",options="header,footer",cols="2*<m"]
+|===
+| name | connections
+
+| "Andy"
+| ["Beatrice", "David"]
+
+| "Beatrice"
+| ["Charlotte"]
+
+| "Charlotte"
+| []
+
+| "David"
+| []
+
+2+d|Rows: 4
+|===
