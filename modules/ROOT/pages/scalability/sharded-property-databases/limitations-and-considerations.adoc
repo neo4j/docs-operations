@@ -1,0 +1,121 @@
+:page-role: new-2025.12 infinigraph not-on-aura
+:description:
+= Limitations and considerations
+
+== Non-supported features
+
+=== Unsupported procedures
+
+xref:procedures/built-in-procedures.adoc#procedure_db_index_fulltext_awaitEventuallyConsistentIndexRefresh[`db.index.fulltext.awaitEventuallyConsistentIndexRefresh()`] is not supported in sharded property databases versions 2025.12 and 2026.01.
+
+[CAUTION]
+====
+It is strongly recommended not to use xref:procedures/built-in-procedures.adoc#procedure_dbms_setConfigValue[`dbms.setConfigValue()`] on sharded property databases, as sharded property databases run in a clustered environment, which means the procedure must be run against each cluster member and is not propagated to other members.
+
+In particular, `dbms.setConfigValue()` cannot be used to set read-only behavior as the two settings `server.databases.read_only` and `server.databases.writable` are not compatible with sharded property databases.
+The correct way of setting read/write access is by using `ALTER DATABASE`.
+See xref:scalability/sharded-property-databases/altering-sharded-databases.adoc[Altering sharded property databases] for details.
+====
+
+=== Property-based access control (PBAC)
+
+PBAC is not supported in this version.
+
+== Performance considerations
+
+=== Queries with `MERGE` clause
+
+`MERGE` queries are very slow at any meaningful scale.
+Due to their plan, they are likely to cause a nested loop join, which does not perform well on sharded property databases at the moment.
+
+=== Filtering on properties in paths
+
+Queries that need to check each relationship property for all relationships between two nodes before they can traverse the next relationship property may see performance issues.
+For example, the following query must fetch each `[k:KNOWS]` relationship between people to check each of its properties before it can traverse onto the next person:
+
+[source, cypher]
+----
+MATCH (n:Person)-[k:KNOWS*1..]->(m:Person)
+WHERE any(rel IN k WHERE rel.creationDate = 1268465841718)
+RETURN n, k, m
+----
+
+A more performant version would be:
+
+[source, cypher]
+----
+MATCH (n:Person)-[k:KNOWS {creationDate: 1268465841718}]->+(m:Person)
+RETURN n,k,m
+----
+
+The more performant version uses a link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/variable-length-patterns/#quantified-relationships[quantified relationship] (`-[]\->+`), which enables batching relationships into sets and then fetching their properties from the different shards, and this is not possible when using the old link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/reference/#variable-length-relationships[variable-length relationship syntax] (`-[*1..]\->`).
+
+[NOTE]
+====
+Property filtering on queries matching for link:{neo4j-docs-base-uri}/cypher-manual/current/patterns/shortest-paths[shortest paths] (with or without quantified path patterns) may not yet be fully optimized for performance.
+====
+
+=== Call in transactions for batch write operations
+
+Because of the write architecture, batching larger transactions during write operations gives significant performance benefits.
+This is also true for single instance databases, but the performance difference is more pronounced in sharded property databases.
+
+For example, consider the following query:
+
+[source, cypher]
+----
+node_updates = [
+    { id: 1, name: "Alice", age: 30 },
+    { id: 2, name: "Bob", age: 25 },
+    { id: 3, name: "Charlie", age: 40 }
+]
+
+FOR each update IN node_updates DO
+    EXECUTE Cypher:
+        MATCH (n:Person {id: update.id})
+        SET n.name = update.name,
+            n.age = update.age
+END FOR
+----
+
+It can be rewritten as follows to perform better:
+
+[source, cypher]
+----
+WITH [
+    {id: 1, name: "Alice", age: 30},
+    {id: 2, name: "Bob", age: 25},
+    {id: 3, name: "Charlie", age: 40}
+] AS updates
+
+UNWIND updates AS u
+MATCH (n:Person {id: u.id})
+SET n.name = u.name,
+    n.age = u.age
+----
+
+== Other considerations
+
+=== `neo4j-admin database copy` to a sharded property database
+
+When using the `neo4j-admin database copy --property-shard-count > 0` command to split an existing database into shards, it is not possible to copy in place, meaning you cannot replace your existing database with a sharded property database.
+Instead, you must specify a new name or set `--to-path-data` and `--to-path-txn` or `--target-location={path|uri}` and `--target-format={database|backup}` to a new DBMS location.
+
+=== `USE` clause with sharded databases
+
+When targeting a sharded database in a `USE` clause, use its virtual database name or an alias in the graph reference.
+Targeting a shard directly is not supported.
+
+For example:
+
+[source, cypher]
+----
+USE `neo4j-sharded` MATCH (n) RETURN n
+----
+
+=== Cypher 5
+
+Cypher 5 is unsupported for sharded property databases.
+Although some queries may work, it is not officially supported.
+You must use Cypher25, which is the default for creating sharded property databases.
+See xref:configuration/cypher-version-configuration.adoc[Configure the Cypher default version].
