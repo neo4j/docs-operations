@@ -396,12 +396,30 @@ This may be different from the topology of `foo` when it was backed up.
 If you want to ensure a certain allocation across the cluster, you can specify the desired topology with the `TOPOLOGY` clause in the `CREATE DATABASE` command.
 See <<create-database, `CREATE DATABASE`>> for more information.
 +
+[.tabbed-example]
+=====
+[role=include-with-Cypher-25 label--new-2025.06]
+======
+
 [source, cypher, role=noplay]
 ----
 CREATE DATABASE foo
 TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
 OPTIONS {existingData: 'use', existingDataSeedServer: '8512c9b9-d9e8-48e6-b037-b15b0004ca18'};
 ----
+
+======
+[role=include-with-Cypher-5]
+======
+[source, cypher, role=noplay]
+----
+CREATE DATABASE foo
+TOPOLOGY [desired number of primaries] PRIMARIES [desired number of secondaries] SECONDARIES
+OPTIONS {existingData: 'use', existingDataSeedInstance: '8512c9b9-d9e8-48e6-b037-b15b0004ca18'};
+----
+======
+=====
+
 . Verify that the `foo` database is online on the desired number of servers, in the desired roles.
 If the `foo` database is of considerable size, the execution of the command can take some time.
 +
@@ -466,11 +484,15 @@ As a final step, verify that the restored database is online on the desired numb
 
 [role=label--new-2026.03]
 [[restore-database-using-copy-command]]
-=== Restore a database backup using the `neo4j-admin database copy` command
+=== Restore a database from a backup using the `neo4j-admin database copy` command
 
 See xref:backup-restore/copy-database.adoc#neo4j-admin-copy-command-limitations[Command limitations] before using this option.
 
-The following example assumes that you have a backup of your existing database `foo` in an AWS S3 bucket.
+The following example assumes:
+
+* You have a backup (created with the `neo4j-admin database backup` command) of your existing database `foo` in an AWS S3 bucket.
+* Or you use the copy command with the new `--target-format=backup --target-location=S3 bucket`.
+
 Before restoring a database, you do not need to stop or drop the database `foo`.
 
 The following options can be specified for the `neo4j-admin database copy` command:
@@ -485,9 +507,15 @@ Possible values are `backup` and `database` (default).
 * `--compress` -- label:new[Introduced in 2026.04] (optional) produces compressed backup artifacts.
 See xref:backup-restore/copy-database.adoc#copy-database-command-options[Copy a database store] for more information.
 
+[IMPORTANT]
+====
 `--source-location` and `--source-format` cannot be used together with `--from-path-data` and/or `--from-path-txn` due to the conflict in trying to supply data from two different locations at once.
 
-. Copy the data from a backup of your standard database `foo` into the database `foo-restored`.
+The copy command does not copy over users and roles metadata.
+You have to copy and re-apply them manually.
+====
+
+. Copy the data from a backup of your standard database `foo` into a backup for the database `foo-restored`.
 +
 [source, shell]
 ----
@@ -532,31 +560,14 @@ Number of primaries and secondaries must respect the number of available servers
 ----
 SHOW DATABASES;
 ----
-. After the new database is online, you can drop the old database `foo` if it is no longer needed, or put it into read-write mode if you want to keep it for other purposes.
+. After the new database is online, you can drop the old database `foo`.
 +
-[.tabbed-example]
-=====
-[.include-with-drop-database]
-======
-
 Run the following command to drop the old database `foo`:
-
++
 [source, cypher]
 ----
 DROP DATABASE foo;
 ----
-======
-[.include-with-change-access-mode]
-======
-
-Change the access mode of the old database `foo` to read-write:
-
-[source, cypher]
-----
-ALTER DATABASE foo SET ACCESS READ WRITE;
-----
-======
-=====
 
 
 [[cluster-allow-deny-db]]
