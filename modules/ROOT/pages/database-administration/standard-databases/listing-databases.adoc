@@ -28,6 +28,11 @@ YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
 
 |===
 
+In Cypher 25 from 2026.05, it is possible to combine the `SHOW DATABASES` command with regular Cypher syntax.
+However, since `SHOW DATABASES` is run against the `system` database, all parts of the query must be allowed on the `system` database.
+For example, clauses like `MATCH` and `SHOW INDEXES` are not allowed on the `system` database; therefore, they cannot be used with `SHOW DATABASES`.
+However, procedure calls of system-allowed procedures are allowed.
+If the `SHOW DATABASES` is combined with other clauses, the automatic re-routing of the command to the `system` database is disabled, and explicit connection or routing is required.
 
 == `SHOW DATABASES` output
 
@@ -147,7 +152,7 @@ Not returned by `SHOW HOME DATABASE` or `SHOW DEFAULT DATABASE`.
 | Number of primaries for this database reported as running currently.
 It is the same as the number of rows where `role=primary` and `name=this database`.
 
-Not applicable to composite databasesfootnote:compositeDb[The change for composite databases applies to versions 2025.04 and later and 5.26.5 and later.], virtual sharded databases, and property shards. (the value is `NULL`).
+Not applicable to composite databasesfootnote:compositeDb[The change for composite databases applies to versions 2025.04 and later and 5.26.5 and later.], virtual sharded databases, and property shards (the value is `NULL`).
 | INTEGER
 |
 
@@ -211,7 +216,7 @@ The value is a string formatted as `{storage engine}-{store format}-{major versi
 Only available for `online` or `deallocating` databases.
 For other database states the value will be `NULL`.
 
-Not applicable to composite databasesfootnote:compositeDb[] and virtual sharded databases. (the value is `NULL`).
+Not applicable to composite databasesfootnote:compositeDb[] and virtual sharded databases (the value is `NULL`).
 | STRING
 |
 
@@ -393,6 +398,9 @@ SHOW DATABASE movies YIELD *
 +----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
+In Cypher 25 from 2026.05, if the given database is a parameter that evaluates to null, the command no longer fails on the wrong type but instead returns nothing.
+This behavior aligns with not returning anything when the given database name does not exist.
+
 == Show the number of databases
 
 The number of distinct databases can be seen using `YIELD` and a `count()` function in the `RETURN` clause.
@@ -506,3 +514,27 @@ include::partial$/view-cypher-version.adoc[]
 
 2+d|Rows: 3
 |===
+
+[role=label--cypher-25 label--new-2026.05]
+== Show quarantined databases and lift their quarantine
+
+The `SHOW DATABASES` command can be combined with procedure calls.
+To ensure the command is run against the `system` database, prepend it with the `USE` clause.
+Combining `SHOW DATABASES` with other Cypher clauses disables the automatic re-routing.
+
+.Query
+[source, cypher]
+----
+USE system
+SHOW DATABASES
+YIELD name AS database, serverID AS server, currentStatus
+WHERE currentStatus='quarantined'
+CALL dbms.unquarantineDatabase(server, database)
+----
+
+Nothing is returned from the query, as it ends with a procedure call of a void procedure.
+To return the affected databases, add `RETURN database, server` at the end of the query.
+It is possible to specify the `operation` argument to the `dbms.unquarantineDatabase()` procedure.
+
+For more information on the `dbms.unquarantineDatabase()` procedure, see xref:database-administration/standard-databases/errors.adoc#quarantine[Standard databases -> Error handling].
+For more information on void procedures, see xref:procedures/call-procedures.adoc#void-procedures[Call procedures -> Note on VOID procedures].
