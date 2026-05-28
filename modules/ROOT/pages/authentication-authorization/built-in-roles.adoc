@@ -875,57 +875,150 @@ If the built-in `admin` role has been altered or dropped and needs to be restore
 [[access-control-built-in-roles-admin-recreate]]
 === Recreating the `admin` role
 
-To restore the role to its original capabilities two steps are needed.
-First, execute `DROP ROLE admin`.
-Secondly, run these queries:
+You might need to recreate the `admin` role, for example, because you want to revoke the role-user mappings, or because its privileges have been modified and you want to restore it to its original capabilities.
 
-// cannot test as it would require deleting the role the test user is logged with
+[[access-control-built-in-roles-admin-recreate-after-drop]]
+==== Recreate the `admin` role after being dropped
+
+This example assumes that you want to revoke all role-user mappings of the `admin` role and then recreate it with the same capabilities.
+
+. Using a client such as xref:tools/cypher-shell.adoc[Cypher Shell] or the Neo4j Browser, connect as a user with rights to manage roles and privileges:
++
+[source, shell]
+----
+bin/cypher-shell -u <username> -p <password>
+----
+. Run the following command to list the privileges that are currently granted to the `admin` role as commands:
++
+[source, cypher, role=noplay]
+----
+SHOW ROLE admin PRIVILEGES AS COMMANDS;
+----
++
+[result]
+----
++-------------------------------------------------------------+
+| command                                                     |
++-------------------------------------------------------------+
+| "GRANT ACCESS ON DATABASE * TO `admin`"                     |
+| "GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`"              |
+| "GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin`"      |
+| "GRANT INDEX MANAGEMENT ON DATABASE * TO `admin`"           |
+| "GRANT LOAD ON ALL DATA TO `admin`"                         |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO `admin`"              |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin`"      |
+| "GRANT NAME MANAGEMENT ON DATABASE * TO `admin`"            |
+| "GRANT SHOW CONSTRAINT ON DATABASE * TO `admin`"            |
+| "GRANT SHOW INDEX ON DATABASE * TO `admin`"                 |
+| "GRANT START ON DATABASE * TO `admin`"                      |
+| "GRANT STOP ON DATABASE * TO `admin`"                       |
+| "GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin`" |
+| "GRANT WRITE ON GRAPH * TO `admin`"                         |
++-------------------------------------------------------------+
+
+14 rows
+ready to start consuming query after 39 ms, results consumed after another 0 ms
+----
+
+. Drop the existing `admin` role:
++
+[source, cypher]
+----
+DROP ROLE admin;
+----
+. Create a new `admin` role:
++
+[source, cypher]
+----
+CREATE ROLE admin;
+----
+. Run the commands from step 2 to recreate the `admin` role with its original capabilities:
++
 [source, cypher, role=noplay test-skip]
 ----
-CREATE ROLE admin
+GRANT ACCESS ON DATABASE * TO `admin`;
+GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`;
+GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin`;
+GRANT INDEX MANAGEMENT ON DATABASE * TO `admin`;
+GRANT LOAD ON ALL DATA TO `admin`;
+GRANT MATCH {*} ON GRAPH * NODE * TO `admin`;
+GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin`;
+GRANT NAME MANAGEMENT ON DATABASE * TO `admin`;
+GRANT SHOW CONSTRAINT ON DATABASE * TO `admin`;
+GRANT SHOW INDEX ON DATABASE * TO `admin`;
+GRANT START ON DATABASE * TO `admin`;
+GRANT STOP ON DATABASE * TO `admin`;
+GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin`;
+GRANT WRITE ON GRAPH * TO `admin`;
+----
++
+The resulting `admin` role now has the same effective privileges as the original `admin` role.
+
+Additional information about restoring the `admin` role can be found in the xref:authentication-authorization/password-and-user-recovery.adoc[Recover the admin role].
+
+[[access-control-built-in-roles-admin-recreate-after-modification]]
+==== Recreate the `admin` role after being modified
+
+This example assumes that the `admin` role still exists, but its privileges have been modified, and you want to restore it to the original capabilities of the built-in `admin` role.
+
+. Using a client such as xref:tools/cypher-shell.adoc[Cypher Shell] or the Neo4j Browser, connect as a user with rights to manage roles and privileges:
++
+[source, shell]
+----
+bin/cypher-shell -u <username> -p <password>
 ----
 
+. Create a new `admin2` role:
++
+[source, cypher]
+----
+CREATE ROLE admin2;
+----
+. Run the following commands to recreate the `admin2` role with the original capabilities of the built-in `admin` role:
++
+[source, cypher, role=noplay test-skip]
+----
+GRANT ACCESS ON DATABASE * TO `admin2`;
+GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin2`;
+GRANT CONSTRAINT MANAGEMENT ON DATABASE * TO `admin2`;
+GRANT INDEX MANAGEMENT ON DATABASE * TO `admin2`;
+GRANT LOAD ON ALL DATA TO `admin2`;
+GRANT MATCH {*} ON GRAPH * NODE * TO `admin2`;
+GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO `admin2`;
+GRANT NAME MANAGEMENT ON DATABASE * TO `admin2`;
+GRANT SHOW CONSTRAINT ON DATABASE * TO `admin2`;
+GRANT SHOW INDEX ON DATABASE * TO `admin2`;
+GRANT START ON DATABASE * TO `admin2`;
+GRANT STOP ON DATABASE * TO `admin2`;
+GRANT TRANSACTION MANAGEMENT (*) ON DATABASE * TO `admin2`;
+GRANT WRITE ON GRAPH * TO `admin2`;
+----
++
+The resulting `admin2` role now has the same effective privileges as the built-in `admin` role.
+
+. Assign the `admin2` role to the users that you want to have the same privileges as the original `admin` role:
++
+[source, cypher]
+----
+GRANT ROLE admin2 TO <user1>, <user2>, ...;
+----
++
+[NOTE]
+====
+The `GRANT ROLE` command requires the `ASSIGN ROLE` privilege.
+See xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[Grant privilege to assign roles] for details on how to grant this privilege.
+====
+. Drop the existing `admin` role:
++
+[source, cypher]
+----
+DROP ROLE admin;
+----
+. Finally, you can rename the `admin2` role to `admin`:
++
 [source, cypher, role=noplay]
 ----
-GRANT ALL DBMS PRIVILEGES ON DBMS TO admin
+RENAME ROLE admin2 TO admin;
 ----
 
-[source, cypher, role=noplay]
-----
-GRANT TRANSACTION MANAGEMENT ON DATABASE * TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT START ON DATABASE * TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT STOP ON DATABASE * TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT MATCH {*} ON GRAPH * TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT WRITE ON GRAPH * TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT LOAD ON ALL DATA TO admin
-----
-
-[source, cypher, role=noplay]
-----
-GRANT ALL ON DATABASE * TO admin
-----
-
-The resulting `admin` role now has the same effective privileges as the original built-in `admin` role.
-
-Additional information about restoring the `admin` role can be found in the xref:authentication-authorization/password-and-user-recovery.adoc[ Recover the admin role].
-
+Additional information about restoring the `admin` role can be found in the xref:authentication-authorization/password-and-user-recovery.adoc[Recover the admin role].
