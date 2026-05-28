@@ -1,0 +1,541 @@
+:description: Information about the `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS` commands.
+:test-skip: true
+= Show and terminate transactions
+
+Transactions can be managed using the Cypher commands `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS`.
+Multiple  `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS` commands can be combined in the same query.
+As of Neo4j 2026.05, using Cypher 25, it is also possible to combine the transaction commands with general Cypher clauses.
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+
+[[show-transactions]]
+== Show transactions
+
+The `SHOW TRANSACTIONS` command displays currently running transactions across the instance.
+To track transactions on remote database aliases, run `SHOW TRANSACTIONS` while connected to the remote database alias.
+
+A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`SHOW TRANSACTION`] privilege can view currently executing transactions, but only to the extent allowed by their granted permissions.
+All users can always view their own active transactions.
+
+[[show-transactions-syntax]]
+=== Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| Show transactions on the current server
+
+a|
+[source, syntax, role="noheader"]
+----
+SHOW TRANSACTION[S] [transaction-id[,...]]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+[NOTE]
+====
+The format of `transaction-id` is `<databaseName>-transaction-<id>`.
+Transaction IDs must be supplied as one or more comma-separated quoted `STRING` values, or as an expression resolving to a `STRING` or a `LIST<STRING>`.
+As of Neo4j 2026.05, using Cypher 25, any transaction IDs that resolve to `null` are ignored instead of causing a type error exception.
+This behavior aligns with not returning anything when the given transaction ID does not exist.
+====
+
+|===
+
+[NOTE]
+====
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+====
+
+[[show-transactions-return-columns]]
+=== Return columns
+
+`SHOW TRANSACTIONS` returns the following columns:
+
+.Show transactions output
+[options="header", cols="3m,4a,2m,1a"]
+|===
+| Column | Description | Type | Default output
+
+| database
+| The name of the database the transaction is executing against.
+| STRING
+| {check-mark}
+
+| transactionId
+| The transaction ID.
+| STRING
+| {check-mark}
+
+| currentQueryId
+| The ID of the query currently executing in this transaction, or `null` if no query is currently executing.
+| STRING
+| {check-mark}
+
+| connectionId
+| The ID of the database connection attached to the transaction or an empty `STRING` for embedded connections.
+| STRING
+| {check-mark}
+
+| clientAddress
+| The client address of the connection issuing the transaction or `null` if unavailable.
+| STRING
+| {check-mark}
+
+| username
+| The username of the user executing the transaction.
+| STRING
+| {check-mark}
+
+| currentQuery
+| The query text of the query currently executing in this transaction, or `null` if no query is currently executing.
+| STRING
+| {check-mark}
+
+| startTime
+| The time at which the transaction was started.
+| ZONED DATETIME
+| {check-mark}
+
+| status
+| The current status of the transaction (`Terminated`, `Blocked`, `Closing`, or `Running`).
+| STRING
+| {check-mark}
+
+| elapsedTime
+| The time that has elapsed since the transaction was started.
+| DURATION
+| {check-mark}
+
+| outerTransactionId
+| The ID of this transaction's outer transaction, if such exists, otherwise `null`.
+For details, see the link:{neo4j-docs-base-uri}/cypher-manual/current/subqueries/subqueries-in-transactions/[Cypher Manual -> `CALL` subqueries in transactions].
+| STRING
+|
+
+| metaData
+| Any metadata associated with the transaction, or an empty map if there is none.
+| MAP
+|
+
+| parameters
+| A map containing all the parameters used by the query currently executing in this transaction, or `null` if no query is currently executing.
+| MAP
+|
+
+| planner
+| The name of the Cypher planner used to plan the query currently executing in this transaction, or `null` if no query is currently executing.
+For details, see the link:{neo4j-docs-base-uri}/cypher-manual/current/query-tuning/#cypher-planner[Cypher Manual -> Cypher planner].
+| STRING
+|
+
+| runtime
+| The name of the Cypher runtime used by the query currently executing in this transaction, or `null` if no query is currently executing.
+For details, see the link:{neo4j-docs-base-uri}/cypher-manual/current/planning-and-tuning/runtimes/[Cypher Manual -> Cypher runtimes].
+| STRING
+|
+
+| indexes
+| The indexes utilized by the query currently executing in this transaction, or `null` if no query is currently executing.
+Only indexes evaluating static node labels and relationship types are shown in this column.
+| LIST<MAP>
+|
+
+
+| currentQueryStartTime
+| The time at which the query currently executing in this transaction was started, or `null` if no query is currently executing.
+| ZONED DATETIME
+|
+
+| protocol
+| The protocol used by the connection issuing the transaction.
+This is not necessarily an internet protocol, such as _http_, etc., although it could be.
+It might also be "embedded", for example, if this connection represents an embedded session.
+| STRING
+|
+
+| requestUri
+| The request URI used by the client connection issuing the transaction, or `null` if the URI is not available.
+| STRING
+|
+
+| currentQueryStatus
+| The current status of the query currently executing in this transaction (`parsing`, `planning`, `planned`, `running`, or `waiting`), or `null` if no query is currently executing.
+| STRING
+|
+
+| statusDetails
+| Provide additional status details from the underlying transaction or an empty `STRING` if none is available.
+| STRING
+|
+
+| resourceInformation
+| Information about any blocked transactions, or an empty map if there is none.
+| MAP
+|
+
+| activeLockCount
+| Count of active locks held by the transaction.
+| INTEGER
+|
+
+| currentQueryActiveLockCount
+| Count of active locks held by the query currently executing in this transaction.
+| INTEGER
+|
+
+| cpuTime
+| CPU time that has been actively spent executing the transaction or `null` if unavailable.
+| DURATION
+|
+
+| waitTime
+| Wait time that has been spent waiting to acquire locks.
+| DURATION
+|
+
+| idleTime
+| Idle time for this transaction, or `null` if unavailable.
+| DURATION
+|
+
+| currentQueryElapsedTime
+| The time that has elapsed since the query currently executing in this transaction was started, or `null` if no query is currently executing.
+| DURATION
+|
+
+| currentQueryCpuTime
+| CPU time that has been actively spent executing the query currently executing in this transaction, or `null` if unavailable or no query is currently executing.
+| DURATION
+|
+
+| currentQueryWaitTime
+| Wait time that has been spent waiting to acquire locks for the query currently executing in this transaction, or `null` if no query is currently executing.
+| DURATION
+|
+
+| currentQueryIdleTime
+| Idle time for the query currently executing in this transaction, or `null` if unavailable or no query is currently executing.
+| DURATION
+|
+
+| currentQueryAllocatedBytes
+| The number of bytes allocated on the heap so far by the query currently executing in this transaction, or `null` if unavailable or no query is currently executing.
+| INTEGER
+|
+
+| allocatedDirectBytes
+| Amount of off-heap (native) memory allocated by the transaction in bytes or `null` if unavailable.
+| INTEGER
+|
+
+| estimatedUsedHeapMemory
+| The estimated amount of used heap memory allocated by the transaction in bytes or `null` if unavailable.
+| INTEGER
+|
+
+| pageHits
+| The total number of page cache hits that the transaction performed.
+| INTEGER
+|
+
+| pageFaults
+| The total number of page cache faults that the transaction performed.
+| INTEGER
+|
+
+| currentQueryPageHits
+| The total number of page cache hits that the query currently executing in this transaction performed.
+| INTEGER
+|
+
+| currentQueryPageFaults
+| The total number of page cache faults that the query currently executing in this transaction performed.
+| INTEGER
+|
+
+| initializationStackTrace
+| The initialization stacktrace for this transaction, or an empty `STRING` if unavailable.
+| STRING
+|
+
+| currentQueryProgress
+|  label:cypher[Cypher 25] label:new[Introduced in Neo4j 2026.03] A map containing real time metrics of data modifications made by the query currently executing in this transaction, or `null` if the current transaction is an inner query.
+The metrics of data modifications made by the inner queries are aggregated in their outer query on commit.
+| MAP
+|
+
+|===
+
+.`currentQueryProgress` map content
+[options="header", cols="1m, 3a"]
+|===
+| Key | Description
+
+| nodesCreated
+| Total number of nodes created.
+
+| nodesDeleted
+| Total number of nodes deleted.
+
+| relationshipsCreated
+| Total number of relationships created.
+
+| relationshipsDeleted
+| Total number of relationships deleted.
+
+| propertiesSet
+| Total number of properties set.
+
+| labelsAdded
+| Total number of labels added.
+
+| labelsRemoved
+| Total number of labels removed.
+
+| fileLinesRead
+| Total number of CSV file lines read.
+
+| transactionsStarted
+| Total number of inner transactions started by the `CALL { ... } IN TRANSACTIONS` query, if this query is an outer transaction, otherwise `null`.
+
+| transactionsCommitted
+| Total number of inner transactions committed by the `CALL { ... } IN TRANSACTIONS` query, if this query is an outer transaction, otherwise `null`.
+
+| transactionsRolledBack
+| Total number of inner transactions rolled back by the `CALL { ... } IN TRANSACTIONS` query, if this query is an outer transaction, otherwise `null`.
+|===
+
+For more information about `transactionsStarted`, `transactionsCommitted`, and `transactionsRolledBack` see the link:{neo4j-docs-base-uri}/cypher-manual/current/subqueries/subqueries-in-transactions/[Cypher Manual -> CALL subqueries in transactions].
+
+[[show-transactions-examples]]
+=== Examples
+
+.Show all running transactions with default return columns
+[source, cypher]
+----
+SHOW TRANSACTIONS
+----
+
+.Show all running transactions with all return columns
+[source, cypher]
+----
+SHOW TRANSACTIONS YIELD *
+----
+
+.Show transactions by transactionId
+[source, cypher]
+----
+SHOW TRANSACTIONS "neo4j-transaction-3"
+----
+
+.Filter `SHOW TRANSACTIONS` with `WHERE`
+[source, cypher]
+----
+SHOW TRANSACTIONS YIELD database, currentQuery
+WHERE currentQuery contains 'Mark'
+----
+
+.Return durations in milliseconds, microseconds, and seconds
+[source, cypher]
+----
+SHOW TRANSACTIONS
+YIELD transactionId, elapsedTime, cpuTime, waitTime, idleTime,
+  currentQueryElapsedTime, currentQueryCpuTime, currentQueryWaitTime, currentQueryIdleTime
+RETURN
+  transactionId AS txId,
+  elapsedTime.milliseconds AS elapsedTimeMillis,
+  cpuTime.milliseconds AS cpuTimeMillis,
+  waitTime.milliseconds AS waitTimeMillis,
+  idleTime.seconds AS idleTimeSeconds,
+  currentQueryElapsedTime.milliseconds AS currentQueryElapsedTimeMillis,
+  currentQueryCpuTime.milliseconds AS currentQueryCpuTimeMillis,
+  currentQueryWaitTime.microseconds AS currentQueryWaitTimeMicros,
+  currentQueryIdleTime.seconds AS currentQueryIdleTimeSeconds
+----
+
+[[terminate-transactions]]
+== Terminate transactions
+
+The `TERMINATE TRANSACTIONS` command is used to terminate running transactions by their IDs.
+
+A user with the link:{neo4j-docs-base-uri}/operations-manual/current/authentication-authorization/database-administration/#access-control-database-administration-transaction[`TERMINATE TRANSACTION`] privilege can terminate transactions, subject to the scope of their granted permissions.
+All users may terminate their own currently executing transactions.
+
+[[terminate-transactions-syntax]]
+=== Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| Terminate transactions by ID on the current server
+
+a|
+[source, syntax, role="noheader"]
+----
+TERMINATE TRANSACTION[S] transaction_id[, ...]
+[YIELD { * \| field[, ...] }
+  [ORDER BY field[, ...]]
+  [SKIP n]
+  [LIMIT n]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+]
+----
+
+[NOTE]
+====
+The format of `transaction-id` is `<databaseName>-transaction-<id>`.
+Transaction IDs must be supplied as one or more comma-separated quoted `STRING` values, or as an expression resolving to a `STRING` or a `LIST<STRING>`.
+As of Neo4j 2026.05, using Cypher 25, any transaction IDs that resolves to `null` will no longer throw an exception on wrong type.
+Instead, they will return a row similar to the row returned when the given transaction ID does not exist.
+====
+|===
+
+[NOTE]
+====
+When using the `WHERE` or `RETURN` clauses, the `YIELD` clause is mandatory and must not be omitted.
+====
+
+[[terminate-transactions-return-columns]]
+=== Return columns
+
+All columns are returned by default for `TERMINATE TRANSACTIONS`.
+As a result, appending `YIELD *` to `TERMINATE TRANSACTIONS` does not return any additional information.
+
+`TERMINATE TRANSACTIONS` returns the following columns:
+
+.Terminate transactions output
+[options="header", cols="4,6,2"]
+|===
+| Column | Description | Type
+
+m| transactionId
+a| The transaction ID.
+m| STRING
+
+m| username
+a| The username of the user executing the transaction.
+m| STRING
+
+m| message
+a| The result of the `TERMINATE TRANSACTION` command as applied to this transaction.
+m| STRING
+
+|===
+
+
+[[terminate-transactions-examples]]
+=== Examples
+
+.Terminate transactions by transaction ID
+[source, cypher]
+----
+TERMINATE TRANSACTIONS "neo4j-transaction-1","neo4j-transaction-2"
+----
+
+.Filter `TERMINATE TRANSACTIONS` with `WHERE`
+[source, cypher]
+----
+TERMINATE TRANSACTIONS "neo4j-transaction-1","neo4j-transaction-2"
+YIELD transactionId, message
+WHERE message <> "Transaction terminated."
+----
+
+[NOTE]
+====
+Unlike the `SHOW` commands, `TERMINATE TRANSACTIONS` does not allow `WHERE` without `YIELD`.
+====
+
+[[combine-transaction-commands]]
+== Combine transaction commands
+
+`SHOW TRANSACTIONS` can be combined with `TERMINATE TRANSACTIONS` to identify and terminate transactions in the same statement.
+Multiple `SHOW` and `TERMINATE` transactions can be included in a single statement.
+
+[NOTE]
+====
+When combining `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS`,  the `YIELD` and `RETURN` clauses are mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+====
+
+.Show all transactions run by user `Alice` and terminate them
+[source, cypher]
+----
+SHOW TRANSACTIONS
+YIELD transactionId AS txId, username AS user
+WHERE user = "Alice"
+TERMINATE TRANSACTIONS txId
+YIELD message
+RETURN txId, message
+----
+
+.Show all transactions running for more than 30 minutes and terminate them
+[source, cypher]
+----
+SHOW TRANSACTIONS
+YIELD transactionId, waitTime
+WHERE waitTime > duration({minutes: 30})
+TERMINATE TRANSACTIONS transactionId
+YIELD username, message
+RETURN *
+----
+
+.Listing other transactions by the same user that were terminated
+[source, cypher]
+----
+TERMINATE TRANSACTION 'neo4j-transaction-1', 'neo4j-transaction-2'
+YIELD username AS terminatedUser
+SHOW TRANSACTIONS
+YIELD username AS showUser, transactionId AS txId, database, currentQuery, status
+WHERE showUser = terminatedUser AND NOT status STARTS WITH 'Terminated'
+RETURN txId, showUser AS user, database, currentQuery
+----
+
+.Listing other transactions by the same user as a given transaction
+[source, cypher]
+----
+SHOW TRANSACTION 'neo4j-transaction-1'
+YIELD username AS originalUser, transactionId AS originalTxId
+SHOW TRANSACTIONS
+YIELD username AS newUser, transactionId AS txId, database, currentQuery, status
+WHERE newUser = originalUser AND NOT txId = originalTxId
+RETURN txId, newUser AS user, database, currentQuery, status
+----
+
+
+[role=label--new-2026.05 label--cypher-25]
+== Combine transaction commands with other Cypher commands
+
+`SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS` can be combined with other Cypher commands to form a single query.
+
+[NOTE]
+====
+When combining `SHOW TRANSACTIONS` and `TERMINATE TRANSACTIONS` with other clauses,  the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
+
+.Transaction commands combined with other Cypher commands
+[source, cypher, role=test-result-skip]
+----
+WITH ['neo4j-transaction-1', 'neo4j-transaction-2', 'mydb-transaction-1'] AS idsToTerminate
+TERMINATE TRANSACTION idsToTerminate
+YIELD username AS terminatedUser
+WITH DISTINCT terminatedUser, idsToTerminate // <1>
+SHOW TRANSACTIONS
+YIELD username AS showUser, transactionId AS txId, database, currentQuery
+WHERE showUser = terminatedUser AND NOT txId IN idsToTerminate
+RETURN txId, showUser AS user, database, currentQuery
+----
+
+<1> `WITH DISTINCT` is used to remove any duplicate users and transaction IDs.
