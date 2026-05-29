@@ -1,0 +1,190 @@
+:description: Information about the `SHOW SETTINGS` command.
+:keywords: SHOW SETTINGS, configuration settings, listing settings, showing settings
+:page-role: not-on-aura
+= Show configuration settings
+
+This page describes showing configuration settings using the `SHOW SETTINGS` command.
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+
+[NOTE]
+====
+* `SHOW SETTINGS` returns settings on the executing server only.
+To retrieve settings on a specific server, you need to directly connect to it using `bolt` scheme.
+For more information, see the link:{neo4j-docs-base-uri}/bolt/current/bolt[Bolt protocol documentation].
+
+* Configurations settings can also be shown using the xref:procedures/built-in-procedures.adoc#procedure_dbms_listConfig[`dbms.listConfig()`] procedure.
+====
+
+[[syntax]]
+== Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| List settings
+
+a|
+[source, syntax, role="noheader"]
+----
+SHOW SETTING[S] [setting-name[,...]]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+|===
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+[NOTE]
+====
+Setting names must be supplied as one or more comma-separated quoted `STRING` values or as an expression resolving to a `STRING` or a `LIST<STRING>`.
+As of Neo4j 2026.05, using Cypher 25, any setting names that resolve to `null` are ignored instead of causing a type error exception.
+This behavior aligns with not returning anything when the given setting name does not exist.
+====
+
+[[return-columns]]
+== Return columns
+
+The `SHOW SETTINGS` command returns the following columns:
+
+.Listing settings output
+[options="header", width="100%", cols="3m,6,2m,2a"]
+|===
+| Column
+| Description
+| Type
+| Default output
+
+| name
+| The name of the setting.
+| STRING
+| {check-mark}
+
+| value
+| The current value of the setting.
+| STRING
+| {check-mark}
+
+| isDynamic
+| Whether the value of the setting can be updated dynamically, without restarting the server.
+For dynamically updating a setting value, see link:{neo4j-docs-base-uri}/operations-manual/current/configuration/dynamic-settings/[Update dynamic settings].
+| BOOLEAN
+| {check-mark}
+
+| defaultValue
+| The default value of the setting.
+| STRING
+| {check-mark}
+
+| description
+| The setting description.
+| STRING
+| {check-mark}
+
+| startupValue
+| The value of the setting at last startup.
+| STRING
+|
+
+| isExplicitlySet
+| Whether the value of the setting is explicitly set by the user, either through configuration or dynamically.
+| BOOLEAN
+|
+
+| validValues
+| A description of valid values for the setting.
+| STRING
+|
+
+| isDeprecated
+| Whether the setting is deprecated.
+| BOOLEAN
+|
+|===
+
+[[examples]]
+== Examples
+
+The following examples show how to use the `SHOW SETTINGS` command to show configuration settings.
+
+=== Show all settings with default return columns
+[source, cypher]
+----
+SHOW SETTINGS
+----
+
+=== Show all settings with all return columns
+
+[source, cypher]
+----
+SHOW SETTINGS YIELD *
+----
+
+=== Show all settings with specified return columns
+[source, cypher]
+----
+SHOW SETTINGS YIELD name, defaultValue, startupValue
+----
+
+=== Show named settings
+[source, cypher]
+----
+SHOW SETTINGS "server.bolt.enabled", "server.bolt.advertised_address", "server.bolt.listen_address"
+----
+
+=== Filter `SHOW SETTINGS` with `WHERE`
+
+[source, cypher]
+----
+SHOW SETTINGS YIELD name, value, description
+WHERE name STARTS WITH 'server'
+RETURN name, value, description
+----
+
+[role=label--cypher-25 label--new-Neo4j-2026.05]
+[[combine-show-settings-with-general-cypher]]
+=== Combine `SHOW SETTINGS` with general Cypher clauses
+
+The `SHOW SETTINGS` command can be combined with general Cypher clauses in a single query.
+
+For example, checking that the current value of a setting is valid.
+
+.Check if the current values of settings starting with `db.checkpoint` are valid
+[source, cypher]
+----
+SHOW SETTINGS
+YIELD name, value
+WHERE name STARTS WITH 'db.checkpoint'
+CALL dbms.checkConfigValue(name, value)
+YIELD valid, message
+RETURN name, value, valid, message;
+----
+
+.Example output
+[result]
+----
++-----------------------------------------------------------------------------+
+| name                             | value       | valid | message            |
++-----------------------------------------------------------------------------+
+| "db.checkpoint"                  | "PERIODIC"  | TRUE  | "requires restart" |
+| "db.checkpoint.interval.time"    | "15m"       | TRUE  | "requires restart" |
+| "db.checkpoint.interval.tx"      | "100000"    | TRUE  | "requires restart" |
+| "db.checkpoint.interval.volume"  | "250.00MiB" | TRUE  | "requires restart" |
+| "db.checkpoint.iops.limit"       | "600"       | TRUE  | ""                 |
+| "db.checkpoint.throughput.limit" | NULL        | TRUE  | ""                 |
++-----------------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 46 ms, results consumed after another 13 ms
+----
+
+[NOTE]
+====
+When combining `SHOW SETTINGS` with other clauses,  the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====

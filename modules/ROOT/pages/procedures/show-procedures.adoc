@@ -1,0 +1,216 @@
+:description: Information about the `SHOW PROCEDURES` command.
+= Show procedures
+
+You can use `SHOW PROCEDURES` to list all available procedures.
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+
+[[syntax]]
+== Syntax
+
+For full details about the syntax descriptions, see xref:database-administration/syntax.adoc#administration-syntax-reading[Administration command syntax].
+
+[options="header", width="100%", cols="1,5a"]
+|===
+| Action | Syntax
+
+| Show all procedures
+|
+[source, syntax, role="noheader"]
+----
+SHOW PROCEDURE[S]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Show procedures that the current user can execute
+|
+[source, syntax, role="noheader"]
+----
+SHOW PROCEDURE[S] EXECUTABLE [BY CURRENT USER]
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+a| Show procedures that the specified user can execute
+
+|
+[source, syntax, role="noheader", indent=0]
+----
+SHOW PROCEDURE[S] EXECUTABLE BY username
+[YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+[WHERE expression]
+[RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+[NOTE]
+====
+Requires the xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[`SHOW USER`] privilege.
+This command cannot be used for LDAP users.
+====
+
+|===
+
+[NOTE]
+====
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+====
+
+[[return-columns]]
+== Return columns
+
+`SHOW PROCEDURES` returns following columns:
+
+.Show procedures output
+[options="header", cols="3m,4a,2m,1a"]
+|===
+| Column | Description | Type | Default output
+
+| name
+| The name of the procedure.
+| STRING
+| {check-mark}
+
+| description
+| The procedure description.
+| STRING
+| {check-mark}
+
+| mode
+| The procedure mode, for example `READ` or `WRITE`.
+| STRING
+| {check-mark}
+
+| worksOnSystem
+| Whether the procedure can be run on the `system` database or not.
+| BOOLEAN
+| {check-mark}
+
+| signature
+| The signature of the procedure.
+| STRING
+|
+
+| argumentDescription
+| List of the arguments for the procedure, as map of strings and booleans with `name`, `type`, `default`, `isDeprecated`, and `description`.
+| LIST<MAP>
+|
+
+| returnDescription
+| List of the returned values for the procedure, as map of strings and booleans with `name`, `type`, `isDeprecated`, and `description`.
+| LIST<MAP>
+|
+
+| admin
+| `true` if this procedure is an admin procedure.
+| BOOLEAN
+|
+
+| rolesExecution
+| List of roles permitted to execute this procedure.
+Is `null` without the link:https://neo4j.com/docs/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+| LIST<STRING>
+|
+
+| rolesBoostedExecution
+| List of roles permitted to use boosted mode when executing this procedure.
+Is `null` without the link:https://neo4j.com/docs/operations-manual/current/authentication-authorization/dbms-administration/dbms-role-management-privileges/#_grant_privilege_to_show_roles[`SHOW ROLE`] privilege.
+| LIST<STRING>
+|
+
+| isDeprecated
+| Whether the procedure is deprecated.
+| BOOLEAN
+|
+
+| deprecatedBy
+| The replacement procedure to use in case of deprecation; otherwise `null`.
+| STRING
+|
+
+| option
+| Map of extra output, e.g. if the procedure is deprecated.
+| MAP
+|
+|===
+
+The deprecation information for procedures is returned both in the `isDeprecated` and `option` columns.
+
+[[examples]]
+== Examples
+
+.Show all procedures and return only default columns
+[source, cypher]
+----
+SHOW PROCEDURES
+----
+
+.Show all procedures and return all columns
+[source, cypher]
+----
+SHOW PROCEDURES YIELD *
+----
+
+.Show all procedures and return specific columns only
+[source, cypher]
+----
+SHOW PROCEDURES YIELD name, admin
+----
+
+.Filter `SHOW PROCEDURES` using `WHERE`
+[source, cypher]
+----
+SHOW PROCEDURES YIELD name, worksOnSystem
+WHERE worksOnSystem = TRUE
+RETURN name
+----
+
+The listed procedures can also be filtered by whether a user can execute them.
+This filtering is only available through the `EXECUTABLE` clause and not through the `WHERE` clause.
+This is due to using the user's privileges instead of filtering on the available output columns.
+
+There are two options for using the `EXECUTABLE` clause.
+The first option is to filter for the current user:
+
+.Show procedures executable by the current user
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES EXECUTABLE BY CURRENT USER YIELD *
+----
+
+The second option for using the `EXECUTABLE` clause is to filter the list to only contain procedures executable by a specific user.
+The following example shows the procedures available to the user `jake`, who has been granted the `EXECUTE PROCEDURE dbms.*` privilege by the `admin` of the database.
+For more information about `DBMS EXECUTE` privilege administration, see the xref:authentication-authorization/dbms-administration/dbms-execute-privileges.adoc[The `DBMS EXECUTE` privileges].
+
+.Show procedures executable by specific user
+[source, cypher, role=test-result-skip]
+----
+SHOW PROCEDURES EXECUTABLE BY jake
+----
+
+[role=label--new-2026.05 label--cypher-25]
+[[composable-show-procedures]]
+== Combine `SHOW PROCEDURES` with other Cypher clauses
+
+`SHOW PROCEDURES` can be combined with other Cypher clauses to form a single query.
+
+[NOTE]
+====
+When combining `SHOW PROCEDURES` with other clauses,  the `YIELD` clause is mandatory and must not be omitted.
+`YIELD` must explicitly list the yielded columns.
+`YIELD *` is not permitted.
+The query must also end with a valid last clause (like a `RETURN` or an updating clause).
+====
+
+.Return all functions and procedures
+[source, cypher]
+----
+SHOW PROCEDURES
+YIELD name, signature
+RETURN name, signature, 'procedure' AS type
+UNION
+SHOW FUNCTIONS
+YIELD name, signature
+RETURN name, signature, 'function' AS type
+----
