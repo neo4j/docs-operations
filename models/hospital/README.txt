@@ -23,7 +23,7 @@ setup the users, roles and security privileges, and those running against
 the `healthcare` database for setting up the data model itself. These
 scripts do not include the queries used by the different users to query the
 database. See the docs at
-https://neo4j.com/docs/operations-manual/current/authentication-authorization/
+https://neo4j.com/docs/operations-manual/5/authentication-authorization/
 for example queries.
 
 Run as `neo4j` against the `system` database:
