@@ -96,7 +96,7 @@ Indexes and constraints are not created during the import.
 Instead, you have to add these afterward (see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Cypher Manual -> Indexes]).
 
 You can use the `--schema` option to create and populate indexes and constraints during the import process.
-The option is available in the Enterprise Edition and works only for the `block` format.
+The option is available in the Enterprise Edition and works only with `block` format.
 See <<indexes-constraints-import, Provide indexes and constraints during import>> for more information.
 
 Vector indexes can take advantage of the incubated Java Vector API for noticeable speed improvements.
@@ -2215,34 +2215,52 @@ bin/neo4j-admin database import full --nodes import/movies-header.csv,import/mov
 [role=label--enterprise-edition]
 [[indexes-constraints-import]]
 == Create/Drop indexes and constraints during import
+
 [NOTE]
 ====
-The ability to specify indexes and constraints is not supported by `aligned` format.
+Creating and dropping indexes and constraints during the import process is supported only by `block` format.
 ====
 
-You can use the `--schema` option to create and populate indexes/constraints during full and incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands.
-During an incremental import, you can also use the same option to drop indexes/constraints, provided that the Cypher script contains `DROP INDEX|CONSTRAINT` commands.
+You can use the `--schema` option to create, populate, drop, or change the graph type during import by providing a Cypher script containing the respective Cypher commands, which will be parsed and executed during the import process.
+You can specify individual constraint statements, or starting with 2026.05, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
 
-For incremental import, creating and dropping indexes and constraints are available from 2025.02.
-Starting with 2026.05, the `--schema` option allows you specify a graph type, using a `ALTER CURRENT GRAPH TYPE` statement instead of individual constraints.
+The following table summarizes the supported commands and their availability per import type and version:
+
+.Supported schema operations per import type and Neo4j and Cypher version
+[options="header", width="100%", cols="1,3,2,2"]
+|===
+| Import type
+| Supported commands
+| Neo4j version
+| Cypher version
+.2+| Full import
+| `CREATE INDEX\|CONSTRAINT` | 5.24 and later | Cypher 5 & Cypher 25
+| `ALTER CURRENT GRAPH TYPE` (only `SET`) | 2026.05 and later | Cypher 25
+.3+| Incremental import
+| `CREATE INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
+| `DROP INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
+// | `ALTER CURRENT GRAPH TYPE` (`SET`, `ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
+|===
+
 // TODO: (For the full importer only SET is supported)
 // TODO: As of 2026.06: For incremental import the option becomes available as of 2026.06, limited to operations ADD, DROP, ALTER. Here you are allowed multiples of these operations.
-You have to specify your constraints either as a single graph type statement, or as multiple individual constraint statements.
+=== Supported index and constraint types
 
-See link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`] for more information on graph types.
+The import tool supports the following index and constraint types:
 
-The import tool supports the following index types:
-
+Supported index types::
 * RANGE
 * LOOKUP
 * POINT
 * TEXT
 * FULL-TEXT
 * VECTOR
++
+For more information on these index types, see link:{neo4j-docs-base-uri}/current/indexes/[Cypher Manual -> Indexes].
 
 // TODO: Verify the official constraint names.
-The import tool supports the following constraint types in addition to setting graph type:
-
+Supported constraint types::
 * NODE PROPERTY EXISTENCE
 * NODE PROPERTY UNIQUENESS
 * NODE PROPERTY KEY
@@ -2252,24 +2270,29 @@ The import tool supports the following constraint types in addition to setting g
 * RELATIONSHIP PROPERTY KEY
 * RELATIONSHIP PROPERTY TYPE
 
-The following constraint types are supported via graph types:
+Supported constraint types via graph types::
 * NODE LABEL EXISTENCE
 * RELATIONSHIP ENDPOINT LABEL
 
+[[create-drop-indexes-constraints-full]]
 === Create indexes and constraints during full import
 
 You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
 
+Starting with 2026.05, you can also specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
+
 [NOTE]
 ====
-Full import does not support dropping indexes and constraints. For graph type it supports SET operations.
+Full import does not support dropping indexes and constraints.
+For graph type it supports only `SET` operations.
 ====
 
 For example:
 
 [.tabbed-example]
 =====
-[role=constraint-statements]
+[role=include-with-constraint-statements]
 ======
 
 ._schema.cypher_ script
@@ -2279,9 +2302,9 @@ CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
 CREATE CONSTRAINT PersonAgeConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS :: INTEGER;
 CREATE CONSTRAINT PersonAgeRequiredConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS NOT NULL;
 ----
-This file uses ';' as a separator.
+This file uses `;` as a separator.
 ======
-[role=graph-type-statement]
+[role=include-with-graph-type-statement]
 ======
 
 ._schema.cypher_ script
@@ -2293,20 +2316,21 @@ CYPHER 25 ALTER CURRENT GRAPH TYPE SET {
 };
 ----
 
-This file uses ';' as a separator.
-Note: only SET is supported by the full importer.
+This file uses `;` as a separator.
+Only `SET` is supported by the full importer.
 
 ======
 =====
 
-Then use the following example commands to run the import:
+Then, use the following example commands to run the import:
 
 [source, shell, role=noplay]
 ----
 bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
 ----
 
-[role=label--new-2025.02]
+[role=label--new-2026.02]
+[[create-drop-indexes-constraints-incremental]]
 === Create and drop indexes and constraints during incremental import
 
 You can use the `--schema` option to create and populate, and drop indexes/constraints during an incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` and `DROP INDEX|CONSTRAINT` commands to be parsed and executed.
@@ -2336,7 +2360,7 @@ This file uses ';' as a separator.
 // TODO: As of 2026.06:
 // [.tabbed-example]
 // =====
-// [role=constraint-statements]
+// [role=include-with-constraint-statements]
 // ======
 //
 // ._schema.cypher_ script
@@ -2347,9 +2371,9 @@ This file uses ';' as a separator.
 // DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
 // CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
 // ----
-// This file uses ';' as a separator.
+// This file uses `;` as a separator.
 // ======
-// [role=graph-type-statement]
+// [role=include-with-graph-type-statement]
 // ======
 //
 // ._schema.cypher_ script
@@ -2357,19 +2381,19 @@ This file uses ';' as a separator.
 // ----
 // DROP INDEX PersonNameIndex IF EXISTS;
 // CYPHER 25 ALTER CURRENT GRAPH TYPE DROP {
-//     (p: person => {age :: INTEGER NOT NULL})
+//     (p: person => {age :: INTEGER NOT NULL}
 // };
 // CYPHER 25 ALTER CURRENT GRAPH TYPE ADD {
 //     CONSTRAINT FOR (p:Person) REQUIRE p.name IS UNIQUE
 // };
 // ----
-// This file uses ';' as a separator.
-// Note: Only ADD, DROP, ALTER is supported by the incremental importer.
+// This file uses `;` as a separator.
+// Only `ADD`, `DROP`, `ALTER` is supported by the incremental importer.
 //
 // ======
 // =====
 
-Then use the following example commands to run the import:
+Then, use the following example commands to run the import:
 
 [source, shell, role=noplay]
 ----
@@ -2432,8 +2456,3 @@ The import CLI supports the `--report-file` option to override the default outpu
 When provided, violations are written to the specified location in the same JSON format.
 
 Each JSON entry includes a `message` field equivalent to the pre-2026.03 format, along with additional fields that provide more detailed information.
-
-
-
-
-
