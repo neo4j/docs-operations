@@ -2272,7 +2272,7 @@ Creating and dropping indexes and constraints during the import process is suppo
 ====
 
 You can use the `--schema` option to create, populate, drop, or change the graph type during import by providing a Cypher script containing the respective Cypher commands, which will be parsed and executed during the import process.
-You can specify individual constraint statements, or starting with 2026.05, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+You can specify individual constraint statements, or starting with 2026.05 for full import and 2026.06 for incremental import, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
 For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
 
 The following table summarizes the supported commands and their availability per import type and version:
@@ -2290,10 +2290,9 @@ The following table summarizes the supported commands and their availability per
 .3+| Incremental import
 | `CREATE INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
 | `DROP INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
-// | `ALTER CURRENT GRAPH TYPE` (`SET`, `ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
+| `ALTER CURRENT GRAPH TYPE` (`SET`, `ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
 |===
 
-// TODO: As of 2026.06: For incremental import the option becomes available as of 2026.06, limited to operations ADD, DROP, ALTER. Here you are allowed multiples of these operations.
 === Supported index and constraint types
 
 The import tool supports the following index and constraint types:
@@ -2391,6 +2390,10 @@ You can use the `--schema` option to create and populate, and drop indexes/const
 Note that you cannot drop indexes that are backing constraints.
 You must drop the constraints themselves, which will also drop the underlying indexes.
 
+Starting with 2026.06, you can also specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`]. +
+Incremental import supports `ADD`, `DROP`, and `ALTER` operations for graph types and it allows using multiple `ALTER CURRENT GRAPH TYPE` statements with different operations in the same script.
+
 [NOTE]
 ====
 You must stop your database before performing an incremental import with a single command.
@@ -2401,6 +2404,11 @@ See <<incremental-import-stages>> for details.
 
 For example:
 
+[.tabbed-example]
+=====
+[role=include-with-constraint-statements]
+======
+
 ._schema.cypher_ script
 [source, cypher, role=nocopy]
 ----
@@ -2409,42 +2417,26 @@ CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNI
 DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
 CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
 ----
-This file uses ';' as a separator.
+This file uses `;` as a separator.
+======
+[role=include-with-graph-type-statement]
+======
+label:new[Introduced in 2026.06] label:cypher[Cypher 25]
 
-// TODO: As of 2026.06:
-// [.tabbed-example]
-// =====
-// [role=include-with-constraint-statements]
-// ======
-//
-// ._schema.cypher_ script
-// [source, cypher, role=nocopy]
-// ----
-// DROP INDEX PersonNameIndex IF EXISTS;
-// CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
-// DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
-// CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
-// ----
-// This file uses `;` as a separator.
-// ======
-// [role=include-with-graph-type-statement]
-// ======
-// label:new[Introduced in 2026.05] label:cypher[Cypher 25]
-//
-// ._schema.cypher_ script
-// [source, cypher, role=nocopy]
-// ----
-// CYPHER 25
-// DROP INDEX PersonNameIndex IF EXISTS;
-// ALTER CURRENT GRAPH TYPE DROP {
-//    (p: person => {age :: INTEGER NOT NULL}
-// }
-// ----
-// This file uses `;` as a separator.
-// Only `ADD`, `DROP`, `ALTER` is supported by the incremental importer.
-//
-// ======
-// =====
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CYPHER 25
+DROP INDEX PersonNameIndex IF EXISTS;
+ALTER CURRENT GRAPH TYPE DROP {
+   (p: person => {age :: INTEGER NOT NULL}
+}
+----
+This file uses `;` as a separator.
+Only `ADD`, `DROP`, `ALTER` are supported by the incremental importer.
+
+======
+=====
 
 Then, use the following example commands to run the import:
 
