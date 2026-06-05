@@ -3,6 +3,31 @@
 [[restore-backup]]
 = Restore a database backup
 
+Neo4j suggests a few options to restore a database backup artifact (full or differential) created with the xref:backup-restore/online-backup.adoc[`neo4j-admin database backup`] command.
+
+== Restore a database on a standalone server
+
+To restore a database from a backup in a standalone server environment, use one of the following methods:
+
+* Use the <<restore-backup-command, `neo4j-admin database restore`>> command.
+* Restore a database using URI approach.
+See xref:database-administration/standard-databases/seed-from-uri.adoc[] for detailed information.
+* label:new[Introduced in 5.24] Recreate a database using the xref:database-administration/standard-databases/recreate-database.adoc[`dbms.recreateDatabase()` procedure].
+* label:new[Introduced in 5.20] You can also load a **full** database backup artifact using the xref:backup-restore/restore-dump.adoc[`neo4j-admin database load`] command.
+This functionality is available in the Community Edition.
+
+== Restore a clustered database from a backup
+
+To restore a database from a backup in a clustered environment, use one of the following methods:
+
+* Recreate a database from a URI.
+See xref:clustering/databases.adoc#restore-database-using-uri-approach[Restore a database in cluster using URI approach] for more information.
+* Designate one of the servers to be used as a seeder, and restore the database backup on that server.
+For more information, see xref:clustering/databases.adoc#cluster-designated-seeder[Restore a database using a server as a designated seeder].
+* label:new[Introduced in 5.24] Recreate a database using the `dbms.recreateDatabase()` procedure.
+See xref:clustering/databases.adoc#restore-database-using-recreate-procedure[Restore a database using `dbms.recreateDatabase()`] for more details.
+
+
 [[restore-backup-command]]
 == Command
 
@@ -11,7 +36,7 @@ A database backup artifact (full or differential) can be restored within the sam
 Starting with Neo4j 5.20, you can load a **full** database backup artifact using the xref:backup-restore/restore-dump.adoc[`neo4j-admin database load`] command.
 This functionality is available in the Community Edition.
 
-[NOTE]
+[IMPORTANT]
 ====
 Restoring a database backup to a previous Neo4j version is not supported.
 ====
@@ -172,7 +197,7 @@ The `LOWEST TX` and `HIGHEST TX` columns show the transaction IDs of the first a
 That means, if you restore `neo4j-2023-06-29T14-50-45.backup`, your database will have `14` as the last transaction ID.
 
 
-=== Restore a database backup
+=== Restore a backup on a standalone server
 
 The following examples assume that you want to restore your data in a new database, called `mydatabase`.
 If you want to replace an existing database, you need to stop it first, and add the option `--overwrite-destination=true` to the restore command.
@@ -233,6 +258,7 @@ For example, `--restore-until=123`.
 CREATE DATABASE mydatabase;
 ----
 
+
 [[restore-cloud-storage]]
 === Restore a backup located in cloud storage
 
@@ -256,6 +282,14 @@ The example assumes that you have backup artifacts located in the `myBucket/myDi
 ----
 bin/neo4j-admin database restore --from-path=s3://myBucket/myDirectory/myBackup.backup mydatabase
 ----
+
+. If you have not stopped your database and used the `--overwrite-destination=true` option, you have to create the new `mydatabase` by running the command:
++
+[source,cypher]
+----
+CREATE DATABASE mydatabase;
+----
+
 ======
 
 [role=include-with-Google-cloud-storage label--new-5.21]
@@ -270,6 +304,14 @@ The example assumes that you have backup artifacts located in the `myBucket/myDi
 ----
 bin/neo4j-admin database restore --from-path=gs://myBucket/myDirectory/myBackup.backup mydatabase
 ----
+
+. If you have not stopped your database and used the `--overwrite-destination=true` option, you have to create the new `mydatabase` by running the command:
++
+[source,cypher]
+----
+CREATE DATABASE mydatabase;
+----
+
 ======
 
 [role=include-with-Azure-cloud-storage label--new-5.24]
@@ -284,20 +326,23 @@ The example assumes that you have backup artifacts located in the `myStorageAcco
 ----
 bin/neo4j-admin database restore --from-path=azb://myStorageAccount/myContainer/myDirectory/myBackup.backup mydatabase
 ----
+
+. If you have not stopped your database and used the `--overwrite-destination=true` option, you have to create the new `mydatabase` by running the command:
++
+[source,cypher]
+----
+CREATE DATABASE mydatabase;
+----
+
 ======
 =====
 
-=== Restore a database backup in a cluster
 
-To restore a database backup in a cluster, designate one of the servers to be used as a seeder, and restore the database backup on that server.
-Then, use that server to create the restored database on other servers in the cluster.
-For more information, see xref:clustering/databases.adoc#cluster-seed[Designated seeder].
+== Restore users and roles metadata
 
-=== Restore users and roles metadata
+Users, roles, and auth rules metadata are backed up during the backup process by default.
 
-If you have backed up a database with the option `--include-metadata`, you can manually restore the users and roles metadata.
-
-From the _<NEO4J_HOME>_ directory, you run the Cypher script _/data/scripts/databasename/restore_metadata.cypher_, which the `neo4j-admin database restore` command outputs, using xref:tools/cypher-shell.adoc[]:
+If you need to restore the users and roles metadata, you have to do it manually by running the Cypher script from the _<NEO4J_HOME>_ directory, _/data/scripts/databasename/restore_metadata.cypher_, which the `neo4j-admin database restore` command outputs, using xref:tools/cypher-shell.adoc[]:
 
 *Using `cat` (UNIX)*
 [source, shell, role=nocopy noplay]
@@ -310,3 +355,4 @@ cat ../data/scripts/databasename/restore_metadata.cypher | bin/cypher-shell -u u
 ----
 type ..\data\scripts\databasename\restore_metadata.cypher | bin\cypher-shell.bat -u user -p password -a ip_address:port -d system --param "database => 'databasename'"
 ----
+
