@@ -390,7 +390,8 @@ This is achieved by using the `format` option of the import command and setting 
 
 [source, shell]
 --
-bin/neo4j-admin database import full --format=block
+bin/neo4j-admin database import full \
+--format=block
 --
 
 The `block` format is available in Enterprise Edition only.
@@ -405,7 +406,9 @@ For example, the following command:
 
 [source, shell]
 ----
-bin/neo4j-admin database import full @/path/to/your/<args-filename> mydb
+bin/neo4j-admin database import full \
+@/path/to/your/<args-filename> \
+databasename
 ----
 For more information, see link:https://picocli.info/#AtFiles[Picocli -> AtFiles] official documentation.
 ====
@@ -457,9 +460,10 @@ The following command imports the three datasets:
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/movies_header.csv,import/movies.csv \
---nodes import/actors_header.csv,import/actors.csv \
---relationships import/roles_header.csv,import/roles.csv
+bin/neo4j-admin database import full \
+--nodes=import/movies_header.csv,import/movies.csv \
+--nodes=import/actors_header.csv,import/actors.csv \
+--relationships=import/roles_header.csv,import/roles.csv
 ----
 
 [role=label--enterprise-edition label--new-5.24]
@@ -493,7 +497,12 @@ For example:
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full neo4j --nodes=import/movies.csv --nodes=import/actors.csv --relationships=import/roles.csv --schema=import/schema.cypher
+bin/neo4j-admin database import full \
+--nodes=import/movies.csv \
+--nodes=import/actors.csv \
+--relationships=import/roles.csv \
+--schema=import/schema.cypher \
+neo4j
 ----
 
 
@@ -508,7 +517,8 @@ For example:
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data_\d+\.csv
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data_\d+\.csv
 ----
 
 [NOTE]
@@ -526,7 +536,9 @@ For example:
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/node_header.csv,'import/node_data_\d{1,5}.csv' databasename
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,'import/node_data_\d{1,5}.csv' \
+databasename
 ----
 
 [[import-files-from-cloud-storage]]
@@ -548,7 +560,10 @@ The example assumes that you have data stored in the `myBucket/data` folder in y
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes s3://myBucket/data/nodes.csv --relationships s3://myBucket/data/relationships.csv newdb
+bin/neo4j-admin database import full \
+--nodes=s3://myBucket/data/nodes.csv \
+--relationships=s3://myBucket/data/relationships.csv \
+databasename
 ----
 ======
 
@@ -562,7 +577,10 @@ The example assumes that you have data stored in the `myBucket/data` folder in y
 +
 [source,shell]
 ----
-bin/neo4j-admin database import full --nodes gs://myBucket/data/nodes.csv --relationships gs://myBucket/data/relationships.csv newdb
+bin/neo4j-admin database import full \
+--nodes=gs://myBucket/data/nodes.csv \
+--relationships=gs://myBucket/data/relationships.csv \
+databasename
 ----
 ======
 
@@ -576,7 +594,10 @@ The example assumes that you have data stored in the `myStorageAccount/myContain
 +
 [source,shell]
 ----
-bin/neo4j-admin database import full --nodes azb://myStorageAccount/myContainer/data/nodes.csv --relationships azb://myStorageAccount/myContainer/data/relationships.csv newdb
+bin/neo4j-admin database import full \
+--nodes=azb://myStorageAccount/myContainer/data/nodes.csv \
+--relationships=azb://myStorageAccount/myContainer/data/relationships.csv \
+databasename
 ----
 ======
 =====
@@ -647,10 +668,10 @@ The importer works well on standalone servers.
 
 To safely perform an incremental import in a clustered environment, follow these steps:
 
-. Run the incremental import command on a single server in the cluster. 
+. Run the incremental import command on a single server in the cluster.
 This server can then be used as the xref:clustering/databases.adoc#cluster-designated-seeder[designated seeder] from which other cluster members can copy the database.
 . Reconfigure the database topology to a single primary by running the xref:procedures/built-in-procedures.adoc#procedure_dbms_cluster_recreateDatabase[`dbms.cluster.recreateDatabase()`] procedure.
-. Then stop the database using xref:database-administration/standard-databases/create-databases.adoc#manage-databases-stop[STOP DATABASE]. 
+. Then stop the database using xref:database-administration/standard-databases/create-databases.adoc#manage-databases-stop[STOP DATABASE].
 . Perform the incremental import on the server that hosts the database.
 . Then start the database with xref:database-administration/standard-databases/create-databases.adoc#manage-databases-start[START DATABASE].
 . Lastly, restore the desired database topology using xref:database-administration/standard-databases/alter-databases.adoc#[ALTER DATABASE].
@@ -944,9 +965,13 @@ This option requires the database to be stopped.
 ====
 [source, shell, role=noplay]
 ----
-neo4j@system> STOP DATABASE db1 WAIT;
+neo4j@system> STOP DATABASE neo4j WAIT;
 ...
-bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-data/incremental-import/b.csv db1
+bin/neo4j-admin database import incremental \
+--stage=all \
+--nodes=N1=../../raw-data/incremental-import/nodes.csv \
+--relationships=R1=../../raw-data/incremental-import/relationships.csv \
+neo4j
 ----
 ====
 
@@ -955,24 +980,26 @@ bin/neo4j-admin database import incremental --stage=all --nodes=N1=../../raw-dat
 
 If you cannot afford a full downtime of your database, you can run the import in three stages.
 
-====
 . `prepare` stage:
 +
 During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
 The import command is run with the option `--stage=prepare` and the database must be stopped.
 +
-.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 The database must be stopped to run `--stage=prepare`.
 +
 [source, shell, role=noplay]
 ----
-STOP DATABASE db1 WAIT
+STOP DATABASE neo4j WAIT;
 ----
 .. Run the incremental import command with the `--stage=prepare` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=prepare --nodes=N1=../../raw-data/incremental-import/c.csv db1
+bin/neo4j-admin database import incremental \
+--stage=prepare \
+--nodes=N1=../../raw-data/incremental-import/c.csv \
+neo4j
 ----
 . `build` stage:
 +
@@ -984,13 +1011,16 @@ The import command is run with the option `--stage=build`.
 +
 [source, shell, role=noplay]
 ----
-ALTER DATABASE db1 SET ACCESS READ ONLY
+ALTER DATABASE neo4j SET ACCESS READ ONLY;
 ----
 .. Run the incremental import command with the `--stage=build` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=build --nodes=N1=../../raw-data/incremental-import/c.csv db1
+bin/neo4j-admin database import incremental \
+--stage=build \
+--nodes=N1=../../raw-data/incremental-import/c.csv \
+neo4j
 ----
 . `merge` stage:
 +
@@ -999,19 +1029,20 @@ It also updates the affected indexes and upholds the affected property uniquenes
 The import command is run with the option `--stage=merge` and the database must be stopped.
 It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
 +
-.. Using the `system` database, stop the database `db1` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
 +
 [source, shell, role=noplay]
 ----
-STOP DATABASE db1 WAIT
+STOP DATABASE neo4j WAIT;
 ----
 .. Run the incremental import command with the `--stage=merge` option:
 +
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import incremental --stage=merge db1
+bin/neo4j-admin database import incremental \
+--stage=merge \
+neo4j
 ----
-====
 
 [[import-tool-header-format]]
 == CSV header format
@@ -1481,7 +1512,10 @@ For example:
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data.csv --multiline-fields=true databasename
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=true \
+databasename
 ----
 
 Where `import/node_data.csv` contains multiline fields, such as:
@@ -1517,7 +1551,11 @@ For example:
 ======
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data.csv --multiline-fields=true --multiline-fields-format=v1 databasename
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=true \
+--multiline-fields-format=v1 \
+databasename
 ----
 
 Where `import/node_data.csv` contains multiline fields, such as:
@@ -1534,7 +1572,11 @@ description
 
 [source, shell, role=noplay]
 ----
-bin/neo4j-admin database import full --nodes import/node_header.csv,import/node_data.csv --multiline-fields=import/node_data.csv --multiline-fields-format=v2 databasename
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=import/node_data.csv \
+--multiline-fields-format=v2 \
+databasename
 ----
 
 Where `import/node_data.csv` contains multiline fields, such as:
@@ -1594,7 +1636,10 @@ actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-heade
 
 [source, sh]
 ----
-bin/neo4j-admin database import --nodes import/movies-header.csv,import/movies.csv.gz --nodes import/actors-header.csv,import/actors.csv.zip --relationships import/roles-header.csv,import/roles.csv.gz
+bin/neo4j-admin database import full \
+--nodes=import/movies-header.csv,import/movies.csv.gz \
+--nodes=import/actors-header.csv,import/actors.csv.zip \
+--relationships=import/roles-header.csv,import/roles.csv.gz
 ----
 ====
 
