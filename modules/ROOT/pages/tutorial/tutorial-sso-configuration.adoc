@@ -15,7 +15,7 @@ Therefore, when reproducing them in the identity providers, you must modify the 
 For example:
 
 ----
-http://localhost:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri
+http://localhost:7474/browser/oauth/callback
 ----
 ====
 
@@ -60,7 +60,7 @@ For the complete guide on how to customize tokens returned from Okta with a grou
 . Click *Next*.
 . Configure the client with the appropriate redirect URI.
 .. Add a name for the app integration.
-.. Add the *Sign-in redirect URIs*, for example, _\http://localhost:7474/browser/?idp_id=okta&auth_flow_step=redirect_uri_.
+.. Add the *Sign-in redirect URIs*, for example, _\http://localhost:7474/browser/oauth/callback_.
 This URI will accept returned token responses after successful authentication.
 . Add the *Sign-out redirect URIs*, for example, _\http://localhost:7474/_.
 . In the *Assignments* section, select *Skip group assignment* for now.
@@ -221,9 +221,14 @@ The following examples show how to configure Microsoft Entra ID for authenticati
 . Click *Microsoft Entra ID* and navigate to *Manage -> App registrations*.
 . Click *New registration*.
 . Type a name for your application, for example, `Neo4j SSO`.
-. Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)`.
-. Under *Redirect URI*, select `Single-page application (SPA)` and enter the redirect URI: `+++http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri+++`
-The redirect URI will accept the returned token responses after successful authentication.
+. Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)` or the option appropriate for your deployment.
+. Under *Redirect URI*, select `Single-page application (SPA)` and enter the following static redirect URI: _\http://localhost:7474/browser/oauth/callback_.
+This redirect URI is used to complete the OAuth 2.0 / OpenID Connect authorization code flow.
++
+[NOTE]
+====
+The redirect URI must be registered exactly as configured in the identity provider. Application-specific context (such as selected identity provider or flow state) should be passed using the OAuth state parameter rather than query parameters in the redirect URI.
+====
 . Click *Register*.
 
 === Access token
@@ -263,10 +268,10 @@ You can configure Neo4j to use Entra ID for authentication by configuring the fo
 [source, properties]
 ----
 # Configure the access_token
-dbms.security.oidc.azure.config=principal=unique_name;code_challenge_method=S256;token_type_principal=access_token;token_type_authentication=access_token
+dbms.security.oidc.azure.config=principal=preferred_username;code_challenge_method=S256;token_type_principal=access_token;token_type_authentication=access_token
 # Configure the OIDC token endpoint with the Directory (tenant) ID
 dbms.security.oidc.azure.token_endpoint=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/oauth2/v2.0/token
-# Configure the iss claim in the id token with the Directory (tenant) ID
+# Configure the iss claim in the access token with the Directory (tenant) ID
 # Make sure you add the trailing slash (`/`) at the end of the URL or this operation might fail.
 dbms.security.oidc.azure.issuer=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/v2.0
 # Provide the Entra ID parameters, such as client_id, response_type, scope, etc.
@@ -349,9 +354,9 @@ Details about Entra ID App Roles can be found in the https://learn.microsoft.com
 +
 [source, json]
 ----
-"groupMembershipClaims": "groupMembershipClaims": "SecurityGroup",
+"groupMembershipClaims": "SecurityGroup, ApplicationGroup",
 ----
-. From the left-hand side menu, navigate to *Manage -> Groups*.
+. From the left-hand side menu, navigate to *Microsoft Entra ID -> Groups*.
 . Create groups and assign users to them.
 Take note of the *Object Id* column.
 . Configure a mapping from Entra Group Object Ids to Neo4j roles.
@@ -360,7 +365,7 @@ For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso
 [source, properties]
 ----
 dbms.security.oidc.azure.authorization.group_to_role_mapping= "e8b6ddfa-688d-4ace-987d-6cc5516af188" = admin; \
-                                                              "9e2a31e1-bdd1-47fe-844d-767502bd138d" = reader
+"9e2a31e1-bdd1-47fe-844d-767502bd138d" = reader
 ----
 . Configure Neo4j to use the `groups` field from the JWT token.
 +
