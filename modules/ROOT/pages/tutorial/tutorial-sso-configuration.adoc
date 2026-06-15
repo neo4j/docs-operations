@@ -15,7 +15,7 @@ Therefore, when reproducing them in the identity providers, you must modify the 
 For example:
 
 ----
-http://localhost:7474/browser/oauth/callback
+https://{server}:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri
 ----
 ====
 
@@ -57,12 +57,13 @@ For the complete guide on how to customize tokens returned from Okta with a grou
 
 . From the left-hand side of the Okta dashboard, navigate to *Applications* and click *Create App Integration*.
 . Select *OIDC - OpenID Connect* for Sign-in method and *Single-Page Application* for Application type.
+Because Neo4j Browser is a single-page application, this is the recommended configuration.
 . Click *Next*.
 . Configure the client with the appropriate redirect URI.
 .. Add a name for the app integration.
-.. Add the *Sign-in redirect URIs*, for example, _\http://localhost:7474/browser/oauth/callback_.
+.. Add the *Sign-in redirect URIs*, for example, _\https://{server}:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri_.
 This URI will accept returned token responses after successful authentication.
-. Add the *Sign-out redirect URIs*, for example, _\http://localhost:7474/_.
+. Add the *Sign-out redirect URIs*, for example, _\https://{server}:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri_.
 . In the *Assignments* section, select *Skip group assignment* for now.
 . Click *Save*.
 . Take note of the Client ID.
@@ -103,7 +104,7 @@ dbms.security.authentication_providers=oidc-okta
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/openid-configuration
+dbms.security.oidc.okta.well_known_discovery_uri=https://example.okta.com/oauth2/default/.well-known/openid-configuration
 dbms.security.oidc.okta.audience=api://default
 dbms.security.oidc.okta.claims.username=sub
 dbms.security.oidc.okta.claims.groups=groups
@@ -157,7 +158,7 @@ The name you give to your claim needs to be also indicated in the configuration 
 .. Add a claim with the name `userid`.
 .. From the *Include in token type* dropdown, select *ID Token*.
 .. From the *Value type* dropdown, select *Expression*.
-.. In the *Value* field, type `(appuser != null) ? appuser.login : app.clientId`.
+.. In the *Value* field, type `(appuser != null) ? appuser.userName : app.clientId`.
 .. Click *Create*.
 
 ==== Configure Neo4j
@@ -170,7 +171,7 @@ dbms.security.authentication_providers=oidc-okta, native
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/openid-configuration
+dbms.security.oidc.okta.well_known_discovery_uri=https://example.okta.com/oauth2/default/.well-known/openid-configuration
 dbms.security.oidc.okta.audience=0oao2rybx5hIERt5W5d7
 dbms.security.oidc.okta.claims.username=userid
 dbms.security.oidc.okta.claims.groups=groups
@@ -222,12 +223,14 @@ The following examples show how to configure Microsoft Entra ID for authenticati
 . Click *New registration*.
 . Type a name for your application, for example, `Neo4j SSO`.
 . Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)` or the option appropriate for your deployment.
-. Under *Redirect URI*, select `Single-page application (SPA)` and enter the following static redirect URI: _\http://localhost:7474/browser/oauth/callback_.
-This redirect URI is used to complete the OAuth 2.0 / OpenID Connect authorization code flow.
+. Under *Redirect URI*, select `Single-page application (SPA)` and enter the following static redirect URI: _\https://{server}:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri_.
+This redirect URI is supported only by single-tenant applications and is used to redirect the user back to the Neo4j Browser after successful authentication.
 +
 [NOTE]
 ====
-The redirect URI must be registered exactly as configured in the identity provider. Application-specific context (such as selected identity provider or flow state) should be passed using the OAuth state parameter rather than query parameters in the redirect URI.
+If using multi-tenant applications, it is recommended to use a centralized callback endpoint, such as _\https://login.neo4j.com/login/callback_, that can handle the redirect from multiple tenants and then redirect the user to the appropriate Neo4j Browser instance.
+The redirect URI must be registered exactly as configured in the identity provider.
+Application-specific context (such as selected identity provider or flow state) should be passed using the OAuth `state` parameter rather than query parameters in the redirect URI.
 ====
 . Click *Register*.
 
