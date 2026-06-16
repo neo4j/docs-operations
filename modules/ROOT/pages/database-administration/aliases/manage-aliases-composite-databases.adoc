@@ -19,7 +19,7 @@ CREATE DATABASE `perennial-flowers`;
 
 
 [[manage-aliases-composite-databases-list]]
-== List database aliases in composite databases
+== Show database aliases in composite databases
 
 Available database aliases in composite databases can be seen using `SHOW ALIASES FOR DATABASE`.
 The name of the composite database a particular database alias appears in the returned `composite` column.
@@ -218,6 +218,9 @@ SHOW DATABASE garden YIELD name, type, constituents
 Naming database aliases in composite databases follows the same rule as xref:database-administration/aliases/naming-aliases.adoc[naming aliases for standard databases].
 However, when it comes to escaping names using backticks, there are some additional things to consider:
 
+Dots in alias names are ambiguous.
+They could either be interpreted as part of the name itself, or as the dot that separates a composite namespace from the alias name.
+
 === Quoting database alias and composite database names
 
 The composite database name and the database alias name need to be quoted individually.
@@ -285,8 +288,14 @@ CREATE ALIAS some.alias FOR DATABASE `northwind-graph`
 
 === Handling parameters
 
+When using parameters to specify database alias names, the same rules apply as when using literal strings.
+However, since parameters cannot be quoted, it is not possible to specify the composite database name and the alias name separately when using parameters.
+This means that the first dot in the parameter value will always be considered as the separator between the composite database name and the alias name, which can lead to unexpected results if the parameter value contains dots.
+
+==== Parameters with dots
+
 When using parameters, names cannot be quoted.
-When the given parameter includes dots, the first dot will be considered the divider for the composite database.
+When the given parameter includes dots, the first dot is considered the divider for the composite database.
 
 Consider the query with parameter:
 
@@ -301,13 +310,15 @@ Consider the query with parameter:
 .Query
 [source, cypher]
 ----
-CREATE ALIAS $aliasname FOR DATABASE `northwind-graph`
+CREATE ALIAS $aliasname FOR DATABASE `northwind-graph`;
 ----
 
-If the composite database `mysimplecompositedatabase` exists, then a database alias `myalias` will be created in that composite database.
-If no such composite database exists, then a database alias `mysimplecompositedatabase.myalias` will be created.
+If the composite database `mySimpleCompositeDatabase` exists, then a database alias `myAlias` will be created in that composite database.
+If no such composite database exists, then a database alias `mySimpleCompositeDatabase.myAlias` will be created.
 
-On the contrary, a database alias `myalias` cannot be created in composite `mycompositedatabase.withdot` using parameters.
+==== Parameters with multiple dots
+
+On the contrary, a database alias `myAlias` cannot be created in composite `myCompositeDatabase.withDot` using parameters.
 Consider the same query but with the following parameter:
 
 .Parameters
@@ -323,9 +334,9 @@ If `mycompositedatabase` does not exist, the command will create a database alia
 
 In these cases, it is recommended to avoid parameters and explicitly quote the composite database name and alias name separately to avoid ambiguity.
 
-=== Handling parameters
+==== Avoiding ambiguity when using parameters
 
-Further special handling with parameters is needed for database aliases and similarly named composite databases.
+Database aliases and similarly named composite databases require further special handling with parameters.
 
 Consider the setup:
 
@@ -336,9 +347,7 @@ CREATE COMPOSITE DATABASE foo
 CREATE ALIAS `foo.bar` FOR DATABASE `northwind-graph`
 ----
 
-The alias `foo.bar` does not belong to the composite database `foo`.
-
-Dropping this alias using parameters fails with an error about a missing alias:
+Because the alias `foo.bar` does not belong to the composite database `foo`, dropping this alias using a parameter will fail with a chain of errors about a missing alias:
 
 .Parameters
 [source, javascript]
@@ -351,17 +360,18 @@ Dropping this alias using parameters fails with an error about a missing alias:
 .Query
 [source, cypher, role=test-fail]
 ----
-DROP ALIAS $aliasname FOR DATABASE
+DROP ALIAS $aliasname FOR DATABASE;
 ----
 
-.Error message
+.Error
 [source, output, role="noheader"]
 ----
-Failed to delete the specified database alias 'foo.bar': Database alias does not exist.
+42N00: Syntax error or access rule violation - graph reference not found. A graph reference with the name `foo.bar` was not found. Verify that the spelling is correct.
+42N51: Syntax error or access rule violation - invalid parameter. Invalid parameter $`aliasname`.
+42001: Syntax error or access rule violation - invalid syntax
 ----
 
-//From 5.26 onwards, the error message also contains the GQLSTATUS code `50N00` and the status description `error: general processing exception - internal error. Internal exception raised { $msgTitle }: Failed to create the specified database alias 'foo.bar'. Database alias does not exist.`
-
-Had the composite database `foo` not existed, the database alias `foo.bar` would have been dropped.
-
+In this example, Neo4j looks for the alias `bar` within the composite database `foo`.
+Since no such alias exists, the operation cannot be completed.
+If the composite database `foo` did not exist, the alias `foo.bar` would be resolved as a standalone alias and could be dropped successfully.
 In these cases, it is recommended to avoid parameters and explicitly quote the composite database name and alias name separately to avoid ambiguity.
