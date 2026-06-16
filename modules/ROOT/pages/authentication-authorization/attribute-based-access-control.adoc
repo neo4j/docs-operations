@@ -7,19 +7,32 @@
 CREATE ROLE salesTeam;
 CREATE ROLE engineeringTeamUK;
 CREATE ROLE countryAccessRole;
+CREATE ROLE piiAccessTeam;
+CREATE ROLE financeAuditTeam;
+CREATE ROLE onCallTeam;
+CREATE ROLE financeApproverTeam;
 ----
 ////
 
 [[attribute-based-access-control]]
 = Attribute-based access control
 
-Attribute-based access control (ABAC) grants roles based on the evaluation of attributes (or claims) contained in a user's authentication token.
+Attribute-based access control (ABAC) grants roles based on the evaluation of user attributes. These could be claims contained in a user's authentication token, or tags attached to a native user object.
 
 == Setup
 
 To set up attribute-based access control, follow these steps:
 
-. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to the OIDC provider(s) you want to use for ABAC.
+. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to be the list of authorization provider(s) you want to use for ABAC. These can include any of the OIDC providers as well as the `native` provider. In order for a provider to be allowed in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], it must also appear in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`].
++
+[NOTE]
+====
+When reasoning about which auth rules will apply for your users given your choice of xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], consider which rules could feasibly be executed.
+
+For example, a purely temporal rule such as `time.transaction('UTC').hour >= 9 AND time.transaction('UTC').hour < 17` does not reference any provider, so it can execute regardless of which providers are configured (but only when at least one valid provider is indeed configured).
+
+In contrast, a rule that calls the metadata accessor function of a provider that is not in the list will fail. When a provider is not listed, its relevant accessor function (for example, `abac.oidc.user_attribute()` for an OIDC provider, or `abac.native.user_tags()` for the `native` provider) is not available at all, so any rule referencing it intentionally fails rather than silently evaluating to a default, meaning that the rule cannot be fulfilled and the user cannot receive the roles from that rule.
+====
 . Define authorization rules for granting roles based on user attributes using the `CREATE AUTH RULE` command.
 See <<create-auth-rule,Create auth rules>> for details.
 . Specify which roles to assign when the authorization rules are fulfilled using the `GRANT ROLE` command.
@@ -55,8 +68,11 @@ Any assigned roles associated with the old auth rule will not be associated to t
 `OR REPLACE` and `IF NOT EXISTS` cannot be used at the same time.
 
 <3> The `SET CONDITION` clause allows you to specify a condition that must be met for a user to be granted the roles associated with the auth rule.
-The `conditionExpression` is a Boolean Cypher expression that evaluates user attributes (claims) contained in the authentication token.
-To access an attribute, use the syntax `abac.oidc.user_attribute('<claim_key>')`.
+
++
+The `conditionExpression` is a Boolean Cypher expression that evaluates conditions against user attributes. These attributes could be claims contained in the users OIDC token (accessed via the `abac.oidc.user_attribute('<claim_key>')` function), or tags on the native user object (accessed via the `abac.native.user_tags()` function).
++
+For more information on attaching tags to native users, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users] and xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users] [[access-control-alter-users]].
 +
 The `conditionExpression` can use any valid Cypher expression that evaluates to a Boolean value, including logical operators (`AND`, `OR`, `NOT`, etc), comparison operators (`=`, `<>`, `<`, `>`, `<=`, and `>=`), and the following built-in functions:
 +
@@ -110,9 +126,9 @@ Token timestamps are fixed at the time of issuance and may use different formats
 By default, the rule is enabled.
 
 
-=== Example 1: Create auth rules with a simple condition
+=== Example 1: Create an auth rule with a simple condition
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `department` equals `sales`:
+The following example creates an auth rule that grants the associated roles to users who have the attribute `department` equals `sales`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -120,9 +136,9 @@ CREATE AUTH RULE salesRule
     SET CONDITION abac.oidc.user_attribute('department') = 'sales';
 ----
 
-=== Example 2: Create auth rules with multiple conditions
+=== Example 2: Create an auth rule with multiple conditions
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `department` equals `engineering` and `location` equals `UK`:
+The following example creates an auth rule that grants the associated roles to users who have attributes `department` equals `engineering` and `location` equals `UK`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -131,9 +147,9 @@ CREATE AUTH RULE engineeringUKRule
         AND abac.oidc.user_attribute('location') = 'UK';
 ----
 
-=== Example 3: Create auth rules based on a list of values
+=== Example 3: Create an auth rule based on a list of values
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `citizenshipCountries` containing any of the allowed countries `c1` or `c5`:
+The following example creates an auth rule that grants the associated roles to users who have attribute `citizenshipCountries` containing any of the allowed countries `c1` or `c5`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -144,7 +160,7 @@ CREATE AUTH RULE ruleset_countries SET CONDITION
 
 === Example 4: Create auth rules with temporal conditions
 
-The following example creates an auth rule that temporarily grants the assigned roles to users with the attribute `jobTitle` equals `developer`, between the hours of 19:00 and 20:00:
+The following example creates an auth rule that temporarily grants the assigned roles to users who have attribute `jobTitle` equals `developer`, between the hours of 19:00 and 20:00:
 
 [source, cypher25, role="noheader"]
 ----
@@ -162,10 +178,72 @@ CREATE AUTH RULE emea_working_hours
         AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18;
 ----
 
+=== Example 5: Create an auth rule based on native user tags
+
+As well as evaluating claims from an OIDC token, auth rules can evaluate the tags attached to a native user using the `abac.native.user_tags()` function.
+This function returns the list of tags assigned to the authenticated user.
+
+The following example grants the associated roles to any native user that has been tagged with `pii-access`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE piiAccessRule
+    SET CONDITION 'pii-access' IN abac.native.user_tags();
+----
+
+=== Example 6: Create an auth rule requiring multiple native user tags
+
+Because `abac.native.user_tags()` returns a list, you can combine it with the list predicate functions to require several tags at once.
+
+The following example grants the associated roles only to native users tagged with both `finance` and `auditor`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE financeAuditorRule
+    SET CONDITION all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags());
+----
+
+=== Example 7: Combine native user tags with other conditions
+
+Native user tags can be combined with OIDC claims, temporal functions, and any other supported expression within a single condition.
+
+The following example grants the associated roles to native users tagged with `on-call`, but only outside standard working hours (before 09:00 or after 17:00 UTC):
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE onCallRule
+    SET CONDITION 'on-call' IN abac.native.user_tags()
+        AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17);
+----
+
+=== Example 8: Combine native user tags with OIDC claims
+
+A single condition can evaluate both native user tags and claims from an OIDC token, allowing you to combine attributes managed in your database with attributes asserted by your identity provider.
+
+The following example grants the associated roles to users who are tagged with `finance` on their native user object and whose `department` claim in the OIDC token equals `finance`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE financeApproverRule
+    SET CONDITION 'finance' IN abac.native.user_tags()
+        AND abac.oidc.user_attribute('department') = 'finance';
+----
+
+[[linking-external-users-to-native]]
+[NOTE]
+====
+For an auth rule to evaluate `abac.native.user_tags()` for an externally authenticated user (for example, an OIDC or LDAP user), the external auth must be linked to a native user so that the user's tags can be resolved.
+
+This linking is achieved either by:
+
+* creating a native user whose username matches the identifier of the externally authenticated user (For OIDC, this is typically the `sub` claim, but precisely the claim specified by the xref:configuration/configuration-settings.adoc#config_dbms.security.oidc.-provider-.claims.username[`dbms.security.oidc.<provider>.claims.username`] setting. For LDAP it would be the user's dn), or
+* using xref:authentication-authorization/auth-providers.adoc#access-control-auth-providers[user auth providers] to explicitly associate the external identity with a native user.
+====
+
 [[assign-roles-auth-rules]]
 == Assign roles to auth rules
 
-To specify which roles to be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command.
+To specify the roles to be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command.
 
 [NOTE]
 ====
@@ -189,6 +267,10 @@ GRANT ROLE salesTeam TO AUTH RULE salesRule;
 GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
 GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
 GRANT ROLE reader TO AUTH RULE temporary_reader;
+GRANT ROLE piiAccessTeam TO AUTH RULE piiAccessRule;
+GRANT ROLE financeAuditTeam TO AUTH RULE financeAuditorRule;
+GRANT ROLE onCallTeam TO AUTH RULE onCallRule;
+GRANT ROLE financeApproverTeam TO AUTH RULE financeApproverRule;
 ----
 
 [NOTE]
@@ -201,7 +283,7 @@ This ensures that if a rule is unexpectedly not fulfilled (e.g., because a claim
 
 [WARNING]
 ====
-The ABAC rule does not restrict the RBAC role.
+ABAC rules do not restrict RBAC roles.
 Users receive both their RBAC roles and the roles from fulfilled auth rules.
 If a user receives a role via both ABAC and RBAC, then the user will have that role regardless of whether the ABAC rule is currently fulfilled or not.
 For example, if a user receives the `admin` role because it appears in their JWT `groups` claim (RBAC), and there is also an ABAC rule that grants the `admin` role between the hours of 19:00 and 20:00, then the user will have the `admin` role at all times, even outside the hours of 19:00 and 20:00, because of the RBAC assignment.
@@ -324,7 +406,37 @@ SHOW AUTH RULES;
 |true
 |["countryAccessRole"]
 
-4+a|Rows: 3
+|"temporary_reader"
+|"abac.oidc.user_attribute('jobTitle') = 'developer' AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20"
+|true
+|["reader"]
+
+|"emea_working_hours"
+|"abac.oidc.user_attribute('region') = 'EMEA' AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18"
+|true
+|[]
+
+|"piiAccessRule"
+|"'pii-access' IN abac.native.user_tags()"
+|true
+|["piiAccessTeam"]
+
+|"financeAuditorRule"
+|"all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags())"
+|true
+|["financeAuditTeam"]
+
+|"onCallRule"
+|"'on-call' IN abac.native.user_tags() AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17)"
+|true
+|["onCallTeam"]
+
+|"financeApproverRule"
+|"'finance' IN abac.native.user_tags() AND abac.oidc.user_attribute('department') = 'finance'"
+|true
+|["financeApproverTeam"]
+
+4+a|Rows: 9
 |===
 
 === Example 2: List auth rules with filtering and sorting
@@ -349,10 +461,22 @@ The result is a table of auth rules whose names end in 'e', along with their ass
 |"engineeringUKRule"
 |["engineeringTeamUK"]
 
+|"financeApproverRule"
+|["financeApproverTeam"]
+
+|"financeAuditorRule"
+|["financeAuditTeam"]
+
+|"onCallRule"
+|["onCallTeam"]
+
+|"piiAccessRule"
+|["piiAccessTeam"]
+
 |"salesRule"
 |["salesTeam"]
 
-2+a|Rows: 2
+2+a|Rows: 6
 |===
 
 It is also possible to use `SKIP` and `LIMIT` to paginate the results.
@@ -379,7 +503,24 @@ AND abac.oidc.user_attribute('location') = 'UK' SET ENABLED true
 |CREATE AUTH RULE ruleset_countries SET CONDITION any(country IN abac.oidc.user_attribute('citizenshipCountries')
 WHERE country IN ['c1', 'c5']) SET ENABLED true
 
-1+a|Rows: 3
+|CREATE AUTH RULE temporary_reader SET CONDITION abac.oidc.user_attribute('jobTitle') = 'developer'
+AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20 SET ENABLED true
+
+|CREATE AUTH RULE emea_working_hours SET CONDITION abac.oidc.user_attribute('region') = 'EMEA'
+AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18 SET ENABLED true
+
+|CREATE AUTH RULE piiAccessRule SET CONDITION 'pii-access' IN abac.native.user_tags() SET ENABLED true
+
+|CREATE AUTH RULE financeAuditorRule SET CONDITION all(tag IN ['finance', 'auditor']
+WHERE tag IN abac.native.user_tags()) SET ENABLED true
+
+|CREATE AUTH RULE onCallRule SET CONDITION 'on-call' IN abac.native.user_tags()
+AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17) SET ENABLED true
+
+|CREATE AUTH RULE financeApproverRule SET CONDITION 'finance' IN abac.native.user_tags()
+AND abac.oidc.user_attribute('department') = 'finance' SET ENABLED true
+
+1+a|Rows: 9
 |===
 
 == Rename auth rules
@@ -483,6 +624,6 @@ ABAC has the following caveats and limitations:
 Only user claims that are used in pre-existing auth rules at the start of a session are retained.
 If the new rules use new claims, users must re-authenticate for the new rules to be applied.
 
-* Attribute-based access control is only supported for OIDC authentication providers.
+* Only OIDC and native authorization providers may be used to supply user attributes. Other types of providers, such as LDAP can be used in <<linking-external-users-to-native,conjunction>> with native users and their tags, but cannot directly supply attributes to auth rules.
 
 * For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in the _neo4j.conf_ file by setting `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`.
