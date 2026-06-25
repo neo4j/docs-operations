@@ -7,23 +7,54 @@
 CREATE ROLE salesTeam;
 CREATE ROLE engineeringTeamUK;
 CREATE ROLE countryAccessRole;
+CREATE ROLE piiAccessTeam;
+CREATE ROLE financeAuditTeam;
+CREATE ROLE onCallTeam;
+CREATE ROLE financeApproverTeam;
 ----
 ////
 
 [[attribute-based-access-control]]
 = Attribute-based access control
 
-Attribute-based access control (ABAC) grants roles based on the evaluation of attributes (or claims) contained in a user's authentication token.
+Attribute-based access control (ABAC) grants roles based on the evaluation of user attributes.
+These could be claims contained in a user's authentication token, or starting with Neo4j 2026.06, tags attached to a native user object.
+
+ABAC is useful when access should depend on _who a user is_ or _the context of their request_, rather than on a static, manually maintained mapping of users to roles.
+Because roles are assigned dynamically from attributes, you can express access policies declaratively, for example, "grant the `finance` role to users in the finance department" or "grant elevated access only during on-call hours", and have them applied automatically as users and their attributes change.
+This reduces the need to manually grant and revoke roles as people join, move between teams, or leave, keeps authorization decisions consistent with the source of truth for user attributes, such as your identity provider, and makes it possible to enforce fine-grained, context-aware policies that would be cumbersome to maintain with role assignments alone.
+
+ABAC is also useful when you need more flexibility than an external auth provider, such as LDAP or OIDC, can offer on its own.
+For example, you may not have control over the provider, the provider might not expose a claim for everything you want to base access on, or you might want to combine its claims with attributes managed inside Neo4j (native user tags) or with contextual conditions such as the time of day.
+In these cases, auth rules let you layer additional, locally-defined logic on top of the identity information supplied by the external provider.
+
+[NOTE]
+====
+User metadata tagging for native DBMS users as part of ABAC rules is available in Neo4j 2026.06 and later.
+====
 
 == Setup
 
 To set up attribute-based access control, follow these steps:
 
-. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to the OIDC provider(s) you want to use for ABAC.
+. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to be the list of authorization provider(s) you want to use for ABAC.
+These can include any OIDC provider, as well as the `native` provider starting with Neo4j 2026.06.
+In order for a provider to be allowed in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], it must also appear in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`].
++
+[TIP]
+====
+When reasoning about which auth rules will apply for your users, given your choice of xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], consider which rules could feasibly be executed.
+
+For example, a purely temporal rule such as `time.transaction('UTC').hour >= 9 AND time.transaction('UTC').hour < 17` does not reference any provider, so it can execute regardless of which providers are configured (but only when at least one valid provider is indeed configured).
+
+In contrast, a rule that calls the metadata accessor function of a provider that is not in the list will fail.
+When a provider is not listed in xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], its relevant accessor function, for example, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` for an OIDC provider, or `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for the `native` provider, is not available at all.
+Therefore, any rule that references it intentionally fails rather than silently evaluating to a default, meaning the rule cannot be fulfilled, and the user cannot receive the roles from that rule.
+====
 . Define authorization rules for granting roles based on user attributes using the `CREATE AUTH RULE` command.
-See <<create-auth-rule,Create auth rules>> for details.
+See <<create-auth-rule>> for details.
 . Specify which roles to assign when the authorization rules are fulfilled using the `GRANT ROLE` command.
-See <<assign-roles-auth-rules,Assign roles to auth rules>> for details.
+See <<assign-roles-auth-rules>> for details.
 
 [[create-auth-rule]]
 == Create auth rules
@@ -37,7 +68,8 @@ See xref:authentication-authorization/dbms-administration/dbms-auth-rule-managem
 ====
 
 
-.`CREATE AUTH RULE` syntax
+=== `CREATE AUTH RULE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 CREATE [OR REPLACE] AUTH RULE ruleName # <1>
@@ -51,12 +83,16 @@ Where:
 <1> Adding `OR REPLACE` to the command deletes any existing auth rule with the same name and creates a new auth rule with the same name.
 Any assigned roles associated with the old auth rule will not be associated to the new auth rule.
 
-<2> Appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should a rule with the same name already exists, and the command has no effect.
+<2> Appending `IF NOT EXISTS` to the command ensures that no error is returned and nothing happens should a rule with the same name already exist, and the command has no effect.
 `OR REPLACE` and `IF NOT EXISTS` cannot be used at the same time.
 
-<3> The `SET CONDITION` clause allows you to specify a condition that must be met for a user to be granted the roles associated with the auth rule.
-The `conditionExpression` is a Boolean Cypher expression that evaluates user attributes (claims) contained in the authentication token.
-To access an attribute, use the syntax `abac.oidc.user_attribute('<claim_key>')`.
+<3> label:new[Introduced in 2026.06] [[set-condition-clause]]The `SET CONDITION` clause allows you to specify a condition that must be met for a user to be granted the roles associated with the auth rule.
+
++
+The `conditionExpression` is a Boolean Cypher expression that evaluates conditions against user attributes.
+These attributes could be claims contained in the user's OIDC token (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` function), or tags on the native user object (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function).
++
+For more information on attaching tags to native users, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users] and xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
 +
 The `conditionExpression` can use any valid Cypher expression that evaluates to a Boolean value, including logical operators (`AND`, `OR`, `NOT`, etc), comparison operators (`=`, `<>`, `<`, `>`, `<=`, and `>=`), and the following built-in functions:
 +
@@ -65,7 +101,7 @@ The `conditionExpression` can use any valid Cypher expression that evaluates to 
 |===
 | Function group | Functions
 
-| Show functions
+| List functions
 | link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-range[range()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-reduce[reduce()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-reverse[reverse()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tail[tail()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tobooleanlist[toBooleanList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tofloatlist[toFloatList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tointegerlist[toIntegerList()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/list/#functions-tostringlist[toStringList()]
 
 | Numeric functions
@@ -77,7 +113,10 @@ The `conditionExpression` can use any valid Cypher expression that evaluates to 
 | Scalar functions
 | link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-char_length[char_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-character_length[character_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-coalesce[coalesce()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-head[head()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-last[last()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-nullIf[nullIf()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-size[size()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-toboolean[toBoolean()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tobooleanornull[toBooleanOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloat[toFloat()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloatornull[toFloatOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointeger[toInteger()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointegerornull[toIntegerOrNull()]
 
-| String Functions
+| Security functions label:new[Introduced in 2026.06]
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]
+
+| String functions
 | link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-btrim[btrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-left[left()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-lower[lower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-ltrim[ltrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-replace[replace()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-reverse[reverse()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-right[right()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-rtrim[rtrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-split[split()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-substring[substring()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tolower[toLower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostring[toString()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostringornull[toStringOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-toupper[toUpper()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-trim[trim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-upper[upper()]
 
 | Temporal duration functions
@@ -90,19 +129,30 @@ The `conditionExpression` can use any valid Cypher expression that evaluates to 
 [NOTE]
 ====
 The functions `date`, `datetime`, `localdatetime`, `localtime`, and `time` are only supported when you use an input argument to specify the instant.
-This is because auth rules are evaluated at the moment the transaction begins.
+This is because auth rules are evaluated when the transaction begins.
 As far as auth rules are concerned, there is no concept of statement time or real time.
 To get the current temporal instant type, use any of the `*.transaction()` functions.
 
-Transaction time functions such as `datetime.transaction()` always reflect the server's clock time.
+Transaction time functions, such as `datetime.transaction()`, always reflect the server's clock time.
 In a cluster, it is important to keep the system clocks synchronized across all cluster members to ensure consistent auth rule evaluation.
+====
++
+[WARNING#avoid-absence-of-tags-warning]
+====
+When using native user tags in auth rules, avoid writing rules whose condition is solely based on the _absence_ of a tag from a user, for example `NOT ('restricted' IN abac.native.user_tags())`.
+See <<example-avoid-absence-of-tags>> for an illustration.
+
+Someone who holds the xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[`USER MANAGEMENT`] privilege, but not the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc[`USER METADATA MANAGEMENT`] privilege can create a user with no tags.
+Such a user satisfies the "absence of tag" condition and is therefore granted the roles associated with the rule, potentially leading to an unintended escalation of privileges.
+
+Prefer conditions based on the _presence_ of a required tag instead.
 ====
 +
 [WARNING]
 ====
 * Avoid using `localtime` and `localdatetime` without specifying a timezone, as these functions rely on the server's default timezone.
 
-* Avoid mixing time values from authentication token claims (via `abac.oidc.user_attribute()`) with server time functions such as `datetime.transaction()` or `time()`.
+* Avoid mixing time values from authentication token claims (via `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]`) with server time functions such as `datetime.transaction()` or `time()`.
 Token timestamps are fixed at the time of issuance and may use different formats or timezones, leading to unexpected comparison results.
 ====
 
@@ -110,9 +160,9 @@ Token timestamps are fixed at the time of issuance and may use different formats
 By default, the rule is enabled.
 
 
-=== Example 1: Create auth rules with a simple condition
+=== Create an auth rule with a simple condition
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `department` equals `sales`:
+The following example creates an auth rule that grants the associated roles to users who have the attribute `department` equals `sales`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -120,9 +170,9 @@ CREATE AUTH RULE salesRule
     SET CONDITION abac.oidc.user_attribute('department') = 'sales';
 ----
 
-=== Example 2: Create auth rules with multiple conditions
+=== Create an auth rule with multiple conditions
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `department` equals `engineering` and `location` equals `UK`:
+The following example creates an auth rule that grants the associated roles to users who have attributes `department` equals `engineering` and `location` equals `UK`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -131,9 +181,9 @@ CREATE AUTH RULE engineeringUKRule
         AND abac.oidc.user_attribute('location') = 'UK';
 ----
 
-=== Example 3: Create auth rules based on a list of values
+=== Create an auth rule based on a list of values
 
-The following example creates an auth rule that grants the associated roles to users with the attribute `citizenshipCountries` containing any of the allowed countries `c1` or `c5`:
+The following example creates an auth rule that grants the associated roles to users who have the attribute `citizenshipCountries` containing any of the allowed countries `c1` or `c5`:
 
 [source, cypher25, role="noheader"]
 ----
@@ -142,9 +192,9 @@ CREATE AUTH RULE ruleset_countries SET CONDITION
     WHERE country IN ['c1', 'c5']);
 ----
 
-=== Example 4: Create auth rules with temporal conditions
+=== Create auth rules with temporal conditions
 
-The following example creates an auth rule that temporarily grants the assigned roles to users with the attribute `jobTitle` equals `developer`, between the hours of 19:00 and 20:00:
+The following example creates an auth rule that temporarily grants the assigned roles to users who have the attribute `jobTitle` equals `developer`, between the hours of 19:00 and 20:00:
 
 [source, cypher25, role="noheader"]
 ----
@@ -162,10 +212,104 @@ CREATE AUTH RULE emea_working_hours
         AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18;
 ----
 
+[role=label--new-2026.06]
+[[example-tag-presence]]
+=== Create an auth rule based on native user tags
+
+As well as evaluating claims from an OIDC token, auth rules can evaluate the tags attached to a native user using the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[`abac.native.user_tags()`] function.
+This function returns the list of tags assigned to the authenticated user.
+
+The following example grants the associated roles to any native user who has been tagged with `pii-access`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE piiAccessRule
+    SET CONDITION 'pii-access' IN abac.native.user_tags();
+----
+
+[role=label--new-2026.06]
+=== Create an auth rule requiring multiple native user tags
+
+Because `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` returns a list, you can combine it with the list predicate functions to require several tags at once.
+
+The following example grants the associated roles only to native users tagged with both `finance` and `auditor`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE financeAuditorRule
+    SET CONDITION all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags());
+----
+
+[role=label--new-2026.06]
+=== Combine native user tags with other conditions
+
+Native user tags can be combined with OIDC claims, temporal functions, and any other supported expression within a single condition (see <<set-condition-clause,the `SET CONDITION` clause>>).
+
+The following example grants the associated roles to native users tagged with `on-call`, but only outside standard working hours (before 09:00 or after 17:00 UTC):
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE onCallRule
+    SET CONDITION 'on-call' IN abac.native.user_tags()
+        AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17);
+----
+
+[role=label--new-2026.06]
+=== Combine native user tags with OIDC claims
+
+A single condition can evaluate both native user tags and claims from an OIDC token, allowing you to combine attributes managed in your database with attributes asserted by your identity provider.
+
+The following example grants the associated roles to users who are tagged with `finance` on their native user object and whose `department` claim in the OIDC token equals `finance`:
+
+[source, cypher25, role="noheader"]
+----
+CREATE AUTH RULE financeApproverRule
+    SET CONDITION 'finance' IN abac.native.user_tags()
+        AND abac.oidc.user_attribute('department') = 'finance';
+----
+
+For this rule to evaluate `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for the OIDC-authenticated user, that user must be linked to a native user — see <<linking-external-users-to-native, linking external users>>.
+
+[role=label--new-2026.06]
+[[example-avoid-absence-of-tags]]
+=== An auth rule to avoid (condition based on the absence of a tag)
+
+[WARNING]
+====
+This example illustrates an auth rule design that you should *avoid*.
+It demonstrates the risk described in <<avoid-absence-of-tags-warning,this warning>>.
+====
+
+The following rule grants its roles to any native user who does _not_ have the `restricted` tag:
+
+[source, cypher25, role=noplay]
+----
+CREATE AUTH RULE unrestrictedRule
+    SET CONDITION NOT ('restricted' IN abac.native.user_tags());
+----
+
+Because the condition is satisfied solely by the _absence_ of the `restricted` tag, any user with no tags meets it.
+Subsequently, someone who holds the xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[`USER MANAGEMENT`] privilege but not the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc[`USER METADATA MANAGEMENT`] privilege can create such a user (they can create users, but cannot set or remove tags), and yet that new user would be granted the roles associated with `unrestrictedRule`.
+
+Instead, base the condition on the _presence_ of a required tag (as in <<example-tag-presence>>), so that the roles are only granted when a tag has been deliberately attached by someone holding the `SET USER METADATA` privilege.
+
+[[linking-external-users-to-native]]
+[NOTE]
+====
+For an auth rule to evaluate `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for an externally authenticated user, such as an OIDC or an LDAP user, the external auth must be linked to a native user so that the user's tags can be resolved.
+
+This linking is achieved either by:
+
+* Creating a native user whose username matches the identifier of the externally authenticated user.
+For OIDC, this is typically the `sub` claim, but precisely the claim specified by the xref:configuration/configuration-settings.adoc#config_dbms.security.oidc.-provider-.claims.username[`dbms.security.oidc.<provider>.claims.username`] setting.
+For LDAP, it would be the user's DN.
+* Using xref:authentication-authorization/auth-providers.adoc[user auth providers] to explicitly associate the external identity with a native user.
+====
+
 [[assign-roles-auth-rules]]
 == Assign roles to auth rules
 
-To specify which roles to be granted to the user when the authorization rule is fulfilled, use the `GRANT ROLE` command.
+To specify which roles to grant to the user when the authorization rule is satisfied, use the `GRANT ROLE` command.
 
 [NOTE]
 ====
@@ -173,13 +317,16 @@ The `GRANT ROLE` command requires the `ASSIGN ROLE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-assignment[Grant privilege to assign roles] for details on how to grant this privilege.
 ====
 
-.`GRANT ROLE` syntax
+=== `GRANT ROLE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 GRANT ROLE[S] role[, ...] TO AUTH RULE[S] ruleName[, ...]
 ----
 
 For information about the `GRANT ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
+
+=== Assign roles to an auth rule example
 
 The following example assigns roles to the auth rules from the examples in <<create-auth-rule, Create auth rules>>:
 
@@ -189,6 +336,10 @@ GRANT ROLE salesTeam TO AUTH RULE salesRule;
 GRANT ROLE engineeringTeamUK TO AUTH RULE engineeringUKRule;
 GRANT ROLE countryAccessRole TO AUTH RULE ruleset_countries;
 GRANT ROLE reader TO AUTH RULE temporary_reader;
+GRANT ROLE piiAccessTeam TO AUTH RULE piiAccessRule;
+GRANT ROLE financeAuditTeam TO AUTH RULE financeAuditorRule;
+GRANT ROLE onCallTeam TO AUTH RULE onCallRule;
+GRANT ROLE financeApproverTeam TO AUTH RULE financeApproverRule;
 ----
 
 [NOTE]
@@ -201,9 +352,9 @@ This ensures that if a rule is unexpectedly not fulfilled (e.g., because a claim
 
 [WARNING]
 ====
-The ABAC rule does not restrict the RBAC role.
+ABAC rules do not restrict RBAC roles.
 Users receive both their RBAC roles and the roles from fulfilled auth rules.
-If a user receives a role via both ABAC and RBAC, then the user will have that role regardless of whether the ABAC rule is currently fulfilled or not.
+If a user receives a role via both ABAC and RBAC, the user will have that role regardless of whether the ABAC rule is currently satisfied.
 For example, if a user receives the `admin` role because it appears in their JWT `groups` claim (RBAC), and there is also an ABAC rule that grants the `admin` role between the hours of 19:00 and 20:00, then the user will have the `admin` role at all times, even outside the hours of 19:00 and 20:00, because of the RBAC assignment.
 ====
 
@@ -218,13 +369,16 @@ The `REVOKE ROLE` command requires the `REMOVE ROLE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc#access-control-dbms-administration-role-removal[Grant privilege to remove roles] for details on how to grant this privilege.
 ====
 
-.`REVOKE ROLE` syntax
+=== `REVOKE ROLE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 REVOKE ROLE[S] role[, ...] FROM AUTH RULE[S] ruleName[, ...]
 ----
 
 For information about the `REVOKE ROLE` command, see xref:authentication-authorization/manage-roles.adoc#access-control-revoke-roles[Revoking roles from users].
+
+=== Revoke a role from an auth rule
 
 The following example revokes the `reader` role from the auth rule `temporary_reader`:
 
@@ -242,6 +396,13 @@ You can show all auth rules using the Cypher command `SHOW AUTH RULES`.
 The `SHOW AUTH RULES` command requires the `SHOW AUTH RULE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-list-auth-rule-privilege[Grant privilege to show auth rules] for details on how to grant this privilege.
 ====
+
+=== `SHOW AUTH RULES` syntax
+
+[source, cypher25, role="noheader"]
+----
+SHOW AUTH RULES
+----
 
 `SHOW AUTH RULES` returns a table containing a single row per auth rule with the following columns:
 
@@ -275,6 +436,16 @@ This column returns `null` if the executing user is missing or denied the `SHOW 
 To view the auth rules as commands, use the `SHOW AUTH RULES AS COMMANDS`, which returns a single column by default.
 Optionally, you can append `YIELD *` to additionally see which roles has been granted to the auth rule.
 
+=== `SHOW AUTH RULES AS COMMANDS` syntax
+
+[source, cypher25, role="noheader"]
+----
+SHOW AUTH RULES AS COMMANDS
+----
+
+`SHOW AUTH RULES AS COMMANDS` returns a table containing a single row per auth rule with the following columns:
+
+
 .`SHOW AUTH RULES AS COMMANDS` output
 [options="header", width="100%", cols="2a,4,2m"]
 |===
@@ -292,7 +463,7 @@ This column returns `null` if the executing user is missing or denied the `SHOW 
 | LIST OF STRING
 |===
 
-=== Example 1: List auth rules
+=== Show all auth rules
 
 The following example shows all auth rules with their conditions, enablement, and assigned roles:
 
@@ -324,10 +495,40 @@ SHOW AUTH RULES;
 |true
 |["countryAccessRole"]
 
-4+a|Rows: 3
+|"temporary_reader"
+|"abac.oidc.user_attribute('jobTitle') = 'developer' AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20"
+|true
+|["reader"]
+
+|"emea_working_hours"
+|"abac.oidc.user_attribute('region') = 'EMEA' AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18"
+|true
+|[]
+
+|"piiAccessRule"
+|"'pii-access' IN abac.native.user_tags()"
+|true
+|["piiAccessTeam"]
+
+|"financeAuditorRule"
+|"all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags())"
+|true
+|["financeAuditTeam"]
+
+|"onCallRule"
+|"'on-call' IN abac.native.user_tags() AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17)"
+|true
+|["onCallTeam"]
+
+|"financeApproverRule"
+|"'finance' IN abac.native.user_tags() AND abac.oidc.user_attribute('department') = 'finance'"
+|true
+|["financeApproverTeam"]
+
+4+a|Rows: 9
 |===
 
-=== Example 2: List auth rules with filtering and sorting
+=== Show auth rules with filtering and sorting
 
 To filter and sort the returned results, you can use `YIELD`, `ORDER BY`, and `WHERE`:
 
@@ -349,17 +550,29 @@ The result is a table of auth rules whose names end in 'e', along with their ass
 |"engineeringUKRule"
 |["engineeringTeamUK"]
 
+|"financeApproverRule"
+|["financeApproverTeam"]
+
+|"financeAuditorRule"
+|["financeAuditTeam"]
+
+|"onCallRule"
+|["onCallTeam"]
+
+|"piiAccessRule"
+|["piiAccessTeam"]
+
 |"salesRule"
 |["salesTeam"]
 
-2+a|Rows: 2
+2+a|Rows: 6
 |===
 
 It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
-=== Example 3: List auth rules as commands
+=== Show auth rules as commands
 
-The following example shows the auth rules as commands:
+The following example shows the auth rules as commands output, which can be used to recreate the auth rules:
 
 [source, cypher, role=noplay]
 ----
@@ -379,7 +592,24 @@ AND abac.oidc.user_attribute('location') = 'UK' SET ENABLED true
 |CREATE AUTH RULE ruleset_countries SET CONDITION any(country IN abac.oidc.user_attribute('citizenshipCountries')
 WHERE country IN ['c1', 'c5']) SET ENABLED true
 
-1+a|Rows: 3
+|CREATE AUTH RULE temporary_reader SET CONDITION abac.oidc.user_attribute('jobTitle') = 'developer'
+AND datetime.transaction().hour >= 19 AND datetime.transaction().hour < 20 SET ENABLED true
+
+|CREATE AUTH RULE emea_working_hours SET CONDITION abac.oidc.user_attribute('region') = 'EMEA'
+AND time.transaction('UTC').hour >= 6 AND time.transaction('UTC').hour < 18 SET ENABLED true
+
+|CREATE AUTH RULE piiAccessRule SET CONDITION 'pii-access' IN abac.native.user_tags() SET ENABLED true
+
+|CREATE AUTH RULE financeAuditorRule SET CONDITION all(tag IN ['finance', 'auditor']
+WHERE tag IN abac.native.user_tags()) SET ENABLED true
+
+|CREATE AUTH RULE onCallRule SET CONDITION 'on-call' IN abac.native.user_tags()
+AND (time.transaction('UTC').hour < 9 OR time.transaction('UTC').hour >= 17) SET ENABLED true
+
+|CREATE AUTH RULE financeApproverRule SET CONDITION 'finance' IN abac.native.user_tags()
+AND abac.oidc.user_attribute('department') = 'finance' SET ENABLED true
+
+1+a|Rows: 9
 |===
 
 == Rename auth rules
@@ -392,13 +622,16 @@ The `RENAME AUTH RULE` command requires the `RENAME AUTH RULE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-rename-auth-rule-privilege[Grant privilege to rename auth rules] for details on how to grant this privilege.
 ====
 
-.`RENAME AUTH RULE` syntax
+=== `RENAME AUTH RULE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 RENAME AUTH RULE ruleName [IF EXISTS] TO newRuleName
 ----
 
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+If specifying `IF EXISTS`, no error is raised if the rule does not exist, and the command has no effect.
+
+=== Rename an auth rule example
 
 For example, use the following command to rename the auth rule `ruleset_countries` to `disabled_ruleset_countries`:
 
@@ -417,7 +650,8 @@ The `ALTER AUTH RULE` command requires the `ALTER AUTH RULE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-alter-auth-rule-privilege[Grant privilege to modify auth rules] for details on how to grant this privilege.
 ====
 
-.`ALTER AUTH RULE` syntax
+=== `ALTER AUTH RULE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 ALTER AUTH RULE ruleName [IF EXISTS]
@@ -425,27 +659,27 @@ ALTER AUTH RULE ruleName [IF EXISTS]
     [SET ENABLED {true | false}]
 ----
 
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+If specifying `IF EXISTS`, no error is raised if the rule does not exist, and the command has no effect.
 At least one of `SET CONDITION` and `SET ENABLED` must be specified.
 
 
-=== Example 1: Modify the condition of an auth rule
+=== Modify the condition of an auth rule
 
 The following example modifies the auth rule `ruleset_countries` to set a new condition that also allows the country `'c6'`:
 
 [source, cypher, role=noplay]
 ----
 ALTER AUTH RULE ruleset_countries SET CONDITION any(country IN abac.oidc.user_attribute('citizenshipCountries')
-WHERE country IN ['c1', 'c5', 'c6'])
+WHERE country IN ['c1', 'c5', 'c6']);
 ----
 
-=== Example 2: Disable an auth rule
+=== Disable an auth rule
 
 The following example disables the auth rule `ruleset_countries`:
 
 [source, cypher, role=noplay]
 ----
-ALTER AUTH RULE ruleset_countries SET ENABLED false
+ALTER AUTH RULE ruleset_countries SET ENABLED false;
 ----
 
 == Drop auth rules
@@ -458,13 +692,16 @@ The `DROP AUTH RULE` command requires the `DROP AUTH RULE` privilege.
 See xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc#grant-drop-auth-rule-privilege[Grant privilege to delete auth rules] for details on how to grant this privilege.
 ====
 
-.`DROP AUTH RULE` syntax
+=== `DROP AUTH RULE` syntax
+
 [source, cypher25, role="noheader"]
 ----
 DROP AUTH RULE ruleName [IF EXISTS]
 ----
 
-If specifying `IF EXISTS`, no error is raised if the rule does not exist and the command has no effect.
+If specifying `IF EXISTS`, no error is raised if the rule does not exist, and the command has no effect.
+
+=== Drop an auth rule example
 
 For example, use the following command to delete the auth rule `temporary_reader`:
 
@@ -477,12 +714,24 @@ DROP AUTH RULE temporary_reader;
 
 ABAC has the following caveats and limitations:
 
-* When evaluating `abac.oidc.user_attribute('<claim_key>')`, if the claim does not exist in the authentication token, it will evaluate to `NULL`.
+* When evaluating `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]`, if the claim does not exist in the authentication token, it evaluates to `null`.
+* When evaluating `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]`, if the user does not have tags set, the function returns an empty list.
+* When evaluating `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` in <<linking-external-users-to-native,conjunction with external authentication>> , the function returns an empty list if the native user is not found (unless `require_local_user` is set to `true`, in which case the absence of a native user prevents the user from authenticating).
+* Newly created or altered auth rule conditions are applied to existing user sessions (i.e., at the start of the user's next transaction), but can only have access to the user claims that had rule conditions referencing them at the start of the session.
+Only user claims that are used in pre-existing auth rule conditions at the start of a session are retained.
+If the new or amended rule conditions use new claims, users must re-authenticate for the new or amended rules to be applied.
+* Changes to a user's tags (effected via the xref:authentication-authorization/manage-users.adoc#access-control-alter-users[`ALTER USER`] command) take effect from the start of the user's next transaction.
+* Only OIDC and native authorization providers may be used to supply user attributes.
+Other types of providers, such as LDAP, can be used in <<linking-external-users-to-native,conjunction>> with native users and their tags, but cannot directly supply attributes to auth rules.
+* Tags support newline characters in the same way that labels do.
+However, care must be taken when inspecting debug and security logs, as newline characters are replaced with spaces in the log output.
+This is done to prevent log forging (log injection), where a value containing newlines could otherwise be used to insert fake log entries.
+As a result, a tag containing a newline character will appear in the logs with a space in place of the newline, making it indistinguishable from a tag that actually contains a space.
+Reconciling such a tag may therefore require extra steps, for example, combining the output of xref:authentication-authorization/manage-users.adoc#access-control-list-users[`SHOW USERS YIELD *`] (to see the actual tag values assigned to users) with <<_showing_auth_rules,`SHOW AUTH RULES`>> (to see the tags referenced by auth rules).
 
-* Newly created auth rules are applied to existing user sessions, but can only have access to the user claims which had rules referencing them at the start of the session.
-Only user claims that are used in pre-existing auth rules at the start of a session are retained.
-If the new rules use new claims, users must re-authenticate for the new rules to be applied.
+== Debugging ABAC evaluation
 
-* Attribute-based access control is only supported for OIDC authentication providers.
-
-* For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log, and turn on JWT claims logging at debug level in the _neo4j.conf_ file by setting `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`.
+* For troubleshooting ABAC evaluation, enable debug logging for the security log and debug log.
+This allows you to see the outcome of auth rule evaluations.
+* label:new[Introduced in 2026.06] Additionally, if using `abac.oidc.user_attribute()`, turn on JWT claims logging at the debug level in the _neo4j.conf_ file by setting `dbms.security.logs.oidc.jwt_claims_at_debug_level_enabled=true`.
+This allows you to see the claims being evaluated in the auth rules.

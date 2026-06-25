@@ -13,7 +13,6 @@ There are two types of user states in the `system` database:
 `ACTIVE` state:: (default for new users)
 Users can log into Neo4j and perform queries according to their privileges.
 
-// [role=label--enterprise-edition]
 `SUSPENDED` state label:enterprise-edition[]::
 
 * Native users who authenticate and authorize against the system graph cannot log into Neo4j.
@@ -54,10 +53,16 @@ Lists the current user.
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-current-users[Listing current user].
+For more information, see <<access-control-current-users>>.
 
 | Required privilege
-a| None
+a|
+None.
+
+However, the `SHOW USER METADATA` privilege is required to see the values in the `tags` column returned by `SHOW CURRENT USER YIELD *`; without it, the column returns `null`.
+
+`SET TAGS` and `SHOW USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
 
 |===
 
@@ -85,7 +90,7 @@ Lists all users.
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-list-users[Showing users].
+For more information, see <<access-control-list-users>>.
 
 | Required privilege
 a|
@@ -95,6 +100,16 @@ GRANT SHOW USER
 ----
 
 For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER METADATA
+----
+
+The `SHOW USER METADATA` privilege is additionally required to see the values in the `tags` column returned by `SHOW USERS YIELD *`; without it, the column returns `null`.
+
+`SET TAGS` and `SHOW USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
 
 |===
 
@@ -155,6 +170,7 @@ CREATE USER name [IF NOT EXISTS]
   [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]...
+  [SET TAG[S] tag[, ...]]
 ----
 
 `<key><value>` pairs for the `SET AUTH` clause could include:
@@ -178,7 +194,7 @@ Creates a new user.
 It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
 ====
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
+For more information, see <<access-control-create-users>>.
 
 | Required privilege
 a|
@@ -189,6 +205,15 @@ GRANT CREATE USER
 
 For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc#grant-create-user-privilege[Grant privilege to create users].
 
+[source, privilege, role="noheader"]
+----
+GRANT SET USER METADATA
+----
+
+The `SET USER METADATA` privilege is only required when attaching tags with the `SET TAG[S]` clause.
+
+`SET TAGS` and `SET USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
 |===
 
 [cols="<15s,<85"]
@@ -206,6 +231,7 @@ CREATE OR REPLACE USER name
   [SET STATUS {ACTIVE \| SUSPENDED}]
   [SET HOME DATABASE name]
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]...
+  [SET TAG[S] tag[, ...]]
 ----
 `<key><value>` pairs for the `SET AUTH` clause could include:
 [source, syntax, role="noheader"]
@@ -228,7 +254,7 @@ Creates a new user, or if a user with the same name exists, replace it.
 It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
 ====
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users].
+For more information, see <<access-control-create-users>>.
 
 | Required privilege
 a|
@@ -247,6 +273,15 @@ GRANT DROP USER
 
 For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc#grant-delete-user-privilege[Grant privilege to delete users].
 
+[source, privilege, role="noheader"]
+----
+GRANT SET USER METADATA
+----
+
+The `SET USER METADATA` privilege is only required when attaching tags with the `SET TAG[S]` clause.
+
+`SET TAGS` and `SET USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
 |===
 
 [cols="<15s,<85"]
@@ -265,7 +300,7 @@ RENAME USER name [IF EXISTS] TO otherName
 a|
 Changes the name of a user.
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-rename-users[Renaming users].
+For more information, see <<access-control-rename-users>>.
 
 | Required privilege
 a|
@@ -290,11 +325,14 @@ a|
 ALTER USER name [IF EXISTS]
   [REMOVE HOME DATABASE]
   [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]...
+  [REMOVE { TAG[S] tag[, ...] \| ALL TAG[S] }]...
+  [ADD TAG[S] tag[, ...]]...
   [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password']
   [[SET PASSWORD] CHANGE [NOT] REQUIRED]
   [SET STATUS {ACTIVE \| SUSPENDED} ]
   [SET HOME DATABASE name]
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]...
+  [SET TAG[S] tag[, ...]]
 ----
 `<key><value>` pairs for the `SET AUTH` clause could include:
 [source, syntax, role="noheader"]
@@ -312,11 +350,12 @@ SET AUTH [PROVIDER] 'provider' "{"
 a|
 Modifies the settings for an existing user.
 
-* At least one `SET` or `REMOVE` clause is required.
-* Any `REMOVE` clause(s) must appear before the first `SET` clause.
+* At least one `SET`, `ADD`, or `REMOVE` clause is required.
+* Any `REMOVE` clause(s) must appear first, followed by any `ADD` clause(s), and then any `SET` clause(s).
+For more information, see <<access-control-alter-users>>.
 
-
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
+`SET TAG[S]`, `ADD TAG[S]`, `REMOVE TAG[S]`, `REMOVE ALL TAG[S]`, and `SET USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>>, <<access-control-alter-users>>, <<access-control-alter-users-bulk>>, and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
 
 | Required privilege
 a|
@@ -342,6 +381,57 @@ GRANT SET AUTH
 
 For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
 
+[source, privilege, role="noheader"]
+----
+GRANT SET USER METADATA
+----
+
+label:new[Introduced in 2026.06] label:enterprise-edition[] The `SET USER METADATA` privilege is only required when setting, adding, or removing tags.
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-set-user-metadata-privilege[Grant privilege to set user metadata].
+
+|===
+
+label:enterprise-edition[] label:new[Introduced in 2026.06]
+[cols="<15s,<85"]
+|===
+| Command
+m| ALTER USERS
+
+| Syntax
+a|
+[source, syntax, role="noheader"]
+----
+ALTER USERS name[, ...] [IF EXISTS]
+  [REMOVE { TAG[S] tag[, ...] \| ALL TAG[S] }]...
+  [ADD TAG[S] tag[, ...]]...
+  [SET TAG[S] tag[, ...]]
+----
+
+| Description
+a|
+Modifies the tags of several existing users in a single command.
+
+* At least one `SET`, `ADD`, or `REMOVE` clause is required.
+* Any `REMOVE` clause(s) must appear first, followed by any `ADD` clause(s), and then any `SET` clause(s).
+
+For more information, see <<access-control-alter-users-bulk>>.
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT ALTER USER
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SET USER METADATA
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-set-user-metadata-privilege[Grant privilege to set user metadata].
+
 |===
 
 
@@ -362,7 +452,7 @@ ALTER CURRENT USER SET PASSWORD FROM 'oldPassword' TO 'newPassword'
 a|
 Changes the current user's password.
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-alter-password[Changing the current user's password].
+For more information, see <<access-control-alter-password>>.
 
 | Required privilege
 a| None
@@ -387,7 +477,7 @@ DROP USER name [IF EXISTS]
 a|
 Removes an existing user.
 
-For more information, see xref:authentication-authorization/manage-users.adoc#access-control-drop-users[Delete users].
+For more information, see <<access-control-drop-users>>.
 
 | Required privilege
 a|
@@ -458,11 +548,22 @@ It returns `null` in Community edition.
 | STRING
 | {cross-mark}
 | {check-mark}
+
+| tags
+| label:enterprise-edition[] label:new[Introduced in 2026.06] The xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] tags attached to the user.
+This column is returned only by `SHOW CURRENT USER YIELD *`, or when you explicitly yield the `tags` column.
+
+Seeing the tag values requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege; without it, the column returns `null`.
+
+It returns `null` in Community edition.
+| LIST OF STRING
+| {cross-mark}
+| {check-mark}
 |===
 
 [source, cypher, role=noplay]
 ----
-SHOW CURRENT USER
+SHOW CURRENT USER;
 ----
 
 .Result
@@ -547,6 +648,17 @@ It returns `null` in Community edition.
 | STRING
 | {cross-mark}
 | {check-mark}
+
+| tags
+| label:enterprise-edition[] label:new[Introduced in 2026.06] The xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] tags attached to the user.
+This column is returned only by `SHOW USERS YIELD *`, or when you explicitly yield the `tags` column.
+
+Seeing the tag values requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege; without it, the column returns `null`.
+
+It returns `null` in Community edition.
+| LIST OF STRING
+| {cross-mark}
+| {check-mark}
 |===
 
 [NOTE]
@@ -555,11 +667,11 @@ When first starting a Neo4j DBMS, there is always a single default user `neo4j` 
 It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise you must change the password after the first login.
 ====
 
-.Show users
-======
+=== Show all users
+
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
@@ -583,10 +695,9 @@ SHOW USERS
 |<null>
 5+a|Rows: 2
 |===
-======
 
-.Show user with column reorder and filtering
-======
+=== Show user with column reorder and filtering
+
 This example shows how to:
 
 * Reorder the columns using a `YIELD` clause.
@@ -595,7 +706,7 @@ This example shows how to:
 [source, cypher, role=noplay]
 ----
 SHOW USER YIELD user, suspended, passwordChangeRequired, roles, home
-WHERE user = 'jake'
+WHERE user = 'jake';
 ----
 
 .Result
@@ -614,18 +725,17 @@ WHERE user = 'jake'
 5+a|Rows: 1
 |===
 
-======
 
-.Show user with `RETURN` clause
-======
+=== Show user with `RETURN` clause
+
 It is possible to add a `RETURN` clause to further manipulate the results after filtering.
 In this example, the `RETURN` clause is used to filter out the `roles` column and rename the `user` column to `adminUser`.
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 SHOW USERS YIELD roles, user
 WHERE 'admin' IN roles
-RETURN user AS adminUser
+RETURN user AS adminUser;
 ----
 .Result
 [role="queryresult" options="header,footer", width="100%", cols="2m"]
@@ -634,7 +744,42 @@ RETURN user AS adminUser
 |"neo4j"
 1+a|Rows: 1
 |===
-======
+
+
+[role=label--enterprise-edition label--new-2026.06]
+=== Show users with their tags
+
+The `tags` column is not part of the default output of `SHOW USERS`.
+It is returned by `SHOW USERS YIELD *`, or when the `tags` column is yielded explicitly.
+
+Assuming `jake` has been assigned the tags `finance` and `auditor` (tags are managed using the <<access-control-alter-users, `ALTER USER`>> command):
+
+[source, cypher, role=noplay]
+----
+SHOW USERS YIELD user, roles, tags;
+----
+
+.Result
+[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m"]
+|===
+|user
+|roles
+|tags
+
+|"neo4j"
+|["admin","PUBLIC"]
+|[]
+|"jake"
+|["PUBLIC"]
+|["finance","auditor"]
+3+a|Rows: 2
+|===
+
+[NOTE]
+====
+Seeing the values in the `tags` column requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege, in addition to the `SHOW USER` privilege required to run `SHOW USERS`.
+Without `SHOW USER METADATA`, the `tags` column returns `null` for every row.
+====
 
 [[access-control-list-user-auth-providers]]
 == Showing user auth providers
@@ -665,11 +810,11 @@ For example, dn of the user for an `ldap` auth provider, the unique external ide
 | {check-mark}
 |===
 
-.Show users with auth
-======
+=== Show users with auth
+
 [source, cypher, role=noplay]
 ----
-SHOW USERS WITH AUTH
+SHOW USERS WITH AUTH;
 ----
 
 .Result
@@ -713,15 +858,14 @@ SHOW USERS WITH AUTH
 }
 7+a|Rows: 3
 |===
-======
 
-.Show user with auth using filtering
-======
+=== Show user with auth using filtering
+
 Show all users with the `oidc` auth provider.
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 SHOW USERS WITH AUTH
-WHERE provider = 'oidc1'
+WHERE provider = 'oidc1';
 ----
 
 .Result
@@ -746,8 +890,6 @@ WHERE provider = 'oidc1'
 7+a|Rows: 1
 |===
 
-======
-
 For more information about auth providers, see xref:authentication-authorization/auth-providers.adoc[User auth providers].
 
 [[access-control-create-users]]
@@ -758,7 +900,8 @@ In both cases, you can specify the user's password, whether they must change it 
 The `SET` clauses can be applied in any order.
 It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
 
-.`CREATE USER` syntax
+=== `CREATE USER` syntax
+
 [source, syntax, role="noheader"]
 ----
 CREATE USER name [IF NOT EXISTS] # <1>
@@ -767,9 +910,11 @@ CREATE USER name [IF NOT EXISTS] # <1>
   [SET STATUS {ACTIVE \| SUSPENDED}] # <4>
   [SET HOME DATABASE name] # <5>
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <6>
+  [SET TAG[S] tag[, ...]] # <7>
 ----
 
-.`CREATE OR REPLACE USER` syntax
+=== `CREATE OR REPLACE USER` syntax
+
 [source, syntax, role="noheader"]
 ----
 CREATE OR REPLACE USER name # <1>
@@ -778,6 +923,7 @@ CREATE OR REPLACE USER name # <1>
   [SET STATUS {ACTIVE \| SUSPENDED}] # <4>
   [SET HOME DATABASE name] # <5>
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <6>
+  [SET TAG[S] tag[, ...]] # <7>
 ----
 Where:
 
@@ -820,6 +966,11 @@ SET AUTH [PROVIDER] 'provider' "{"
 "}"
 ----
 
+<7> label:new[Introduced in 2026.06] label:enterprise-edition[] One or more tags can be attached to the user with the `SET TAG[S]` clause.
+The value is either a single string or a comma-separated list of strings.
+Tags are arbitrary labels attached to the native user object that can be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[attribute-based access control (ABAC)] auth rules through the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function.
+`ADD TAGS` idempotently adds the specified tags to any existing tags, `REMOVE TAGS` idempotently removes the specified tags, and `SET TAGS` replaces any tags the user already has with the specified tags.
+
 [NOTE]
 ====
 Usernames are case sensitive.
@@ -830,54 +981,51 @@ The created user will appear on the list provided by `SHOW USERS`.
 ====
 
 
-.Create user
-======
+=== Create user with password, status, and home database
+
 For example, you can create the user `jake` in a suspended state, with the home database `anotherDb`, and the requirement to change the password by using the command:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 CREATE USER jake
 SET PASSWORD 'abcd1234' CHANGE REQUIRED
 SET STATUS SUSPENDED
-SET HOME DATABASE anotherDb
+SET HOME DATABASE anotherDb;
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 CREATE USER jake
 SET STATUS SUSPENDED
 SET HOME DATABASE anotherDb
-SET AUTH 'native' {SET PASSWORD 'abcd1234' SET PASSWORD CHANGE REQUIRED}
+SET AUTH 'native' {SET PASSWORD 'abcd1234' SET PASSWORD CHANGE REQUIRED};
 ----
-======
 
 
-.Create user with an encrypted password
-======
-Or you can create the user `Jake` in an active state, with an encrypted password (taken from the _/data/scripts/databasename/restore_metadata.cypher_ of a restored database backup), and the requirement to not change the password by running:
+=== Create user with an encrypted password
 
-[source,cypher,role=noplay]
+You can create the user `Jake` in an active state, with an encrypted password (taken from the _/data/scripts/databasename/restore_metadata.cypher_ of a restored database backup), and the requirement to not change the password by running:
+
+[source, cypher,role=noplay]
 ----
 CREATE USER Jake
 SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' CHANGE NOT REQUIRED
-SET STATUS ACTIVE
+SET STATUS ACTIVE;
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
-.
-[source,cypher,role=noplay]
+
+[source, cypher,role=noplay]
 ----
 CREATE USER jake
 SET STATUS ACTIVE
 SET AUTH 'native' {
   SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c'
   SET PASSWORD CHANGE NOT REQUIRED
-}
+};
 ----
-
-======
 
 [NOTE, role=label--enterprise-edition]
 ====
@@ -890,44 +1038,54 @@ The `CREATE USER` command is optionally idempotent, with the default behavior to
 Appending `IF NOT EXISTS` to the `CREATE USER` command will ensure that no exception is thrown and nothing happens should the user already exist.
 
 
-.Create user if not exists
-======
-[source,cypher,role=noplay]
+=== Create user if not exists
+
+[source, cypher,role=noplay]
 ----
 CREATE USER jake IF NOT EXISTS
-SET PLAINTEXT PASSWORD 'abcd1234'
+SET PLAINTEXT PASSWORD 'abcd1234';
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 CREATE USER jake IF NOT EXISTS
-SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'}
+SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'};
 ----
-======
 
 The `CREATE OR REPLACE USER` command will result in any existing user being deleted and a new one created.
 
 
-.Create or replace user
-======
-[source,cypher,role=noplay]
+=== Create or replace user
+
+[source, cypher,role=noplay]
 ----
 CREATE OR REPLACE USER jake
-SET PLAINTEXT PASSWORD 'abcd1234'
+SET PLAINTEXT PASSWORD 'abcd1234';
 ----
 
 This is equivalent to running `DROP USER jake IF EXISTS` followed by `CREATE USER jake SET PASSWORD 'abcd1234'`.
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 CREATE OR REPLACE USER jake
-SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'}
+SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'};
 ----
-======
+
+[role=label--enterprise-edition label--new-2026.06]
+=== Create a user with tags
+
+For example, you can create the user `jake` and attach the tags `finance` and `auditor`, which can then be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] auth rules:
+
+[source, cypher,role=noplay]
+----
+CREATE USER jake
+SET PASSWORD 'abcd1234'
+SET TAGS 'finance', 'auditor';
+----
 
 [NOTE]
 ====
@@ -942,14 +1100,14 @@ Users can be renamed with the `RENAME USER` command.
 
 [source, cypher, role=noplay]
 ----
-RENAME USER jake TO bob
+RENAME USER jake TO bob;
 ----
 
 To verify the change, you can use the `SHOW USERS` command:
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
@@ -983,21 +1141,26 @@ The `RENAME USER` command is only available when using native authentication and
 == Modifying users
 
 You can modify users with the `ALTER USER` command.
-The command allows you to change the user's password, status, home database, and auth provider settings.
-The `SET` and `REMOVE` clauses can be applied in any order.
-However, all `REMOVE` clauses must come before the first `SET` clause and at least one `SET` or `REMOVE` clause is required for the command.
-If any of the `SET` or `REMOVE` clauses are omitted, the corresponding settings will not be changed.
+The command allows you to change the user's password, status, home database, auth provider settings, and tags.
+Within each group, the `REMOVE`, `ADD`, and `SET` clauses can be applied in any order.
+However, all `REMOVE` clauses must come before any `ADD` clause, which in turn must come before the first `SET` clause, and at least one `SET`, `ADD`, or `REMOVE` clause is required for the command.
+If any of the `SET`, `ADD`, or `REMOVE` clauses are omitted, the corresponding settings will not be changed.
+
+=== `ALTER USER` syntax
 
 [source, syntax, role="noheader"]
 ----
 ALTER USER name [IF EXISTS] # <1>
   [REMOVE HOME DATABASE] # <2>
   [REMOVE { AUTH [PROVIDER[S]] provider[, ...] \| ALL AUTH [PROVIDER[S]] }]... # <3>
-  [SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'] # <4>
-  [[SET PASSWORD] CHANGE [NOT] REQUIRED] # <5>
-  [SET STATUS {ACTIVE | SUSPENDED}] # <6>
-  [SET HOME DATABASE name] # <7>
-  [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <8>
+  [REMOVE { TAG[S] tag[, ...] \| ALL TAG[S] }]... # <4>
+  [ADD TAG[S] tag[, ...]]... # <5>
+  [SET [PLAINTEXT | ENCRYPTED] PASSWORD 'password'] # <6>
+  [[SET PASSWORD] CHANGE [NOT] REQUIRED] # <7>
+  [SET STATUS {ACTIVE | SUSPENDED}] # <8>
+  [SET HOME DATABASE name] # <9>
+  [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <10>
+  [SET TAG[S] tag[, ...]] # <11>
 ----
 Where:
 
@@ -1007,7 +1170,12 @@ As a result, the DBMS default database will be used as the home database for tha
 <3> Removes one, several, or all existing xref:authentication-authorization/auth-providers.adoc[auth provider(s)] from a user.
 However, a user must always have at least one auth provider.
 Therefore, `REMOVE ALL AUTH` must be used in conjunction with at least one `SET AUTH` clause in order to meet this requirement.
-<4> Specifies the password for the user.
+<4> label:new[Introduced in 2026.06] label:enterprise-edition[] Removes one, several, or all existing tags from the user.
+Use `REMOVE TAG[S] tag[, ...]` to remove specific tags, or `REMOVE ALL TAG[S]` to remove every tag from the user.
+Removing a tag that the user does not have has no effect.
+<5> label:new[Introduced in 2026.06] label:enterprise-edition[] Adds one or more tags to the user, keeping any existing tags.
+The value is either a single string or a comma-separated list of strings.
+<6> Specifies the password for the user.
 The `'password'` can either be a string value or a string parameter with default value length of at least 8 characters. +
 The `PLAINTEXT` and `ENCRYPTED` keywords are optional and can be used to specify the format of the password, i.e. whether Neo4j needs to hash it or it has already been hashed.
 By default, all passwords are encrypted (hashed) when stored in the Neo4j `system` database.
@@ -1017,15 +1185,15 @@ See xref:backup-restore/restore-backup#_restore_users_and_roles_metadata[Restore
 With `ENCRYPTED`, the password string is expected to be in the format of `<encryption-version>,<hash>,<salt>`, where, for example:
 ** `0` is the first version and refers to the `SHA-256` cryptographic hash function with iterations `1`.
 ** `1` is the second version and refers to the `SHA-256` cryptographic hash function with iterations `1024`.
-<5> Specifies whether the user must change their password at the next login.
+<7> Specifies whether the user must change their password at the next login.
 If the optional `SET PASSWORD CHANGE [NOT] REQUIRED` is omitted when adding native auth to a user (either by first removing pre-existing native auth or if the user does not have native auth to start with), the default is `CHANGE REQUIRED`.
 The `SET PASSWORD` prefix of the `CHANGE [NOT] REQUIRED` clause is only optional if it directly follows the `SET PASSWORD 'password'` clause and is not part of a `SET AUTH` clause.
-<6> Specifies the user's status.
-<7> Specifies a home database for a user.
+<8> Specifies the user's status.
+<9> Specifies a home database for a user.
 A home database is resolved if it is pointing to a database or a database alias.
 If no home database is set, the DBMS default database is used as the home database for that user.
 
-<8> One or more `SET AUTH` clauses can be used to set xref:authentication-authorization/auth-providers.adoc[auth providers], which define authentication / authorization providers for that user.
+<10> One or more `SET AUTH` clauses can be used to set xref:authentication-authorization/auth-providers.adoc[auth providers], which define authentication / authorization providers for that user.
 This might be used to configure external auth providers like LDAP or OIDC, but can also be used as an alternative way to set the native (password-based) auth settings like `SET PASSWORD` and `SET PASSWORD CHANGE REQUIRED`.
 For further informations, see the examples in this section, as well as xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers], and xref:authentication-authorization/ldap-integration.adoc#auth-ldap-auth-providers[Configure authentication/authorization at the user level using auth providers].
 +
@@ -1039,17 +1207,20 @@ SET AUTH [PROVIDER] 'provider' "{"
     }
 "}"
 ----
+<11> label:new[Introduced in 2026.06] label:enterprise-edition[] Sets the user's tags, replacing any tags the user already has.
+To add tags without removing existing ones, use the `ADD TAG[S]` clause instead.
+Tags can be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[attribute-based access control (ABAC)] auth rules using the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function.
 
 
-.Modify a user's password and status
-======
+=== Modify a user's password and status
+
 For example, you can modify the user `bob` by setting a new password and active status, and removing the requirement to change his password by running:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
 SET PASSWORD 'abcd5678' CHANGE NOT REQUIRED
-SET STATUS ACTIVE
+SET STATUS ACTIVE;
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
@@ -1057,77 +1228,106 @@ The equivalent command using the xref:authentication-authorization/auth-provider
 ----
 ALTER USER bob
 SET AUTH 'native' {SET PASSWORD 'abcd5678' SET PASSWORD CHANGE NOT REQUIRED}
-SET STATUS ACTIVE
+SET STATUS ACTIVE;
 ----
-======
 
-.Modify a user to expire their current password
-======
+=== Modify a user to expire their current password
+
 For example, you can modify the user `bob` to expire his current password so that he must change it the next time he logs in:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
-SET PASSWORD CHANGE REQUIRED
+SET PASSWORD CHANGE REQUIRED;
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
 ----
 ALTER USER bob
-SET AUTH 'native' {SET PASSWORD CHANGE REQUIRED}
+SET AUTH 'native' {SET PASSWORD CHANGE REQUIRED};
 ----
-======
+
 
 [role=label--enterprise-edition]
-.Modify a user to use an external OIDC auth provider
-======
+=== Modify a user to use an external OIDC auth provider
+
 For example, you can modify the user `bob` by removing his native auth provider and adding an external OIDC auth provider:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
 REMOVE AUTH 'native'
-SET AUTH 'oidc-mysso1' {SET ID 'bobsUniqueMySso1Id'}
+SET AUTH 'oidc-mysso1' {SET ID 'bobsUniqueMySso1Id'};
 ----
-======
+
 
 [role=label--enterprise-edition]
-.Modify a user to use multiple external OIDC auth providers
-======
+=== Modify a user to use multiple external OIDC auth providers
+
 For example, you can modify the user `bob` by removing all of his existing auth providers and adding two external OIDC auth providers:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
 REMOVE ALL AUTH
 SET AUTH 'oidc-mysso1' {SET ID 'bobsUniqueMySso1Id'}
-SET AUTH 'oidc-mysso2' {SET ID 'bobsUniqueMySso2Id'}
+SET AUTH 'oidc-mysso2' {SET ID 'bobsUniqueMySso2Id'};
 ----
-======
 
-.Assign a user a different home database
-======
+=== Assign a user a different home database
+
 For example, you can modify the user `bob` by assigning him a different home database:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
-SET HOME DATABASE anotherDbOrAlias
+SET HOME DATABASE anotherDbOrAlias;
 ----
-======
 
-.Remove the home database from a user and set their status to suspended
-======
+
+=== Remove the home database from a user and set their status to suspended
+
 For example, you can modify the user `bob` by removing his home database and setting his status to suspended:
 
-[source,cypher,role=noplay]
+[source, cypher,role=noplay]
 ----
 ALTER USER bob
 REMOVE HOME DATABASE
-SET STATUS SUSPENDED
+SET STATUS SUSPENDED;
 ----
-======
+
+
+[role=label--enterprise-edition label--new-2026.06]
+=== Add and remove tags on a user
+
+For example, you can modify the user `bob` by adding the `on-call` tag while removing the `auditor` tag:
+
+[source, cypher,role=noplay]
+----
+ALTER USER bob
+REMOVE TAG 'auditor'
+ADD TAG 'on-call';
+----
+
+[NOTE]
+====
+Any `REMOVE` clause(s) must come before any `ADD` clause(s), which must come before any `SET` clause(s).
+====
+
+[role=label--enterprise-edition label--new-2026.06]
+=== Replace all of a user's tags
+
+`SET TAGS` replaces whatever tags the user currently has.
+For example, you can replace `bob` tags with exactly `finance` and `auditor`:
+
+[source, cypher,role=noplay]
+----
+ALTER USER bob
+SET TAGS 'finance', 'auditor';
+----
+
+Instead of removing every tag from a user, use `REMOVE ALL TAGS`, for example `ALTER USER bob REMOVE ALL TAGS`.
 
 [NOTE]
 ====
@@ -1137,38 +1337,48 @@ For example, leaving out the `CHANGE [NOT] REQUIRED` part of the query leaves th
 
 [NOTE, role=label--enterprise-edition]
 ====
-The `SET STATUS {ACTIVE | SUSPENDED}`, `SET HOME DATABASE`, `REMOVE HOME DATABASE`, and `REMOVE AUTH` parts of the command are only available in Neo4j Enterprise Edition.
+The `SET STATUS {ACTIVE | SUSPENDED}`, `SET HOME DATABASE`, `REMOVE HOME DATABASE`, `REMOVE AUTH`, and the tag clauses: `SET TAG[S]`, `ADD TAG[S]`, `REMOVE TAG[S]`, and `REMOVE ALL TAG[S]` parts of the command are only available in Neo4j Enterprise Edition, starting with Neo4j 2026.06.
 The `SET AUTH` clause for external providers is only available in Neo4j Enterprise Edition.
 However, `SET AUTH 'native'` can be used in Neo4j Community Edition.
 ====
 
-The changes to the user will appear on the list provided by `SHOW USERS`:
+The changes to the user will appear on the list provided by `SHOW USERS`.
+To see the `tags` set, use `SHOW USERS YIELD *` to explicitly yield the `tags` column.
+The `tags` column is not part of the default output of `SHOW USERS`.
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS YIELD *;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
+[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m"]
 |===
-|user |roles |passwordChangeRequired |suspended |home
+|user |roles |passwordChangeRequired |suspended |home |tags
 
 |"bob"
 |["PUBLIC"]
 |false
 |false
 |<null>
+|["finance","auditor"]
 
 |"neo4j"
 |["admin","PUBLIC"]
 |true
 |false
 |<null>
+|[]
 
-5+a|Rows: 2
+6+a|Rows: 2
 
 |===
+
+[NOTE]
+====
+label:new[Introduced in 2026.06] Seeing the values in the `tags` column requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege, in addition to the `SHOW USER` privilege required to run `SHOW USERS`.
+Without `SHOW USER METADATA`, the `tags` column returns `null` for every row.
+====
 
 The default behavior of this command is to throw an exception if the user does not exist.
 Adding an optional parameter `IF EXISTS` to the command makes it idempotent and ensures that no exception is thrown.
@@ -1176,7 +1386,58 @@ Nothing happens should the user not exist.
 
 [source, cypher, role=noplay]
 ----
-ALTER USER nonExistingUser IF EXISTS SET PASSWORD 'abcd1234'
+ALTER USER nonExistingUser IF EXISTS SET PASSWORD 'abcd1234';
+----
+
+
+[[access-control-alter-users-bulk]]
+[role=label--enterprise-edition label--new-2026.06]
+== Modifying multiple users' tags
+
+You can modify the tags of several users in a single command with the `ALTER USERS` command.
+This is useful for applying the same tag changes across a group of users without issuing a separate `ALTER USER` command for each one.
+
+=== `ALTER USERS` syntax
+
+[source, syntax, role="noheader"]
+----
+ALTER USERS name[, ...] [IF EXISTS] # <1>
+  [REMOVE { TAG[S] tag[, ...] \| ALL TAG[S] }]... # <2>
+  [ADD TAG[S] tag[, ...]]... # <3>
+  [SET TAG[S] tag[, ...]] # <4>
+----
+Where:
+
+<1> Specifies the command to alter one or more users, given as a comma-separated list of usernames.
+By default, the command throws an exception if any of the listed users do not exist.
+Adding the optional `IF EXISTS` makes the command idempotent, so no exception is thrown and the missing users are skipped.
+<2> Removes one, several, or all existing tags from each listed user.
+Use `REMOVE TAG[S] tag[, ...]` to remove specific tags, or `REMOVE ALL TAG[S]` to remove every tag.
+<3> Adds one or more tags to each listed user, keeping any existing tags.
+<4> Sets the tags of each listed user, replacing any tags they already have.
+
+As with `ALTER USER`, any `REMOVE` clause(s) must come before any `ADD` clause(s), which must come before any `SET` clause(s), and at least one `SET`, `ADD`, or `REMOVE` clause is required.
+The tags can be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[attribute-based access control (ABAC)] auth rules through the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function.
+
+=== Add a tag to multiple users
+
+For example, you can add the `finance` tag to both `bob` and `alice` in a single command:
+
+[source, cypher,role=noplay]
+----
+ALTER USERS bob, alice
+ADD TAG 'finance';
+----
+
+
+=== Replace the tags of multiple users
+
+For example, you can replace whatever tags `bob` and `alice` currently have with exactly `finance` and `auditor`, skipping any of the listed users that do not exist:
+
+[source, cypher,role=noplay]
+----
+ALTER USERS bob, alice IF EXISTS
+SET TAGS 'finance', 'auditor';
 ----
 
 
@@ -1191,7 +1452,7 @@ When a user executes this command it will change their password as well as set t
 [source, cypher, role=test-skip]
 ----
 ALTER CURRENT USER
-SET PASSWORD FROM 'password1' TO 'password2'
+SET PASSWORD FROM 'password1' TO 'password2';
 ----
 
 [NOTE]
@@ -1207,7 +1468,7 @@ Users can be deleted with `DROP USER`.
 
 [source, cypher, role=noplay]
 ----
-DROP USER bob
+DROP USER bob;
 ----
 
 Deleting a user does not automatically terminate associated connections, sessions, transactions, or queries.
@@ -1216,7 +1477,7 @@ However, when a user is deleted, it no longer appears on the list provided by `S
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
