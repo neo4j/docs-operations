@@ -127,7 +127,7 @@ Currently, this is only supported with `existingDataSeedInstance`, `existingData
 
 |`existingDataSeedServer`
 
-`existingDataSeedInstance` label:deprecated[deprecated in 5.25]
+`existingDataSeedInstance` label:deprecated[Deprecated in 5.25]
 | ID of the cluster server
 |
 Defines which server is used for seeding the data of the created database.
@@ -144,7 +144,7 @@ For more information, see xref:database-administration/standard-databases/seed-f
 | Comma-separated list of configuration values.
 |
 
-| `seedCredentials` label:deprecated[Deprecated in 5.26] label:removed[Removed in Cypher 25, Neo4j 2025.06]
+| `seedCredentials` label:deprecated[Deprecated in 5.26]
 | credentials
 |
 Defines credentials that need to be passed into certain seed providers.
@@ -156,7 +156,7 @@ For more information see xref::database-administration/standard-databases/seed-f
 |
 Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
 
-For details about enrichment mode, see link:https://neo4j.com/docs/cdc/current/get-started/self-managed/#_modify_a_databases_cdc_mode[Change Data Capture Manual -> Enable CDC on self-managed instances -> Modify a database’s CDC mode].
+For details about enrichment mode, see link:{neo4j-docs-base-uri}/cdc/current/get-started/self-managed/#tweak-mode[Change Data Capture Manual -> Enable CDC on self-managed instances -> Toggle CDC mode].
 
 | `storeFormat`
 | `aligned` \| `standard` \| `high_limit` \| `block`
@@ -165,43 +165,60 @@ Defines the store format if the database created is new.
 `high_limit` and `standard` formats are deprecated from 5.23.
 For more information on store formats, see xref::database-internals/store-formats.adoc[Store formats].
 
-If the store is seeded with `seedURI`, `existingDataSeedInstance` (removed in Cypher 25), or `existingDataSeedServer`, or if the command is used to mount pre-existing store files already present on the disk, they will retain their current store format without any modifications.
+If the store is seeded with `seedURI`, `existingDataSeedInstance`, or `existingDataSeedServer`, or if the command is used to mount pre-existing store files already present on the disk, they will retain their current store format without any modifications.
+
+| `seedRestoreUntil` label:new[Introduced in 2025.01]
+| Datetime or transaction id. E.g. `datetime("2025-01-01T12:15:00.000+0100")` or `123456`
+|
+If you are passing a `seedURI` that leads to a backup chain, including differential backups, you can choose to not apply all the transactions in the differential backups.
+To seed up to a specific date, specify a `datetime`.
+This will seed the database with transactions committed before the provided timestamp.
+To seed up to a specific transaction ID, specify a transaction ID.
+This will seed the database with transactions up to, but not including the specified transaction.
 |===
 
-[NOTE]
-====
-Starting from Neo4j 2025.01, you can use `existingData`, `seedURI`, `seedConfig`, and `seedCredentials` options together with the `CREATE OR REPLACE DATABASE` command.
-
-The `existingDataSeedInstance` (removed in Cypher 25) and `existingDataSeedServer` are not supported with the `CREATE OR REPLACE DATABASE` command.
-More details about seeding options can be found in xref::clustering/databases.adoc#cluster-seed[Seed a cluster].
-====
 ======
 [role=include-with-cypher-25]
 ======
 The `CREATE DATABASE [OR REPLACE]` command can have a map of options, e.g., `OPTIONS {key: 'value'}`.
 
-[options="header"]
+[options="header", width="100%", cols="2m,2a,3a"]
 |===
 
 | Key | Value | Description
 
+| `existingData` label:deprecated[Deprecated in 2025.06]
+| `use`
+|
+Included for backward compatibility only, has no effect and will be removed in a future version.
+
 |`existingDataSeedServer`
+
+`existingDataSeedInstance` label:removed[Removed in 2025.06]
 | ID of the cluster server
 |
 Defines which server is used for seeding the data of the created database.
 The server ID can be found in the `serverId` column after running `SHOW SERVERS`.
+Replaced by `existingDataSeedServer`.
 
-| `seedURI`
-| URI to a backup, a folder that contains backup artifacts or a dump from an existing database.
+| `seedURI` label:changed[Changed in 2025.06]
+| URI to a backup, a folder that contains backup artifacts, or a dump from an existing database.
 |
 Defines a seed from an external source, which will be used to seed all servers.
+For more information, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
 | `seedConfig`
 | Comma-separated list of configuration values.
 |
-For more information see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
-| `txLogEnrichment`§
+| `seedCredentials` label:removed[Removed in 2025.06]
+| credentials
+|
+Defines credentials that need to be passed into certain seed providers.
+It is recommended to use the `CloudSeedProvider` seed provider, which does not require this configuration when seeding from cloud storage.
+For more information see xref::database-administration/standard-databases/seed-from-uri.adoc#cloud-seed-provider[CloudSeedProvider].
+
+| `txLogEnrichment`
 | `FULL` \| `DIFF` \| `OFF`
 |
 Defines the level of enrichment applied to transaction logs for Change Data Capture (CDC) purposes.
@@ -231,21 +248,20 @@ This will seed the database with transactions up to, but not including the speci
 |
 If the `seedURI` points to a folder containing backups for multiple databases, you can specify the database name to filter the artifacts.
 
-| `existingData` label:deprecated[Deprecated in 2025.06]
-| `use`
-|
-Included for backward compatibility only, has no effect and will be removed in a future version.
-
 |===
-
-[NOTE]
-====
-In Cypher 25, the options `seedCredentials` and `existingDataSeedInstance` have been removed, while the `existingData` option is deprecated and has no effect.
-====
 ======
 =====
 
+[NOTE]
+====
+Starting with Neo4j 2025.01 for Cypher 5 and 2025.06 for Cypher 25, you can use `seedURI`, `seedConfig`, `existingData` (removed in Cypher 25), and `seedCredentials` (removed in Cypher 25) options together with the `CREATE OR REPLACE DATABASE` command.
+
+The `existingDataSeedInstance` (removed in Cypher 25) and `existingDataSeedServer` are not supported with the `CREATE OR REPLACE DATABASE` command.
+More details about seeding options can be found in xref::clustering/databases.adoc#cluster-seed[Seed a cluster].
+====
+
 The following examples show how to create a database using the `CREATE DATABASE` command with various options.
+For examples on seeding a database from a URI, see xref:database-administration/standard-databases/seed-from-uri.adoc[Create a database from a URI].
 
 == Create a database
 
