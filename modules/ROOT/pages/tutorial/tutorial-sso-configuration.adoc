@@ -15,7 +15,7 @@ Therefore, when reproducing them in the identity providers, you must modify the 
 For example:
 
 ----
-http://localhost:7474/browser/?idp_id={provider}&auth_flow_step=redirect_uri
+http://localhost:7474/browser/?idp_id=<provider>&auth_flow_step=redirect_uri
 ----
 ====
 
@@ -57,6 +57,7 @@ For the complete guide on how to customize tokens returned from Okta with a grou
 
 . From the left-hand side of the Okta dashboard, navigate to *Applications* and click *Create App Integration*.
 . Select *OIDC - OpenID Connect* for Sign-in method and *Single-Page Application* for Application type.
+Because Neo4j Browser is a single-page application, this is the recommended configuration.
 . Click *Next*.
 . Configure the client with the appropriate redirect URI.
 .. Add a name for the app integration.
@@ -103,7 +104,7 @@ dbms.security.authentication_providers=oidc-okta
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/oauth-authorization-server
+dbms.security.oidc.okta.well_known_discovery_uri=https://example.okta.com/oauth2/default/.well-known/openid-configuration
 dbms.security.oidc.okta.audience=api://default
 dbms.security.oidc.okta.claims.username=sub
 dbms.security.oidc.okta.claims.groups=groups
@@ -161,7 +162,7 @@ dbms.security.authentication_providers=oidc-okta, native
 dbms.security.authorization_providers=oidc-okta
 dbms.security.oidc.okta.display_name=Okta
 dbms.security.oidc.okta.auth_flow=pkce
-dbms.security.oidc.okta.well_known_discovery_uri=https://dev-54101110.okta.com/oauth2/default/.well-known/oauth-authorization-server
+dbms.security.oidc.okta.well_known_discovery_uri=https://example.okta.com/oauth2/default/.well-known/openid-configuration
 dbms.security.oidc.okta.audience=0oao2rybx5hIERt5W5d7
 dbms.security.oidc.okta.claims.username=userid
 dbms.security.oidc.okta.claims.groups=groups
@@ -202,9 +203,10 @@ The following examples show how to configure Microsoft Entra ID for authenticati
 . Click *Microsoft Entra ID* and navigate to *Manage -> App registrations*.
 . Click *New registration*.
 . Type a name for your application, for example, `Neo4j SSO`.
-. Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)`.
-. Under *Redirect URI*, select `Single-page application (SPA)` and enter the redirect URI: _\http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri_
-The redirect URI will accept the returned token responses after successful authentication.
+. Under *Select the supported account types*, select `Accounts in this organizational directory only (Default Directory only - Single tenant)` or the option appropriate for your deployment.
+. Under *Redirect URI*, select `Single-page application (SPA)` and enter the following static redirect URI: _\http://localhost:7474/browser/?idp_id=azure&auth_flow_step=redirect_uri_.
+This redirect URI is supported only by single-tenant applications and is used to redirect the user back to the Neo4j Browser after successful authentication.
+
 . Click *Register*.
 
 === Access token
@@ -244,12 +246,17 @@ You can configure Neo4j to use Entra ID for authentication by configuring the fo
 [source, properties]
 ----
 # Configure the access_token
-dbms.security.oidc.azure.config=principal=unique_name;code_challenge_method=S256;token_type_principal=access_token;token_type_authentication=access_token
+dbms.security.oidc.azure.config=principal=sub;code_challenge_method=S256;token_type_principal=access_token;token_type_authentication=access_token
 # Configure the OIDC token endpoint with the Directory (tenant) ID
 dbms.security.oidc.azure.token_endpoint=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/oauth2/v2.0/token
-# Configure the iss claim in the id token with the Directory (tenant) ID
+# Configure the iss claim in the access token with the Directory (tenant) ID
+dbms.security.oidc.azure.issuer=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/v2.0
+# Configure the audience claim in the access token with the Application (client) ID
+dbms.security.oidc.azure.audience=4376dc8b-b5af-424f-9ada-c1c1b2d416b9
+# Configure the OIDC well-known discovery endpoint with the Directory (tenant) ID
+dbms.security.oidc.azure.well_known_discovery_uri=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/v2.0/.well-known/openid-configuration
 # Make sure you add the trailing slash (`/`) at the end of the URL or this operation might fail.
-dbms.security.oidc.azure.issuer=https://sts.windows.net/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/
+dbms.security.oidc.azure.issuer=https://login.microsoftonline.com/54e85725-ed2a-49a4-a19e-11c8d29f9a0f/v2.0
 # Provide the Entra ID parameters, such as client_id, response_type, scope, etc.
 dbms.security.oidc.azure.params=client_id=4376dc8b-b5af-424f-9ada-c1c1b2d416b9;response_type=code;scope=openid profile email api://4376dc8b-b5af-424f-9ada-c1c1b2d416b9/access-token
 ----
@@ -311,6 +318,7 @@ For details, see #using-claims-to-reliably-identify-a-user-subject-and-object-id
 dbms.security.oidc.azure.claims.username=sub
 ----
 
+[[tutorial-sso-entra-groups-mapping]]
 ==== Map Entra groups to Neo4j roles
 
 Decide whether you want to use Entra groups directly or Entra App Roles.
@@ -328,13 +336,9 @@ Details about Entra ID App Roles can be found in the https://learn.microsoft.com
 
 . From the *App registrations* page, select your application.
 . From the left-hand side menu, navigate to *Manage -> Manifest*.
-. Verify that the server is configured to return the Group Object IDs in the JWT identity tokens:
-+
-[source, json]
-----
-"groupMembershipClaims": "SecurityGroup, ApplicationGroup",
-----
-. From the left-hand side menu, navigate to *Manage -> Groups*.
+. Verify that the server is configured to return the Group Object IDs in the JWT identity tokens.
+See https://learn.microsoft.com/en-us/entra/identity/hybrid/connect/how-to-connect-fed-group-claims[Microsoft documentation] for details on when to use which and how it can help with the 200 roles limit described in <<tutorial-sso-entra-groups-mapping>>.
+. From the left-hand side menu, navigate to *Microsoft Entra ID -> Groups*.
 . Create groups and assign users to them.
 Take note of the *Object Id* column.
 . Configure a mapping from Entra Group Object Ids to Neo4j roles.
@@ -343,7 +347,7 @@ For details, see xref:authentication-authorization/sso-integration.adoc#auth-sso
 [source, properties]
 ----
 dbms.security.oidc.azure.authorization.group_to_role_mapping= "e8b6ddfa-688d-4ace-987d-6cc5516af188" = admin; \
-                                                              "9e2a31e1-bdd1-47fe-844d-767502bd138d" = reader
+"9e2a31e1-bdd1-47fe-844d-767502bd138d" = reader
 ----
 . Configure Neo4j to use the `groups` field from the JWT token.
 +
@@ -552,7 +556,7 @@ Change to ID tokens in your _neo4j.conf_:
 
 [source, properties]
 ----
-dbms.security.oidc.{{provider}}.config=token_type_principal=id_token;token_type_authentication=id_token
+dbms.security.oidc.google.config=token_type_principal=id_token;token_type_authentication=id_token
 ----
 
 === When should identity tokens vs. access tokens be used?
