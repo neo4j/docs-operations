@@ -52,7 +52,7 @@ The user running `neo4j-admin database import` must have `WRITE` capabilities in
 
 This section describes the `neo4j-admin database import` option.
 
-Starting with 2026.03, you can see the detailed logging of import progress for both `neo4j-admin database import` commands.
+Starting with Neo4j 2026.03, you can see the detailed logging of import progress for both `neo4j-admin database import` commands.
 See <<import-logs, Import progress reporting>> for more details.
 
 [TIP]
@@ -190,6 +190,8 @@ The xref:import.adoc#import-tool-examples[examples] for CSV can also be used wit
 
 |--array-delimiter=<char>
 |Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the array is encoded as a string.
 
 ====
 * ASCII character -- e.g. `--array-delimiter=";"`.
@@ -399,6 +401,7 @@ For example, quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling 
 Thus `""` would be interpreted as a literal `"`.
 
 You cannot escape using `\`.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
 |"
 | {check-mark}
 |
@@ -515,6 +518,8 @@ performance, this value should not be greater than the number of available proce
 
 |--vector-delimiter=<char>
 |label:new[Introduced in 2025.10] Delimiter character between vector coordinates within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the vector is encoded as a string.
 |;
 | {check-mark}
 | {check-mark}
@@ -908,6 +913,8 @@ If the database into which you import does not exist prior to importing, you mus
 
 |--array-delimiter=<char>
 |Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the array is encoded as a string.
 
 ====
 * ASCII character -- e.g. `--array-delimiter=";"`.
@@ -1108,6 +1115,7 @@ For example, quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling 
 Thus `""` would be interpreted as a literal `"`.
 
 You cannot escape using `\`.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
 |"
 | {check-mark}
 |
@@ -1234,6 +1242,8 @@ If not specifically provided, the default temp path will be created inside the d
 
 |--vector-delimiter=<char>
 |label:new[Introduced in 2025.10] Delimiter character between vector coordinates within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the vector is encoded as a string.
 |;
 | {check-mark}
 | {check-mark}
@@ -1590,6 +1600,9 @@ A different delimiter can be specified with `--array-delimiter`.
 Arrays are not affected by the `--normalize-types` flag.
 For example, if you want a byte array to be stored as a Cypher long array, you must explicitly declare the property as `long[]`.
 
+Array values can also be sourced directly from a `LIST` typed column with Parquet files, in which case the `--array-delimiter` option is not needed.
+Furthermore, values read from `LIST` typed columns are mapped to their corresponding Cypher types, e.g., `LIST<INT>` is mapped to `int[]`, `LIST<STRING>` is mapped to `string[]`, and so on, and there is no need to specify the type in the header.
+
 [NOTE]
 ====
 CSV-based import does not import empty arrays, because they cannot be distinguished from arrays that are set to `null`.
@@ -1707,9 +1720,6 @@ The map must specify both the `coordinateType` and the `dimensions` of the vecto
 The `coordinateType` can be one of `byte`, `short`, `int`, `long`, `float`, or `double`.
 The `dimensions` must be between 1 and 4096, inclusive.
 
-By default, vector values are separated by `;`.
-A different delimiter can be specified with `--vector-delimiter`.
-
 The dimensions of each vector in the data must match what is specified in the header.
 
 A vector in a header could for example look like this:
@@ -1719,6 +1729,11 @@ A vector in a header could for example look like this:
 ----
 
 Note that quotation marks are necessary, since the `,` inside the map would otherwise be interpreted as a column delimiter.
+
+With CSV files and Parquet files where vector values are encoded as strings, by default, vector values are separated by `;`.
+A different delimiter can be specified with `--vector-delimiter`.
+
+Starting with Neo4j 2026.06, vector values can also be sourced from a `LIST` typed column with Parquet files, in which case the `--vector-delimiter` option is not needed.
 --
 
 [[import-tool-id-spaces]]
@@ -2272,7 +2287,7 @@ Creating and dropping indexes and constraints during the import process is suppo
 ====
 
 You can use the `--schema` option to create, populate, drop, or change the graph type during import by providing a Cypher script containing the respective Cypher commands, which will be parsed and executed during the import process.
-You can specify individual constraint statements, or starting with 2026.05, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+You can specify individual constraint statements, or starting with Neo4j 2026.05 for full import and 2026.06 for incremental import, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
 For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
 
 The following table summarizes the supported commands and their availability per import type and version:
@@ -2290,10 +2305,9 @@ The following table summarizes the supported commands and their availability per
 .3+| Incremental import
 | `CREATE INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
 | `DROP INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
-// | `ALTER CURRENT GRAPH TYPE` (`SET`, `ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
+| `ALTER CURRENT GRAPH TYPE` (`ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
 |===
 
-// TODO: As of 2026.06: For incremental import the option becomes available as of 2026.06, limited to operations ADD, DROP, ALTER. Here you are allowed multiples of these operations.
 === Supported index and constraint types
 
 The import tool supports the following index and constraint types:
@@ -2324,15 +2338,13 @@ For more information on the constraint types, see link:{neo4j-docs-base-uri}/cyp
 [[create-drop-indexes-constraints-full]]
 === Create indexes and constraints during full import
 
-You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` commands to be parsed and executed.
-
-Starting with 2026.05, you can also specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` and `ALTER CURRENT GRAPH TYPE` (Introduced in 2026.05) commands to be parsed and executed.
 For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
 
 [NOTE]
 ====
 Full import does not support dropping indexes and constraints.
-For graph type it supports only `SET` operations.
+For graph type, it supports only `SET` operations.
 ====
 
 For example:
@@ -2387,12 +2399,15 @@ neo4j
 [[create-drop-indexes-constraints-incremental]]
 === Create and drop indexes and constraints during incremental import
 
-You can use the `--schema` option to create and populate, and drop indexes/constraints during an incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` and `DROP INDEX|CONSTRAINT` commands to be parsed and executed.
-Note that you cannot drop indexes that are backing constraints.
-You must drop the constraints themselves, which will also drop the underlying indexes.
+You can use the `--schema` option to create and populate, and drop indexes/constraints during an incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT`, `DROP INDEX|CONSTRAINT`, and `ALTER CURRENT GRAPH TYPE` (Introduced in 2026.06) commands to be parsed and executed.
+Incremental import supports `ADD`, `DROP`, and `ALTER` operations for graph types and allows only one `ALTER CURRENT GRAPH TYPE` statement per script.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
 
 [NOTE]
 ====
+You cannot drop indexes that are backing constraints.
+You must drop the constraints themselves, which will drop the underlying indexes.
+
 You must stop your database before performing an incremental import with a single command.
 If you cannot afford a full downtime of your database, split the operation into several stages.
 See <<incremental-import-stages>> for details.
@@ -2400,6 +2415,11 @@ See <<incremental-import-stages>> for details.
 
 
 For example:
+
+[.tabbed-example]
+=====
+[role=include-with-constraint-statements]
+======
 
 ._schema.cypher_ script
 [source, cypher, role=nocopy]
@@ -2409,42 +2429,26 @@ CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNI
 DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
 CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
 ----
-This file uses ';' as a separator.
+This file uses `;` as a separator.
+======
+[role=include-with-graph-type-statement]
+======
+label:new[Introduced in 2026.06] label:cypher[Cypher 25]
 
-// TODO: As of 2026.06:
-// [.tabbed-example]
-// =====
-// [role=include-with-constraint-statements]
-// ======
-//
-// ._schema.cypher_ script
-// [source, cypher, role=nocopy]
-// ----
-// DROP INDEX PersonNameIndex IF EXISTS;
-// CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
-// DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
-// CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
-// ----
-// This file uses `;` as a separator.
-// ======
-// [role=include-with-graph-type-statement]
-// ======
-// label:new[Introduced in 2026.05] label:cypher[Cypher 25]
-//
-// ._schema.cypher_ script
-// [source, cypher, role=nocopy]
-// ----
-// CYPHER 25
-// DROP INDEX PersonNameIndex IF EXISTS;
-// ALTER CURRENT GRAPH TYPE DROP {
-//    (p: person => {age :: INTEGER NOT NULL}
-// }
-// ----
-// This file uses `;` as a separator.
-// Only `ADD`, `DROP`, `ALTER` is supported by the incremental importer.
-//
-// ======
-// =====
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CYPHER 25
+DROP INDEX PersonNameIndex IF EXISTS;
+ALTER CURRENT GRAPH TYPE DROP {
+   (p: person => {age :: INTEGER NOT NULL}
+}
+----
+This file uses `;` as a separator.
+Only `ADD`, `DROP`, `ALTER` are supported by the incremental importer.
+
+======
+=====
 
 Then, use the following example commands to run the import:
 
