@@ -1,39 +1,42 @@
 :description: This section describes how to manage databases across clusters.
-:page-role: new-2026.07 enterprise-edition not-on-aura cypher-25
+:page-role: new-2026.08 enterprise-edition not-on-aura cypher-25
 [[database-management]]
 = Replicating databases across clusters
 
 [[ccr-overview]]
 == Overview
 
-In 2026.07, cross-cluster database replication (CCDR) has been officially released.
+In 2026.08, cross-cluster database replication (CCDR) is officially released.
 This provides the functionality for one database in a cluster to be replicated over to another cluster.
 The original database is called _upstream_ or _source_, while the database that replicates data is called the _replica_.
 
-There are two mechanisms for replicating between databases:
+There are two mechanisms for replicating databases across clusters:
 
 * Replication via the network (see _Figure 1_).
 * Replication via backups (see _Figure 2_).
 
-Both mechanisms poll for new transactions/backups and applies them as soon as new transactions become available.
+Both mechanisms poll for new transactions/backups and apply them as soon as new transactions/backups become available.
 
 image::replication.svg[title="Schema of replicating a database across clusters via the network", width="300"]
 image::replication-via-backups.svg[title="Schema of replicating a database across clusters via backups", width="300"]
 
-Ensure that clusters run the same Neo4j version, and that version must be 2026.07 or later.
+Ensure that clusters run the same Neo4j version, and that version must be 2026.08 or later.
 
 The commands and procedures for creating and promoting replica databases are supported by Cypher 25.
 
 All replica databases are *read-only*.
 A replica database can have topology with primary and secondary copies that follow the servers' mode constraints.
-However, both primaries and secondaries remain read-only. Neither primaries nor secondaries accept write operations.
+However, both primaries and secondaries remain read-only.
+Neither replica primaries nor replica secondaries accept write operations.
 
 [[create-replica-via-the-network]]
 == Creating a replica database via the network
 
-When there is a direct network connection between the two clusters, this creation method is recommended.
-We also recommend an inter-cluster encryption and mutual trust between the clusters.
+This creation method is recommended when the two clusters are directly connected over the network.
+Inter-cluster encryption and mutual trust between the clusters are also strongly recommended.
 
+[[syntax-create-replica-db-via-network]]
+.CREATE REPLICA DATABASE via the network connection
 [source, syntax, role="noheader"]
 ----
 CREATE REPLICA DATABASE name
@@ -57,11 +60,15 @@ Defines the upstream information for the replica to pull from.
 Possible keys of this map include:
 
 `remote`:: The name of the upstream database in a remote cluster.
-`addresses`:: A list of the xref:configuration/configuration-settings.adoc#config_dbms.cluster.endpoints[cluster endpoints] of the servers in the remote cluster. Use this if there is a direct network connection between clusters.
+`addresses`:: A list of xref:configuration/configuration-settings.adoc#config_dbms.cluster.endpoints[cluster endpoints] for the servers in the remote cluster.
+Use this if there is a direct network connection between clusters. +
+There is no requirement that every remote server hosts the upstream database.
 |===
+
 
 [[create-replica-db-example]]
 === Example
+
 Let's assume you have two separate clusters running independently from each other: *Cluster A* and *Cluster B*.
 
 On *Cluster A*, the database `foo` is running and has three servers with cluster addresses: `server01.example.com:6000`, `server02.example.com:6000`, `server03.example.com:6000`.
@@ -87,11 +94,11 @@ OPTIONS {
 The command can only be executed successfully if the replica database is able to contact the remote cluster endpoints listed in `addresses`.
 If not, the command results in an error.
 
-Verify that the `foo-replica` database is online on the desired number of servers, in the desired roles.
-Note that the type is labelled as `replica`.
-
 If a `seedURI` is also specified, the initial seeding of the replica database is done from the `seedURI`.
 After initial seeding, the replica pulls transactions from the upstream database using the servers listed in `addresses`.
+
+By running the `SHOW DATABASES` command, verify that the `foo-replica` database is online on the desired number of servers, in the desired roles.
+Note that the database type is `replica`, and the `options` column shows its configuration.
 
 [source, cypher, role=noplay]
 ----
@@ -146,14 +153,16 @@ cluster/
 ----
 
 
-[[create-replica-remote-backup-pulling]]
+[[create-replica-via-remote-backup-pulling]]
 == Creating a replica database with remote backup pulling
 
-Replication can also be done by pulling backups through cloud object storage or a file system.
-The benefit of this is that a direct network connection between clusters is not necessary in this case.
+Replication can also be done by retrieving backups through cloud object storage or a file system.
+The advantage of this approach is that it eliminates the need for a direct network connection between the clusters.
 
 The user is responsible for creating the required backups and pushing them to the bucket or file-system location referenced by `pullURI`.
 
+[[create-replica-db-via-backups]]
+.CREATE REPLICA DATABASE via remote backup pulling
 [source, syntax, role="noheader"]
 ----
 CREATE REPLICA DATABASE name
@@ -177,19 +186,20 @@ Defines the upstream information for the replica to pull from.
 Possible keys of this map include:
 
 `remote`:: The name of the upstream database in a remote cluster.
-`pullURI`:: A URI from which the replica can pull backups when using backup pulling. Use this to replicate via cloud object storage or a file system, without requiring a direct network connection between clusters.
+`pullURI`:: A URI from which the replica can pull backups when using backup pulling method.
+Use this to replicate a database via cloud object storage or a file system, without requiring a direct network connection between clusters.
 |===
 
 [IMPORTANT]
 ====
 The backup-producing process and the replica database need access to the object storage location used by `pullURI`.
 Bucket permissions must be configured before the replica database is created.
-For details, see xref:database-administration/standard-databases/seed-from-uri.adoc#cloud-seed-provider[CloudSeedProvider].
+For details, see xref:database-administration/standard-databases/seed-from-uri.adoc#cloud-seed-provider[`CloudSeedProvider`].
 ====
 
 
 [[replica-initialization]]
-=== Initialization
+=== Initialization of a replica
 
 Initialization always starts from a complete backup chain.
 A complete backup chain contains a full backup and, optionally, some number of differential backups that follow it without gaps.
@@ -206,7 +216,7 @@ image::replica-backup-pulling-initialization.svg[title="Initializing a replica d
 
 
 [[replica-running]]
-=== Running
+=== Running a replica
 
 After initialization, the replica consumes only differential backups from `pullURI`.
 The differential backup chain must remain unbroken from the replica database's current point onward.
@@ -235,7 +245,6 @@ If a `seedURI` is also specified, initial seeding is done from `seedURI`, and th
 CREATE REPLICA DATABASE `foo-replica`
 TOPOLOGY 3 PRIMARIES 1 SECONDARY
 OPTIONS {
-  existingData: "use",
   seedURI: "s3://myBucket/myBackup.backup",
   replicaConfig: {
     remote: "foo",
@@ -369,10 +378,11 @@ Once a replica is promoted, it cannot be re-attached to the original source.
 To resume replication, you need to create a new replica.
 ====
 
-Use `dbms.promoteReplicaDatabase` to promote a replica database.
+Use the `dbms.promoteReplicaDatabase()` procedure to promote a replica database.
 You can retain the current topology, or specify a new topology as part of the promotion.
 
-.dbms.promoteReplicaDatabase()
+[role=label--cypher-25]
+.`dbms.promoteReplicaDatabase()`
 |===
 | *Syntax* 3+m| dbms.promoteReplicaDatabase(replicaDatabaseName, options)
 | *Description* 3+a| Convert a replica database to a standard database while keeping the data it currently has.
