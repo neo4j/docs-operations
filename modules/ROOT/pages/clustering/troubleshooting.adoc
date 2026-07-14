@@ -1,25 +1,25 @@
 :description: Troubleshooting information for common Neo4j cluster availability and replication issues.
-[role=enterprise-edition]
+:page-role: enterprise-edition
 [[clustering-troubleshooting]]
 = Troubleshooting
 
-This page describes known cluster issues and mitigations.
+This page describes known cluster issues and their mitigations.
 
 [[clustering-troubleshooting-raft-sender-channel-acquisition]]
 == Slow or unavailable writes when a cluster member is shut down
 
 In Neo4j 5.26 LTS, a cluster can experience delayed or unavailable writes if the leader waits for a Raft sender connection to a cluster member that has stopped but whose network endpoint still accepts connection attempts.
-This can happen when a server, virtual machine, or container is killed or shut down, but the network layer does not immediately refuse connections to that member.
+This can happen when a server, virtual machine, or container is stopped or shut down, but the network layer does not immediately refuse connections to that member.
 
-When this happens, the leader may wait until `dbms.cluster.network.connect_timeout` elapses before it attempts to replicate to another member.
-In a three-member cluster, this can delay writes because Raft requires a quorum to receive the replication message.
+When this happens, the leader may wait until xref:configuration/configuration-settings.adoc#config_dbms.cluster.network.connect_timeout[`dbms.cluster.network.connect_timeout`] elapses before attempting to replicate data to another cluster member.
+In a three-member cluster, this can delay writes because the Raft protocol requires a quorum (two of the three members) to replicate the transaction before it can be committed.
 
 [[clustering-troubleshooting-raft-sender-channel-acquisition-symptoms]]
 === Symptoms
 
 Common symptoms include:
 
-* Writes become slow, time out, or appear unavailable after one cluster member is stopped, killed, or restarted.
+* Writes become slow, time out, or appear unavailable after one cluster member is stopped, shut down, or restarted.
 * The problem lasts for approximately the configured `dbms.cluster.network.connect_timeout`, which is `30s` by default.
 * The problem is more likely in environments where a stopped member's network endpoint continues to accept connection attempts instead of refusing them immediately.
 This has been observed in Kubernetes environments, but it is not limited to Kubernetes.
@@ -51,6 +51,6 @@ This allows the leader to continue replicating to other members without blocking
 [NOTE]
 ====
 *Behavior from Neo4j 2025.02* +
-Starting in Neo4j 2025.02, the setting is available as link:https://neo4j-docs-operations-3174.surge.sh/operations-manual/2026.07/configuration/configuration-settings/#config_dbms.cluster.raft.async_channel_acquisition_enabled[`dbms.cluster.raft.async_channel_acquisition_enabled`] and defaults to `true`.
+Starting with Neo4j 2025.02, the setting is available as xref:configuration/configuration-settings.adoc#config_dbms.cluster.raft.async_channel_acquisition_enabled[`dbms.cluster.raft.async_channel_acquisition_enabled`] and defaults to `true`.
 No mitigation is required for this issue in Neo4j 2025.02 or later unless this setting has been explicitly changed to `false`.
 ====
