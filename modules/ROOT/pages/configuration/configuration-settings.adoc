@@ -267,11 +267,10 @@ m|+++10.0+++
 |===
 
 
+[[cluster-settings]]
 == Cluster settings
 
 The cluster settings are used to configure the behavior of a Neo4j cluster.
-For more information, see also xref:clustering/settings.adoc[Clustering settings].
-
 
 [role=label--enterprise-edition label--new-2026.06]
 [[config_db.cluster.backup.pull_interval]]
@@ -480,6 +479,12 @@ a|A comma-separated list where each element is a socket address in the format of
 m|
 |===
 
+The `dbms.cluster.endpoints` is renamed in 2025.01 from `dbms.cluster.discovery.v2.endpoints`.
+For details, see xref:breaking-changes.adoc[].
+
+Typically, all cluster members, including the current server, are specified in this list.
+For example, `dbms.cluster.discovery.resolver_type=LIST` combined with `server01.example.com:6000,server02.example.com:6000,server03.example.com:6000` attempt to reach Neo4j servers listening on _server01.example.com_, _server02.example.com_ and _server03.example.com_; all on port `6000`.
+
 [role=label--enterprise-edition]
 [[config_dbms.cluster.discovery.resolver_type]]
 === `dbms.cluster.discovery.resolver_type`
@@ -503,6 +508,11 @@ a|A string.
 m|+++LIST+++
 |===
 
+This setting specifies the strategy that the server uses to determine the addresses for other servers in the cluster to contact for _bootstrapping_.
+
+You need to set `dbms.cluster.endpoints` in the _neo4j.conf_ file.
+Detailed information about discovery and discovery configuration options is given in xref:clustering/setup/discovery.adoc#clustering-discovery-methods[Methods for server discovery].
+
 [role=label--enterprise-edition]
 [[config_dbms.cluster.minimum_initial_system_primaries_count]]
 === `dbms.cluster.minimum_initial_system_primaries_count`
@@ -519,6 +529,9 @@ a|An integer that is minimum `1`.
 m|+++3+++
 |===
 
+`dbms.cluster.minimum_initial_system_primaries_count` defines the minimum number of servers initially required to form the cluster.
+Reaching this threshold allows members to discover each other, but it does not guarantee that the DBMS is online or that the `system` databases are in the `STARTED` state.
+For details, see xref:clustering/setup/deploy.adoc[].
 
 [role=label--enterprise-edition label--dynamic]
 [[config_dbms.cluster.network.connect_timeout]]
@@ -797,6 +810,7 @@ a|A boolean.
 m|+++false+++
 |===
 
+After startup, it can be changed with the xref:procedures/built-in-procedures.adoc#procedure_dbms_cluster_setAutomaticallyEnableFreeServers[`dbms.cluster.setAutomaticallyEnableFreeServers`] procedure.
 
 [role=label--enterprise-edition]
 [[config_initial.dbms.default_primaries_count]]
@@ -813,6 +827,8 @@ a|An integer that is minimum `1` and is maximum `11`.
 m|+++1+++
 |===
 
+The initial number of database copies in primary role.
+For details on primary databases in a Neo4j cluster, see xref:clustering/introduction.adoc#clustering-primaries[Introduction: Neo4j clustering architecture].
 
 [role=label--enterprise-edition]
 [[config_initial.dbms.default_secondaries_count]]
@@ -828,6 +844,9 @@ a|An integer that is minimum `0` and is maximum `20`.
 |Default value
 m|+++0+++
 |===
+
+The initial number of database copies in secondary role.
+For details on secondary databases in a Neo4j cluster, see xref:clustering/introduction.adoc#clustering-secondaries[Introduction: Neo4j clustering architecture].
 
 [role=label--enterprise-edition label--new-2025.12]
 [[config_initial.dbms.default_property_shard_replica_count]]
@@ -896,6 +915,12 @@ a|One of [PRIMARY, SECONDARY, NONE].
 m|+++NONE+++
 |===
 
+As an initial setting, the value set here is used when a server is first enabled.
+For example, a server configured with `initial.server.mode_constraint=SECONDARY` hosts databases only in `secondary` role.
+For details, see xref:clustering/servers.adoc#server-enabled-state[How to enable a server].
+
+Once enabled, a server's mode constraint can only be changed with xref:clustering/servers.adoc#alter-server-options[`ALTER SERVER 'name' SET OPTIONS {modeConstraint:'PRIMARY'}`].
+
 
 [role=label--enterprise-edition]
 [[config_initial.server.tags]]
@@ -928,6 +953,9 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port` that
 m|+++:6000+++
 |===
 
+This address/port setting specifies the location where the server advertises its availability for discovery service communication as well as transaction-shipping catch-up requests.
+
+For example,`server.cluster.advertised_address=192.168.33.20:6001` listens for cluster communication on the network interface bound to `192.168.33.20` on port `6001`.
 
 [role=label--enterprise-edition label--dynamic]
 [[config_server.cluster.catchup.connect_randomly_to_server_tags]]
@@ -992,6 +1020,11 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port`. If 
 m|+++:6000+++
 |===
 
+The address/port setting that specifies which network interface and port the Neo4j server binds to for cluster communication.
+This setting must be set in coordination with the address this server advertises it listens at in the setting `server.cluster.advertised_address`.
+
+For example, `server.cluster.listen_address=0.0.0.0:6001` listens for cluster communication on any network interface at port `6001`.
+For details, see xref:configuration/ports.adoc#_cluster[Configuration -> Ports].
 
 [role=label--enterprise-edition]
 [[config_server.cluster.network.native_transport_enabled]]
@@ -1024,6 +1057,10 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port` that
 m|+++:7000+++
 |===
 
+The address/port setting that specifies where the Neo4j server advertises to other members of the cluster that it listens for Raft messages within the cluster.
+For example, `server.cluster.raft.advertised_address=192.168.33.20:7000` listens for cluster communication in the network interface bound to `192.168.33.20` on port `7000`.
+For information about cluster ports, see xref:configuration/ports.adoc#_cluster[Ports].
+
 
 [role=label--enterprise-edition]
 [[config_server.cluster.raft.listen_address]]
@@ -1040,6 +1077,10 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port`. If 
 m|+++:7000+++
 |===
 
+The address/port setting that specifies which network interface and port the Neo4j server binds to for cluster communication.
+This setting must be set in coordination with the address this server advertises it listens at in the setting `server.cluster.raft.advertised_address`.
+
+For example, `server.cluster.raft.listen_address=0.0.0.0:7000` listens for cluster communication on any network interface at port `7000`.
 
 [role=label--enterprise-edition]
 [[config_server.cluster.system_database_mode]]
@@ -1049,13 +1090,21 @@ m|+++:7000+++
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Users must manually specify the mode for the system database on each server.
+a|Users must manually specify the mode for the `system` database on each server.
 |Valid values
 a|One of [PRIMARY, SECONDARY].
 |Default value
 m|+++PRIMARY+++
 |===
 
+Every cluster member hosts the `system` database.
+This setting controls which mode a given server hosts the `system` database in: `PRIMARY` or `SECONDARY`.
+
+For example, `server.cluster.system_database_mode=SECONDARY` means that this server holds only a secondary copy of the `system` database.
+
+If you have a large cluster, then increasing the number of `system` primaries up to seven can improve the resiliency of your DBMS.
+However, if enabling more than 10 servers, it is recommended to start making the later ones secondaries.
+For details, see xref:clustering/databases.adoc#cluster-system-db[The `system` database in a cluster].
 
 == Connection settings
 
