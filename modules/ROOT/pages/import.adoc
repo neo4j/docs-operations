@@ -1449,6 +1449,7 @@ For example, you can use `uuid:ID(Person){label:Person}`, where the relationship
 ====
 
 [role=label--new-2025.04]
+[[import-tool-header-format-parquet]]
 === Extended header support for Parquet
 
 In addition to the header format supported by the CSV import, the Parquet import supports name-mapping header files.
@@ -1462,6 +1463,83 @@ id,movie_title,year,label
 ----
 
 If a header file is provided for a set of labels or a relationship type, the importer will ignore columns not mentioned in the headers.
+
+[role=label--new-2025.04]
+[[import-tool-header-format-parquet-types]]
+=== Default data types for Parquet
+
+Unlike CSV, where an unspecified property type defaults to `string` (see <<import-tool-header-format-properties>>), Parquet files carry their own type information in the file schema.
+Because of this, you do not have to declare the `<field_type>` for a property in a Parquet header.
+If you leave the type out, the importer picks the corresponding Neo4j type from the Parquet column's type automatically.
+
+For example, the following header relies on the types stored in the Parquet file for all properties:
+
+[source, csv]
+----
+movieId:ID,title,year,:LABEL
+----
+
+You can still specify a type explicitly to override the inferred one, or to request a conversion (for example, storing a Parquet `INT32` column as a `string`).
+
+The following table shows how Parquet types are mapped to Neo4j property types when no type is given in the header.
+
+.Default Parquet-to-Neo4j type mapping
+[options="header", cols="2m,2m,3a"]
+|===
+| Parquet type | Neo4j type | Notes
+
+| BOOLEAN
+| boolean
+|
+
+| INT32, INT64
+| long
+| Integer logical types (`INT(8)`, `INT(16)`, `INT(32)`, `INT(64)`) are also imported as `long`.
+
+| FLOAT, DOUBLE
+| double
+|
+
+| BINARY, FIXED_LEN_BYTE_ARRAY, INT96
+| string
+| Applies to the `STRING` (UTF-8) logical type and to other binary columns, which are read using their string representation.
+
+| DATE (logical)
+| date
+| label:new[Introduced in 2025.09]
+
+| TIME (logical)
+| time / localtime
+| label:new[Introduced in 2025.09] Mapped to `time` when the column is adjusted to UTC, and to `localtime` otherwise.
+
+| TIMESTAMP (logical)
+| datetime / localdatetime
+| label:new[Introduced in 2025.09] Mapped to `datetime` when the column is adjusted to UTC, and to `localdatetime` otherwise.
+
+| INTERVAL (logical)
+| duration
+| label:new[Introduced in 2026.07]
+
+| LIST (logical)
+| array
+| label:new[Introduced in 2025.02] Imported as an array of the mapped element type, for example, a `LIST` of `INT64` becomes a `long[]`.
+
+| MAP (logical)
+| individual properties
+| label:new[Introduced in 2025.02] Each entry becomes its own property. See <<import-tool-header-format-parquet-maps>>.
+|===
+
+[[import-tool-header-format-parquet-maps]]
+==== Map columns
+
+Neo4j properties cannot hold a map value, so a Parquet `MAP` column is not stored as a single property.
+Instead, each entry in the map is extracted into its own property, named `<column>.<key>`, where `<column>` is the name of the Parquet column and `<key>` is the key of the map entry.
+The value of each property is converted according to the same type mapping as any other column.
+Entries whose value is `null` are skipped and do not create a property.
+
+For example, a Parquet column named `address` holding a map with the keys `city` and `zip` results in two properties, `address.city` and `address.zip`, on the imported node or relationship.
+
+Struct (nested group) columns are extracted in the same way, producing one `<column>.<field>` property per nested field.
 
 [[import-tool-header-format-nodes]]
 == Node files
