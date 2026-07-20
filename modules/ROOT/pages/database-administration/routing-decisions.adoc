@@ -5,51 +5,50 @@
 :page-aliases: routing-decisions.adoc
 
 Query routing is the process of deciding which Cypher executor (database) should be used and at which physical location the query should be executed.
-Every query that arrives at a Neo4j server, over the bolt protocol from a driver, undergoes the process described here.
+Every query that arrives at a Neo4j server, over the Bolt protocol from a driver, or over the HTTP protocol from a client, is routed to a database for execution.
+The routing decision process is illustrated in the following decision tree:
 
-== Routing decision tree
+image::routing-decisions.png[width=800, title="Illustrated routing decision tree"]
 
-Before the query is executed, these are the decisions taken during query routing stage:
+. The query router determines the name of the target database (execution context) by picking the first from the following that has a value:
 
-Step 1: Determine the name of the target database::
-   Pick the first of these that has a value:
-. link:{neo4j-docs-base-uri}/cypher-manual/5/clauses/use[Cypher `USE` clause]
-** Note that link:{neo4j-docs-base-uri}/operations-manual/5/database-administration/[administration commands]  implicitly have `USE system`.
-. link:{neo4j-docs-base-uri}/create-applications/[Driver session database]
-. xref:database-administration/index.adoc#manage-databases-default[Home or default database]
-Step 2: Reuse open transaction::
-* If there is an already open transaction to the target database, local or remote, then proceed to step 6.
-* If not, then proceed to step 3.
-Step 3: Determine the type of the target database (execution context type)::
-* If the target database is a database in this DBMS, then the context type is _Internal_.
-* If the target database is a xref::database-administration/composite-databases/concepts.adoc[Composite database], then the context type is _Composite_. +
-+
-[NOTE]
-====
+* link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/use[Cypher `USE` clause].
+Note that link:{neo4j-docs-base-uri}/operations-manual/current/database-administration/[administration commands]  implicitly have `USE system`.
+* link:{neo4j-docs-base-uri}/create-applications/[Driver session database]
+* xref:database-administration/index.adoc#manage-databases-default[Home or default database]
+
+. If there is an already open transaction to the target database, local or remote, it proceeds to step 6.
+Otherwise, it proceeds to step 3.
+
+. Determines the type of the target database (execution context type) depending on the type of database determined in step 1:
+
+* If the target database is in this DBMS, the context type is _Internal_.
+* If the target database is a xref::scalability/composite-databases/concepts.adoc[composite database], the context type is _Composite_.
 This also allows the query to target multiple databases.
-====
-+
-* If the target database is a xref:database-administration/aliases/manage-aliases-standard-databases.adoc[Remote Alias], then the context type is _External_.
-Step 4: Determine the location of execution::
-* If context type is _Internal_
-** and the URI scheme is `bolt://` (routing disabled), then location is _Local_.
-** and the transaction mode is `READ`
-*** and the database is hosted on this server, then location is _Local_.
-*** and the database is hosted on another sever
-**** and xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] is xref:configuration/configuration-settings.adoc#config_dbms.routing.enabled[enabled], then location is _Remote_ (using the xref:configuration/configuration-settings.adoc#config_server.routing.advertised_address[routing advertised address] of that server).
-**** if not, then fail.
-** if the transaction mode is `WRITE`
-*** and the local server is the leader for the database, then location is _Local_.
-*** and another server is the leader for the database
-**** and xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] is xref:configuration/configuration-settings.adoc#config_dbms.routing.enabled[enabled], then location is _Remote_ (using the xref:configuration/configuration-settings.adoc#config_server.routing.advertised_address[routing advertised address] of that server).
-**** and xref:clustering/setup/routing.adoc#clustering-routing[Server-side routing] is _not_ enabled, then fail.
-* If context type is _Composite_, then location is _Local_ (for this part of the query).
-* If context type is _External_, then location is _Remote_ (using the xref:database-administration/aliases/remote-database-alias-configuration.adoc[URI and database] given in the configuration).
-Step 5: Open a transaction::
-* If location is _Local_, then open a transaction to the database on this server.
-* If location is _Remote_, then open a driver transaction to the database using the URI determined in step 4.
-Step 6: Execute query::
-* Execute the query in the open transaction.
+* If the target database is a xref:database-administration/aliases/manage-aliases-standard-databases.adoc[remote alias], the context type is _External_.
 
-== Illustrated routing decision tree
-image::routing-decisions.svg[width=800, title="Illustrated routing decision tree"]
+. Determines the location of execution:
++
+_Internal_::
+** If the URI scheme is `bolt://` (routing disabled), the location is _Local_.
+** If the transaction mode is `READ` and the database is hosted on _this server_, the location is _Local_.
+** If the transaction mode is `READ` and the database is hosted on _another server_ with
+xref:clustering/setup/routing.adoc#clustering-routing[server-side routing] xref:configuration/configuration-settings.adoc#config_dbms.routing.enabled[enabled], the location is _Remote_ (using the xref:configuration/configuration-settings.adoc#config_server.routing.advertised_address[routing advertised address] of that server).
+If server-side routing _is not_ enabled, then the operation fails.
+** If the transaction mode is `WRITE` and the database on this server is the leader for that database, the location is _Local_.
+** If the transaction mode is `WRITE` and the database on this server _is not_ the leader for that database, but server-side routing is enabled, then the location is _Remote_ (using the xref:configuration/configuration-settings.adoc#config_server.routing.advertised_address[routing advertised address] of that server).
+If server-side routing _is not_ enabled, then the process fails.
++
+_Composite_ type::
+Location is _Local_ (for this part of the query).
++
+_External_ type::
+Location is _Remote_ (using the xref:database-administration/aliases/remote-database-alias-configuration.adoc[URI and database] given in the configuration).
+
+. Opens a transaction depending on the determined location:
+
+* For _Local_, opens a transaction to the database on this server.
+* For _Remote_, opens a driver transaction to the database using the URI determined in step 4.
+
+. Executes the query in the opened transaction.
+
