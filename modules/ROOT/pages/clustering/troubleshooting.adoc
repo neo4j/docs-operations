@@ -1,0 +1,51 @@
+:description: Troubleshooting information for write delays when one cluster member is unavailable.
+:page-role: enterprise-edition
+[[clustering-troubleshooting]]
+[[clustering-troubleshooting-raft-sender-channel-acquisition]]
+= Troubleshooting write delays when one cluster member is unavailable
+
+A cluster can experience delayed or unavailable writes if the leader waits for a Raft sender connection to a cluster member that has stopped but whose network endpoint still accepts connection attempts.
+This can happen when a server, virtual machine, or container is stopped or shut down, but the network layer does not immediately refuse connections to that member.
+
+When this happens, the leader may wait until xref:configuration/configuration-settings.adoc#config_dbms.cluster.network.connect_timeout[`dbms.cluster.network.connect_timeout`] elapses before attempting to replicate data to another cluster member.
+In a three-member cluster, this can delay writes because the Raft protocol requires a quorum (two of the three members) to replicate the transaction before it can be committed.
+
+[[clustering-troubleshooting-raft-sender-channel-acquisition-symptoms]]
+== Symptoms
+
+Common symptoms include:
+
+* Writes become slow, time out, or appear unavailable after one cluster member is stopped, shut down, or restarted.
+* The problem lasts for approximately the configured `dbms.cluster.network.connect_timeout`, which is `30s` by default.
+* The problem is more likely in environments where a stopped member's network endpoint continues to accept connection attempts instead of refusing them immediately.
+This has been observed in Kubernetes environments, but it is not limited to Kubernetes.
+* The Neo4j debug log can contain Raft sender connection timeout messages similar to:
++
+[source, text]
+----
+Raft sender failed exceptionally [Address: <host>:7000]
+...
+io.netty.channel.ConnectTimeoutException: connection timed out after 30000 ms
+----
+
+If the network endpoint refuses connections immediately, the log can instead contain `Connection refused`.
+That case is less likely to cause the write latency described here because the leader can move on to another member without waiting for the connection timeout.
+
+[[clustering-troubleshooting-raft-sender-channel-acquisition-mitigation]]
+== Mitigation
+
+Starting with Neo4j 5.26.29, you can enable asynchronous acquisition of Raft sender channels by setting xref:configuration/configuration-settings.adoc#config_dbms.cluster.raft.async_channel_acquisition_enabled[`dbms.cluster.raft.async_channel_acquisition_enabled`] to `true` in _neo4j.conf_ on each cluster members:
+
+[source, properties]
+----
+dbms.cluster.raft.async_channel_acquisition_enabled=true
+----
+
+Restart each member for the setting to take effect.
+This allows the database leader to continue replicating to other members without blocking on a slow or hanging connection attempt to one member.
+
+[NOTE]
+====
+In Neo4j 5.26.29, this new setting makes an existing internal async Raft sender behavior available as a public setting.
+It does not introduce a new implementation or change the async Raft sender behavior itself.
+====
