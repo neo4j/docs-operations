@@ -48,18 +48,30 @@ To specify the property/value conditions of the privilege, you can use the follo
       | FOR {
           ([var][:label["|" ...]] "{" property: value "}")
           | (var[:label["|" ...]])
-            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
+            WHERE [NOT] { var.property { = | <> | > | >= | < | <= } value | value { = | <> | > | >= | < | <= } var.property | var.property { IS NULL | IS NOT NULL } | var.property IN { "["[value[, ...]]"]" | listParam } | value IN var.property }
           | (var[:label["|" ...]]
-            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } )
+            WHERE [NOT] { var.property { = | <> | > | >= | < | <= } value | value { = | <> | > | >= | < | <= } var.property | var.property { IS NULL | IS NOT NULL } | var.property IN { "["[value[, ...]]"]" | listParam } | value IN var.property } )
           | ()[<]-"["[var][:type["|" ...]] "{" property: value "}" "]"-[>]()
           | ()[<]-"["var[:type["|" ...]]"]"-[>]()
-            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } }
+            WHERE [NOT] { var.property { = | <> | > | >= | < | <= } value | value { = | <> | > | >= | < | <= } var.property | var.property { IS NULL | IS NOT NULL } | var.property IN { "["[value[, ...]]"]" | listParam } | value IN var.property }
           | ()[<]-"["var[:type["|" ...]]
-            WHERE [NOT] var.property { { = | <> | > | >= | < | <= } value | IS NULL | IS NOT NULL | IN { "["[value[, ...]]"]" | listParam } } "]"-[>]()
+            WHERE [NOT] { var.property { = | <> | > | >= | < | <= } value | value { = | <> | > | >= | < | <= } var.property | var.property { IS NULL | IS NOT NULL } | var.property IN { "["[value[, ...]]"]" | listParam } | value IN var.property } "]"-[>]()
       }
     ]
  {TO | FROM} role[, ...]
 ----
+
+[NOTE]
+====
+The following forms are available from Cypher 25 (introduced in Neo4j 2026.08):
+
+* Placing the property on either side of a scalar comparison operator (`=`, `<>`, `>`, `>=`, `<`, `<=`), for example both `var.property > value` and `value < var.property`.
+See <<grant-privilege-with-property-on-either-side-of-operator>> for an example.
+* Checking whether a value is contained in a list-valued property using `value IN var.property`.
+See <<grant-privilege-based-on-list-property-value>> for an example.
+
+In Cypher 5, the property must appear on the left-hand side of a scalar comparison operator, and `IN` can only be used to check the property against a list of values (`var.property IN [value, ...]`).
+====
 
 
 == Performance considerations
@@ -116,6 +128,23 @@ The following example shows how to grant permission to `READ` the `since` proper
 GRANT READ { since } ON GRAPH * FOR ()-[o:OWNS]-() WHERE o.classification = 'UNCLASSIFIED' TO regularUsers
 ----
 
+[role=label--new-2026.08 label--cypher-25]
+[[grant-privilege-with-property-on-either-side-of-operator]]
+=== Grant a property-based privilege with the property on either side of the operator
+
+The property can appear on either side of a scalar comparison operator (`=`, `<>`, `>`, `>=`, `<`, `<=`).
+The following example shows how to grant permission to `READ` all properties on nodes where the value `3` is less than the `securityLevel` property to the role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT READ {*} ON GRAPH * FOR (n) WHERE 3 < n.securityLevel TO regularUsers
+----
+
+Placing the property on the right is equivalent to the property-on-the-left form `n.securityLevel > 3`.
+When the property is on the right, the operator is mirrored, so this rule matches nodes whose `securityLevel` is greater than `3`.
+Regardless of the orientation used to create the privilege, it is always stored and listed in the canonical property-on-the-left form.
+Running `SHOW PRIVILEGES AS COMMANDS` for the example above returns the rule as `n.securityLevel > 3`.
+
 === Grant a property-based privilege using `NULL`
 
 The following example shows how to grant permission to `TRAVERSE` nodes with the label `Email` where property `classification` is `NULL` to role `regularUsers`:
@@ -168,6 +197,44 @@ GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.classification IN ['UNCLASSIFIED
 ----
 
 // The last two examples were added in 5.26.
+
+[role=label--new-2026.08 label--cypher-25]
+[[grant-privilege-based-on-list-property-value]]
+=== Grant a property-based privilege based on a value in a list property
+
+You can check whether a value is a member of a list-valued property using the `value IN var.property` syntax.
+Here, the property stored on the node or relationship is a list, and the rule matches when the given value is an element of that list.
+This is different from `var.property IN [value, ...]`, which checks whether a single-valued property matches one of the values in a given list.
+
+The following example shows how to grant permission to `READ` all properties on nodes where the list-valued `regions` property contains the value `'EU'` to the role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT READ {*} ON GRAPH * FOR (n) WHERE 'EU' IN n.regions TO regularUsers
+----
+
+[NOTE]
+====
+The value on the left of `IN` must be a single value that is not `NULL` or `NaN`.
+The rule only matches when the property is a list that contains the value.
+If the property is missing or is a single (scalar) value rather than a list, the rule does not match.
+====
+
+You can also negate the condition to match nodes and relationships whose list property does not contain the value.
+The following example shows how to grant permission to `READ` and `TRAVERSE` nodes and relationships where the `regions` property does not contain the value `'EU'` to the role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT MATCH {*} ON GRAPH * FOR (n) WHERE NOT 'EU' IN n.regions TO regularUsers
+GRANT MATCH {*} ON GRAPH * FOR ()-[r]-() WHERE NOT 'EU' IN r.regions TO regularUsers
+----
+
+[NOTE]
+====
+The value on the left of `NOT IN` must be a single value that is not `NULL` or `NaN`.
+The rule only matches when the property is a list that does not contain the value.
+If the property is missing or is a single (scalar) value rather than a list, the rule does not match.
+====
 
 === Grant a property-based privilege using temporal value
 
