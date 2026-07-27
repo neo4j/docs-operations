@@ -3,7 +3,7 @@
 [[database-management]]
 = Replicating databases across clusters
 
-[[ccr-overview]]
+[[ccdr-overview]]
 == Overview
 
 In 2026.08, cross-cluster database replication (CCDR) is officially released.
@@ -19,8 +19,6 @@ Both mechanisms poll for new transactions/backups and apply them as soon as new 
 
 image::replication.svg[title="Schema of replicating a database across clusters via the network", width="300"]
 image::replication-via-backups.svg[title="Schema of replicating a database across clusters via backups", width="300"]
-
-Ensure that clusters run the same Neo4j version, and that version must be 2026.08 or later.
 
 The commands and procedures for creating and promoting replica databases are supported by Cypher 25.
 
@@ -64,7 +62,6 @@ Possible keys of this map include:
 Use this if there is a direct network connection between clusters. +
 There is no requirement that every remote server hosts the upstream database.
 |===
-
 
 [[create-replica-db-example]]
 === Example
@@ -152,6 +149,13 @@ cluster/
 └── revoked/
 ----
 
+=== Recovery Point Objective (RPO)
+
+Network replication streams transactions from the upstream database to the replica.
+This provides a near-zero recovery point objective (RPO), subject to any asynchronous replication lag between the upstream and replica databases.
+
+For details about monitoring replication lag, see <<replication-metrics, Monitoring replica databases>>.
+
 
 [[create-replica-via-remote-backup-pulling]]
 == Creating a replica database with remote backup pulling
@@ -197,7 +201,6 @@ Bucket permissions must be configured before the replica database is created.
 For details, see xref:database-administration/standard-databases/seed-from-uri.adoc#cloud-seed-provider[`CloudSeedProvider`].
 ====
 
-
 [[replica-initialization]]
 === Initialization of a replica
 
@@ -222,7 +225,6 @@ After initialization, the replica consumes only differential backups from `pullU
 The differential backup chain must remain unbroken from the replica database's current point onward.
 
 The user is responsible for continuing to create and push differential backups for the upstream database to the `pullURI` location.
-If the differential backup chain is broken, for example because a required differential backup is missing, the replica database must be recreated from a complete backup chain.
 
 image::replica-backup-pulling-running.svg[title="Running a replica database by pulling differential backups", width="700"]
 
@@ -271,6 +273,20 @@ SHOW DATABASE `foo-replica` YIELD name, type, access, address, role, writer, opt
 | "foo-replica" | "replica" | "read-only" | "localhost:7690" | "secondary" | FALSE  | {replicaConfig: {remote: "foo", pullURI: "s3://myBucket/"}} |
 +-------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
+
+=== Recovery Point Objective (RPO)
+
+This is determined by how often differential backups are created and pushed, plus the replica pull interval.
+The replica checks for new differential backups at the interval configured by xref:configuration/configuration-settings.adoc#config_db.cluster.backup.pull_interval[`db.cluster.backup.pull_interval`], which defaults to `1m`.
+
+For a low RPO, push differential backups frequently, reduce the pull interval if needed, or use <<create-replica-via-the-network, network replication>>, which streams transactions continuously and provides a near-zero RPO.
+For example, with hourly differential backups and the default `1m` pull interval, failover can lose up to approximately one hour of writes.
+Increasing frequency of differential backups to once every 10 minutes with the default `1m` pull interval, failover only loses 10-11 minutes of writes.
+
+Note that it's important to add observability for the replication lag between the upstream and replica databases (see see <<replication-metrics, Monitoring replica databases>>).
+A growing lag could mean the differential backup chain is broken causing the replica to no longer pull new updates.
+
+The replica database must be recreated from a complete backup chain before it can continue applying differential backups.
 
 [[drivers-and-cypher-shell]]
 == Accessing replica databases via drivers or Cypher Shell
@@ -346,8 +362,11 @@ Therefore, it is important to track the replication lag between the upstream and
 In order to do this, plot the xref:monitoring/metrics/reference.adoc#db-tx-metrics[`<prefix>.database.<db>.transaction.last_committed_tx_id`] metric for both the upstream and replica databases.
 This difference effectively captures the lag between the upstream and the replica.
 
-[[ccr-upgrade]]
-== Managing upgrades
+[[ccdr-versions-and-upgrades]]
+== Versions and upgrades
+
+The downstream cluster where the replica database is created must run Neo4j 2026.08 or later.
+The upstream cluster can run Neo4j 2025.01 or later, up to and including the version of the downstream cluster.
 
 When upgrading clusters that participate in cross-cluster database replication, upgrade the downstream cluster before the upstream cluster.
 
