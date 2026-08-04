@@ -1,0 +1,123 @@
+:page-role: new-2025.12 infinigraph not-on-aura
+:description: Instructions for deploying sharded property databases with Neo4j Graph Data Science (GDS).
+:keywords: sharded databases, graph data science,
+= Deploying Graph Data Science on a sharded property database
+
+This page describes how to deploy Graph Data Science (GDS) for a sharded property database by using a dedicated graph-shard secondary as the analytics server.
+
+In this deployment you have 5 servers in total:
+
+* Two servers, one in primary and one secondary mode, host the graph shard.
+* The secondary also hosts the GDS plugin and executes GDS workloads.
+* Three other servers to host three property shards.
+
+== Prerequisites
+
+Before creating the sharded property database:
+
+. Obtain an Infinigraph subscription for Neo4j Enterprise Edition and https://neo4j.com/docs/graph-data-science/current/installation/installation-enterprise-edition/[GDS Enterprise Edition] licence key.
+. Deploy an analytics cluster by following xref:clustering/setup/analytics-cluster.adoc[Deploy an analytics cluster].
++
+[IMPORTANT]
+====
+* Configure the analytics server as a `SECONDARY` and ensure that it has sufficient resources to handle GDS workloads.
+See https://neo4j.com/docs/graph-data-science/current/installation/System-requirements/[System requirements] for GDS for details.
+
+* Install the GDS plugin on the analytics server by copying or moving the file _neo4j-graph-data-science-[version].jar_ from the _products_ directory to the _plugins_ directory, and adding the following lines to the _neo4j.conf_ file on the analytics server:
++
+[source,properties]
+----
+dbms.security.procedures.unrestricted=gds.*
+dbms.security.procedures.allowlist=gds.*
+gds.enterprise.license_file=/path/to/my/license/keyfile
+----
+
+* Verify Cypher 25 is enabled on all servers in the cluster. +
+Starting with Neo4j 2026.02, the distributed _neo4j.conf_ explicitly sets `db.query.default_language=CYPHER_25`.
+For earlier versions, you can enable Cypher 25 by manually adding the line to the _neo4j.conf_ file on each servers in the cluster.
+====
+
+. After starting the cluster, verify that the GDS plugin is installed and enabled on the analytics server by running `RETURN gds.version();` over Bolt.
+
+== Creating the sharded property database
+
+Connect to the `system` database on the graph shard primary (or via a routing URI) and run:
+
+[source,cypher]
+----
+CYPHER 25 CREATE DATABASE `foo-sharded`
+ SET GRAPH SHARD { TOPOLOGY 1 PRIMARY 1 SECONDARY }
+ SET PROPERTY SHARDS { COUNT 3 };
+----
+
+The command creates a sharded property database named `foo-sharded` with the following topology:
+
+[source, text]
+----
+foo-sharded
+├── foo-sharded-g000
+│   ├── PRIMARY
+│   └── SECONDARY
+├── foo-sharded-p000
+├── foo-sharded-p001
+└── foo-sharded-p002
+----
+
+== Verifying the sharded property database
+
+You can verify that the graph shard and property shards are operational by running `SHOW DATABASES`.
+
+. On the primary server, connect to the `system` database, for example using Cypher Shell:
++
+[source,bash]
+----
+bin/cypher-shell -d system -u <username> -p <password>
+----
+
+. Run the following command to list all databases:
++
+[source,cypher]
+----
+SHOW DATABASES;
+----
++
+The command should return a list of databases, including the newly created `foo-sharded` database and its shards.
+See xref:clustering/monitoring/show-databases-monitoring.adoc#show-databases-monitoring-listing-cluster[Monitoring databases in a cluster] for details on the output of `SHOW DATABASES`.
+
+== Running GDS workloads on the sharded property database
+
+. Connect directly to the analytics server (the graph-shard secondary) using Cypher Shell or via Bolt and select the graph shard database:
++
+[source,cypher]
+----
+:use foo-sharded-g000;
+----
+. Verify that Graph Data Science is available:
++
+[source,cypher]
+----
+RETURN gds.version();
+----
+. Run GDS workloads on the graph shard database as you would on a standard Neo4j database.
+For example, you can run the following command to list all available GDS procedures:
++
+[source,cypher]
+----
+CALL gds.list();
+----
++
+[TIP]
+====
+For more examples and explanations, see link:https://neo4j.com/docs/graph-data-science/current/[Neo4j Graph Data Science] documentation.
+====
+
+== Considerations
+
+* Graph Data Science operates on the graph shard.
+* Property shards remain transparent to GDS and are managed automatically by the sharded property database.
+This means that even though analytics work will not run on property shards, any queries that need properties will reach out to them, so GDS workloads may affect their load.
+If this is the case, you can add more replicas for your property shards to help with the increased load.
+* The graph-shard secondary is intended for read-only analytical workloads.
+* This topology provides a dedicated analytics server while keeping transactional queries on the graph-shard primary.
+* A graph shard with one primary and one secondary is not highly available for writes.
+For production deployments requiring write high availability, configure multiple graph-shard primaries.
