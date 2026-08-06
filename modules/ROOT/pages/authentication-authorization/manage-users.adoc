@@ -569,22 +569,18 @@ SHOW CURRENT USER;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,2m,3m,2m,2m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
+[role="queryresult"]
+----
++---------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home |
++---------------------------------------------------------------------------+
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL |
++---------------------------------------------------------------------------+
 
-|"jake"
-|["PUBLIC"]
-|false
-|false
-|<null>
+1 row
+ready to start consuming query after 3 ms, results consumed after another 0 ms
+----
 
-5+a|Rows: 1
-|===
 
 [NOTE]
 ====
@@ -595,320 +591,6 @@ This command is only supported for a logged-in user and returns an empty result 
 ====
 For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
 ====
-
-[[access-control-list-users]]
-== Showing users
-
-You can list all available users using the Cypher command `SHOW USERS`.
-It produces a table containing a single row per user with the following columns:
-
-[options="header", width="100%", cols="2a,4,2m,^.^,^.^"]
-|===
-| Column
-| Description
-| Type
-| Community Edition
-| Enterprise Edition
-
-| user
-| User name
-| STRING
-| {check-mark}
-| {check-mark}
-
-| roles
-| Native roles granted to the user using the `GRANT ROLE` command.
-
-The set of roles a user receives in practice may differ from those in this column.
-It depends on DMBS configuration and the user's xref:authentication-authorization/auth-providers.adoc[auth providers].
-
-For example, if they use external (e.g. LDAP or OIDC) auth, or if `native` is not listed in the xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`] configuration setting.
-
-It returns `null` in Community edition.
-| LIST OF STRING
-| {cross-mark}
-| {check-mark}
-
-| passwordChangeRequired
-| If `true`, the user must change their password at the next login.
-This is `null` if the user has `native` auth disabled.
-| BOOLEAN
-| {check-mark}
-| {check-mark}
-
-| suspended
-| If `true`, the user is currently suspended.
-
-It returns `null` in Community edition.
-| BOOLEAN
-| {cross-mark}
-| {check-mark}
-
-| home
-| The home database configured for the user, otherwise `null`.
-A home database is resolved if it is pointing to a database or a database alias.
-Constituents, graph or property shards are not supported as a home database.
-If the configured home database is unavailable and the user does not specify another database, the login will fail.
-
-It returns `null` in Community edition.
-| STRING
-| {cross-mark}
-| {check-mark}
-
-| tags
-| label:enterprise-edition[] label:new[Introduced in 2026.06] The xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] tags attached to the user.
-This column is returned only by `SHOW USERS YIELD *`, or when you explicitly yield the `tags` column.
-
-Seeing the tag values requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege; without it, the column returns `null`.
-
-It returns `null` in Community edition.
-| LIST OF STRING
-| {cross-mark}
-| {check-mark}
-|===
-
-[NOTE]
-====
-When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
-It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise you must change the password after the first login.
-====
-
-[TIP]
-====
-For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
-====
-
-=== Show all users
-
-The `SHOW USERS` command lists all users of a database, including their roles, password change requirement, suspension status, and home database.
-
-[source, cypher, role=noplay]
-----
-SHOW USERS;
-----
-
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
-
-|"neo4j"
-|["admin","PUBLIC"]
-|false
-|false
-|<null>
-|"jake"
-|["PUBLIC"]
-|false
-|false
-|<null>
-5+a|Rows: 2
-|===
-
-=== Show user with column reorder and filtering
-
-This example shows how to:
-
-* Reorder the columns using a `YIELD` clause.
-* Filter the results using a `WHERE` clause.
-
-[source, cypher, role=noplay]
-----
-SHOW USER YIELD user, suspended, passwordChangeRequired, roles, home
-WHERE user = 'jake';
-----
-
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user
-|suspended
-|passwordChangeRequired
-|roles
-|home
-|"jake"
-|false
-|false
-|["PUBLIC"]
-|<null>
-5+a|Rows: 1
-|===
-
-
-=== Show user with `RETURN` clause
-
-It is possible to add a `RETURN` clause to further manipulate the results after filtering.
-In this example, the `RETURN` clause is used to filter out the `roles` column and rename the `user` column to `adminUser`.
-
-[source, cypher,role=noplay]
-----
-SHOW USERS YIELD roles, user
-WHERE 'admin' IN roles
-RETURN user AS adminUser;
-----
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m"]
-|===
-|adminUser
-|"neo4j"
-1+a|Rows: 1
-|===
-
-
-[role=label--enterprise-edition label--new-2026.06]
-=== Show users with their tags
-
-The `tags` column is not part of the default output of `SHOW USERS`.
-It is returned by `SHOW USERS YIELD *`, or when the `tags` column is yielded explicitly.
-
-Assuming `jake` has been assigned the tags `finance` and `auditor` (tags are managed using the <<access-control-alter-users, `ALTER USER`>> command):
-
-[source, cypher, role=noplay]
-----
-SHOW USERS YIELD user, roles, tags;
-----
-
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m"]
-|===
-|user
-|roles
-|tags
-
-|"neo4j"
-|["admin","PUBLIC"]
-|[]
-|"jake"
-|["PUBLIC"]
-|["finance","auditor"]
-3+a|Rows: 2
-|===
-
-[NOTE]
-====
-Seeing the values in the `tags` column requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege, in addition to the `SHOW USER` privilege required to run `SHOW USERS`.
-Without `SHOW USER METADATA`, the `tags` column returns `null` for every row.
-====
-
-[[access-control-list-user-auth-providers]]
-== Showing user auth providers
-
-To inspect available user auth providers, use `SHOW USERS WITH AUTH`.
-The command produces a row per user per auth provider and yields the following two columns in addition to those output by `SHOW USERS`:
-
-[options="header", width="100%", cols="1a,4,1m,^.^,^.^"]
-|===
-| Column
-| Description
-| Type
-| Community Edition
-| Enterprise Edition
-
-| provider
-| The name of the auth provider.
-| STRING
-| {check-mark}
-| {check-mark}
-
-| auth
-| A map containing configuration for the user.
-For example, dn of the user for an `ldap` auth provider, the unique external identifier for an `oidc` auth provider, or password status for a `native` auth provider.
-
-| MAP
-| {check-mark}
-| {check-mark}
-|===
-
-[TIP]
-====
-For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
-====
-
-=== Show users with auth
-
-[source, cypher, role=noplay]
-----
-SHOW USERS WITH AUTH;
-----
-
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m,4m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
-|provider
-|auth
-|"neo4j"
-|["admin","PUBLIC"]
-|false
-|false
-|<null>
-|"native"
-|{
-"password": "*********",
-"changeRequired": false
-}
-|"jack"
-|["PUBLIC"]
-|false
-|false
-|<null>
-|"native"
-|{
-"password": "*********",
-"changeRequired": false
-}
-|"jack"
-|["PUBLIC"]
-|false
-|false
-|<null>
-|"oidc1"
-|{
-"id": "jacksIdForOidc1"
-}
-7+a|Rows: 3
-|===
-
-=== Show user with auth using filtering
-
-Show all users with the `oidc` auth provider.
-[source, cypher,role=noplay]
-----
-SHOW USERS WITH AUTH
-WHERE provider = 'oidc1';
-----
-
-.Result
-[role="queryresult" options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m,4m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
-|provider
-|auth
-|"jack"
-|["PUBLIC"]
-|false
-|false
-|<null>
-|"oidc1"
-|{
-"id": "jacksIdForOidc1"
-}
-7+a|Rows: 1
-|===
-
-For more information about auth providers, see xref:authentication-authorization/auth-providers.adoc[User auth providers].
 
 [[access-control-create-users]]
 == Creating users
@@ -1015,29 +697,38 @@ The equivalent command using the xref:authentication-authorization/auth-provider
 
 [source, cypher,role=noplay]
 ----
-CREATE USER jake
+CREATE USER joe
 SET STATUS SUSPENDED
 SET HOME DATABASE anotherDb
 SET AUTH 'native' {SET PASSWORD 'abcd1234' SET PASSWORD CHANGE REQUIRED};
 ----
 
-
-=== Create user with an encrypted password
-
-You can create the user `Jake` in an active state, with an encrypted password (taken from the _/data/scripts/databasename/restore_metadata.cypher_ of a restored database backup), and the requirement to not change the password by running:
+Or is using a third-party ID provider:
 
 [source, cypher,role=noplay]
 ----
-CREATE USER Jake
+CREATE USER alice
+SET HOME DATABASE anotherDb
+SET AUTH 'oidc1' {SET ID 'alicesUniqueMySsoId'};
+----
+
+=== Create user with an encrypted password
+
+You can create the user `molly` in an active state, with an encrypted password (taken from the _/data/scripts/databasename/restore_metadata.cypher_ of a restored database backup), and the requirement to not change the password by running:
+
+[source, cypher,role=noplay]
+----
+CREATE USER molly
+SET STATUS ACTIVE
 SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' CHANGE NOT REQUIRED
-SET STATUS ACTIVE;
+;
 ----
 
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
 [source, cypher,role=noplay]
 ----
-CREATE USER jake
+CREATE USER jessy
 SET STATUS ACTIVE
 SET AUTH 'native' {
   SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c'
@@ -1058,6 +749,8 @@ Appending `IF NOT EXISTS` to the `CREATE USER` command will ensure that no excep
 
 === Create user if not exists
 
+You can create the user `jake` only if it does not already exist by using the command:
+
 [source, cypher,role=noplay]
 ----
 CREATE USER jake IF NOT EXISTS
@@ -1076,6 +769,8 @@ The `CREATE OR REPLACE USER` command will result in any existing user being dele
 
 
 === Create or replace user
+
+You can create the user `jake` or replace it if it already exists by using the command:
 
 [source, cypher,role=noplay]
 ----
@@ -1096,11 +791,18 @@ SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'};
 [role=label--enterprise-edition label--new-2026.06]
 === Create a user with tags
 
-For example, you can create the user `jake` and attach the tags `finance` and `auditor`, which can then be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] auth rules:
-
+For example, you can create the user `jim` and attach the tags `finance` and `auditor`, which can then be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] auth rules:
+//This one doesn't work on 2026.06 version:
+// neo4j@system> CREATE USER jim
+//               SET PASSWORD 'abcd1234'
+//               SET TAGS 'finance', 'auditor';
+// 42I06: syntax error or access rule violation - invalid input. Invalid input ',', expected: 'SET' or <EOF>. (line 3, column 19 (offset: 58))
+// "SET TAGS 'finance', 'auditor'"
+//                    ^
+//   42001: syntax error or access rule violation - invalid syntax
 [source, cypher,role=noplay]
 ----
-CREATE USER jake
+CREATE USER jim
 SET PASSWORD 'abcd1234'
 SET TAGS 'finance', 'auditor';
 ----
@@ -1109,6 +811,282 @@ SET TAGS 'finance', 'auditor';
 ====
 The `CREATE OR REPLACE USER` command does not allow the use of `IF NOT EXISTS`.
 ====
+
+[[access-control-list-users]]
+== Showing users
+
+You can list all available users using the Cypher command `SHOW USERS`.
+It produces a table containing a single row per user with the following columns:
+
+[options="header", width="100%", cols="2a,4,2m,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+
+| user
+| User name
+| STRING
+| {check-mark}
+| {check-mark}
+
+| roles
+| Native roles granted to the user using the `GRANT ROLE` command.
+
+The set of roles a user receives in practice may differ from those in this column.
+It depends on DMBS configuration and the user's xref:authentication-authorization/auth-providers.adoc[auth providers].
+
+For example, if they use external (e.g. LDAP or OIDC) auth, or if `native` is not listed in the xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`] configuration setting.
+
+It returns `null` in Community edition.
+| LIST OF STRING
+| {cross-mark}
+| {check-mark}
+
+| passwordChangeRequired
+| If `true`, the user must change their password at the next login.
+This is `null` if the user has `native` auth disabled.
+| BOOLEAN
+| {check-mark}
+| {check-mark}
+
+| suspended
+| If `true`, the user is currently suspended.
+
+It returns `null` in Community edition.
+| BOOLEAN
+| {cross-mark}
+| {check-mark}
+
+| home
+| The home database configured for the user, otherwise `null`.
+A home database is resolved if it is pointing to a database or a database alias.
+Constituents, graph or property shards are not supported as a home database.
+If the configured home database is unavailable and the user does not specify another database, the login will fail.
+
+It returns `null` in Community edition.
+| STRING
+| {cross-mark}
+| {check-mark}
+
+| tags
+| label:enterprise-edition[] label:new[Introduced in 2026.06] The xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] tags attached to the user.
+This column is returned only by `SHOW USERS YIELD *`, or when you explicitly yield the `tags` column.
+
+Seeing the tag values requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege; without it, the column returns `null`.
+
+It returns `null` in Community edition.
+| LIST OF STRING
+| {cross-mark}
+| {check-mark}
+|===
+
+[NOTE]
+====
+When first starting a Neo4j DBMS, there is always a single default user `neo4j` with administrative privileges.
+It is possible to set the initial password using xref:configuration/set-initial-password.adoc[`neo4j-admin dbms set-initial-password <password>`], otherwise you must change the password after the first login.
+====
+
+[TIP]
+====
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+====
+
+=== Show all users
+
+The `SHOW USERS` command lists all users of a database, including their roles, password change requirement, suspension status, and home database.
+
+[source, cypher, role=noplay]
+----
+SHOW USERS;
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home        |
++----------------------------------------------------------------------------------+
+| "alice" | ["PUBLIC"]          | NULL                   | FALSE     | "anotherdb" |
+| "jake"  | ["PUBLIC"]          | TRUE                   | FALSE     | NULL        |
+| "jessy" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        |
+| "joe"   | ["PUBLIC"]          | TRUE                   | TRUE      | "anotherdb" |
+| "molly" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        |
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL        |
++----------------------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 4 ms, results consumed after another 3 ms
+----
+
+=== Show user with column reorder and filtering
+
+This example shows how to:
+
+* Reorder the columns using a `YIELD` clause.
+* Filter the results using a `WHERE` clause.
+
+[source, cypher, role=noplay]
+----
+SHOW USER YIELD user, suspended, passwordChangeRequired, roles, home
+WHERE user = 'jake';
+----
+
+.Result
+[role="queryresult"]
+----
++-----------------------------------------------------------------+
+| user   | suspended | passwordChangeRequired | roles      | home |
++-----------------------------------------------------------------+
+| "jake" | FALSE     | TRUE                   | ["PUBLIC"] | NULL |
++-----------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 165 ms, results consumed after another 2 ms
+----
+
+
+=== Show user with `RETURN` clause
+
+It is possible to add a `RETURN` clause to further manipulate the results after filtering.
+In this example, the `RETURN` clause is used to filter out the `roles` column and rename the `user` column to `adminUser`.
+
+[source, cypher,role=noplay]
+----
+SHOW USERS YIELD roles, user
+WHERE 'admin' IN roles
+RETURN user AS adminUser;
+----
+.Result
+[role="queryresult"]
+----
++-----------+
+| adminUser |
++-----------+
+| "neo4j"   |
++-----------+
+
+1 row
+ready to start consuming query after 113 ms, results consumed after another 4 ms
+----
+
+
+[role=label--enterprise-edition label--new-2026.06]
+=== Show users with their tags
+
+////
+[source, cypher, role=test-setup]
+----
+GRANT SHOW USER METADATA ON DBMS TO PUBLIC;
+----
+////
+
+The `tags` column is not part of the default output of `SHOW USERS`.
+It is returned by `SHOW USERS YIELD *`, or when the `tags` column is yielded explicitly.
+
+Assuming `jake` has been assigned the tags `finance` and `auditor` (tags are managed using the <<access-control-alter-users, `ALTER USER`>> command):
+
+[source, cypher, role=noplay]
+----
+SHOW USERS YIELD user, roles, tags;
+----
+
+.Result
+[role="queryresult"]
+----
+TO DO WHEN THE CREATE WORKS
+----
+
+[NOTE]
+====
+Seeing the values in the `tags` column requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege, in addition to the `SHOW USER` privilege required to run `SHOW USERS`.
+Without `SHOW USER METADATA`, the `tags` column returns `null` for every row.
+====
+
+[[access-control-list-user-auth-providers]]
+== Showing user auth providers
+
+To inspect available user auth providers, use `SHOW USERS WITH AUTH`.
+The command produces a row per user per auth provider and yields the following two columns in addition to those output by `SHOW USERS`:
+
+[options="header", width="100%", cols="1a,4,1m,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+
+| provider
+| The name of the auth provider.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| auth
+| A map containing configuration for the user.
+For example, dn of the user for an `ldap` auth provider, the unique external identifier for an `oidc` auth provider, or password status for a `native` auth provider.
+
+| MAP
+| {check-mark}
+| {check-mark}
+|===
+
+[TIP]
+====
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+====
+
+=== Show users with auth
+
+[source, cypher, role=noplay]
+----
+SHOW USERS WITH AUTH;
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------------------------------------------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home        | provider | auth                                     |
++----------------------------------------------------------------------------------------------------------------------------------------+
+| "alice" | ["PUBLIC"]          | NULL                   | FALSE     | "anotherdb" | "oidc1"  | {id: "alicesUniqueMySsoId"}              |
+| "jake"  | ["PUBLIC"]          | TRUE                   | FALSE     | NULL        | "native" | {changeRequired: TRUE, password: "***"}  |
+| "jessy" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        | "native" | {changeRequired: FALSE, password: "***"} |
+| "joe"   | ["PUBLIC"]          | TRUE                   | TRUE      | "anotherdb" | "native" | {changeRequired: TRUE, password: "***"}  |
+| "molly" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        | "native" | {changeRequired: FALSE, password: "***"} |
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL        | "native" | {changeRequired: FALSE, password: "***"} |
++----------------------------------------------------------------------------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 4 ms, results consumed after another 3 ms
+----
+
+=== Show user with auth using filtering
+
+Show all users with the `oidc` auth provider.
+[source, cypher,role=noplay]
+----
+SHOW USERS WITH AUTH
+WHERE provider = 'oidc1';
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------------------------------------+
+| user    | roles      | passwordChangeRequired | suspended | home        | provider | auth                        |
++------------------------------------------------------------------------------------------------------------------+
+| "alice" | ["PUBLIC"] | NULL                   | FALSE     | "anotherdb" | "oidc1"  | {id: "alicesUniqueMySsoId"} |
++------------------------------------------------------------------------------------------------------------------+
+
+1 row
+ready to start consuming query after 2 ms, results consumed after another 1 ms
+----
+
+For more information about auth providers, see xref:authentication-authorization/auth-providers.adoc[User auth providers].
 
 
 [[access-control-rename-users]]
@@ -1129,25 +1107,22 @@ SHOW USERS;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user |roles |passwordChangeRequired |suspended |home
+[role="queryresult"]
+----
++----------------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home        |
++----------------------------------------------------------------------------------+
+| "alice" | ["PUBLIC"]          | NULL                   | FALSE     | "anotherdb" |
+| "bob"   | ["PUBLIC"]          | TRUE                   | FALSE     | NULL        |
+| "jessy" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        |
+| "joe"   | ["PUBLIC"]          | TRUE                   | TRUE      | "anotherdb" |
+| "molly" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        |
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL        |
++----------------------------------------------------------------------------------+
 
-|"bob"
-|["PUBLIC"]
-|true
-|false
-|<null>
-
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-
-5+a|Rows: 2
-
-|===
+6 rows
+ready to start consuming query after 8 ms, results consumed after another 2 ms
+----
 
 [NOTE]
 ====
@@ -1244,7 +1219,7 @@ SET STATUS ACTIVE;
 The equivalent command using the xref:authentication-authorization/auth-providers.adoc[auth providers] syntax would be:
 
 ----
-ALTER USER bob
+ALTER USER joe
 SET AUTH 'native' {SET PASSWORD 'abcd5678' SET PASSWORD CHANGE NOT REQUIRED}
 SET STATUS ACTIVE;
 ----
@@ -1338,7 +1313,7 @@ Any `REMOVE` clause(s) must come before any `ADD` clause(s), which must come bef
 
 `SET TAGS` replaces whatever tags the user currently has.
 For example, you can replace `bob` tags with exactly `finance` and `auditor`:
-
+//This one doesn't work on 2026.06 version for the same reason: the comma between the two tags.
 [source, cypher,role=noplay]
 ----
 ALTER USER bob
@@ -1368,29 +1343,24 @@ The `tags` column is not part of the default output of `SHOW USERS`.
 ----
 SHOW USERS YIELD *;
 ----
-
+//To update the result after we fix the issue with the comma.
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m,3m"]
-|===
-|user |roles |passwordChangeRequired |suspended |home |tags
+[role="queryresult"]
+----
++-----------------------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home        | tags |
++-----------------------------------------------------------------------------------------+
+| "alice" | ["PUBLIC"]          | NULL                   | FALSE     | "anotherdb" | []   |
+| "bob"   | ["PUBLIC"]          | NULL                   | TRUE      | NULL        | []   |
+| "jessy" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        | []   |
+| "joe"   | ["PUBLIC"]          | TRUE                   | FALSE     | "anotherdb" | []   |
+| "molly" | ["PUBLIC"]          | FALSE                  | FALSE     | NULL        | []   |
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL        | []   |
++-----------------------------------------------------------------------------------------+
 
-|"bob"
-|["PUBLIC"]
-|false
-|false
-|<null>
-|["finance","auditor"]
-
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-|[]
-
-6+a|Rows: 2
-
-|===
+6 rows
+ready to start consuming query after 9 ms, results consumed after another 2 ms
+----
 
 [NOTE]
 ====
@@ -1451,7 +1421,7 @@ ADD TAG 'finance';
 === Replace the tags of multiple users
 
 For example, you can replace whatever tags `bob` and `alice` currently have with exactly `finance` and `auditor`, skipping any of the listed users that do not exist:
-
+//Doesn't work for the same reason.
 [source, cypher,role=noplay]
 ----
 ALTER USERS bob, alice IF EXISTS
@@ -1487,6 +1457,10 @@ Users can be deleted with `DROP USER`.
 [source, cypher, role=noplay]
 ----
 DROP USER bob;
+DROP USER alice;
+DROP USER jessy;
+DROP USER joe;
+DROP USER molly;
 ----
 
 Deleting a user does not automatically terminate associated connections, sessions, transactions, or queries.
@@ -1499,16 +1473,14 @@ SHOW USERS;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user |roles |passwordChangeRequired |suspended |home
+[role="queryresult"]
+----
++---------------------------------------------------------------------------+
+| user    | roles               | passwordChangeRequired | suspended | home |
++---------------------------------------------------------------------------+
+| "neo4j" | ["admin", "PUBLIC"] | FALSE                  | FALSE     | NULL |
++---------------------------------------------------------------------------+
 
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-
-5+a|Rows: 1
-
-|===
+1 row
+ready to start consuming query after 7 ms, results consumed after another 1 ms
+----
