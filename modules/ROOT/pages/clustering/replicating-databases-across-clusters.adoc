@@ -29,6 +29,12 @@ A replica database can have topology with primary and secondary copies that foll
 However, both primaries and secondaries remain read-only.
 Neither replica primaries nor replica secondaries accept write operations.
 
+[NOTE]
+====
+Only standard databases can be used as upstream sources for cross-cluster database replication.
+Composite databases and sharded property databases (SPD) are not supported as replication sources.
+====
+
 [[create-replica-via-the-network]]
 == Creating a replica database via the network
 
@@ -318,10 +324,11 @@ To achieve a low RPO:
 * Reduce the pull interval if needed.
 * Use <<create-replica-via-the-network, network replication>>, which streams transactions continuously and provides a near-zero RPO.
 
-For example, with hourly differential backups and the default 1-minute pull interval, failover can result in the loss of up to one hour of data.
-Increasing differential backup frequency to every 10 minutes while keeping the default 1-minute pull interval reduces potential data loss up to 10–11 minutes.
+For example, with hourly differential backups and the default 1-minute pull interval, failover can result in the loss of up to about one hour of data.
+Increasing differential backup frequency to every 10 minutes while keeping the default 1-minute pull interval reduces potential data loss up to 10–15 minutes.
+Note that the true RPO is dependent on time taken for the backup created, uploaded, pulled and applied - and this is heavily dependent on workload.
 
-Note that it is important to implement observability tools to track the replication lag between the upstream and replica databases (see <<replication-metrics, Monitoring replica databases>>).
+As such it is important to implement observability tools to track the replication lag between the upstream and replica databases (see <<replication-metrics, Monitoring replica databases>>).
 Growing lag often indicates a broken differential backup chain, which stops the replica from pulling new updates.
 If this occurs, you must recreate the replica database from a complete backup chain before it can continue applying differential backups.
 
@@ -402,10 +409,28 @@ This difference effectively captures the lag between the upstream and the replic
 [[ccdr-versions-and-upgrades]]
 == Versions and upgrades
 
+[[ccdr-differing-versions]]
+=== Differing versions upstream and downstream
+
 The downstream cluster where the replica database is created must run Neo4j 2026.08 or later.
 The upstream cluster can run Neo4j 2025.01 or later, up to and including the version of the downstream cluster.
 
+[[ccdr-upgrade-order]]
+=== Upgrading order
+
 When upgrading clusters that participate in cross-cluster database replication, upgrade the downstream cluster before the upstream cluster.
+
+[[ccdr-upgrade-types]]
+=== Upgrading types
+
+When using xref:#create-replica-via-the-network[network-based replication], the server addresses specified in the `replicaConfig.addresses` list at replica creation time are fixed and cannot be changed after creation.
+The replica uses these exact addresses to connect to the upstream cluster.
+This means that:
+
+* *DNS-based upgrades* and *in-place rolling upgrades* are safe, because the server addresses remain the same.
+* *Additive rolling upgrades*, where new servers with different addresses replace the original ones, will not work because the replica cannot discover the new addresses.
+
+If you need to change the upstream addresses of a replica, you must drop and recreate the replica database with the new addresses.
 
 
 [[dr-scenario]]
