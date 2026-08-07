@@ -18,7 +18,9 @@ There are two mechanisms for replicating databases across clusters:
 Both mechanisms poll for new transactions/backups and apply them as soon as new transactions/backups become available.
 
 image::replication.svg[title="Schema of replicating a database across clusters via the network", width="300"]
-image::replication-via-backups.svg[title="Schema of replicating a database across clusters via backups", width="300"]
+
+[[via-backups]]
+image::replication-via-backups.svg[title="Schema of replicating a database across clusters via backups", width="350"]
 
 The commands and procedures for creating and promoting replica databases are supported by Cypher 25.
 
@@ -60,7 +62,9 @@ Possible keys of this map include:
 `remote`:: The name of the upstream database in a remote cluster.
 `addresses`:: A list of xref:configuration/configuration-settings.adoc#config_dbms.cluster.endpoints[cluster endpoints] for the servers in the remote cluster.
 Use this if there is a direct network connection between clusters. +
-There is no requirement that every remote server hosts the upstream database.
++
+If the upstream cluster runs 2026.08 or later, there is no requirement that every remote server hosts the upstream database.
+However, if the upstream runs a version earlier than 2026.08, every remote server in the `addresses` has to host the upstream database.
 |===
 
 [[create-replica-db-example]]
@@ -91,10 +95,34 @@ OPTIONS {
 The command can only be executed successfully if the replica database is able to contact the remote cluster endpoints listed in `addresses`.
 If not, the command results in an error.
 
-If a `seedURI` is also specified, the initial seeding of the replica database is done from the `seedURI`.
-After initial seeding, the replica pulls transactions from the upstream database using the servers listed in `addresses`.
+[TIP]
+====
+You can also create a replica database from a database backup using `seedURI`.
+See xref:database-administration/standard-databases/seed-from-uri.adoc[] for details.
 
-By running the `SHOW DATABASES` command, verify that the `foo-replica` database is online on the desired number of servers, in the desired roles.
+If a `seedURI` is specified, the initial seeding of the replica database is done from the `seedURI`:
+
+[source, cypher, role=noplay]
+----
+CREATE REPLICA DATABASE `foo-replica`
+TOPOLOGY 3 PRIMARIES 1 SECONDARY
+OPTIONS {
+  seedURI: "s3://myBucket/myBackup.backup",
+  replicaConfig: {
+    remote: "foo",
+    addresses: [
+      "server01.example.com:6000",
+      "server02.example.com:6000",
+      "server03.example.com:6000"
+    ]
+  }
+};
+----
+
+After initial seeding, the replica pulls transactions from the upstream database using the servers listed in `addresses`.
+====
+
+By running the `SHOW DATABASES` command, you can verify that the `foo-replica` database is online on the desired number of servers, in the desired roles.
 Note that the database type is `replica`, and the `options` column shows its configuration.
 
 [source, cypher, role=noplay]
@@ -149,7 +177,7 @@ cluster/
 └── revoked/
 ----
 
-=== Recovery Point Objective (RPO)
+=== Recovery point objective (RPO)
 
 Network replication streams transactions from the upstream database to the replica.
 This provides a near-zero recovery point objective (RPO), subject to any asynchronous replication lag between the upstream and replica databases.
@@ -160,10 +188,9 @@ For details about monitoring replication lag, see <<replication-metrics, Monitor
 [[create-replica-via-remote-backup-pulling]]
 == Creating a replica database with remote backup pulling
 
-Replication can also be done by retrieving backups through cloud object storage or a file system.
+Replication can also be done by retrieving backups through cloud object storage or a file system (see <<via-backups, _Figure 2_>>).
 The advantage of this approach is that it eliminates the need for a direct network connection between the clusters.
 
-The user is responsible for creating the required backups and pushing them to the bucket or file-system location referenced by `pullURI`.
 
 [[create-replica-db-via-backups]]
 .CREATE REPLICA DATABASE via remote backup pulling
@@ -204,29 +231,11 @@ For details, see xref:database-administration/standard-databases/seed-from-uri.a
 [[replica-initialization]]
 === Initialization of a replica
 
-Initialization always starts from a complete backup chain.
+Initialization starts from a complete backup chain.
 A complete backup chain contains a full backup and, optionally, some number of differential backups that follow it without gaps.
 
 When only `pullURI` is specified, the complete backup chain must be available at `pullURI`.
-The replica initializes its store from that complete chain.
-
-If `seedURI` is also specified, initial seeding is done from the complete backup chain at `seedURI` instead.
-In this case, `pullURI` is used after initialization to pull differential backups.
-
-The user is responsible for creating and pushing the complete backup chain to the bucket or file-system location used for initialization.
-
-image::replica-backup-pulling-initialization.svg[title="Initializing a replica database from a complete backup chain", width="700"]
-
-
-[[replica-running]]
-=== Running a replica
-
-After initialization, the replica consumes only differential backups from `pullURI`.
-The differential backup chain must remain unbroken from the replica database's current point onward.
-
-The user is responsible for continuing to create and push differential backups for the upstream database to the `pullURI` location.
-
-image::replica-backup-pulling-running.svg[title="Running a replica database by pulling differential backups", width="700"]
+The replica initializes its store from that complete chain:
 
 [source, cypher]
 ----
@@ -240,7 +249,12 @@ OPTIONS {
 };
 ----
 
-If a `seedURI` is also specified, initial seeding is done from `seedURI`, and the replica then pulls differential backups from `pullURI`:
+[TIP]
+====
+You can also create a replica database from a database backup using `seedURI`.
+See xref:database-administration/standard-databases/seed-from-uri.adoc[] for details.
+
+If a `seedURI` is also specified, the initial seeding of the replica database is done from the `seedURI`.:
 
 [source, cypher, role=noplay]
 ----
@@ -254,6 +268,24 @@ OPTIONS {
   }
 };
 ----
+
+`pullURI` is used after initialization to pull differential backups.
+====
+
+You have to create and push the complete backup chain to the bucket or file-system location used for replica initialization.
+
+image::replica-backup-pulling-initialization.svg[title="Initializing a replica database from a complete backup chain", width="700"]
+
+
+[[replica-running]]
+=== Running a replica
+
+After initialization, a replica database consumes only differential backups from `pullURI`.
+The differential backup chain must remain unbroken from the replica database's current point onward.
+
+You are responsible for continuing to create and push differential backups from the upstream database to the `pullURI` location.
+
+image::replica-backup-pulling-running.svg[title="Running a replica database by pulling differential backups", width="700"]
 
 To view the replica configuration, yield the `options` column:
 
@@ -274,19 +306,23 @@ SHOW DATABASE `foo-replica` YIELD name, type, access, address, role, writer, opt
 +-------------------------------------------------------------------------------------------------------------------------------------------------+
 ----
 
-=== Recovery Point Objective (RPO)
+=== Recovery point objective (RPO)
 
-This is determined by how often differential backups are created and pushed, plus the replica pull interval.
-The replica checks for new differential backups at the interval configured by xref:configuration/configuration-settings.adoc#config_db.cluster.backup.pull_interval[`db.cluster.backup.pull_interval`], which defaults to `1m`.
+RPO is determined by the frequency of differential backup creation and transmission, combined with the replica pull interval.
+A replica database checks for new differential backups at the interval configured by xref:configuration/configuration-settings.adoc#config_db.cluster.backup.pull_interval[`db.cluster.backup.pull_interval`], which defaults to 1 minute (`1m`).
 
-For a low RPO, push differential backups frequently, reduce the pull interval if needed, or use <<create-replica-via-the-network, network replication>>, which streams transactions continuously and provides a near-zero RPO.
-For example, with hourly differential backups and the default `1m` pull interval, failover can lose up to approximately one hour of writes.
-Increasing frequency of differential backups to once every 10 minutes with the default `1m` pull interval, failover only loses 10-11 minutes of writes.
+To achieve a low RPO:
 
-Note that it's important to add observability for the replication lag between the upstream and replica databases (see see <<replication-metrics, Monitoring replica databases>>).
-A growing lag could mean the differential backup chain is broken causing the replica to no longer pull new updates.
+* Increase backup frequency: create and push differential backups more often.
+* Reduce the pull interval if needed.
+* Use <<create-replica-via-the-network, network replication>>, which streams transactions continuously and provides a near-zero RPO.
 
-The replica database must be recreated from a complete backup chain before it can continue applying differential backups.
+For example, with hourly differential backups and the default 1-minute pull interval, failover can result in the loss of up to one hour of data.
+Increasing differential backup frequency to every 10 minutes while keeping the default 1-minute pull interval reduces potential data loss up to 10–11 minutes.
+
+Note that it is important to implement observability tools to track the replication lag between the upstream and replica databases (see <<replication-metrics, Monitoring replica databases>>).
+Growing lag often indicates a broken differential backup chain, which stops the replica from pulling new updates.
+If this occurs, you must recreate the replica database from a complete backup chain before it can continue applying differential backups.
 
 [[drivers-and-cypher-shell]]
 == Accessing replica databases via drivers or Cypher Shell
