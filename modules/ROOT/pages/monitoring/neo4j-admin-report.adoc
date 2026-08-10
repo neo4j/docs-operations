@@ -14,18 +14,16 @@ The `neo4j-admin server report` command has the following syntax:
 
 [source,role=noheader]
 ----
-neo4j-admin server report [-h]
-                          [--expand-commands] [--list] [--verbose]
-                          [--ignore-disk-space-check[=true|false]]
-                          [--additional-config=<file>] [--database=<database>]
-                          [--to-path=<path>] [<classifier>...] [COMMAND]
+neo4j-admin server report [-h] [--expand-commands] [--list] [--verbose] [--ignore-disk-space-check[=true|false]]
+                          [-a=<address>] [--additional-config=<file>] [--database=<database>] [-p=<password>]
+                          [--to-path=<path>] [-u=<username>] [<classifier>...] [COMMAND]
 ----
 
 === Description
 
 The command collects information about the system and packages everything in an archive.
 If you specify `all`, everything is included.
-You can also finetune the selection by passing classifiers to the tool, e.g `logs tx threads`.
+You can also fine-tune the selection by passing classifiers to the tool, e.g `logs tx threads`.
 
 The Neo4j Admin report tool allows you to choose the databases for which you want to include database-specific information.
 You can generate a report covering all databases in the DBMS, a specific database, or databases that match a specified pattern.
@@ -55,66 +53,101 @@ To share this information with the Neo4j Support organization, you have to send 
 
 [[classifiers]]
 .Classifiers
-[options="header", cols="<1m,^1a,<4a"]
+[options="header", cols="<1m,^1a,^1a,<4a"]
 |===
 | Classifier
 | Online
+| Requires authentication
 | Description
 
 | all
+|
 |
 | Include all of the available classifiers.
 
 | ccstate
 |
+|
 | Include the current cluster state.
 
+| databases
+| {check-mark}
+| {check-mark}
+| Include metadata about the databases.
+
+| graphcounts
+| {check-mark}
+| {check-mark}
+| Include metadata about node labels, relationship types, indexes, and constraints.
+
 | config
+|
 |
 | Include Neo4j configuration files.
 
 | heap
 | {check-mark}
+|
 | Include a heap dump.
 
+| indexes
+| {check-mark}
+| {check-mark}
+| Include detailed information about indexes.
+
 | logs
+|
 |
 | Include log files, e.g., _debug.log_, _neo4j.log_, etc.
 
 | metrics
 |
+|
 | Include the collected metrics.
 
 | plugins
+|
 |
 | Include a text view of the plugin directory (no files are collected).
 
 | ps
 |
+|
 | Include a list of running processes.
 
 | raft
 |
+|
 | Include the raft log.
+
+| servers
+| {check-mark}
+| {check-mark}
+| Include information about the servers comprising the cluster.
 
 | sysprop
 | {check-mark}
+|
 | Include a list of Java system properties.
 
 | threads
 | {check-mark}
+|
 | Include a thread dump of the running instance.
 
 | tree
+|
 |
 | Include a text view of the folder structure of the data directory (no files are collected).
 
 | tx
 |
+|
 | Include transaction logs.
 |===
 
-The classifiers marked as _Online_ work only when you have a running Neo4j instance that the tool can find.
+The classifiers marked as _Online_ work only when you have a running Neo4j server that the tool can find.
+The classifiers marked as _Requires authentication_ require you to provide authentication credentials to the running Neo4j server.
 
 If no classifiers are specified, the following classifiers are used: `logs`, `config`, `plugins`, `tree`, `metrics`, `threads`, `sysprop`, `ps`, and `version`.
 
@@ -122,6 +155,22 @@ The reporting tool does not read any data from your database.
 However, the heap, the raft logs, and the transaction logs may contain data.
 Additionally, even though the standard _neo4j.conf_ file does not contain password information, for specific configurations, it may have this type of information.
 Therefore, be aware of your organization's data security rules before using the classifiers `heap`, `tx`, `raft`, and `config`.
+
+=== Authenticated classifiers
+
+To provide the required credentials for the classifiers that require authentication, it is recommended to use the `--username` option and specify the password interactively when prompted.
+
+By default, the address is derived from the Neo4j configuration, but you can override it using the `--address` option.
+
+To create a role with the minimum required privileges to run the `neo4j-admin server report` command, you can use the following Cypher statement:
+
+[source, cypher]
+----
+CREATE ROLE adminReport;
+GRANT EXECUTE ADMIN PROCEDURES ON DBMS TO adminReport;
+GRANT SHOW SERVERS ON DBMS TO adminReport;
+GRANT SHOW INDEXES ON DATABASE * TO adminReport;
+----
 
 === Options
 
@@ -133,6 +182,10 @@ The `neo4j-admin server report` command has the following options:
 | Option
 | Description
 | Default
+
+|-a, --uri, --address=<address>
+|Address of the DBMS to connect to, including the scheme (e.g. _bolt://localhost:7687_ or _bolt+ssc://localhost:7687_). Defaults to an address derived from the Neo4j configuration.
+|
 
 |--additional-config=<file>footnote:[See xref:neo4j-admin-neo4j-cli.adoc#_configuration[Neo4j Admin and Neo4j CLI -> Configuration] for details.]
 |Configuration file with additional configuration.
@@ -159,8 +212,16 @@ The `neo4j-admin server report` command has the following options:
 |List all available classifiers.
 |
 
+|-p, --password=<password>
+|Password for connecting to the running DBMS. Required when a classifier that needs a connection to a live database is selected. Can be specified as the `NEO4J_PASSWORD` environment variable.
+|
+
 |--to-path=<path>
 |Destination directory for reports. Defaults to a system tmp directory.
+|
+
+|-u, --username=<username>
+|Username for connecting to the running DBMS. Required when a classifier that needs a connection to a live database is selected. Can be specified as the `NEO4J_USERNAME` environment variable.
 |
 
 |--verbose
@@ -177,14 +238,14 @@ Therefore, if you are confident that you do have enough disk space, you can disa
 
 [NOTE]
 ====
-This tool uses the https://docs.oracle.com/javase/8/docs/technotes/guides/attach/index.html[Java Attach API] to gather data from a running Neo4j instance.
+This tool uses the https://docs.oracle.com/javase/8/docs/technotes/guides/attach/index.html[Java Attach API] to gather data from a running Neo4j server.
 Therefore, it requires the Java JDK to run properly.
 ====
 
 .Invoke `neo4j-admin server report` using the default classifiers
 ====
 
-The following command gathers information about the Neo4j instance using the default classifiers and saves it to the default location:
+The following command gathers information about the Neo4j server using the default classifiers and saves it to the default location:
 
 [source, shell]
 ----
@@ -195,18 +256,18 @@ bin/neo4j-admin server report
 .Invoke `neo4j-admin server report` using all classifiers
 ====
 
-The following command gathers information about the Neo4j instance using all classifiers and saves it to a specified location:
+The following command interactively prompts for the password for user `neo4j`, gathers information about the Neo4j server using all classifiers, and saves it to a specified location:
 
 [source, shell]
 ----
-bin/neo4j-admin server report --to-path=./report all
+bin/neo4j-admin server report --username=neo4j --to-path=./report all
 ----
 ====
 
 .Invoke `neo4j-admin server report` to gather only logs and thread dumps
 ====
 
-The following command gathers only logs and thread dumps from the running Neo4j instance and saves it to a specified location:
+The following command gathers only logs and thread dumps from the running Neo4j server and saves it to a specified location:
 
 [source, shell]
 ----
