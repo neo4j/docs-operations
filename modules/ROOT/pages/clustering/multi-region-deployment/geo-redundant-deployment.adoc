@@ -1,26 +1,80 @@
-:description: The page describes recommended and non-recommended patterns of deploying Neo4j cluster across multiple cloud regions / data centers.
+:description: The page describes recommended and non-recommended patterns of deploying Neo4j cluster(s) across multiple cloud regions / data centers.
 [role=enterprise-edition]
 
 
-= Designing a resilient multi-data center cluster
+= Designing resilient multi-region cluster deployments
+
+[NOTE]
+====
+.A note on terminology
+In this guide, the terms _cloud region_ and _data center_ are used interchangeably to represent distinct, isolated geographical deployment locations.
+
+Whether you deploy Neo4j on your own physical hardware or in the cloud, the architectural rules for latency, quorum, and replication remain identical.
+====
 
 [[multi-region-deployment-overview]]
 == Overview
 
-The goal of deploying a resilient multi-data center cluster is to achieve high availability, disaster recovery, and tolerance against the loss of a data center.
+To maximize cluster resilience, you have to choose between two strategies:
 
-You should take into account cluster architecture and topology and decide where database primaries and secondaries are located, balancing performance and fault tolerance.
+* Stretching a single cluster across multiple data centers.
+* Or deploying multiple independent clusters with the database replication between them - officially released in Neo4j 2026.08.
+
+Before choosing a multi-region cluster architecture, you have to consider the following:
+
+* Recovery point objective (RPO).
+* Recovery time objective (RTO).
+* Database write performance/workload.
+* Network cost.
+
+
+[role=label--new-2026.08]
+[[multiple-independent-clusters]]
+== Deploying multiple independent clusters
+
+Multiple independent clusters provide regional isolation by running Neo4j clusters in different locations and replicating databases between them.
+
+image::replication.svg[title="Schema of replicating a database across clusters via the network", width="300"]
+
+image::replication-via-backups.svg[title="Schema of replicating a database across clusters via backups", width="350"]
+
+Each cluster has its own architecture.
+Replication happens on a database level, not on a cluster member (server) level.
+The replica database is always **read-only**.
+It can be promoted to become write-available if required.
+
+For detailed instructions, see xref:clustering/replicating-databases-across-clusters.adoc[].
+
+=== Recovering from the loss of the upstream cluster
+
+If the source (upstream) cluster becomes unavailable, you can promote a replica database to accept writes.
+
+Promotion is a one-way operation.
+
+Example recovery steps::
+
+. Use the `dbms.promoteReplicaDatabase()` procedure to promote a replica database.
+You can retain the current topology, or specify a new topology as part of the promotion.
+. By running `SHOW DATABASES`, verify that the former replica database is online on the desired number of servers and has type `standard`.
+
+For detailed information, see xref:clustering/replicating-databases-across-clusters.adoc#dr-scenario[Replicating databases across clusters -> Disaster recovery scenario].
+
+
+[[single-cluster-across-multiple-dc]]
+== Stretching a single cluster across multiple data centers
+
+A single Neo4j cluster can be distributed across multiple locations, such as data centers or cloud regions.
+
+Choosing this method of cluster deployment, you can achieve high availability, disaster recovery, and tolerance against the loss of a data center.
+
+Taking into account cluster architecture and topology, you decide where database primaries and secondaries are located, balancing performance and fault tolerance.
 See xref:clustering/introduction.adoc[] for recommendations on database topologies.
  
-Pay attention to networking and traffic routing:
+Also, pay attention to networking and traffic routing:
 
 * If database primaries are distant from each other, that will increase your write latency.
 * To commit a change, xref:clustering/introduction.adoc#clustering-primaries[the writer primary] must get confirmation from a quorum of members, including itself.
 If primaries are far apart, network latency adds to commit time.
-
-
-[[recommended-cluster-patterns]]
-== Recommended cluster design patterns
 
 [[secondaries-for-read-resilience]]
 === Read resilience with user database secondaries
@@ -213,6 +267,7 @@ Besides, all writes have to pay the cross-data center latency cost.
 
 This design pattern is strongly recommended to avoid.
 
+
 == Summary
 
 .Comparison of cluster designs
@@ -224,7 +279,15 @@ This design pattern is strongly recommended to avoid.
 | Cons
 | Best use case
 
-5+^| Recommended patterns
+5+^| Multiple independent clusters
+
+| Independent clusters running in different locations
+| Each cluster has its own architecture with a database replicating between them
+| 
+| 
+| 
+
+5+^| A single cluster with database copies distributed across multiple data centers
 
 | Secondaries for read resilience
 | Primaries in one data center, secondaries in other data centers
