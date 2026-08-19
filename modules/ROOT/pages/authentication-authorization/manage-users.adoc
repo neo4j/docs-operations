@@ -113,6 +113,53 @@ For more information, see <<access-control-create-users>> and xref:authenticatio
 
 |===
 
+[cols="<15s,<85"]
+|===
+
+| Command
+m| SHOW USERS AS COMMANDS
+
+| Syntax
+a|
+[source, syntax, role="noheader"]
+----
+SHOW USER[S]
+  [WITH AUTH]
+  AS COMMAND[S]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+a|
+Lists commands to create all users.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+For more information, see <<access-control-list-user-as-commands>>.
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER CREDENTIALS
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER METADATA
+----
+
+The `SHOW USER METADATA` privilege is additionally required to see the values in the `tags` column returned by `SHOW USERS AS COMMANDS YIELD *`.
+Otherwise, the column returns `null`.
+
+Tags and `SHOW USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
+
+|===
 
 [cols="<15s,<85"]
 |===
@@ -1111,6 +1158,91 @@ ready to start consuming query after 51 ms, results consumed after another 1 ms
 ----
 
 For more information about auth providers, see xref:authentication-authorization/auth-providers.adoc[User auth providers].
+
+[[access-control-list-user-as-commands]]
+[role=label--new-2026.08 label--cypher-25]
+== Showing users as commands
+
+To get the commands to create users, use SHOW USERS AS COMMANDS. The command produces a row per user and yields the following column:
+
+[options="header", width="100%", cols="2a,4,2m,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+
+| command
+| The command to create the user
+| STRING
+| {check-mark}
+| {check-mark}
+|===
+
+=== Show users as commands
+
+[source, cypher, role=noplay]
+----
+SHOW USERS AS COMMANDS;
+----
+
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| command                                                                                                                                                                                                                                          |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "CREATE USER neo4j SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,1d18af8e64cb4f77c64fe60f3e0e22a5e54eb9b222e33f8bf72900c3956d1873,dad046cc0751fd3fd4b74b8aaa18857ddf11d0b050a57e44f39c38675d96d41b' SET PASSWORD CHANGE NOT REQUIRED }" |
+| "CREATE USER jake SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,54f7ae30a86010934978d063a499647a3567babcacab8883326c582b918f0a0c,2b9abbfd9b61f1991872b1a25bd36977c6ce457a6a4f7c56b644c224dcac956f' SET PASSWORD CHANGE NOT REQUIRED }"  |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
+
+
+=== Show user with auth as commands
+
+When using the `AS COMMANDS` clause together with `SHOW USERS WITH AUTH`, the command produces a row per user per auth provider, and yields the following two columns in addition to those output by `SHOW USERS AS COMMANDS`:
+
+[options="header", width="100%", cols="1a,4,1m,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+
+| provider
+| The name of the auth provider.
+| STRING
+| {check-mark}
+| {check-mark}
+
+| auth
+| A map containing configuration for the user.
+For example, dn of the user for an `ldap` auth provider, the unique external identifier for an `oidc` auth provider, or password status for a `native` auth provider.
+
+| MAP
+| {check-mark}
+| {check-mark}
+|===
+
+[source, cypher, role=noplay]
+----
+SHOW USERS WITH AUTH AS COMMANDS;
+----
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| command                                                                                                                                                                                                                                                                                                | provider | auth                                     |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "CREATE USER neo4j SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,1d18af8e64cb4f77c64fe60f3e0e22a5e54eb9b222e33f8bf72900c3956d1873,dad046cc0751fd3fd4b74b8aaa18857ddf11d0b050a57e44f39c38675d96d41b' SET PASSWORD CHANGE NOT REQUIRED }"                                                       | "native" | {changeRequired: FALSE, password: "***"} |
+| "CREATE USER jack SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,61ce8efee49f1649c163f65aea6f9d17cc92863a1b9b86ed2787334bb3d525be,0a270f6434fbf4b7dfabae1ff9593b1dfaebace3f16c7866f862822d5866cefb' SET PASSWORD CHANGE NOT REQUIRED } SET AUTH PROVIDER 'oidc1' { SET ID 'jacksIdForOidc1' }" | "native" | {changeRequired: FALSE, password: "***"} |
+| "CREATE USER jack SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,61ce8efee49f1649c163f65aea6f9d17cc92863a1b9b86ed2787334bb3d525be,0a270f6434fbf4b7dfabae1ff9593b1dfaebace3f16c7866f862822d5866cefb' SET PASSWORD CHANGE NOT REQUIRED } SET AUTH PROVIDER 'oidc1' { SET ID 'jacksIdForOidc1' }" | "oidc1"  | {id: "jacksIdForOidc1"}                  |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+----
 
 
 [[access-control-rename-users]]
