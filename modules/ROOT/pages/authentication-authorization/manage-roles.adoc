@@ -326,7 +326,7 @@ Assigns roles directly to users or indirectly through attribute-based access con
 
 For more information on assigning roles to users, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
 
-For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assigning roles to auth rules].
+For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assign roles to auth rules].
 
 | Required privilege
 a|
@@ -580,9 +580,9 @@ The example result shows that the `PUBLIC` role is assigned to all users, while 
 | role     | member  |
 +--------------------+
 | "PUBLIC" | "neo4j" |
-| "PUBLIC" | "bob"   |
-| "PUBLIC" | "user1" |
 | "PUBLIC" | "user2" |
+| "PUBLIC" | "user1" |
+| "PUBLIC" | "bob"   |
 | "PUBLIC" | "user3" |
 | "admin"  | "neo4j" |
 +--------------------+
@@ -593,6 +593,18 @@ ready to start consuming query after 6 ms, results consumed after another 1 ms
 
 [role=label--new-2026.03]
 === Showing auth rules assigned to roles
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE AUTH RULE financeRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'finance';
+CREATE AUTH RULE financeAuditorRule
+    SET CONDITION all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags());
+GRANT ROLE role1 TO AUTH RULE financeRule;
+GRANT ROLE role2 TO AUTH RULE financeRule, financeAuditorRule;
+----
+////
 
 To see which auth rules are assigned to which roles, add `WITH AUTH RULES` to the command:
 
@@ -605,19 +617,22 @@ The command produces a row per role per auth rule and yields an `authRule` colum
 If a role is assigned to multiple auth rules, it will appear once for each auth rule.
 
 The example result shows that the `PUBLIC` and `admin` roles are not assigned to any auth rules.
-//We need to update the cypher setup if we want to show assigned authRule.
+
 .Result
 [role="queryresult"]
 ----
-+---------------------+
-| role     | authRule |
-+---------------------+
-| "PUBLIC" | NULL     |
-| "admin"  | NULL     |
-+---------------------+
++---------------------------------+
+| role     | authRule             |
++---------------------------------+
+| "PUBLIC" | NULL                 |
+| "admin"  | NULL                 |
+| "role1"  | "financeRule"        |
+| "role2"  | "financeAuditorRule" |
+| "role2"  | "financeRule"        |
++---------------------------------+
 
-2 rows
-ready to start consuming query after 25 ms, results consumed after another 1 ms
+5 rows
+ready to start consuming query after 6 ms, results consumed after another 1 ms
 ----
 
 === Filtering and ordering roles results
