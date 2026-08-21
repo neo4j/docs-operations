@@ -249,10 +249,9 @@ SET AUTH [PROVIDER] 'provider' "{"
 a|
 Creates a new user, or if a user with the same name exists, replace it.
 
-[NOTE]
-====
-It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
-====
+* It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
+* `SET TAG[S]`, `ADD TAG[S]`, `REMOVE TAG[S]`, `REMOVE ALL TAG[S]`, and `SET USER METADATA` are Enterprise Edition features introduced in Neo4j 2026.06.
+Tags must be supplied as a single quoted `STRING` value, a `LIST` containing `STRING` values, or a parameter resolving to a `STRING` or a `LIST<STRING>`.
 
 For more information, see <<access-control-create-users>>.
 
@@ -391,8 +390,6 @@ label:new[Introduced in 2026.06] label:enterprise-edition[] The `SET USER METADA
 For more information, see xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-set-user-metadata-privilege[Grant privilege to set user metadata].
 
 |===
-
-label:enterprise-edition[] label:new[Introduced in 2026.06]
 [cols="<15s,<85"]
 |===
 | Command
@@ -410,10 +407,11 @@ ALTER USERS name[, ...] [IF EXISTS]
 
 | Description
 a|
-Modifies the tags of several existing users in a single command.
+label:enterprise-edition[] label:new[Introduced in 2026.06] Modifies the tags of several existing users in a single command.
 
 * At least one `SET`, `ADD`, or `REMOVE` clause is required.
 * Any `REMOVE` clause(s) must appear first, followed by any `ADD` clause(s), and then any `SET` clause(s).
+* Tags must be supplied as a single quoted `STRING` value, a `LIST` containing `STRING` values, or a parameter resolving to a `STRING` or a `LIST<STRING>`.
 
 For more information, see <<access-control-alter-users-bulk>>.
 
@@ -491,18 +489,20 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
-
-[NOTE,role=label--enterprise-edition]
-====
-The `SHOW USER[S] PRIVILEGES` command is described in xref:authentication-authorization/manage-privileges.adoc#access-control-list-privileges[Showing privileges].
-====
-
 [[access-control-create-users]]
-== Creating a new user
+== Creating users
 
-You can create a new user using the `CREATE USER` command.
-You can optionally append `IF NOT EXISTS` to the command to ensure that no exception is thrown and nothing happens should the user already exist.
+You can create users using one of the following Cypher commands, depending on whether you want to create a new user or replace an existing one.
+You can also optionally append `IF NOT EXISTS` to the command to ensure that no exception is thrown and nothing happens should the user already exist.
 
+In both cases, you can specify the user's password, whether they must change it at the next login, their status, home database, and auth provider settings.
+The `SET` clauses can be applied in any order.
+It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
+
+[.tabbed-example]
+=====
+[role=include-with-create-user-syntax]
+======
 .Syntax
 [source, syntax, role="noheader"]
 ----
@@ -514,6 +514,22 @@ CREATE USER name [IF NOT EXISTS] # <1>
   [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <6>
   [SET TAG[S] tags] # <7>
 ----
+======
+[role=include-with-create-or-replace-user-syntax]
+======
+
+[source, syntax, role="noheader"]
+----
+CREATE OR REPLACE USER name # <1>
+  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'] # <2>
+  [[SET PASSWORD] CHANGE [NOT] REQUIRED] # <3>
+  [SET STATUS {ACTIVE \| SUSPENDED}] # <4>
+  [SET HOME DATABASE name] # <5>
+  [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <6>
+  [SET TAG[S] tags] # <7>
+----
+======
+=====
 
 Where:
 
@@ -638,7 +654,7 @@ However, `SET AUTH 'native'` can be used in Neo4j Community Edition.
 === Create user if not exists
 
 The `CREATE USER` command is optionally idempotent, with the default behavior to throw an exception if the user already exists.
-Appending `IF NOT EXISTS` to the `CREATE USER` command will ensure that no exception is thrown and nothing happens should the user already exist.
+Appending `IF NOT EXISTS` to the `CREATE USER` command ensures that no exception is thrown and nothing happens should the user already exist.
 
 You can create the user `jake` only if it does not already exist by using the command:
 
@@ -656,84 +672,12 @@ CREATE USER jake IF NOT EXISTS
 SET AUTH 'native' {SET PLAINTEXT PASSWORD 'abcd1234'};
 ----
 
-The `CREATE OR REPLACE USER` command will result in any existing user being deleted and a new one created.
-
-== Creating or replacing users
+=== Create or replace users
 
 You can replace an existing user with the `CREATE OR REPLACE USER` command.
-You can specify the user's password, whether they must change it at the next login, their status, home database, and auth provider settings.
-The `SET` clauses can be applied in any order.
-It is mandatory to specify a `SET PASSWORD` and/or at least one `SET AUTH` clause because users must have at least one auth provider.
+It results in any existing user being deleted and a new one created.
 
-.Syntax
-[source, syntax, role="noheader"]
-----
-CREATE OR REPLACE USER name # <1>
-  [SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password'] # <2>
-  [[SET PASSWORD] CHANGE [NOT] REQUIRED] # <3>
-  [SET STATUS {ACTIVE \| SUSPENDED}] # <4>
-  [SET HOME DATABASE name] # <5>
-  [SET AUTH [PROVIDER] 'provider' "{"{SET <key> <value>}..."}"]... # <6>
-  [SET TAG[S] tags] # <7>
-----
-Where:
-
-<1> Specifies the command to create a user.
-<2> Specifies the password for the user.
-The `'password'` can either be a string value or a string parameter with default value length of at least 8 characters. +
-The `PLAINTEXT` and `ENCRYPTED` keywords are optional and can be used to specify the format of the password, i.e. whether Neo4j needs to hash it or it has already been hashed.
-By default, all passwords are encrypted (hashed) when stored in the Neo4j `system` database.
-* The optional `PLAINTEXT` in `SET PLAINTEXT PASSWORD` has the same behavior as `SET PASSWORD`.
-* The optional `ENCRYPTED` is used to recreate an existing user when the plaintext password is unknown, but the encrypted password is available in the _/data/scripts/databasename/restore_metadata.cypher_ file of restored database backup.
-See xref:backup-restore/restore-backup#_restore_users_and_roles_metadata[Restore users and roles metadata]. +
-With `ENCRYPTED`, the password string is expected to be in the format of `<encryption-version>,<hash>,<salt>`, where, for example:
-** `0` is the first version and refers to the `SHA-256` cryptographic hash function with iterations `1`.
-** `1` is the second version and refers to the `SHA-256` cryptographic hash function with iterations `1024`.
-
-<3> Specifies whether the user must change their password at the next login.
-If the optional `SET PASSWORD CHANGE [NOT] REQUIRED` is omitted but a password is given, the default is `CHANGE REQUIRED`.
-The `SET PASSWORD` prefix of the `CHANGE [NOT] REQUIRED` clause is only optional if it directly follows the `SET PASSWORD 'password'` clause and is not part of a `SET AUTH` clause.
-
-<4>  Specifies the user's status.
-If not set, the default is `ACTIVE`.
-
-<5> Specifies a home database for a user.
-A home database is resolved if it is pointing to a database or a database alias.
-Constituents and shards are not supported.
-If no home database is set, the DBMS default database is used as the home database for that user.
-
-<6> One or more `SET AUTH` clause can be used to configure external xref:authentication-authorization/auth-providers.adoc[auth providers], such as LDAP or OIDC, which define authentication/authorization providers for that user.
-`SET AUTH` can also be used as an alternative way to set the native (password-based) auth settings like `SET PASSWORD` and `SET PASSWORD CHANGE REQUIRED`.
-For further informations, see the examples in this section, as well as xref:authentication-authorization/sso-integration.adoc#auth-sso-auth-providers[Configure SSO at the user level using auth providers] for OIDC, and xref:authentication-authorization/ldap-integration.adoc#auth-ldap-auth-providers[Configure authentication/authorization at the user level using auth providers] for LDAP.
-+
-[source, syntax, role="noheader"]
-----
-SET AUTH [PROVIDER] 'provider' "{"
-    {
-        SET ID 'id' # a unique identifier of the user in an external system.
-        \| SET [PLAINTEXT \| ENCRYPTED] PASSWORD 'password' # only applicable to the 'native' provider.
-        \| SET PASSWORD CHANGE [NOT] REQUIRED # only applicable to the 'native' provider.
-    }
-"}"
-----
-
-<7> label:new[Introduced in 2026.06] label:enterprise-edition[] One or more tags can be attached to the user with the `SET TAG[S]` clause.
-Tags must be supplied as a single quoted `STRING` value, a `LIST` containing `STRING` values, or a parameter resolving to a `STRING` or a `LIST<STRING>`.
-Tags are arbitrary labels attached to the native user object that can be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[attribute-based access control (ABAC)] auth rules through the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function.
-`ADD TAGS` idempotently adds the specified tags to any existing tags, `REMOVE TAGS` idempotently removes the specified tags, and `SET TAGS` replaces any tags the user already has with the specified tags.
-
-[NOTE]
-====
-Usernames are case sensitive.
-The created user will appear on the list provided by `SHOW USERS`.
-
-* In Neo4j Community Edition there are no roles, but all users have implied administrator privileges.
-* In Neo4j Enterprise Edition all users are automatically assigned the xref:authentication-authorization/built-in-roles.adoc#access-control-built-in-roles-public[`PUBLIC` role], giving them a base set of privileges.
-====
-
-=== Create or replace user
-
-You can create the user `jake` or replace it if it already exists by using the command:
+For example, you can create the user `jake` or replace it if it already exists by using the command:
 
 [source, cypher,role=noplay]
 ----
@@ -757,7 +701,7 @@ The `CREATE OR REPLACE USER` command does not allow the use of `IF NOT EXISTS`.
 ====
 
 [role=label--enterprise-edition label--new-2026.06]
-== Creating a user with tags
+=== Create a user with tags
 
 For example, you can create the user `jim` and attach the tags `finance` and `auditor`, which can then be evaluated in xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] auth rules:
 
