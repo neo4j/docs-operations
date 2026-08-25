@@ -4,19 +4,6 @@
 [[access-control-manage-roles]]
 = Manage roles
 
-////
-[source, cypher, role=test-setup]
-----
-CREATE USER bob SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
-CREATE USER user1 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
-CREATE USER user2 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
-CREATE USER user3 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
-CREATE ROLE myrole IF NOT EXISTS;
-CREATE ROLE role1 IF NOT EXISTS;
-CREATE ROLE role2 IF NOT EXISTS;
-----
-////
-
 Roles can be created and managed using a set of Cypher administration commands executed against the `system` database.
 
 When connected to the DBMS over `bolt`, administration commands are automatically routed to the `system` database.
@@ -339,7 +326,7 @@ Assigns roles directly to users or indirectly through attribute-based access con
 
 For more information on assigning roles to users, see xref:authentication-authorization/manage-roles.adoc#access-control-assign-roles[Assigning roles to users].
 
-For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assigning roles to auth rules].
+For more information on assigning roles to auth rules, see xref:authentication-authorization/attribute-based-access-control.adoc#assign-roles-auth-rules[Assign roles to auth rules].
 
 | Required privilege
 a|
@@ -386,10 +373,106 @@ For more information, see xref:authentication-authorization/dbms-administration/
 
 |===
 
+[[access-control-create-roles]]
+== Creating roles
+
+There are different ways to create roles, depending on your needs.
+
+The following naming rules apply to all roles created in Neo4j:
+
+* The first character must be an ASCII alphabetic character.
+* Subsequent characters can be ASCII alphabetic, numeric characters, and underscore.
+* Role names are case sensitive.
+
+=== Creating new roles
+
+You can create roles using `CREATE [IMMUTABLE] ROLE`:
+
+[source, syntax]
+----
+CREATE [IMMUTABLE] ROLE name [IF NOT EXISTS] [AS COPY OF otherName]
+----
+
+The `CREATE ROLE` command is optionally idempotent, with the default behavior to throw an exception if the role already exists.
+Adding `IF NOT EXISTS` to the `CREATE ROLE` command ensures that no exception is thrown and nothing happens should the role already exist.
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE myrole IF NOT EXISTS;
+----
+
+=== Creating new roles with the same privileges as existing roles
+
+You can copy a role, keeping its privileges, using `CREATE [IMMUTABLE] ROLE name AS COPY OF otherName`:
+
+[source, cypher, role=noplay]
+----
+CREATE ROLE mysecondrole AS COPY OF myrole;
+----
+
+The created roles appear on the list provided by `SHOW ROLES`:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLES;
+----
+
+.Result
+[role="queryresult"]
+----
++----------------+
+| role           |
++----------------+
+| "PUBLIC"       |
+| "admin"        |
+| "architect"    |
+| "editor"       |
+| "myrole"       |
+| "mysecondrole" |
+| "publisher"    |
+| "reader"       |
++----------------+
+
+8 rows
+ready to start consuming query after 14 ms, results consumed after another 1 ms
+----
+
+=== Creating new roles or replacing existing roles
+
+You can create or replace roles by using `CREATE OR REPLACE [IMMUTABLE] ROLE`:
+
+[source, syntax]
+----
+CREATE OR REPLACE [IMMUTABLE] ROLE name [AS COPY OF otherName]
+----
+
+The `CREATE OR REPLACE ROLE` command results in any existing role being deleted and a new one created. +
+For example:
+
+[source, cypher, role=noplay]
+----
+CREATE OR REPLACE ROLE myrole;
+----
+
+The command `CREATE OR REPLACE ROLE myrole` will delete the existing `myrole` and create a new one with the same name.
+This is equivalent to running `DROP ROLE myrole IF EXISTS` followed by `CREATE ROLE myrole`.
+
+[NOTE]
+====
+The `CREATE OR REPLACE ROLE` command does not allow you to use the `IF NOT EXISTS`.
+====
+
+[[access-control-immutable-roles]]
+== Immutable roles
+
+Immutable roles are roles that cannot be modified in the usual way.
+This means they cannot be created, renamed, dropped, or have privileges granted to or revoked from them under normal operating conditions.
+See xref:authentication-authorization/immutable-roles-privileges.adoc[Immutable roles and privileges] for details of when and how the `IMMUTABLE` keyword may be used.
+
+They are useful in cases where you need a permanent built-in system role that cannot be modified even by users who have xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc[`ROLE MANAGEMENT` privileges] but yet can be granted to and revoked from users in the same way as an ordinary role.
 
 [[access-control-list-roles]]
 == Showing roles
-
 
 You can view all available roles using the Cypher command `SHOW ROLES`, which returns a single column by default.
 Optionally, you can also use `SHOW ROLES YIELD *` to see if the role is immutable.
@@ -422,25 +505,31 @@ To list all roles, use the `SHOW ROLES` command:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLES
+SHOW ROLES;
 ----
 
 This is the same command as `SHOW ALL ROLES`.
+The result is a single column containing the names of all roles, including built-in roles and any user-defined roles.
 
 .Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|role
+[role="queryresult"]
+----
++----------------+
+| role           |
++----------------+
+| "PUBLIC"       |
+| "admin"        |
+| "architect"    |
+| "editor"       |
+| "myrole"       |
+| "mysecondrole" |
+| "publisher"    |
+| "reader"       |
++----------------+
 
-|"PUBLIC"
-|"admin"
-|"architect"
-|"editor"
-|"publisher"
-|"reader"
-
-1+a|Rows: 6
-|===
+8 rows
+ready to start consuming query after 9 ms, results consumed after another 1 ms
+----
 
 When first starting a Neo4j DBMS, there are a number of built-in roles:
 
@@ -460,70 +549,91 @@ This returns the same output columns as `SHOW ROLES`.
 
 === Showing users assigned to roles
 
+////
+[source, cypher, role=test-setup]
+----
+CREATE USER bob SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE USER user1 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE USER user2 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE USER user3 SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
+CREATE ROLE myrole IF NOT EXISTS;
+CREATE ROLE role1 IF NOT EXISTS;
+CREATE ROLE role2 IF NOT EXISTS;
+----
+////
+
 To see which users are assigned to which roles, you can add `WITH USERS` to the command.
 
 [source, cypher, role=noplay]
 ----
-SHOW POPULATED ROLES WITH USERS
+SHOW POPULATED ROLES WITH USERS;
 ----
 
 The command produces a row per role per user and yields a `member` column, in addition to the one returned by `SHOW ROLES`, containing the name of the user assigned to the role, or null if the role is not assigned to any users.
 If a role is assigned to multiple users, it will appear once for each user.
+The example result shows that the `PUBLIC` role is assigned to all users, while the `admin` role is only assigned to the `neo4j` user.
 
 .Result
-[options="header,footer", width="100%", cols="m,m"]
-|===
-|role
-|member
+[role="queryresult"]
+----
++--------------------+
+| role     | member  |
++--------------------+
+| "PUBLIC" | "neo4j" |
+| "PUBLIC" | "user2" |
+| "PUBLIC" | "user1" |
+| "PUBLIC" | "bob"   |
+| "PUBLIC" | "user3" |
+| "admin"  | "neo4j" |
++--------------------+
 
-|"PUBLIC"
-|"neo4j"
-
-|"PUBLIC"
-|"bob"
-
-|"PUBLIC"
-|"user1"
-
-|"PUBLIC"
-|"user2"
-
-|"PUBLIC"
-|"user3"
-
-|"admin"
-|"neo4j"
-
-2+a|Rows: 6
-|===
+6 rows
+ready to start consuming query after 6 ms, results consumed after another 1 ms
+----
 
 [role=label--new-2026.03]
 === Showing auth rules assigned to roles
+
+////
+[source, cypher, role=test-setup]
+----
+CREATE AUTH RULE financeRule
+    SET CONDITION abac.oidc.user_attribute('department') = 'finance';
+CREATE AUTH RULE financeAuditorRule
+    SET CONDITION all(tag IN ['finance', 'auditor'] WHERE tag IN abac.native.user_tags());
+GRANT ROLE role1 TO AUTH RULE financeRule;
+GRANT ROLE role2 TO AUTH RULE financeRule, financeAuditorRule;
+----
+////
 
 To see which auth rules are assigned to which roles, add `WITH AUTH RULES` to the command:
 
 [source, cypher, role=noplay]
 ----
-SHOW POPULATED ROLES WITH AUTH RULES
+SHOW POPULATED ROLES WITH AUTH RULES;
 ----
 
 The command produces a row per role per auth rule and yields an `authRule` column, in addition to the one returned by `SHOW ROLES`, containing the name of the auth rule assigned to the role, or null if the role is not assigned to any auth rules.
 If a role is assigned to multiple auth rules, it will appear once for each auth rule.
 
+The example result shows that the `PUBLIC` and `admin` roles are not assigned to any auth rules.
+
 .Result
-[options="header,footer", width="100%", cols="m,m"]
-|===
-|role
-|authRule
+[role="queryresult"]
+----
++---------------------------------+
+| role     | authRule             |
++---------------------------------+
+| "PUBLIC" | NULL                 |
+| "admin"  | NULL                 |
+| "role1"  | "financeRule"        |
+| "role2"  | "financeAuditorRule" |
+| "role2"  | "financeRule"        |
++---------------------------------+
 
-|"PUBLIC"
-|null
-
-|"admin"
-|"adminRule"
-
-2+a|Rows: 6
-|===
+5 rows
+ready to start consuming query after 6 ms, results consumed after another 1 ms
+----
 
 === Filtering and ordering roles results
 
@@ -533,7 +643,7 @@ You can filter and sort the results by using `YIELD`, `ORDER BY`, and `WHERE`:
 ----
 SHOW ROLES YIELD role
 ORDER BY role
-WHERE role ENDS WITH 'r'
+WHERE role ENDS WITH 'r';
 ----
 
 In this example:
@@ -544,112 +654,19 @@ In this example:
 It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 
 .Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|role
-
-|"editor"
-|"publisher"
-|"reader"
-
-1+a|Rows: 3
-|===
-
-[[access-control-create-roles]]
-== Creating roles
-
-There are different ways to create roles, depending on your needs.
-
-The following naming rules apply to all roles created in Neo4j:
-
-* The first character must be an ASCII alphabetic character.
-* Subsequent characters can be ASCII alphabetic, numeric characters, and underscore.
-* Role names are case sensitive.
-
-=== Creating new roles
-
-You can create roles using `CREATE [IMMUTABLE] ROLE`:
-
-[source, syntax]
+[role="queryresult"]
 ----
-CREATE [IMMUTABLE] ROLE name [IF NOT EXISTS] [AS COPY OF otherName]
++-------------+
+| role        |
++-------------+
+| "editor"    |
+| "publisher" |
+| "reader"    |
++-------------+
+
+3 rows
+ready to start consuming query after 40 ms, results consumed after another 1 ms
 ----
-
-The `CREATE ROLE` command is optionally idempotent, with the default behavior to throw an exception if the role already exists.
-Adding `IF NOT EXISTS` to the `CREATE ROLE` command ensures that no exception is thrown and nothing happens should the role already exist.
-
-[source, cypher, role=noplay]
-----
-CREATE ROLE myrole IF NOT EXISTS
-----
-
-=== Creating new roles with the same privileges as existing roles
-
-You can copy a role, keeping its privileges, using `CREATE [IMMUTABLE] ROLE name AS COPY OF otherName`:
-
-[source, cypher, role=noplay]
-----
-CREATE ROLE mysecondrole AS COPY OF myrole
-----
-
-The created roles appear on the list provided by `SHOW ROLES`:
-
-[source, cypher, role=noplay]
-----
-SHOW ROLES
-----
-
-.Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|role
-
-|"PUBLIC"
-|"admin"
-|"architect"
-|"editor"
-|"myrole"
-|"mysecondrole"
-|"publisher"
-|"reader"
-
-1+a|Rows: 8
-|===
-
-=== Creating new roles or replacing existing roles
-
-You can create or replace roles by using `CREATE OR REPLACE [IMMUTABLE] ROLE`:
-
-[source, syntax]
-----
-CREATE OR REPLACE [IMMUTABLE] ROLE name [AS COPY OF otherName]
-----
-
-The `CREATE OR REPLACE ROLE` command results in any existing role being deleted and a new one created. +
-For example:
-
-[source, cypher, role=noplay]
-----
-CREATE OR REPLACE ROLE myrole
-----
-
-The command `CREATE OR REPLACE ROLE myrole` will delete the existing `myrole` and create a new one with the same name.
-This is equivalent to running `DROP ROLE myrole IF EXISTS` followed by `CREATE ROLE myrole`.
-
-[NOTE]
-====
-The `CREATE OR REPLACE ROLE` command does not allow you to use the `IF NOT EXISTS`.
-====
-
-[[access-control-immutable-roles]]
-== Immutable roles
-
-Immutable roles are roles that cannot be modified in the usual way.
-This means they cannot be created, renamed, dropped, or have privileges granted to or revoked from them under normal operating conditions.
-See xref:authentication-authorization/immutable-roles-privileges.adoc[Immutable roles and privileges] for details of when and how the `IMMUTABLE` keyword may be used.
-
-They are useful in cases where you need a permanent built-in system role that cannot be modified even by users who have xref:authentication-authorization/dbms-administration/dbms-role-management-privileges.adoc[`ROLE MANAGEMENT` privileges] but yet can be granted to and revoked from users in the same way as an ordinary role.
-
 
 [[access-control-rename-roles]]
 == Renaming roles
@@ -658,32 +675,37 @@ You can rename a role using `RENAME ROLE` command:
 
 [source, cypher, role=noplay]
 ----
-RENAME ROLE mysecondrole TO mythirdrole
+RENAME ROLE mysecondrole TO mythirdrole;
 ----
 
 After renaming a role, the new name will appear on the list provided by `SHOW ROLES`:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLES
+SHOW ROLES;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|role
+[role="queryresult"]
+----
++---------------+
+| role          |
++---------------+
+| "PUBLIC"      |
+| "admin"       |
+| "architect"   |
+| "editor"      |
+| "myrole"      |
+| "mythirdrole" |
+| "publisher"   |
+| "reader"      |
+| "role1"       |
+| "role2"       |
++---------------+
 
-|"PUBLIC"
-|"admin"
-|"architect"
-|"editor"
-|"myrole"
-|"mythirdrole"
-|"publisher"
-|"reader"
-
-1+a|Rows: 8
-|===
+10 rows
+ready to start consuming query after 3 ms, results consumed after another 1 ms
+----
 
 [NOTE]
 ====
@@ -703,57 +725,32 @@ Users can be given access rights by assigning them roles using `GRANT ROLE`:
 
 [source, cypher, role=noplay]
 ----
-GRANT ROLE myrole TO bob
+GRANT ROLE myrole TO bob;
 ----
 
 The roles assigned to each user can be seen on the list provided by xref:authentication-authorization/manage-users.adoc#access-control-list-users[`SHOW USERS`]:
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
+[role="queryresult"]
+----
++----------------------------------------------------------------------------+
+| user    | roles                | passwordChangeRequired | suspended | home |
++----------------------------------------------------------------------------+
+| "bob"   | ["myrole", "PUBLIC"] | FALSE                  | FALSE     | NULL |
+| "neo4j" | ["admin", "PUBLIC"]  | FALSE                  | FALSE     | NULL |
+| "user1" | ["PUBLIC"]           | FALSE                  | FALSE     | NULL |
+| "user2" | ["PUBLIC"]           | FALSE                  | FALSE     | NULL |
+| "user3" | ["PUBLIC"]           | FALSE                  | FALSE     | NULL |
++----------------------------------------------------------------------------+
 
-|"bob"
-|["myrole","PUBLIC"]
-|false
-|false
-|<null>
-
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user1"
-|["PUBLIC"]
-|true
-|false
-|<null>
-
-|"user2"
-|["PUBLIC"]
-|true
-|false
-|<null>
-
-|"user3"
-|["PUBLIC"]
-|true
-|false
-|<null>
-
-5+a|Rows: 5
-|===
+5 rows
+ready to start consuming query after 2 ms, results consumed after another 0 ms
+----
 
 === Assigning multiple roles to multiple users
 
@@ -761,55 +758,30 @@ You can assign multiple roles to multiple users in one command:
 
 [source, cypher, role=noplay]
 ----
-GRANT ROLES role1, role2 TO user1, user2, user3
+GRANT ROLES role1, role2 TO user1, user2, user3;
 ----
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------+
+| user    | roles                        | passwordChangeRequired | suspended | home |
++------------------------------------------------------------------------------------+
+| "bob"   | ["myrole", "PUBLIC"]         | FALSE                  | FALSE     | NULL |
+| "neo4j" | ["admin", "PUBLIC"]          | FALSE                  | FALSE     | NULL |
+| "user1" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
+| "user2" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
+| "user3" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
++------------------------------------------------------------------------------------+
 
-|"bob"
-|["myrole","PUBLIC"]
-|false
-|false
-|<null>
-
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user1"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user2"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user3"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-5+a|Rows: 5
-|===
+5 rows
+ready to start consuming query after 39 ms, results consumed after another 1 ms
+----
 
 Common errors, such as attempts to grant roles to users who have already been granted those roles, will lead to notifications.
 Some of these notifications may be replaced with errors in a future version of Neo4j.
@@ -827,57 +799,32 @@ Users can lose access rights by revoking their role using `REVOKE ROLE`:
 
 [source, cypher, role=noplay]
 ----
-REVOKE ROLE myrole FROM bob
+REVOKE ROLE myrole FROM bob;
 ----
 
 The roles revoked from users can no longer be seen on the list provided by `SHOW USERS`:
 
 [source, cypher, role=noplay]
 ----
-SHOW USERS
+SHOW USERS;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="2m,3m,3m,2m,2m"]
-|===
-|user
-|roles
-|passwordChangeRequired
-|suspended
-|home
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------+
+| user    | roles                        | passwordChangeRequired | suspended | home |
++------------------------------------------------------------------------------------+
+| "bob"   | ["PUBLIC"]                   | FALSE                  | FALSE     | NULL |
+| "neo4j" | ["admin", "PUBLIC"]          | FALSE                  | FALSE     | NULL |
+| "user1" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
+| "user2" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
+| "user3" | ["role1", "role2", "PUBLIC"] | FALSE                  | FALSE     | NULL |
++------------------------------------------------------------------------------------+
 
-|"bob"
-|["PUBLIC"]
-|false
-|false
-|<null>
-
-|"neo4j"
-|["admin","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user1"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user2"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-|"user3"
-|["role1","role2","PUBLIC"]
-|true
-|false
-|<null>
-
-5+a|Rows: 5
-|===
+5 rows
+ready to start consuming query after 3 ms, results consumed after another 0 ms
+----
 
 === Revoking multiple roles from multiple users
 
@@ -885,7 +832,7 @@ You can revoke multiple roles from multiple users in one command:
 
 [source, cypher, role=noplay]
 ----
-REVOKE ROLES role1, role2 FROM user1, user2, user3
+REVOKE ROLES role1, role2 FROM user1, user2, user3;
 ----
 
 Common errors, such as misspellings or attempts to revoke roles from users who have not been granted those roles, will lead to notifications.
@@ -899,36 +846,41 @@ You can delete roles that are no longer needed using the `DROP ROLE` command:
 
 [source, cypher, role=noplay]
 ----
-DROP ROLE mythirdrole
+DROP ROLE mythirdrole;
+DROP ROLE role1;
+DROP ROLE role2;
 ----
 
 Deleting a role removes it from the list provided by `SHOW ROLES`:
 
 [source, cypher, role=noplay]
 ----
-SHOW ROLES
+SHOW ROLES;
 ----
 
 .Result
-[options="header,footer", width="100%", cols="m"]
-|===
-|role
+[role="queryresult"]
+----
++-------------+
+| role        |
++-------------+
+| "PUBLIC"    |
+| "admin"     |
+| "architect" |
+| "editor"    |
+| "myrole"    |
+| "publisher" |
+| "reader"    |
++-------------+
 
-|"PUBLIC"
-|"admin"
-|"architect"
-|"editor"
-|"myrole"
-|"publisher"
-|"reader"
-
-1+a|Rows: 8
-|===
+7 rows
+ready to start consuming query after 2 ms, results consumed after another 0 ms
+----
 
 This command is optionally idempotent, with the default behavior to throw an exception if the role does not exist.
 Adding `IF EXISTS` to the command will ensure that no exception is thrown and nothing happens should the role not exist:
 
 [source, cypher, role=noplay]
 ----
-DROP ROLE mythirdrole IF EXISTS
+DROP ROLE mythirdrole IF EXISTS;
 ----
