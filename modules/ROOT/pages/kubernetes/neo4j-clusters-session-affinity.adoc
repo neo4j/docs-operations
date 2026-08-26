@@ -1,0 +1,122 @@
+[[kubernetes-session-affinity]]
+= Neo4j clusters and session affinity
+:description: This page explains why sticky sessions are required when using explicit HTTP Query API transactions with Neo4j clusters on Kubernetes, and how to configure session affinity on the Neo4j load balancer service.
+
+When running Neo4j in a Kubernetes cluster, applications that use explicit multi-request transactions via the link:https://neo4j.com/docs/query-api/current/[HTTP Query API] require _sticky sessions_ (session affinity) to function correctly.
+
+However, the default Neo4j Helm chart creates a `neo4j-loadbalancer` Kubernetes `Service` with `sessionAffinity: None`.
+See the Kubernetes documentation on link:https://kubernetes.io/docs/reference/networking/virtual-ips/#session-affinity[Session affinity].
+This means that each individual HTTP request is routed independently to any available Neo4j pod in the cluster.
+
+For single-request query execution this is not a problem.
+However, link:https://neo4j.com/docs/query-api/current/transactions/[explicit transactions] in the Query API span *multiple HTTP requests* (begin, execute, commit/rollback).
+Transaction state is held on the specific database pod that opened the transaction.
+If subsequent requests in the same transaction are routed to a different pod, the transaction cannot be found and the operation fails with an error, such as:
+
+[source, error]
+----
+Neo.ClientError.Transaction.TransactionNotFound
+----
+
+This issue affects *all applications* that communicate with Neo4j over HTTP and use explicit Query API transactions, including link:https://neo4j.com/docs/enterprise-studio/current/[Enterprise Studio (NES)] and any other HTTP-based client.
+
+[NOTE]
+====
+Applications using the Bolt protocol are not affected, because the Bolt driver maintains a persistent connection to a single server for the lifetime of a transaction.
+====
+
+To ensure that all requests belonging to the same HTTP transaction are routed to the same Neo4j pod, you must configure `sessionAffinity: ClientIP` on the Kubernetes `Service` used to reach the cluster.
+
+You have two options depending on your setup.
+
+[[kubernetes-session-affinity-existing-lb]]
+== Option 1: Install the `neo4j/neo4j-loadbalancer` chart with session affinity
+
+Install the `neo4j/neo4j-loadbalancer` Helm chart with a `values.yaml` file that enables `ClientIP` session affinity.
+This is the recommended approach because the setting is version-controlled and survives Helm upgrades.
+
+. Update the `values.yaml` file with the following content.
+To see all available configuration options, run `helm show values neo4j/neo4j-loadbalancer` and adjust the values as needed.
++
+[source, yaml]
+----
+neo4j:
+  name: "neo4j-loadbalancer"  # <1>
+  edition: "enterprise"
+
+selector:
+  "helm.neo4j.com/neo4j.loadbalancer": "include"
+  "helm.neo4j.com/clustering": "true"
+
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # <2>
+----
+<1> Replace with the name of your Neo4j cluster release.
+<2> `10800` seconds (3 hours) matches the default Neo4j transaction timeout.
+Adjust this value to match your configured `dbms.transaction.timeout` if it differs.
+
+. Install the chart:
++
+[source, shell]
+----
+helm install neo4j-loadbalancer neo4j/neo4j-loadbalancer \
+  --namespace neo4j \
+  --values values.yaml
+----
+
+. Set your application's connection URI to the service created by the chart, for example:
++
+----
+http://neo4j-loadbalancer.neo4j.svc.cluster.local:7474
+----
+
+[[kubernetes-session-affinity-new-service]]
+== Option 2: Other Kubernetes deployments
+
+If the Neo4j cluster runs on Kubernetes without the `neo4j-loadbalancer` chart, create a dedicated `Service` with `sessionAffinity: ClientIP` and set your application's connection URI to it.
+See the Kubernetes documentation on link:https://kubernetes.io/docs/reference/networking/virtual-ips/#session-affinity[Session affinity].
+
+. Create a `neo4j-affinity-service.yaml` file:
++
+[source, yaml]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j-affinity
+  namespace: neo4j
+spec:
+  type: ClusterIP
+  selector:                                  # <1>
+    app: neo4j
+    helm.neo4j.com/clustering: "true"
+    helm.neo4j.com/neo4j.loadbalancer: include
+  ports:
+    - name: http
+      port: 7474
+      targetPort: 7474
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800  # <2>
+----
+<1> Adjust the selector to match the labels on your Neo4j cluster pods.
+<2> `10800` seconds (3 hours) matches the default Neo4j transaction timeout.
+Adjust this value to match your configured `dbms.transaction.timeout` if it differs.
+
+. Apply it with:
++
+[source, shell]
+----
+kubectl apply -f neo4j-affinity-service.yaml
+----
+
+. Point your HTTP-based application at the `neo4j-affinity` service hostname, for example:
++
+----
+http://neo4j-affinity.neo4j.svc.cluster.local:7474
+----
