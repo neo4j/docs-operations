@@ -46,7 +46,7 @@ The network connectors are configured by settings in the format `server.<network
 | `xref:configuration/configuration-settings.adoc#config_server.bolt.listen_address[server.bolt.listen_address]`, `xref:configuration/configuration-settings.adoc#config_server.https.listen_address[server.https.listen_address]`, `xref:configuration/configuration-settings.adoc#config_server.http.listen_address[server.http.listen_address]`
 | This setting specifies how Neo4j listens for incoming connections.
 It consists of two parts; an IP address (e.g. 127.0.0.1 or 0.0.0.0) and a port number (e.g. 7687), and is expressed in the format `<ip-address>:<port-number>`.
-See below for an example of usage.
+If using IPv6, the IP address must be enclosed in square brackets, for example `[::1]:7687` or `[::]:7687`.
 
 | `advertised_address`
 | `localhost:<network-connector-default-port>`
@@ -54,7 +54,7 @@ See below for an example of usage.
 | This setting specifies the address that clients should use for this network connector.
 This is useful in a cluster as it allows each server to correctly advertise the addresses of the other servers in the cluster.
 The advertised address consists of two parts; an address (fully qualified domain name, hostname, or IP address) and a port number (e.g. 7687), and is expressed in the format `<address>:<port-number>`.
-See below for an example of usage.
+If using IPv6, the address must be enclosed in square brackets, for example `[::1]:7687` or `[::]:7687`.
 
 | `tls_level`
 | `DISABLED`
@@ -153,4 +153,73 @@ The default address settings can only accept the hostname or IP address portion 
 Port numbers are protocol-specific, and can only be added by the protocol-specific network connector configuration.
 
 For example, if you configure the default address value to be `example.com:9999`, Neo4j will fail to start and you will get an error in xref:configuration/file-locations.adoc[_neo4j.log_].
+====
+
+[[connectors-ipv6]]
+== IPv6 support
+
+Neo4j supports IPv6 addresses for all connectors.
+IPv6 addresses must be enclosed in square brackets in all configuration values, for example `[::1]` or `[::]`.
+
+=== Configure connectors for IPv6
+
+To bind Neo4j connectors to an IPv6 address, set the `listen_address` and `advertised_address` settings in _neo4j.conf_.
+
+.Bolt connector
+[source, properties]
+----
+# Listen on all IPv6 interfaces
+server.bolt.listen_address=[::]:<port>
+
+# Advertise a specific IPv6 address to clients
+server.bolt.advertised_address=[2001:db8::1]:<port>
+----
+
+.HTTP connector
+[source, properties]
+----
+server.http.listen_address=[::]:<port>
+server.http.advertised_address=[2001:db8::1]:<port>
+----
+
+.HTTPS connector
+[source, properties]
+----
+server.https.listen_address=[::]:<port>
+server.https.advertised_address=[2001:db8::1]:<port>
+----
+
+=== Dual-stack configuration
+
+To accept both IPv4 and IPv6 connections simultaneously, bind connectors to the wildcard IPv6 address `[::]`.
+On most operating systems, this enables dual-stack mode, meaning IPv4 connections are also accepted via IPv4-mapped IPv6 addresses.
+
+[source, properties]
+----
+# Global bind address (does not use brackets)
+server.default_listen_address=::
+
+# Individual connector addresses (MUST use square brackets for IPv6)
+server.bolt.enabled=true
+server.bolt.listen_address=[::]:7687
+
+server.http.enabled=true
+server.http.listen_address=[::]:7474
+
+server.https.enabled=false
+# server.https.listen_address=[::]:7473
+
+# Local advertised mappings
+server.default_advertised_address=localhost
+server.bolt.advertised_address=localhost:7687
+server.http.advertised_address=localhost:7474
+----
+
+[NOTE]
+====
+Dual-stack behavior depends on the operating system.
+macOS enables dual-stack sockets by default.
+When you bind Neo4j to `[::]` on your Mac, the operating system will natively map incoming IPv4 traffic to IPv6 addresses, allowing both types of connections to succeed on ports `7687` and `7474` automatically.
+On some Linux systems, `net.ipv6.bindv6only` may be set to `1`, which disables IPv4-mapped addresses.
+In that case, you must run Neo4j with two separate listen addresses — one for IPv4 and one for IPv6 — or change the kernel setting.
 ====
