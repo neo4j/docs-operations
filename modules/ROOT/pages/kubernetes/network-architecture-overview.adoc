@@ -4,55 +4,67 @@
 //Cross Mark
 :cross-mark: icon:times[]
 
-[[client-connectivity-architecture-patterns]]
-= Client connectivity architecture patterns
+[[connectivity-architecture-patterns]]
+= Connectivity architecture patterns
 
-[[choose-a-pattern]]
+[[choose-pattern]]
 == Choosing a pattern
 
-Exposing Neo4j on Kubernetes involves configuring two network connectors: **HTTPS** (for Neo4j Browser, Bloom, NeoDash, REST API) and **Bolt** (for drivers, ETL tools, and microservices).
+Exposing Neo4j on Kubernetes requires configuring two network connectors: **HTTPS** for Neo4j Browser, Bloom, NeoDash, REST API and **Bolt** for drivers, ETL tools, and microservices.
 See xref:configuration/connectors.adoc[] for details.
 
-Each problem can be solved separately, and the combination of decisions defines your connectivity architecture pattern.
+These connectivity paths can be can be configured independently.
+The combination of choices for HTTPS and Bolt determines your connectivity architecture pattern.
 
 
-
+[[https-bolt-ports]]
 === HTTPS and Bolt exposure
 
 For information about configuring SSL/TLS policies in a Neo4j Kubernetes deployment, see xref:kubernetes/security.adoc[Configuring SSL].
 
-HTTPS connectionis used by Neo4j Browser, Bloom, NeoDash, REST API, and any HTTP-based client.
+HTTPS provides access to Neo4j Browser, Bloom, NeoDash, REST API, and any HTTP-based client.
 
+.HTTPS exposure
 [cols="1,1,1,1,1,2",options="header"]
 |===
-| Method | Port | TLS handled by | WAF / L7 policies | Ingress requirement | Notes
-| **LoadBalancer** | 7473 | Neo4j | {cross-mark} | N/A | Simplest setup; Neo4j directly exposed
-| **Ingress with TLS Passthrough** | 443 | Neo4j | {cross-mark} | TLS passthrough | End-to-end encryption; certs managed by Neo4j
-| **Ingress with TLS Termination** | 443 | Ingress (cert-manager) | {check-mark} | HTTPS routing | Centralized cert management; recommended for most setups
-| **Reverse Proxy** | 443 | Proxy | {check-mark} | N/A | Single port; also handles Bolt over WSS (JS driver only)
-| **Query API** | 443 | Ingress or Proxy | {check-mark} | HTTPS routing | Limited driver support; no Bolt needed
+| Pattern ^| Port | TLS handled by ^| WAF / L7 policies | Ingress requirement | Notes
+| **LoadBalancer** ^| `7473` | Neo4j ^| {cross-mark} | N/A | Simplest setup; Neo4j is directly exposed.
+| **Ingress with TLS Passthrough** ^| `443` | Neo4j ^| {cross-mark} | TLS passthrough | End-to-end encryption; certificates are managed by Neo4j.
+| **Ingress with TLS Termination** ^| `443` | Ingress (cert-manager) ^| {check-mark} | HTTPS routing | Centralized certificate management; this method is recommended for most setups.
+| **Reverse Proxy** ^| `443` | Proxy ^| {check-mark} | N/A | Single port; also handles Bolt over WSS (JS driver only)
+| **Query API** ^| `443` | Ingress or Proxy ^| {check-mark} | HTTPS routing | Limited driver support; no Bolt needed
 |===
 
 
-Bolt is used by Neo4j drivers (Python, Java, Go, .NET, JavaScript), ETL tools, and microservices.
+Bolt protocol provides connectivity for Neo4j drivers (Python, Java, Go, .NET, and JavaScript), ETL tools, and microservices.
 
+[[bolt-exposure]]
+.Bolt exposure
 [cols="1,1,1,1,1,1,2"]
 |===
-| Method | Port | TLS handled by | WAF / L7 policies | Ingress requirement | Clients | Notes
+| Pattern ^| Port | TLS handled by ^| WAF / L7 policies | Ingress requirement | Clients | Notes
 
-| **LoadBalancer** | 7687 | Neo4j | {cross-mark} | N/A | All drivers | Can be private/internal LB
-| **Ingress with TLS Passthrough** | 7687 | Neo4j | {cross-mark} | TCP routing | All drivers | 
-| **Ingress with TLS Termination** | 7687 | Ingress (cert-manager) | {check-mark} | TCP + TLS termination | All drivers | Not all ingress controllers support this
+| **LoadBalancer** ^| `7687` | Neo4j ^| {cross-mark} | N/A | All drivers | Can be private/internal LB
+| **Ingress with TLS Passthrough** ^| `7687` | Neo4j ^| {cross-mark} | TCP routing | All drivers | 
+| **Ingress with TLS Termination** ^| `7687` | Ingress (cert-manager) ^| {check-mark} | TCP + TLS termination | All drivers | Not all ingress controllers support this
 |===
 
 [NOTE]
 ====
-Not all Ingress Controllers support TCP routing.
-If yours does not, consider either deploying a **second Ingress Controller** that supports TCP (e.g., Envoy Gateway, Traefik) dedicated to Bolt traffic or using a **private LoadBalancer** for Bolt only — a simple and effective option when Bolt access is restricted to internal applications.
+Not all ingress controllers support TCP routing.
+If your ingress controller does not, consider deploying a second ingress controller that supports TCP (e.g., Envoy Gateway, Traefik) and dedicating it to Bolt traffic.
+Alternatively, you can use a private `LoadBalancer` for Bolt only.
+This is a simple and effective option when Bolt access is restricted to internal applications.
 ====
 
-== Common approaches
 
+[[common-architecture-approaches]]
+=== Common approaches
+
+The following table sums up all the recommended network architecture patterns for exposing Neo4j on Kubernetes.
+
+[[common-architecture-patterns]]
+.Common approaches
 [cols="1,1,1,1",options="header"]
 |===
 | Architecture pattern
@@ -61,29 +73,29 @@ If yours does not, consider either deploying a **second Ingress Controller** tha
 | Notes
 
 | **Direct `LoadBalancer` connectivity**
-| LoadBalancer :7473
-| LoadBalancer :7687
-| Simplest setup: Neo4j is directly exposed
+| LoadBalancer `7473`
+| LoadBalancer `7687`
+| Simplest setup: Neo4j is directly exposed.
 
 | **Ingress with TLS Passthrough**
-| Ingress TLS Passthrough :443
-| Ingress TLS Passthrough :7687
+| Ingress TLS Passthrough `443`
+| Ingress TLS Passthrough `7687`
 | End-to-end encryption, and certificates are managed by Neo4j.
 
 | **Ingress with TLS Termination**
-| Ingress TLS Termination :443
-| Ingress TLS Termination :7687
+| Ingress TLS Termination `443`
+| Ingress TLS Termination `7687`
 | Centralized certificates via cert-manager; this setup requires TCP-capable Ingress.
 
 | **Reverse Proxy**
-| Reverse Proxy :443
-| Reverse Proxy WSS :443
-| Single port 443; only JavaScript driver is supported for Bolt
+| Reverse Proxy `443`
+| Reverse Proxy WSS `443`
+| Single port `443`; only JavaScript driver is supported for Bolt.
 
 | **Ingress TLS + WSS**
-| Reverse Proxy :443
-| Ingress TCP :7687 + Reverse Proxy WSS :443
-| All drivers are supported; higher complexity
+| Reverse Proxy `443`
+| Ingress TCP `7687` + Reverse Proxy WSS `443`
+| All Neo4j drivers are supported; higher complexity.
 |===
 
 
@@ -122,13 +134,13 @@ neo4j:
 
 
 [[ingress-tls-passthrough]]
-== Ingress with TLS Passthrough
+== Ingress with TLS passthrough
 
 The Ingress forwards encrypted traffic as-is, without decrypting it.
 Neo4j handles TLS natively using its own certificates.
 This is a simpler alternative when you do not want to configure TCP termination at the Ingress level.
 
-For details about accessing Neo4j through Kubernetes networking, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
+For details on accessing Neo4j through Kubernetes networking, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
 
 For information about configuring TLS directly in Neo4j, see xref:kubernetes/security.adoc[Configuring SSL].
 
@@ -162,9 +174,10 @@ config:
 * No possibility to apply WAF or L7 policies on Bolt traffic.
 
 
-== Ingress with TLS Termination
+[[ingress-with-tls-termination]]
+== Ingress with TLS termination
 
-TLS is terminated at the Ingress Controller level.
+TLS is terminated at the ingress controller level.
 The Ingress decrypts traffic and forwards it in plaintext to Neo4j inside the cluster. Certificates are managed centrally via cert-manager.
 
 For details about accessing Neo4j using Kubernetes Services, see xref:kubernetes/accessing-neo4j.adoc[Accessing Neo4j].
@@ -190,64 +203,65 @@ config:
 
 [IMPORTANT]
 ====
-Most HTTP Ingress controllers handle HTTPS natively, but Bolt (TCP) requires explicit TCP routing configuration.
+Most HTTP ingress controllers handle HTTPS natively, but Bolt (TCP) requires explicit TCP routing configuration.
 With Envoy Gateway or Traefik, a `TCPRoute` or `IngressRouteTCP` resource is needed.
-See the [Bolt exposure table](#2--bolt-exposure) for alternatives if your Ingress Controller does not support TCP.
+See the <<bolt-exposure, Bolt exposure table>> for alternatives if your ingress controller does not support TCP.
 ====
 
 **Pros:**
 
-- Centralized certificate management with cert-manager and automatic rotation
-- Neo4j is not exposed directly to the Internet.
-- Single entry point for the entire cluster
-- WAF, rate limiting, and access policies can be applied at Ingress level
-- All driver types supported (native Bolt, not limited to WebSocket)
+* Centralized certificate management with cert-manager and automatic rotation.
+* Neo4j is not exposed directly to the Internet.
+* Single entry point for the entire cluster.
+* WAF, rate limiting, and access policies can be applied at the ingress level.
+* All Neo4j drivers are supported (native Neo4j Bolt, not limited to WebSocket).
 
 **Cons:**
 
-- Requires explicit TCP routing configuration for Bolt (not just a standard Ingress rule)
-- Traffic between Ingress and Neo4j is unencrypted — acceptable only if the cluster network is trusted.
+* Requires explicit TCP routing configuration for Bolt (not just a standard ingress rule).
+* Traffic between Ingress and Neo4j is unencrypted, and this is acceptable only if the cluster network is trusted.
 
 
+[[reverse-proxy-based-connectivity]]
 == Reverse proxy-based connectivity (WSS only)
 
 Neo4j reverse proxy sits in front of Neo4j and handles SSL termination.
-Bolt is exposed over WebSocket Secure (WSS) on port 443 (reverse proxy).
+Bolt is exposed over WebSocket Secure (WSS) on the port `443` (reverse proxy).
 
 [WARNING]
 ====
-WSS is only supported by the **JavaScript driver** (and partially by Java Driver).
+WSS is only supported by the Neo4j JavaScript driver.
 This covers Neo4j Browser, Bloom, and NeoDash.
-All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **do not work** through a reverse proxy.
+All other Neo4j drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **do not work** through a reverse proxy.
 
-If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
+If your use case includes any non-JS client, do not use this option alone — see the <<ingress-with-tls-terminated-wss-connectivity ,Ingress with TLS-terminated WSS connectivity>>.
 ====
 
-For details about accessing Neo4j through a Kubernetes Ingress and the Neo4j reverse proxy, see
+For details about accessing Neo4j through a Kubernetes Ingress and Neo4j reverse proxy, see
 xref:kubernetes/accessing-neo4j-ingress.adoc[Accessing Neo4j using Kubernetes Ingress].
 
 **Pros:**
 
-- Single port (`443`) for both HTTPS and Bolt.
-- Good for web-only access (Neo4j Browser, Bloom, NeoDash).
+* Single port (`443`) for both HTTPS and Bolt.
+* Good for web-only access (Neo4j Browser, Bloom, NeoDash).
 
 **Cons:**
 
-- Only works for the JavaScript driver (WSS).
-- Other native Bolt drivers (Python, Java, Go, .NET, ETL tools) are not supported.
-- Not suitable as the sole access method if non-JS clients exist.
+* Only works for the JavaScript driver (WSS).
+* Other native Bolt drivers (Python, Java, Go, .NET, ETL tools) are not supported.
+* Not suitable as the sole access method if non-JS clients exist.
 
 
-
+[[ingress-with-tls-terminated-wss-connectivity]]
 == Ingress with TLS-terminated WSS connectivity
 
-If you need web access via reverse proxy (WSS) *and* native Bolt for ETL or microservices, this architecture pattern combines an Ingress Controller for Bolt with a reverse proxy for WebSocket traffic.
+If you need web access via reverse proxy (WSS) and native Bolt for ETL tools or microservices, this architecture pattern combines an Ingress controller for Bolt with a reverse proxy for WebSocket traffic.
 
 [WARNING]
 ====
 Neo4j reverse proxy only redirects to unsecured HTTP and Bolt.
 This means you cannot enforce TLS `REQUIRED` at Neo4j level but only as `OPTIONAL`.
-Reverse proxy will be unsecured while clients can **choose** whether or not to enforce SSL.
+Reverse proxy is unsecured while clients can **choose** whether or not to enforce SSL.
 ====
 
 For information about accessing Neo4j through a Kubernetes Ingress and reverse proxy, see
@@ -258,25 +272,25 @@ xref:configuration/connectors.adoc[Configure network connectors].
 
 **Pros:**
 
-- All driver types supported (native Bolt via Ingress + WSS via Reverse Proxy)
-- Web clients (Neo4j Browser, Bloom, NeoDash) work through the reverse proxy
-- ETL and microservices connect via native Bolt through the Ingress
-- WAF and rate limiting can be applied at both Ingress and proxy level
+* All driver types are supported (native Bolt via Ingress + WSS via Reverse Proxy).
+* Web clients (Neo4j Browser, Bloom, NeoDash) work through the reverse proxy.
+* ETL tools and microservices connect via native Bolt through the Ingress.
+* WAF and rate limiting can be applied at both Ingress and proxy levels.
 
 **Cons:**
 
-- Higher complexity — two Ingress paths to manage.
-- Neo4j reverse proxy does not support TLS to Neo4j, so internal traffic from the proxy is unencrypted.
-- TLS `REQUIRED` cannot be enforced at Neo4j level (only `OPTIONAL`).
+* Higher complexity — two Ingress paths to manage.
+* Neo4j reverse proxy does not support TLS to Neo4j, so internal traffic from the proxy is unencrypted.
+* TLS `REQUIRED` cannot be enforced at Neo4j level (only `OPTIONAL`).
 
 
+[[sni-based-tls-routing-with-envoy]]
 == Additional pattern: SNI-based TLS routing with Envoy
 
-This is an additional pattern
+This is an additional pattern.
 
-A single port `:443` serves both HTTPS and Bolt, with routing based on TLS SNI (Server Name Indication).
+A single port `443` serves both HTTPS and Bolt, with routing based on TLS SNI (Server Name Indication).
 Envoy inspects the SNI header of the TLS handshake — without decrypting the payload — and routes to the appropriate backend.
-
 This requires DNS and valid certificates for both hostnames.
 
 
@@ -297,20 +311,20 @@ config:
 
 **Pros:**
 
-- Single port 443 (TCP) for all traffic
-- All driver types supported (native Bolt, not limited to WebSocket)
-- Fine-grained routing without decrypting payload
-- cert-manager compatible
-- Suitable for strict compliance environments (end-to-end encryption)
+* Single port `443` (TCP) for all traffic.
+* All Neo4j drivers are supported (native Bolt, not limited to WebSocket).
+* Fine-grained routing without decrypting payload.
+* cert-manager compatible.
+* Suitable for strict compliance environments (end-to-end encryption).
 
 **Cons:**
 
-- Requires DNS and valid certificates configured before deployment
-- More complex to set up and operate than architectures B and C: Ingress with TLS passtrough or termination.
-- Envoy (or a SNI-capable Ingress) required — not all Ingress controllers support SNI-based TCP routing
+* Requires DNS and valid certificates configured before deployment.
+* More complex to set up and operate than the patterns: _Ingress with TLS passthrough_ or _Ingress with TLS termination_.
+* Envoy (or a SNI-capable Ingress) is required — not all ingress controllers support SNI-based TCP routing.
 
 
-
+[[client-side-routing]]
 == Client-side routing
 
 In a Neo4j cluster, the driver can use xref:clustering/setup/routing.adoc#clustering-client-side-routing[client-side routing] to discover and connect directly to individual cluster members.
@@ -323,10 +337,10 @@ Only the **Direct LoadBalancer** method supports this, since each Neo4j server c
 All other methods (Ingress, Reverse Proxy, SNI) route traffic through a single entry point, making individual members unreachable from outside the cluster.
 
 
-
+[[repository-structure]]
 == Repository structure
 
-- `gke/` — Google Kubernetes Engine configurations
-- `aks/` — Azure Kubernetes Service configurations  
-- `local/` — Local cluster configurations (Docker Compose, kind, minikube)
+- `gke/` — Google Kubernetes Engine configurations.
+- `aks/` — Azure Kubernetes Service configurations.
+- `local/` — Local cluster configurations (Docker Compose, `kind`, `minikube`).
 
