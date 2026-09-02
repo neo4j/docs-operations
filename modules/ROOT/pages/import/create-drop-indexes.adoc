@@ -1,0 +1,193 @@
+:description: This section describes how to create, populate, and drop indexes and constraints during the import process using the `--schema` option of the `neo4j-admin database import` command.
+:page-role: enterprise-edition
+[[indexes-constraints-import]]
+= Create or drop indexes and constraints during import
+
+[NOTE]
+====
+Creating and dropping indexes and constraints during the import process is supported only by `block` format.
+====
+
+You can use the `--schema` option to create, populate, drop, or change the graph type during import by providing a Cypher script containing the respective Cypher commands, which will be parsed and executed during the import process.
+You can specify individual constraint statements, or starting with Neo4j 2026.05 for full import and 2026.06 for incremental import, you can specify a graph type using an `ALTER CURRENT GRAPH TYPE` statement.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
+
+The following table summarizes the supported commands and their availability per import type and version:
+
+.Supported schema operations per import type and Neo4j and Cypher version
+[options="header", width="100%", cols="1,3,2,2"]
+|===
+| Import type
+| Supported commands
+| Neo4j version
+| Cypher version
+.2+| Full import
+| `CREATE INDEX\|CONSTRAINT` | 5.24 and later | Cypher 5 & Cypher 25
+| `ALTER CURRENT GRAPH TYPE` (only `SET`) | 2026.05 and later | Cypher 25
+.3+| Incremental import
+| `CREATE INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
+| `DROP INDEX\|CONSTRAINT` | 2025.02 and later | Cypher 5 & Cypher 25
+| `ALTER CURRENT GRAPH TYPE` (`ADD`, `DROP`, `ALTER`) | 2026.06 and later | Cypher 25
+|===
+
+== Supported index and constraint types
+
+The import tool supports the following index and constraint types:
+
+Supported index types::
+* RANGE
+* LOOKUP
+* POINT
+* TEXT
+* FULL-TEXT
+* VECTOR
++
+For more information on these index types, see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/[Cypher Manual -> Indexes].
+
+Supported constraint types::
+* *Property uniqueness constraints*: ensure that the combined property values are unique for all nodes with a specific label or all relationships with a specific type.
+* *Property existence constraints*: ensure that a property exists either for all nodes with a specific label or for all relationships with a specific type.
+* *Property type constraints*: ensure that a property has the required property type for all nodes with a specific label or for all relationships with a specific type.
+* *Key constraints*: ensure that all properties exist and that the combined property values are unique for all nodes with a specific label or all relationships with a specific type.
+
+Supported constraint types via graph types::
+* *Node label existence*: ensure that a particular label exists on a node.
+* *Relationship source and target label constraints*: ensure that specific relationship types have target and source nodes with specific labels.
+
+For more information on the constraint types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/set-graph-types/#constraint-types-explained[Cypher Manual -> Constraint types explained].
+
+
+[[create-drop-indexes-constraints-full]]
+== Create indexes and constraints during full import
+
+You can use the `--schema` option to create and populate indexes/constraints during full import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT` and `ALTER CURRENT GRAPH TYPE` (Introduced in 2026.05) commands to be parsed and executed.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
+
+[NOTE]
+====
+Full import does not support dropping indexes and constraints.
+For graph type, it supports only `SET` operations.
+====
+
+For example:
+
+[.tabbed-example]
+=====
+[role=include-with-constraint-statements]
+======
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
+CREATE CONSTRAINT PersonAgeConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS :: INTEGER;
+CREATE CONSTRAINT PersonAgeRequiredConstraint IF NOT EXISTS FOR (c:Person) REQUIRE c.age IS NOT NULL;
+----
+This file uses `;` as a separator.
+======
+[role=include-with-graph-type-statement]
+======
+label:new[Introduced in 2026.05] label:cypher[Cypher 25]
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CYPHER 25
+CREATE INDEX PersonNameIndex IF NOT EXISTS FOR (p:Person) ON (p.name);
+ALTER CURRENT GRAPH TYPE SET {
+    (p: person => { age :: INTEGER NOT NULL })
+};
+----
+
+This file uses `;` as a separator.
+Only `SET` is supported by the full importer.
+
+======
+=====
+
+Then, use the following example commands to run the import:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/movies.csv \
+--nodes=import/actors.csv \
+--relationships=import/roles.csv \
+--schema=import/schema.cypher \
+neo4j
+----
+
+[role=label--new-2026.02]
+[[create-drop-indexes-constraints-incremental]]
+== Create and drop indexes and constraints during incremental import
+
+You can use the `--schema` option to create and populate, and drop indexes/constraints during an incremental import by providing a Cypher script containing `CREATE INDEX|CONSTRAINT`, `DROP INDEX|CONSTRAINT`, and `ALTER CURRENT GRAPH TYPE` (Introduced in 2026.06) commands to be parsed and executed.
+Incremental import supports `ADD`, `DROP`, and `ALTER` operations for graph types and allows only one `ALTER CURRENT GRAPH TYPE` statement per script.
+For more information on graph types, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/graph-types/[CypherManual -> `Graph types (Preview)`].
+
+[NOTE]
+====
+You cannot drop indexes that are backing constraints.
+You must drop the constraints themselves, which will drop the underlying indexes.
+
+You must stop your database before performing an incremental import with a single command.
+If you cannot afford a full downtime of your database, split the operation into several stages.
+See xref:import/incremental-import.adoc#incremental-import-stages[Incremental import stages] for details.
+====
+
+
+For example:
+
+[.tabbed-example]
+=====
+[role=include-with-constraint-statements]
+======
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+DROP INDEX PersonNameIndex IF EXISTS;
+CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
+DROP CONSTRAINT PersonAgeConstraint IF EXISTS;
+CREATE CONSTRAINT movie_title IF NOT EXISTS FOR (m:Movie) REQUIRE m.title IS UNIQUE;
+----
+This file uses `;` as a separator.
+======
+[role=include-with-graph-type-statement]
+======
+label:new[Introduced in 2026.06] label:cypher[Cypher 25]
+
+._schema.cypher_ script
+[source, cypher, role=nocopy]
+----
+CYPHER 25
+DROP INDEX PersonNameIndex IF EXISTS;
+ALTER CURRENT GRAPH TYPE DROP {
+   (p: person => {age :: INTEGER NOT NULL}
+}
+----
+This file uses `;` as a separator.
+Only `ADD`, `DROP`, `ALTER` are supported by the incremental importer.
+
+======
+=====
+
+Then, use the following example commands to run the import:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import incremental \
+--stage=all \
+--nodes=import/movies.csv \
+--nodes=import/actors.csv \
+--relationships=import/roles.csv \
+--schema=import/schema.cypher
+----
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]

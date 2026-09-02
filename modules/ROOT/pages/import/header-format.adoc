@@ -1,0 +1,751 @@
+
+:description: This section describes the format of the header files used in the import process.
+= Import header format
+
+[[import-tool-csv-header-format]]
+== CSV header format
+
+The header file of each data source specifies how the data fields should be interpreted.
+You must use the same delimiter for the header file and the data files.
+
+The header contains information for each field, with the format `<name>:<field_type>`.
+The `<name>` is used for properties and node IDs.
+In all other cases, the `<name>` part of the field is ignored.
+
+== Incremental import special requirements
+
+When using xref:import/incremental-import.adoc[Incremental import], you must have node property uniqueness constraints in place for the property key and label combinations that form the primary key, or the uniquely identifiable nodes.
+For example, importing nodes with a `Person` label that are uniquely identified with a `uuid` property key, the format of the header should be `uuid:ID{label:Person}`.
+
+This is also true when working with multiple groups.
+For example, you can use `uuid:ID(Person){label:Person}`, where the relationship CSV data can refer to different groups for its `:START_ID` and `:END_ID`, just like the full import method.
+
+* For more information on constraints, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/constraints[Cypher Manual -> Constraints].
+* For examples of creating property uniqueness constraints, see link:{neo4j-docs-base-uri}/cypher-manual/current/schema/constraints/create-constraints/#create-property-uniqueness-constraints[Cypher Manual -> Create property uniqueness constraints].
+
+[role=label--new-2025.04]
+[[import-tool-header-format-parquet]]
+== Extended header support for Parquet
+
+In addition to the header format supported by the CSV import, the Parquet import supports name-mapping header files.
+Those files contain two rows of entries, where the first row represents the name (incl. optional type, id group, etc.), and the second row references the name of the original columns in the data files.
+
+.movie_header.csv
+[source, csv]
+----
+movieId:ID,title,year:int,:LABEL
+id,movie_title,year,label
+----
+
+If a header file is provided for a set of labels or a relationship type, the importer will ignore columns not mentioned in the headers.
+
+[role=label--new-2025.04]
+[[import-tool-header-format-parquet-types]]
+== Default data types for Parquet
+
+Unlike CSV, where an unspecified property type defaults to `string` (see <<import-tool-header-format-properties>>), Parquet files carry their own type information in the file schema.
+Because of this, you do not have to declare the `<field_type>` for a property in a Parquet header.
+If you leave the type out, the importer picks the corresponding Neo4j type from the Parquet column's type automatically.
+
+For example, the following header relies on the types stored in the Parquet file for all properties:
+
+[source, csv]
+----
+movieId:ID,title,year,:LABEL
+----
+
+You can still specify a type explicitly to override the inferred one, or to request a conversion (for example, storing a Parquet `INT32` column as a `string`).
+
+=== Default Parquet-to-Neo4j type mapping
+
+The following table shows how Parquet types are mapped to Neo4j property types when no type is given in the header.
+
+.Default Parquet-to-Neo4j type mapping
+[options="header", cols="2m,2m,3a"]
+|===
+| Parquet type | Neo4j type | Notes
+
+| BOOLEAN
+| boolean
+|
+
+| INT32, INT64
+| long
+| Integer logical types (`INT(8)`, `INT(16)`, `INT(32)`, `INT(64)`) are also imported as `long`.
+
+| FLOAT, DOUBLE
+| double
+|
+
+| BINARY, FIXED_LEN_BYTE_ARRAY, INT96
+| string
+| Applies to the `STRING` (UTF-8) logical type and to other binary columns, which are read using their string representation.
+
+| DATE (logical)
+| date
+| label:new[Introduced in 2025.09]
+
+| TIME (logical)
+| time / localtime
+| label:new[Introduced in 2025.09] Mapped to `time` when the column is adjusted to UTC, and to `localtime` otherwise.
+
+| TIMESTAMP (logical)
+| datetime / localdatetime
+| label:new[Introduced in 2025.09] Mapped to `datetime` when the column is adjusted to UTC, and to `localdatetime` otherwise.
+
+| INTERVAL (logical)
+| duration
+| label:new[Introduced in 2026.07]
+
+| LIST (logical)
+| array
+| label:new[Introduced in 2025.02] Imported as an array of the mapped element type, for example, a `LIST` of `INT64` becomes a `long[]`.
+
+| MAP (logical)
+| individual properties
+| label:new[Introduced in 2025.02] Each entry becomes its own property. See <<import-tool-header-format-parquet-maps>>.
+|===
+
+[[import-tool-header-format-parquet-maps]]
+=== Map columns
+
+Neo4j properties cannot hold a map value, so a Parquet `MAP` column is not stored as a single property.
+Instead, each entry in the map is extracted into its own property, named `<column>.<key>`, where `<column>` is the name of the Parquet column and `<key>` is the key of the map entry.
+The value of each property is converted according to the same type mapping as any other column.
+Entries whose value is `null` are skipped and do not create a property.
+
+For example, a Parquet column named `address` holding a map with the keys `city` and `zip` results in two properties, `address.city` and `address.zip`, on the imported node or relationship.
+
+Struct (nested group) columns are extracted in the same way, producing one `<column>.<field>` property per nested field.
+
+[[import-tool-header-format-nodes]]
+== Node files
+
+Files containing node data can have an `ID` field, a `LABEL` field, and properties.
+
+ID::
+  Each node must have a unique ID if it is to be connected by any relationships created in the import.
+  Neo4j uses the IDs to find the correct nodes when creating relationships.
+  Note that the ID has to be unique across all nodes within the group, regardless of their labels.
+  The unique ID is persisted in a property whose name is defined by the `<name>` part of the field definition `<name>:ID`.
+  If no such property `name` is defined, the unique ID will be used for the import but not be available for reference later.
+  If no ID is specified, the node will be imported, but it will not be connected to other nodes during the import.
+  When a property `name` is provided, that property type can be configured globally via the `--id-type` option  (as for <<import-tool-header-format-properties>>). +
+ You can specify a different value ID type to be stored for a node property in its group using the option `id-type` in the header, e.g: `id:ID(MyGroup){label:MyLabel, id-type: int}`.
+  This ID type overrides the global `--id-type` option.
+  For example, the global `id-type` can be a string, but the nodes will have their IDs stored as `int` type in their ID properties.
+  For more information, see <<import-tool-id-types-header>>. +
+  A node header can also contain multiple `ID` columns, where the relationship data references the composite value of all those columns.
+  This also implies using `string` as `id-type`.
+  For each `ID` column, you can specify to store its values as different node properties.
+  However, the composite value cannot be stored as a node property.
+  For more information, see <<import-tool-multiple-ids>>.
+LABEL::
+  Read one or more labels from this field.
+  Like array values, multiple labels are separated by `;`, or by the character specified with `--array-delimiter`.
+  The max length of label names for block format is 16,383 characters.
+
+.Define node files
+====
+
+You define the headers for movies in the _movies_header.csv_ file.
+Movies have the properties `movieId`, `year`, and `title`.
+You also specify a field for labels.
+
+[source, csv]
+----
+movieId:ID,title,year:int,:LABEL
+----
+
+You define three movies in the _movies.csv_ file.
+They contain all the properties defined in the header file.
+All the movies are given the label `Movie`.
+Two of them are also given the label `Sequel`.
+
+[source, csv]
+----
+tt0133093,"The Matrix",1999,Movie
+tt0234215,"The Matrix Reloaded",2003,Movie;Sequel
+tt0242653,"The Matrix Revolutions",2003,Movie;Sequel
+----
+
+Similarly, you also define three actors in the _actors_header.csv_ and _actors.csv_ files.
+They all have the properties `personId` and `name`, and the label `Actor`.
+
+[source, csv]
+----
+personId:ID,name,:LABEL
+----
+
+[source, csv]
+----
+keanu,"Keanu Reeves",Actor
+laurence,"Laurence Fishburne",Actor
+carrieanne,"Carrie-Anne Moss",Actor
+----
+====
+
+
+[[import-tool-header-format-rels]]
+== Relationship files
+
+Files containing relationship data have three mandatory fields and can also have properties.
+The mandatory fields are:
+
+TYPE::
+  The relationship type to use for this relationship.
+  The max length of relationship type names for block format is 16,383 characters.
+START_ID::
+  The ID of the start node for this relationship.
+END_ID::
+  The ID of the end node for this relationship.
+
+The `START_ID` and `END_ID` refer to the unique node ID defined in one of the node data sources, as explained in the previous section.
+None of these take a name, e.g. if `<name>:START_ID` or `<name>:END_ID` is defined, the `<name>` part will be ignored.
+Nor do they take a `<field_type>`, e.g. if `:START_ID:int` or `:END_ID:int` is defined, the `:int` part does not have any meaning in the context of type information.
+
+
+.Define relationships files
+====
+
+In this example, you assume that the two node files from the previous example are used together with the following relationships file.
+
+You define relationships between actors and movies in the files _roles_header.csv_ and _roles.csv_.
+Each row connects a start node and an end node with a relationship of relationship type `ACTED_IN`.
+Notice how you use the unique identifiers `personId` and `movieId` from the nodes files above.
+The name of the character that the actor is playing in this movie is stored as a `role` property on the relationship.
+
+[source, csv]
+----
+:START_ID,role,:END_ID,:TYPE
+----
+
+[source, csv]
+----
+keanu,"Neo",tt0133093,ACTED_IN
+keanu,"Neo",tt0234215,ACTED_IN
+keanu,"Neo",tt0242653,ACTED_IN
+laurence,"Morpheus",tt0133093,ACTED_IN
+laurence,"Morpheus",tt0234215,ACTED_IN
+laurence,"Morpheus",tt0242653,ACTED_IN
+carrieanne,"Trinity",tt0133093,ACTED_IN
+carrieanne,"Trinity",tt0234215,ACTED_IN
+carrieanne,"Trinity",tt0242653,ACTED_IN
+----
+====
+
+
+[[import-tool-header-format-properties]]
+== Property data types
+
+For properties, the `<name>` part of the field designates the property key, while the `<field_type>` part assigns a data type.
+You can have properties in both node data files and relationship data files.
+The max length of property keys for block format is 16,383 characters.
+
+Use one of `int`, `long`, `float`, `double`, `boolean`, `byte`, `short`, `char`, `string`, `point`, `date`, `localtime`, `time`, `localdatetime`, `datetime`, `duration`, and `vector` (introduced in 2025.10) to designate the data type for properties.
+By default, types (except arrays) are converted to Cypher types.
+See link:{neo4j-docs-base-uri}/cypher-manual/current/values-and-types/property-structural-constructed[Cypher Manual -> Property, structural, and constructed values].
+
+This behavior can be disabled using the option `--normalize-types=false`.
+Normalizing types can require more space on disk, but avoids Cypher converting the type during queries.
+If no data type is given, this defaults to `string`.
+
+To define an array type, append `[]` to the type.
+By default, array values are separated by `;`.
+A different delimiter can be specified with `--array-delimiter`.
+Arrays are not affected by the `--normalize-types` flag.
+For example, if you want a byte array to be stored as a Cypher long array, you must explicitly declare the property as `long[]`.
+
+Array values can also be sourced directly from a `LIST` typed column with Parquet files, in which case the `--array-delimiter` option is not needed.
+Furthermore, values read from `LIST` typed columns are mapped to their corresponding Cypher types, e.g., `LIST<INT>` is mapped to `int[]`, `LIST<STRING>` is mapped to `string[]`, and so on, and there is no need to specify the type in the header.
+
+[NOTE]
+====
+CSV-based import does not import empty arrays, because they cannot be distinguished from arrays that are set to `null`.
+However, the Parquet import distinguishes between them and will import empty arrays as empty arrays and `null` as `null`.
+====
+
+Boolean values are _true_ if they match exactly the text `true`. All other values are _false_.
+Values that contain the delimiter character need to be escaped by enclosing in double quotation marks, or by using a different delimiter character with the `--delimiter` option.
+
+.Header format with data types
+====
+
+This example illustrates several different data types specified in the CSV header.
+
+[source, csv]
+----
+:ID,name,joined:date,active:boolean,points:int
+user01,Joe Soap,2017-05-05,true,10
+user02,Jane Doe,2017-08-21,true,15
+user03,Moe Know,2018-02-17,false,7
+----
+
+====
+
+Special considerations for the `point` data type::
+A point is specified using the Cypher syntax for maps.
+The map allows the same keys as the input to the link:{neo4j-docs-base-uri}/cypher-manual/current/functions/spatial/[Cypher Manual -> Point function].
+The point data type in the header can be amended with a map of default values used for all values of that column, e.g. `point{crs: 'WGS-84'}`.
+Specifying the header this way allows you to have an incomplete map in the value position in the data file.
+Optionally, a value in a data file may override default values from the header.
++
+.Property format for `point` data type
+====
+
+This example illustrates various ways of using the `point` data type in the import header and the data files.
+
+You are going to import the name and location coordinates for cities.
+First, you define the header as:
+
+[source, csv]
+----
+:ID,name,location:point{crs:WGS-84}
+----
+
+You then define cities in the data file.
+
+* The first city's location is defined using `latitude` and `longitude`, as expected when using the coordinate system defined in the header.
+* The second city uses `x` and `y` instead.
+This would normally lead to a point using the coordinate reference system `cartesian`.
+Since the header defines `crs:WGS-84`, that coordinate reference system will be used.
+* The third city overrides the coordinate reference system defined in the header and sets it explicitly to `WGS-84-3D`.
+
+[source, csv]
+----
+:ID,name,location:point{crs:WGS-84}
+city01,"Malmö","{latitude:55.6121514, longitude:12.9950357}"
+city02,"London","{y:51.507222, x:-0.1275}"
+city03,"San Mateo","{latitude:37.554167, longitude:-122.313056, height: 100, crs:'WGS-84-3D'}"
+----
+
+Note that all point maps are within double quotation marks `"` in order to prevent the enclosed `,` character from being interpreted as a column separator.
+An alternative approach would be to use `--delimiter='\t'` and reformat the file with tab separators, in which case the `"` characters are not required.
+
+[source, csv]
+----
+:ID name    location:point{crs:WGS-84}
+city01  Malmö   {latitude:55.6121514, longitude:12.9950357}
+city02  London  {y:51.507222, x:-0.1275}
+city03  San Mateo   {latitude:37.554167, longitude:-122.313056, height: 100, crs:'WGS-84-3D'}
+----
+
+====
+
+Special considerations for temporal data types::
+The format for all temporal data types must be defined as described in link:{neo4j-docs-base-uri}/cypher-manual/current/values-and-types/temporal/#cypher-temporal-instants[Cypher Manual -> Temporal instants syntax] and link:{neo4j-docs-base-uri}/cypher-manual/current/values-and-types/temporal/#cypher-temporal-durations[Cypher Manual -> Durations syntax].
+Two of the temporal types, _Time_ and _DateTime_, take a time zone parameter that might be common between all or many of the values in the data file.
+It is therefore possible to specify a default time zone for _Time_ and _DateTime_ values in the header, for example: `time{timezone:+02:00}` and: `datetime{timezone:Europe/Stockholm}`.
+If no default time zone is specified, the default timezone is determined by the xref:/configuration/configuration-settings.adoc#config_db.temporal.timezone[`db.temporal.timezone`] configuration setting.
+The default time zone can be explicitly overridden in the values in the data file.
++
+.Property format for temporal data types
+====
+
+This example illustrates various ways of using the `datetime` data type in the import header and the data files.
+
+First, you define the header with two _DateTime_ columns.
+The first one defines a time zone, but the second one does not:
+
+[source, csv]
+----
+:ID,date1:datetime{timezone:Europe/Stockholm},date2:datetime
+----
+
+You then define dates in the data file.
+
+* The first row has two values that do not specify an explicit timezone.
+The value for `date1` will use the `Europe/Stockholm` time zone that was specified for that field in the header.
+The value for `date2` will use the configured default time zone of the database.
+* In the second row, both `date1` and `date2` set the time zone explicitly to be `Europe/Berlin`.
+This overrides the header definition for `date1`, as well as the configured default time zone of the database.
+
+[source, csv]
+----
+1,2018-05-10T10:30,2018-05-10T12:30
+2,2018-05-10T10:30[Europe/Berlin],2018-05-10T12:30[Europe/Berlin]
+----
+
+====
+
+Special considerations for vector data types introduced in 2025.10::
++
+--
+A vector is specified using the Cypher syntax for maps.
+The map must specify both the `coordinateType` and the `dimensions` of the vector.
+The `coordinateType` can be one of `byte`, `short`, `int`, `long`, `float`, or `double`.
+The `dimensions` must be between 1 and 4096, inclusive.
+
+The dimensions of each vector in the data must match what is specified in the header.
+
+A vector in a header could for example look like this:
+[source, csv]
+----
+:ID,"vector1:vector{coordinateType:byte,dimensions:4096}"
+----
+
+Note that quotation marks are necessary, since the `,` inside the map would otherwise be interpreted as a column delimiter.
+
+With CSV files and Parquet files where vector values are encoded as strings, by default, vector values are separated by `;`.
+A different delimiter can be specified with `--vector-delimiter`.
+
+Starting with Neo4j 2026.06, vector values can also be sourced from a `LIST` typed column with Parquet files, in which case the `--vector-delimiter` option is not needed.
+--
+
+[[import-tool-id-spaces]]
+== Using ID spaces
+
+By default, the import tool assumes that node identifiers are unique across node files.
+In many cases, the ID is unique only across each entity file, for example, when your CSV files contain data extracted from a relational database and the ID field is pulled from the primary key column in the corresponding table.
+To handle this situation you define _ID spaces_.
+ID spaces are defined in the `ID` field of node files using the syntax `ID(<ID space identifier>)`.
+To reference an ID of an ID space in a relationship file, you use the syntax `START_ID(<ID space identifier>)` and `END_ID(<ID space identifier>)`.
+
+.Define and use ID spaces
+====
+
+Define a `Movie-ID` ID space in the _movies_header.csv_ file.
+
+[source, csv]
+----
+movieId:ID(Movie-ID),title,year:int,:LABEL
+----
+
+[source, csv]
+----
+1,"The Matrix",1999,Movie
+2,"The Matrix Reloaded",2003,Movie;Sequel
+3,"The Matrix Revolutions",2003,Movie;Sequel
+----
+
+Define an `Actor-ID` ID space in the header of the _actors_header.csv_ file.
+
+[source, csv]
+----
+personId:ID(Actor-ID),name,:LABEL
+----
+
+[source, csv]
+----
+1,"Keanu Reeves",Actor
+2,"Laurence Fishburne",Actor
+3,"Carrie-Anne Moss",Actor
+----
+
+Now use the previously defined ID spaces when connecting the actors to movies.
+
+[source, csv]
+----
+:START_ID(Actor-ID),role,:END_ID(Movie-ID),:TYPE
+----
+
+[source, csv]
+----
+1,"Neo",1,ACTED_IN
+1,"Neo",2,ACTED_IN
+1,"Neo",3,ACTED_IN
+2,"Morpheus",1,ACTED_IN
+2,"Morpheus",2,ACTED_IN
+2,"Morpheus",3,ACTED_IN
+3,"Trinity",1,ACTED_IN
+3,"Trinity",2,ACTED_IN
+3,"Trinity",3,ACTED_IN
+----
+====
+
+[[import-tool-multiple-ids]]
+== Using multiple node IDs (full import only)
+
+A node header can contain multiple `ID` columns.
+
+Starting from 2025.07, the relationship data must then use a matching number of `START_ID` / `END_ID` columns as references to the composite value of those ID columns.
+This implies using `string` as `id-type`.
+
+For each `ID` column, you can specify to store its values as different node properties.
+However, the composite value cannot be stored as a node property.
+
+=== Define multiple IDs as node properties
+
+. Define multiple `ID` columns in the node header.
++
+.nodes_header.csv
+[source, csv]
+----
+:ID,:ID,name
+----
++
+.nodes.csv
+[source, csv]
+----
+aa,11,John
+bb,22,Paul
+----
+
+. Define the relationship between two established nodes.
++
+[.tabbed-example]
+=====
+[role=include-with-multiple-ID-columns]
+======
+
+Starting from 2025.07, you can use a matching number of `START_ID` and `END_ID` columns when defining the relationship.
+However, do not mix how to refer to composite IDs.
+Either all references must use a single `START_ID` and `END_ID` column or all references must use a matching number of them.
+
+.relationships_header.csv
+[source, csv]
+----
+:START_ID,:START_ID,:TYPE,:END_ID,:END_ID
+----
+
+.relationships.csv
+[source, csv]
+----
+aa,11,WORKS_WITH,bb,22
+----
+======
+
+[role=include-with-single-ID-column]
+======
+
+Now use both IDs when defining the relationship:
+
+.relationships_header.csv
+[source, csv]
+----
+:START_ID,:TYPE,:END_ID
+----
+
+.relationships.csv
+[source, csv]
+----
+aa11,WORKS_WITH,bb22
+----
+======
+=====
+
+[[multiple-IDs-Id-spaces]]
+=== Define multiple IDs stored in ID spaces
+
+. Define a `MyGroup` ID space in the _nodes_header.csv_ file.
++
+.nodes_header.csv
+[source, csv]
+----
+personId:ID(MyGroup),memberId:ID(MyGroup),name
+----
++
+.nodes.csv
+[source, csv]
+----
+aa,11,John
+bb,22,Paul
+----
+
+. Now use the defined ID space when connecting John with Paul, and use both IDs in the relationship.
++
+[.tabbed-example]
+=====
+[role=include-with-multiple-ID-columns]
+======
+
+Starting from 2025.07, you have to use a matching number of `START_ID` and `END_ID` columns when defining the relationship:
+
+.relationships_header.csv
+[source, csv]
+----
+:START_ID(MyGroup),:START_ID(MyGroup),:TYPE,:END_ID(MyGroup),:END_ID(MyGroup)
+----
+
+.relationships.csv
+[source, csv]
+----
+aa,11,WORKS_WITH,bb,22
+----
+
+======
+[role=include-with-single-ID-column]
+======
+
+.relationships_header.csv
+[source, csv]
+----
+:START_ID(MyGroup),:TYPE,:END_ID(MyGroup)
+----
+
+.relationships.csv
+[source, csv]
+----
+aa11,WORKS_WITH,bb22
+----
+======
+=====
+
+
+[[import-tool-id-types-header]]
+== Storing a different value type for IDs in a group
+
+You can control the ID type of the node property that will be stored by defining the `id-type` option in the header, for example, `:ID{id-type:long}`.
+The `id-type` option in the header overrides the global `--id-type` value provided to the command.
+This way, you can have property values of different types for different groups of nodes.
+For example, the global `id-type` can be a string, but some nodes can have their IDs stored as `long` type in their ID properties.
+
+.Import nodes with different ID value types
+====
+.persons_header.csv
+[source, csv]
+----
+id:ID(GroupOne){id-type:long},name,:LABEL
+----
+
+.persons.csv
+[source, csv]
+----
+123,P1,Person
+456,P2,Person
+----
+
+.games_header.csv
+[source, csv]
+----
+id:ID(GroupTwo),name,:LABEL
+----
+
+.games.csv
+[source, csv]
+----
+ABC,G1,Game
+DEF,G2,Game
+----
+
+.Import the nodes
+[source, shell, role=noplay]
+----
+neo4j_home$ --nodes persons.csv --nodes games.csv --id-type string
+----
+
+The `id` property of the nodes in the `persons` group will be stored as `long` type, while the `id` property of the nodes in the `games` group will be stored as `string` type, as the global `id-type` is a string.
+====
+
+[[import-tool-multiline-fields]]
+== Importing data that spans multiple lines
+
+The `--multiline-fields` option allows fields from an input source to span multiple lines, i.e. contain newline characters.
+For example:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=true \
+databasename
+----
+
+Where `import/node_data.csv` contains multiline fields, such as:
+
+[source, csv, role=nocopy]
+----
+id,name,birthDate,birthYear,birthLocation,description
+1,John,October 1st,2000,New York,This is a multiline
+description
+----
+
+[WARNING]
+====
+Setting `--multiline-fields=true` can severely degrade the performance of the importer.
+Therefore, use it with care, especially with large imports.
+====
+
+Optionally, you can specify the format of the `--multiline-fields` to control the parsing of the input source by setting the `--multiline-fields-format` option.
+Possible values are:
+
+* `v1` - the default format, which uses the current processing method for multiline fields.
+* `v2` - a more efficient processing method that requires text fields to be quoted.
+For `v2`, the `--multiline-fields` option must be set to a list of files (regular expressions are allowed) that contain multiline fields.
+
+Both formats have the restriction that the entirety of every row must be able to fit into the buffer (default is 4m).
+The `--multiline-fields-format` option is available in the `full` and `incremental` import modes.
+
+For example:
+
+[.tabbed-example]
+=====
+[role=include-with-multiline-fields-format-v1]
+======
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=true \
+--multiline-fields-format=v1 \
+databasename
+----
+
+Where `import/node_data.csv` contains multiline fields, such as:
+
+[source, csv, role=nocopy]
+----
+id,name,birthDate,birthYear,birthLocation,description
+1,John,October 1st,2000,New York,This is a multiline
+description
+----
+======
+[role=include-with-multiline-fields-format-v2]
+======
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data.csv \
+--multiline-fields=import/node_data.csv \
+--multiline-fields-format=v2 \
+databasename
+----
+
+Where `import/node_data.csv` contains multiline fields, such as:
+
+[source, csv, role=nocopy]
+----
+id,name,birthDate,birthYear,birthLocation,description
+1,"John","October 1st",2000,"New York","This is a multiline
+description"
+----
+======
+=====
+
+[[import-tool-header-format-skip-columns]]
+== Skipping columns
+
+IGNORE::
+If there are fields in the data that you wish to ignore completely, this can be done using the `IGNORE` keyword in the header file.
+`IGNORE` must be prepended with a `:`.
++
+.Skip a column
+====
+
+In this example, you are not interested in the data in the third column of the nodes file and wish to skip over it.
+Note that the `IGNORE` keyword is prepended by a `:`.
+
+[source, csv]
+----
+personId:ID,name,:IGNORE,:LABEL
+----
+
+[source, csv]
+----
+keanu,"Keanu Reeves","male",Actor
+laurence,"Laurence Fishburne","male",Actor
+carrieanne,"Carrie-Anne Moss","female",Actor
+----
+====
+
+If all your superfluous data is placed in columns located to the right of all the columns that you wish to import, you can instead use the command line option `--ignore-extra-columns`.
+
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]
