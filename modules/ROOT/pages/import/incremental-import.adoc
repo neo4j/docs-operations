@@ -1,0 +1,809 @@
+:description: This section describes how to perform incremental imports of data into Neo4j.
+:page-role: enterprise-edition
+:check-mark: icon:check[]
+:rfc-4180: https://datatracker.ietf.org/doc/html/rfc4180
+[[incremental-import]]
+= Incremental import
+
+Incremental import allows you to incorporate large amounts of data in batches into the graph.
+You can run this operation as part of the initial data load when it cannot be completed in a single full import.
+Besides, you can update your graph by importing data incrementally, which is more performant than transactional insertion of such data.
+
+The incremental import command can be used to add:
+
+* New nodes with labels and properties.
++
+[WARNING]
+====
+Note that you must have node property uniqueness constraints in place for the property key and label combinations that form the primary key, or the uniquely identifiable nodes.
+Otherwise, the command will throw an error and exit.
+For more information, see xref:import/header-format.adoc#import-tool-csv-header-format[CSV header format].
+====
+* New relationships between existing or new nodes.
+
+Starting from 2025.01, the incremental import command can also be used for:
+
+* Adding new properties to existing nodes or relationships.
+* Updating or deleting properties in nodes or relationships.
+* Updating or deleting labels in nodes.
+* Deleting existing nodes and relationships.
+
+This is supported only by `block` format.
+See <<#_applying_changes_to_data_via_csv_files>> for more information.
+
+
+Incremental import requires the use of `--force` and can be run on an existing database only.
+You must stop your database, if you want to perform the incremental import within one command.
+If you cannot afford a full downtime of your database, split the operation into several stages:
+
+* _prepare_ stage (offline)
+* _build_ stage (offline or read-only)
+* _merge_ stage (offline)
+
+The database must be stopped for the `prepare` and `merge` stages.
+During the `build` stage, the database can be left online but put into read-only mode.
+For a detailed example, see <<incremental-import-stages>>.
+
+[WARNING]
+====
+It is highly recommended to back up your database before running the incremental import, as if the _merge_ stage fails, is aborted, or crashes, it may corrupt the database.
+====
+
+[[incremental-import-syntax]]
+== Syntax
+
+The syntax for importing a set of CSV files incrementally is:
+
+[source, syntax, role="nocopy"]
+----
+neo4j-admin database import incremental [-h] [--expand-commands] [--force] [--update-all-matching-relationships]
+                                        [--verbose] [--auto-skip-subsequent-headers[=true|false]] [--compress
+                                        [=true|false]] [--dry-run[=true|false]] [--ignore-empty-strings[=true|false]]
+                                        [--ignore-extra-columns[=true|false]] [--legacy-style-quoting[=true|false]]
+                                        [--normalize-types[=true|false]] [--profile[=true|false]]
+                                        [--skip-bad-entries-logging[=true|false]] [--skip-bad-relationships
+                                        [=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict[=true|false]]
+                                        [--trim-strings[=true|false]] [--additional-config=<file>]
+                                        [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                        [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+                                        [--input-encoding=<character-set>] [--input-type=csv|parquet]
+                                        [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
+                                        [--profile-results-path=<path>] [--property-shard-count=<propertyShardCount>]
+                                        [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>]
+                                        [--schema=<path>] [--stage=all|prepare|build|merge] [--target-format=<format>]
+                                        [--target-location=<path>] [--temp-path=<path>] [--threads=<num>]
+                                        [--vector-delimiter=<char>] [--nodes=[<label>[:<label>]...=]<files>...]...
+                                        [--relationships=[<type>=]<files>...]... [--multiline-fields=true|false|<path>[,
+                                        <path>] [--multiline-fields-format=v1|v2]] <database>
+----
+
+== Description
+
+Incremental import into an existing database.
+
+== Parameters
+
+.`neo4j-admin database import incremental` parameters
+[options="header", cols="5m,10a,2m"]
+|===
+| Parameter
+| Description
+| Default
+
+|<database>
+|Name of the database to import.
+If the database into which you import does not exist prior to importing, you must create it subsequently using `CREATE DATABASE`.
+|neo4j
+|===
+
+== Options
+
+[[incremental-import-options-table]]
+.`neo4j-admin database import incremental` options
+[options="header", cols="4m,6a,2m,1,2"]
+|===
+| Option
+| Description
+| Default
+| CSV
+| Parquet
+
+|--additional-config=<file>footnote:[See xref:neo4j-admin-neo4j-cli.adoc#_configuration[Neo4j Admin and Neo4j CLI -> Configuration] for details.]
+|Configuration file with additional configuration.
+|
+| {check-mark}
+| {check-mark}
+
+|--array-delimiter=<char>
+|Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the array is encoded as a string.
+
+====
+* ASCII character -- e.g. `--array-delimiter=";"`.
+* `\ID` -- Unicode character with ID, e.g. `--array-delimiter="\59"`.
+* `U+XXXX` -- Unicode character specified with 4 HEX characters, e.g. `--array-delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--array-delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+|;
+| {check-mark}
+| {check-mark}
+
+| --auto-skip-subsequent-headers[=true\|false]
+|Automatically skip accidental header lines in subsequent files in file groups with more than one file.
+|false
+| {check-mark}
+|
+
+|--bad-tolerance=<num>
+|Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
+|-1 label:changed[Changed in 2025.12]
+| {check-mark}
+| {check-mark}
+
+|--compress[=true\|false]footnote:shardedDb2[For using this option with sharded property databases, see xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data import].]
+|label:new[Introduced in 2026.04] Request backup artifact to be compressed. Compression can yield a backup artefact many times smaller, but the exact reduction depends upon many factors, including the database format and the kind of data stored. If disabled, the size of the produced artifact will be approximately equal to the size of the backed-up database. The speed of the import operation is affected by compression, but which is faster depends upon the relative performance of CPU and storage. If import speed is important, consider evaluating both options - with compression enabled and disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--delimiter=<char>
+|Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+002A` for specifying a character using Unicode. Note that the delimiter character must be a single byte character in UTF-8.
+
+====
+* ASCII character -- e.g. `--delimiter=","`.
+* `\ID` -- Unicode character with ID, e.g. `--delimiter="\44"`.
+* `U+XXXX` -- Unicode character specified with 4 HEX characters, e.g. `--delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+|,
+| {check-mark}
+|
+
+|--dry-run[=true\|false]footnote:[See <<import-incremental-dry-run>> for details.]
+|label:new[Introduced in 2026.02]Flag used to indicate that a dry run of the import should be performed, i.e. no data will actually be imported, only the validation of the various arguments and estimation of size of the import will be performed and reported.
+|false
+| {check-mark}
+| {check-mark}
+
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
+| {check-mark}
+| {check-mark}
+
+|--force
+|Confirm incremental import by setting this flag.
+|
+| {check-mark}
+| {check-mark}
+
+|-h, --help
+|Show this help message and exit.
+|
+| {check-mark}
+| {check-mark}
+
+|--high-parallel-io=on\|off\|auto
+|Ignore environment-based heuristics and indicate if the target storage subsystem can support parallel IO with high throughput or auto detect.
+Typically this is `on` for SSDs, large raid arrays, and network-attached storage.
+|auto
+| {check-mark}
+| {check-mark}
+
+|--id-type=string\|integer\|actual
+|Each node must provide a unique ID.
+This is used to find the correct nodes when creating relationships.
+
+Possible values are:
+
+* `string` -- arbitrary strings for identifying nodes.
+* `integer` -- arbitrary integer values for identifying nodes.
+* `actual` -- (advanced) actual node IDs.
+|string
+| {check-mark}
+| {check-mark}
+
+|--ignore-empty-strings[=true\|false]
+|Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
+|false
+| {check-mark}
+| {check-mark}
+
+|--ignore-extra-columns[=true\|false]
+|If unspecified columns should be ignored during the import.
+|false
+| {check-mark}
+|
+
+|--input-encoding=<character-set>
+|Character set that input data is encoded in.
+|UTF-8
+| {check-mark}
+|
+
+|--input-type=csv\|parquet
+|File type to import from. Can be csv or parquet. Defaults to csv.
+|
+| {check-mark}
+| {check-mark}
+
+|--legacy-style-quoting[=true\|false]
+|Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
+|false
+| {check-mark}
+| {check-mark}
+
+|--max-off-heap-memory=<size>
+|Maximum off-heap memory that the command can use for page cache and various caching data structures to improve performance. Use this option to tune the command memory usage; the command does not use the server.memory.pagecache.size configuration setting for this purpose. Values can be plain numbers, such as 10000000, or, for example, 20G for 20 gigabytes, or 70%, which will amount to 70% of currently free memory on the machine.
+|90%
+| {check-mark}
+| {check-mark}
+
+|--multiline-fields=true\|false\|<path>[,<path>] footnote:[The option's value depends on `--multiline-fields-format`. For details, see xref:import/header-format.adoc#import-tool-multiline-fields[Importing data that spans multiple lines].]
+|In v1, whether or not fields from an input source can span multiple lines, i.e. contain newline characters. Setting `--multiline-fields=true` can severely degrade the performance of the importer. Therefore, use it with care, especially with large imports. In v2, this option will specify the list of files that contain multiline fields. Files can also be specified using regular expressions.
+|
+| {check-mark}
+|
+
+|--multiline-fields-format=v1\|v2
+|Controls the parsing of input source that can span multiple lines, i.e. contain newline characters. When set to `v1`, the value for `--multiline-fields` can only be `true` or `false`. When set to `v2`, the value for `--multiline-fields` should be the list of files that contain multiline fields.
+|v1
+| {check-mark}
+|
+
+|--nodes=[<label>[:<label>]...=]<files>...
+|Node CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+It is possible to import files from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+
+For an example, see <<incremental-import-multiple-input-files-regex-example>>.
+|
+| {check-mark}
+| {check-mark}
+
+|--normalize-types[=true\|false]
+|When `true`, non-array property values are converted to their equivalent Cypher types. For example, all integer values will be converted to 64-bit long integers.
+| true
+| {check-mark}
+| {check-mark}
+
+|--path-pattern-style=regex\|glob\|nonefootnote:[See xref:import/path-pattern-styles.adoc[Using pattern style for matching nodes and relationships files] for details.]
+|label:new[Introduced in 2026.01] Pattern style to use for matching `--nodes` and `--relationships` files.
+
+Possible values are:
+
+* `glob` -- allows you to write patterns like `/some+++/**+++/deep+++/**+++/nested/structure.*`.
+* `regex` -- allows you to write regular expressions, i.e. `/some/nested/structure.*`.
+* `none` -- you have to enumerate all the file paths exactly, i.e. `/some/content/structure1.csv,/some/content/structure2.csv`.
+|regex
+| {check-mark}
+| {check-mark}
+
+|--profile[=true\|false]
+|label:new[Introduced in 2026.02]Capture a java flight recording for the entire duration of the import.
+|false
+| {check-mark}
+| {check-mark}
+
+|--profile-results-path=<path>
+|label:new[Introduced in 2026.02]Provide a path where to store java flight recordings captured with the `--profile` option. Requires `--profile` or `--profile=true` to be set to have an effect.
+|
+| {check-mark}
+| {check-mark}
+
+|--property-shard-count=<propertyShardCount>footnote:shardedDb2[]
+|label:new[Introduced in 2025.12] label:enterprise[Enterprise edition] (advanced) Number of shards of property data that will be created, each shard will be its own database. Typically this option doesn't need to be set at all, since the number of shards has already been decided during initial import.
+|0
+| {check-mark}
+|
+
+|--quote=<char> footnote:[To escape quotation marks in the CSV data, you should double the configured character.]
+|Character to treat as a quotation mark for values in CSV data.
+
+For example, quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them.
+Thus `""` would be interpreted as a literal `"`.
+
+You cannot escape using `\`.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+|"
+| {check-mark}
+|
+
+|--read-buffer-size=<size>
+|Size of each buffer for reading input data.
+
+It has to be at least large enough to hold the biggest single value in the input data.
+The value can be a plain number or a byte units string, e.g. `128k`, `1m`.
+|4194304
+| {check-mark}
+| {check-mark}
+
+|--relationships=[<type>=]<files>...
+|Relationship CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+It is possible to import files from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+
+For an example, see <<incremental-import-multiple-input-files-regex-example>>.
+|
+| {check-mark}
+| {check-mark}
+
+|--report-file=<path>
+|File in which to store the report of the csv-import.
+
+The location of the import log file can be controlled using the `--report-file` option.
+If you run large imports of CSV files that have low data quality, the import log file can grow very large.
+For example, CSV files that contain duplicate node IDs, or that attempt to create relationships between non-existent nodes, could be classed as having low data quality.
+In these cases, you may wish to direct the output to a location that can handle the large log file.
+
+If you are running on a UNIX-like system and you are not interested in the output, you can get rid of it altogether by directing the report file to `/dev/null`.
+
+If you need to debug the import, it might be useful to collect the stack trace.
+This is done by using the `--verbose` option.
+|
+| {check-mark}
+| {check-mark}
+
+|--schema=<path>
+|label:new[Available from 2025.02] Path to the file containing the Cypher commands for creating indexes and constraints during data import.
+It is possible to load commands from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+|
+| {check-mark}
+| {check-mark}
+
+|--skip-bad-entries-logging[=true\|false]
+|When set to `true`, the details of bad entries are not written in the log. Disabling logging can improve performance when the data contains lots of faults. Cleaning the data before importing it is highly recommended because faults dramatically affect the tool's performance even without logging.
+|false
+| {check-mark}
+| {check-mark}
+
+|--skip-bad-relationships[=true\|false]
+|Whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to a node that was not specified by the node input data.
+
+Skipped relationships will be logged if they are within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--skip-duplicate-nodes[=true\|false]
+|Whether or not to skip importing nodes that have the same ID/group.
+
+In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
+
+Skipped nodes will be logged if they are within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--stage=all\|prepare\|build\|merge
+|Stage of incremental import.
+
+For incremental import into an existing database use `all` (which requires the database to be stopped).
+
+For semi-online incremental import run `prepare` (on a stopped database) followed by `build` (on a potentially running database) and finally `merge` (on a stopped database).
+|all
+| {check-mark}
+| {check-mark}
+
+|--strict[=true\|false]
+| Whether or not the lookup of nodes referred to from relationships needs to be checked strict.
+If disabled, most but not all relationships referring to non-existent nodes will be detected.
+If enabled all those relationships will be found but at the cost of lower performance.
+|false
+| {check-mark}
+| {check-mark}
+
+|--target-format=<format>footnote:shardedDb2[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Target format can be either a plain database directory/files structure (`database`) or a backup artifact (`backup`). Uses the `--temp-path` location to keep any intermediate state.
+|database
+| {check-mark}
+|
+
+|--target-location=<path>footnote:shardedDb2[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Location for target backup artifact data. Used together with `--target-format=backup`.
+|
+| {check-mark}
+|
+
+|--temp-path=<path>
+|label:new[Introduced in 2025.04] Provide a path where to store temporary files that are created and deleted during import.
+If not specifically provided, the default temp path will be created inside the database directory of the imported database.
+|
+| {check-mark}
+| {check-mark}
+
+|--threads=<num>
+| (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal performance, this value should not be greater than the number of available processors.
+|
+| {check-mark}
+| {check-mark}
+
+|--trim-strings[=true\|false]
+|Whether or not strings should be trimmed for whitespaces.
+|false
+| {check-mark}
+|
+
+|--vector-delimiter=<char>
+|label:new[Introduced in 2025.10] Delimiter character between vector coordinates within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the vector is encoded as a string.
+|;
+| {check-mark}
+| {check-mark}
+
+|--update-all-matching-relationships
+|label:new[Introduced in 2025.01] Whether or not to update all existing relationships that match a relationship data entry. If disabled, the relationship data entry will be logged if it is within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+
+|false
+| {check-mark}
+| {check-mark}
+
+|--verbose
+|Enable verbose output.
+|
+| {check-mark}
+| {check-mark}
+|===
+
+== Usage and limitations
+
+The following limitations apply to the incremental import command:
+
+Importing data incrementally in a clustered environment::
+The importer works well on standalone servers.
++
+To safely perform an incremental import in a clustered environment, follow these steps:
++
+. Run the incremental import command on a single server in the cluster.
+This server can then be used as the xref:clustering/databases.adoc#cluster-designated-seeder[designated seeder] from which other cluster members can copy the database.
+. Reconfigure the database topology to a single primary by running the xref:procedures/built-in-procedures.adoc#procedure_dbms_recreateDatabase[`dbms.recreateDatabase()`] procedure.
+. Then stop the database using xref::database-administration/standard-databases/start-stop-databases.adoc#manage-databases-stop[STOP DATABASE].
+. Perform the incremental import on the server that hosts the database.
+. Then start the database with xref::database-administration/standard-databases/start-stop-databases.adoc#manage-databases-start[START DATABASE].
+. Lastly, restore the desired database topology using xref::database-administration/standard-databases/alter-databases.adoc#[ALTER DATABASE].
+
+Using both a multi-value option and a positional parameter::
+When using both a multi-value option, such as `--nodes` and `--relationships`, and a positional parameter (for example, in `--additional-config neo4j.properties --nodes 0-nodes.csv mydatabase`), the `--nodes` option acts "greedy" and the next option, in this case, `mydatabase`,  is pulled in via the nodes convertor.
++
+This is a limitation of the underlying library, Picocli, and is not specific to Neo4j Admin.
+For more information, see link:https://picocli.info/#_variable_arity_options_and_positional_parameters[Picocli -> Variable Arity Options and Positional Parameters] official documentation.
++
+To resolve the problem, use one of the following solutions:
++
+* Put the positional parameters first.
+For example, `mydatabase --nodes 0-nodes.csv`.
+* Put the positional parameters last, after `--` and the final value of the last multi-value option.
+For example, `nodes 0-nodes.csv -- mydatabase`.
+
+
+[[incremental-import-examples]]
+== Examples
+
+[role=label--new-2026.02]
+[[import-incremental-dry-run]]
+=== Perform a dry run before importing data
+
+Before performing the actual import, you can run a dry run to validate the input files and estimate the size of the import.
+The command does not write any data to the database.
+
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE neo4j WAIT;
+...
+bin/neo4j-admin database import incremental \
+--dry-run=true \
+--nodes=N1=../../raw-data/incremental-import/nodes.csv \
+--relationships=R1=../../raw-data/incremental-import/relationships.csv \
+neo4j
+----
+
+.Example output
+[result, subs="attributes+,+macros"]
+----
+Neo4j version: {neo4j-version-exact}
+Checking the contents of the following files:
+Nodes:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/raw-data/incremental-import/nodes.csv
+Relationships:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/raw-data/incremental-import/relationships.csv
+
+Available resources:
+  Total machine memory: 64.00GiB
+  Free machine memory: 9.997GiB
+  Max heap memory : 14.22GiB
+  Max worker threads: 10
+  Configured max memory: 40.00GiB
+  High parallel IO: true
+
+Schema commands:
+  Indexes to be created: 3
+  Indexes to be dropped: 1
+  Constraints to be created: 2
+  Constraints to be dropped: 3
+
+Estimated entity counts / sizes:
+  Nodes: 2702496410
+    Includes updates: true
+    Labels: 2702496410
+    Property count: 16348903762
+    Property size: 253.6GiB
+  Relationships: 18094004256
+    Includes updates: false
+    Property count: 6076138797
+    Property size: 96.14GiB
+----
+
+There are two ways of importing data incrementally.
+
+=== Incremental import in a single command
+
+If downtime is not a concern, you can run a single command with the option `--stage=all`.
+This option requires the database to be stopped.
+
+[source, shell, role=noplay]
+----
+neo4j@system> STOP DATABASE neo4j WAIT;
+...
+bin/neo4j-admin database import incremental \
+--stage=all \
+--nodes=N1=../../raw-data/incremental-import/nodes.csv \
+--relationships=R1=../../raw-data/incremental-import/relationships.csv \
+neo4j
+----
+
+[[incremental-import-stages]]
+=== Incremental import in stages
+
+If you cannot afford a full downtime of your database, you can run the import in three stages.
+
+. `prepare` stage:
++
+During this stage, the import tool analyzes the CSV headers and copies the relevant data over to the new increment database path.
+The import command is run with the option `--stage=prepare` and the database must be stopped.
++
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
+The database must be stopped to run `--stage=prepare`.
++
+[source, shell, role=noplay]
+----
+STOP DATABASE neo4j WAIT
+----
+.. Run the incremental import command with the `--stage=prepare` option:
++
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import incremental \
+--stage=prepare \
+--nodes=N1=../../raw-data/incremental-import/nodes.csv \
+--relationships=R1=../../raw-data/incremental-import/relationships.csv \
+neo4j
+----
+. `build` stage:
++
+During this stage, the import tool imports the data, deduplicates it, and validates it in the new increment database path.
+This is the longest stage and you can put the database in read-only mode to allow read access.
+The import command is run with the option `--stage=build`.
++
+.. Put the database in read-only mode:
++
+[source, shell, role=noplay]
+----
+ALTER DATABASE neo4j SET ACCESS READ ONLY
+----
+.. Run the incremental import command with the `--stage=build` option:
++
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import incremental \
+--stage=build \
+--nodes=N1=../../raw-data/incremental-import/nodes.csv \
+--relationships=R1=../../raw-data/incremental-import/relationships.csv \
+neo4j
+----
+. `merge` stage:
++
+During this stage, the import tool merges the new with the existing data in the database.
+It also updates the affected indexes and upholds the affected property uniqueness constraints and property existence constraints.
+The import command is run with the option `--stage=merge` and the database must be stopped.
+It is not necessary to include the `--nodes` or `--relationships` options when using `--stage=merge`.
++
+.. Using the `system` database, stop the database `neo4j` with the `WAIT` option to ensure a checkpoint happens before you run the incremental import command.
++
+[source, shell, role=noplay]
+----
+STOP DATABASE neo4j WAIT
+----
+.. Run the incremental import command with the `--stage=merge` option:
++
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import incremental \
+--stage=merge \
+neo4j
+----
+
+[[incremental-import-multiple-input-files-regex-example]]
+=== Importing multiple input files using regular expression
+
+During incremental import, you can use regular expressions to match multiple input files.
+
+For example, the following command imports all CSV files in the `import` directory that match the pattern `*.csv`:
+
+[source, shell]
+----
+bin/neo4j-admin database import incremental \
+--stage=all \
+--nodes=import/*.csv \
+--relationships=import/*.csv
+neo4j
+----
+
+[[incremental-import-compressed-files]]
+=== Importing compressed files
+
+During incremental import, you can import files compressed with `zip` or `gzip`.
+Each compressed file must contain a single file.
+
+For example, the following command imports compressed files, where `actors.csv.zip` is a zip file and `movies.csv.gz` and `roles.csv.gz` are gzip files:
+
+[source, sh]
+----
+neo4j_home$ ls import
+actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-header.csv  roles.csv.gz
+----
+
+[source, sh]
+----
+STOP DATABASE neo4j WAIT;
+...
+bin/neo4j-admin database import incremental \
+--stage=all \
+--nodes=import/movies-header.csv,import/movies.csv.gz \
+--nodes=import/actors-header.csv,import/actors.csv.zip \
+--relationships=import/roles-header.csv,import/roles.csv.gz
+neo4j
+----
+
+[role=label--new-2025.01.0]
+== Applying changes to data via CSV files
+
+You can use CSV files to update existing nodes, relationships, labels, or properties during incremental import.
+This feature is supported only by `block` format.
+
+=== Set an explicit action for each row
+
+You can set an explicit action for each row in the CSV file by using the `:ACTION` keyword in the header file.
+If no action is specified, the import tool works as in full import mode, creating new data.
+
+The following actions are supported:
+
+* `empty` = `CREATE` (default)
+* `C`, `CREATE` - Creates new nodes and relationships, with or without properties, as well as labels.
+* `U`, `UPDATE` - Updates existing nodes, relationships, labels, and properties.
+* `D`, `DELETE` - Deletes existing nodes or relationships.
+Deleting a node also deletes its relationships (`DETACH DELETE`).
+
+
+.Using actions in CSV files to update nodes
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),name,:LABEL
+CREATE,person1,"Keanu Reeves",Actor
+UPDATE,person2,"Laurence Fishburne",Actor
+DELETE,person4,,
+----
+
+Nodes are identified by their unique property value for the key/label combination that the header specifies.
+
+.Using actions in CSV files to update relationships
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:END_ID,:TYPE,role
+CREATE,person1,movie1,ACTED_IN,"Neo"
+UPDATE,person2,movie1,ACTED_IN,"Morpheus"
+DELETE,person3,movie1,ACTED_IN
+----
+
+Relationships are identified non-uniquely by their start and end node IDs, and their type.
+
+To further narrow down selection you can tag a property column as an identifier to help out in selecting relationships uniquely (or at least more uniquely).
+
+.Using actions in CSV files to update relationships with identifier properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:TYPE,:END_ID,p1{identifier:true},name,p4
+U,person1,KNOWS,person2,abc,"Keanu Reeves","Hello Morpheus"
+U,person2,KNOWS,person1,def,"Laurence Fishburne","Hello Neo"
+----
+
+The data in the `p1` column for these relationships helps select relationships "more uniquely" if a multiple of `1,KNOWS,2` exists.
+There can also be multiple identifier properties defined in the header.
+Identifier properties match the selected relationships and will not be set on the relationships that already have them.
+
+=== Update existing labels
+
+You can add or remove one or more labels from an existing node by prepending the clause `LABEL` in the header with a `+` (default) or `-`:
+
+* `:+LABEL` - Add one or more labels to an existing node.
+* `:-LABEL` - Remove one or more labels (if they exist) from an existing node.
+
+
+For example, a file could have the following format:
+
+[source, csv]
+----
+uid:ID(label:Person),:+LABEL,:-LABEL,name,age
+person1,Actor,Producer,"Keanu Reeves",55
+person2,Actor;Director,,"Laurence Fishburne",60
+----
+
+In this case, all labels in the second column are added and all the labels in the third column are removed (if they exist).
+
+=== Remove existing properties
+
+You can remove properties from existing nodes or relationships by a `:-PROPERTY` column in the header.
+In the contents of this field you can add zero or more property names to remove from the entity.
+For example:
+
+.Remove nodes' properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),:-PROPERTY
+U,person1,age;hometown
+----
+
+Properties `age` and `hometown` are removed from the node with the `uid:ID` `person1`.
+
+.Remove relationships' properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,:START_ID,:END_ID,:TYPE,:-PROPERTY
+U,person1,movie1,ACTED_IN,role;description
+----
+
+Properties `role` and `description` are removed from the relationship with the `:START_ID` `person1`, `:END_ID` `movie1`, and `:TYPE` `ACTED_IN`.
+
+.Using actions in CSV files to update labels and properties
+[source, cypher, role="nocopy"]
+----
+:ACTION,uid:ID(label:Person),:LABEL,:-LABEL,:-PROPERTY,name,height:int
+U,person1,Actor,Producer,age;hometown,Henry",185
+----
+
+One CSV entry can specify all types of updates to one entity at the same time.
+In this example, the node `person1` is updated with:
+
+* added `Actor` label
+* removed `Producer` label
+* removed `age` and `hometown` properties
+* set `name="Henry"` property
+* set `height=185` property
+
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]

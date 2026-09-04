@@ -1,0 +1,108 @@
+:description: This section describes how to perform bulk offline imports of data into Neo4j using the command line tool `neo4j-admin database import`.
+:page-aliases: tools/neo4j-admin/neo4j-admin-import.adoc
+:rfc-4180: https://datatracker.ietf.org/doc/html/rfc4180
+[[neo4j-admin-import]]
+= Import
+
+`neo4j-admin database import` writes CSV data into Neo4j's native file format as fast as possible. +
+It also provides support for the Parquet file format.
+
+You should use this command when:
+
+* Import performance is important because you have a large amount of data (millions/billions of entities).
+* The database can be taken offline and you have direct access to one of the servers hosting your Neo4j DBMS.
+* The database is non-existent or empty and you need to perform the initial data load.
+* You need to update your graph with a large amount of data, in which case importing data incrementally can be more performant than transactional insertion.
+For details, see xref:import/incremental-import.adoc#_incremental_import_in_a_single_command[Incremental import in a single command] and xref:import/incremental-import.adoc#incremental-import-stages[Incremental import stages].
+* The CSV data is clean/fault-free (nodes are not duplicated and relationships' start and end nodes exist).
+`neo4j-admin database import` can handle data faults but performance is not optimized.
+If your data has a lot of faults, it is recommended to clean it using a dedicated tool before import.
+
+Other methods of importing data into Neo4j might be better suited to users who primarily work with data in Neo4j rather than manage Neo4j:
+
+* Cypher(R) - CSV data can be bulk loaded via the Cypher command `LOAD CSV`.
+See link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/load-csv/[Cypher Manual -> `LOAD CSV`].
+* Graphical Tools - link:{neo4j-docs-base-uri}/aura/import/introduction[Neo4j AuraDB -> Importing data].
+
+[NOTE]
+====
+Change Data Capture _does not_ capture any data changes resulting from the use of `neo4j-admin database import`.
+See link:{neo4j-docs-base-uri}/cdc/current/get-started/self-managed/#non-tx-log-changes[Change Data Capture -> Key considerations] for more information.
+====
+
+== Import command modes
+
+The `neo4j-admin database import` command has two modes both used for initial data import:
+
+* _full_ -- used to import data into a non-existent or empty database.
+* _incremental_ -- used when import cannot be completed in a single _full_ import, by allowing the import to be a series of smaller imports.
+
+[NOTE]
+====
+The user running `neo4j-admin database import` must have write access to the directories configured by `server.directories.data` and `server.directories.logs`.
+====
+
+Starting with Neo4j 2026.03, you can see the detailed logging of import progress for both `neo4j-admin database import` commands.
+See xref:import/import-logs.adoc[Import progress reporting] for more details.
+
+[[import-memory-controls]]
+== Import command memory controls
+
+`neo4j-admin database import` uses two main memory controls:
+
+* JVM heap, configured for the admin process through the usual configuration sources described in xref:neo4j-admin-neo4j-cli.adoc#_configuration[Neo4j Admin and Neo4j CLI -> Configuration].
+* Off-heap working memory, controlled by `--max-off-heap-memory`.
+If this option is not provided, the importer derives a budget from the available system resources.
+
+The importer does not use the `server.memory.pagecache.size` configuration setting to size import memory.
+The off-heap budget is shared across page cache and other off-heap data structures used during import.
+In dry-run and verbose output, `Configured max memory` shows the effective off-heap memory budget available to the import command.
+
+[[import-file-considerations]]
+== Import file considerations
+When creating your import files, keep the following in mind:
+
+* Fields are comma-separated by default but a different delimiter can be specified.
+* All files must use the same delimiter.
+* Multiple data sources can be used for both nodes and relationships.
+* A data source can optionally be provided using multiple files.
+* A separate file with a header that provides information on the data fields, must be the first specified file of each data source.
+* Fields without corresponding information in the header are not read.
+* UTF-8 encoding is used.
+* By default, the importer trims extra whitespace at the beginning and end of strings.
+  Quote your data to preserve leading and trailing whitespaces.
+
+== Indexes and constraints during import
+
+Indexes and constraints are not created during the import.
+Instead, you have to add them afterward (see link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/[Cypher Manual -> Indexes]).
+
+You can use the `--schema` option to create and populate indexes and constraints during the import process.
+The option is available in the Enterprise Edition and works only with `block` format.
+See xref:import/create-drop-indexes.adoc[Create/Drop indexes and constraints during import] for more information.
+
+Vector indexes can take advantage of the incubated Java Vector API for noticeable speed improvements.
+If you are using a compatible version of Java, you can uncomment the following value of the xref:configuration/configuration-settings.adoc#config_server.jvm.additional[`server.jvm.additional`] setting in the _neo4j-admin.conf_ file:
+
+[source,properties]
+----
+server.jvm.additional=--add-modules=jdk.incubator.vector
+----
+
+[role=label--enterprise-edition]
+[[import-tool-resume]]
+== Resuming a stopped or canceled import
+
+An import that is stopped or fails before completing can be resumed from a point closer to where it was stopped.
+An import can be resumed from the following points:
+
+- Linking of relationships
+- Post-processing
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]
