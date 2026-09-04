@@ -113,6 +113,52 @@ For more information, see <<access-control-create-users>> and xref:authenticatio
 
 |===
 
+[cols="<15s,<85"]
+|===
+
+| Command
+m|
+label:new[Introduced in 2026.09] label:cypher[Cypher 25] SHOW USERS AS COMMANDS
+
+| Syntax
+a|
+[source, syntax, role="noheader"]
+----
+SHOW USER[S]
+  [WITH AUTH]
+  AS COMMAND[S]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+a|
+Lists commands to create all users.
+
+When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+For more information, see <<access-control-list-user-as-commands>>.
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER CREDENTIALS
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER METADATA
+----
+
+The `SHOW USER METADATA` privilege is additionally required to include the tags in the commands string and to see the values in the `tags` column returned by `SHOW USERS AS COMMANDS YIELD *`.
+Otherwise, they are left out of the create command and the `tags` column returns `null`.
+For more information, see <<access-control-create-users>> and xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[Grant privilege to show user metadata].
+
+|===
 
 [cols="<15s,<85"]
 |===
@@ -1111,6 +1157,157 @@ ready to start consuming query after 51 ms, results consumed after another 1 ms
 ----
 
 For more information about auth providers, see xref:authentication-authorization/auth-providers.adoc[User auth providers].
+
+[[access-control-list-user-as-commands]]
+[role=label--new-2026.09 label--cypher-25]
+== Showing users as commands
+
+To list the commands to create users, use `SHOW USERS AS COMMANDS`.
+The command produces a row per user and yields the following columns:
+
+.Output
+[options="header", width="100%", cols="2a,4,2m,^.^,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+| Default
+
+| command
+| The command to create the user
+| STRING
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| user
+| User name
+| STRING
+| {check-mark}
+| {check-mark}
+|
+
+| roles
+| Native roles granted to the user using the `GRANT ROLE` command.
+
+The set of roles a user receives in practice may differ from those in this column.
+It depends on the DMBS configuration and the user's xref:authentication-authorization/auth-providers.adoc[auth providers].
+For example, users may use external (e.g., LDAP or OIDC) auth, and `native` may not be listed in the xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`] configuration setting.
+
+It returns `null` in Community edition.
+| LIST<STRING>
+| {cross-mark}
+| {check-mark}
+|
+
+| tags
+| The xref:authentication-authorization/attribute-based-access-control.adoc[ABAC] tags attached to the user.
+
+Seeing the tag values requires the xref:authentication-authorization/dbms-administration/dbms-user-metadata-management-privileges.adoc#grant-show-user-metadata-privilege[`SHOW USER METADATA`] privilege; without it, the column returns `null`.
+
+It returns `null` in Community edition.
+| LIST<STRING>
+| {cross-mark}
+| {check-mark}
+|
+|===
+
+Only columns marked as default are returned by default, the other columns require a `YIELD *` or `YIELD` of that column to be returned.
+
+[TIP]
+====
+For general information about the `SHOW` command, see the link:{neo4j-docs-base-uri}/cypher-manual/current/clauses/show/[Cypher Manual -> SHOW].
+====
+
+=== Show users as commands
+
+[source, cypher, role=noplay]
+----
+SHOW USERS AS COMMANDS;
+----
+
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| command                                                                                                                                                                                                                                                                                                     |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "CREATE USER neo4j SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,1d18af8e64cb4f77c64fe60f3e0e22a5e54eb9b222e33f8bf72900c3956d1873,dad046cc0751fd3fd4b74b8aaa18857ddf11d0b050a57e44f39c38675d96d41b' SET PASSWORD CHANGE NOT REQUIRED }"                                                            |
+| "CREATE USER jake SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,8fe7ea2f353a54bcdb3782d9f2f2cef2574c75e5201a5b0e21c94255e465d8b1,0181edc0ed7070821f7e829f9427f59e369a9a72df629a195442cd01c96fdc5a' }"                                                                                              |
+| "CREATE USER joe SET STATUS SUSPENDED SET HOME DATABASE anotherdb SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,97f3f09d71dbb5ecd881c58410b187550749defe857f802421a7efe3488ccc9f,edbfa769686e7bea77ef9c06b58892286961d51601fd61b73705b2393039218a' }"                                              |
+| "CREATE USER alice SET STATUS SUSPENDED SET HOME DATABASE anotherdb SET AUTH PROVIDER 'oidc1' { SET ID 'alicesUniqueMySsoId' }"                                                                                                                                                                             |
+| "CREATE USER molly SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED }"                                                            |
+| "CREATE USER jessy SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED } SET AUTH PROVIDER 'oidc1' { SET ID 'jessysUniqueMySsoId' }" |
+| "CREATE USER jim SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,cce68c2ec70323aa46e4625f3461bce263602a1e50979c7bedeed1b00bcd6f37,c24b217101de8fd23fac3cd4c98b78b70d6d8590f2815998fc0b7ca3c8d8fec1' } SET TAGS [finance,auditor]"                                                                    |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+7 rows
+ready to start consuming query after 37 ms, results consumed after another 1 ms
+----
+
+
+=== Show users with auth as commands
+
+When using the `AS COMMANDS` clause together with `SHOW USERS WITH AUTH`, the command produces a row per user per auth provider, and yields the following two columns in addition to those output by `SHOW USERS AS COMMANDS`:
+
+.Output
+[options="header", width="100%", cols="1a,4,1m,^.^,^.^,^.^"]
+|===
+| Column
+| Description
+| Type
+| Community Edition
+| Enterprise Edition
+| Default
+
+| provider
+| The name of the auth provider.
+| STRING
+| {check-mark}
+| {check-mark}
+| {check-mark}
+
+| auth
+| A map containing configuration for the user.
+For example, dn of the user for an `ldap` auth provider, the unique external identifier for an `oidc` auth provider, or password status for a `native` auth provider.
+| MAP
+| {check-mark}
+| {check-mark}
+| {check-mark}
+|===
+
+[NOTE]
+====
+The `WITH AUTH` clause only adds columns, the auth information will always be a part of the command even when not using `WITH AUTH`.
+====
+
+[source, cypher, role=noplay]
+----
+SHOW USERS WITH AUTH AS COMMANDS;
+----
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| command                                                                                                                                                                                                                                                                                                     | provider | auth                                     |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "CREATE USER neo4j SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,1d18af8e64cb4f77c64fe60f3e0e22a5e54eb9b222e33f8bf72900c3956d1873,dad046cc0751fd3fd4b74b8aaa18857ddf11d0b050a57e44f39c38675d96d41b' SET PASSWORD CHANGE NOT REQUIRED }"                                                            | "native" | {changeRequired: FALSE, password: "***"} |
+| "CREATE USER jake SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,8fe7ea2f353a54bcdb3782d9f2f2cef2574c75e5201a5b0e21c94255e465d8b1,0181edc0ed7070821f7e829f9427f59e369a9a72df629a195442cd01c96fdc5a' }"                                                                                              | "native" | {changeRequired: TRUE, password: "***"}  |
+| "CREATE USER joe SET STATUS SUSPENDED SET HOME DATABASE anotherdb SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,97f3f09d71dbb5ecd881c58410b187550749defe857f802421a7efe3488ccc9f,edbfa769686e7bea77ef9c06b58892286961d51601fd61b73705b2393039218a' }"                                              | "native" | {changeRequired: TRUE, password: "***"}  |
+| "CREATE USER alice SET STATUS SUSPENDED SET HOME DATABASE anotherdb SET AUTH PROVIDER 'oidc1' { SET ID 'alicesUniqueMySsoId' }"                                                                                                                                                                             | "oidc1"  | {id: "alicesUniqueMySsoId"}              |
+| "CREATE USER molly SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED }"                                                            | "native" | {changeRequired: FALSE, password: "***"} |
+| "CREATE USER jessy SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED } SET AUTH PROVIDER 'oidc1' { SET ID 'jessysUniqueMySsoId' }" | "native" | {changeRequired: FALSE, password: "***"} |
+| "CREATE USER jessy SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,6d57a5e0b3317055454e455f96c98c750c77fb371f3f0634a1b8ff2a55c5b825,190ae47c661e0668a0c8be8a21ff78a4a34cdf918cae3c407e907b73932bd16c' SET PASSWORD CHANGE NOT REQUIRED } SET AUTH PROVIDER 'oidc1' { SET ID 'jessysUniqueMySsoId' }" | "oidc1"  | {id: "jessysUniqueMySsoId"}              |
+| "CREATE USER jim SET AUTH PROVIDER 'native' { SET ENCRYPTED PASSWORD '1,cce68c2ec70323aa46e4625f3461bce263602a1e50979c7bedeed1b00bcd6f37,c24b217101de8fd23fac3cd4c98b78b70d6d8590f2815998fc0b7ca3c8d8fec1' } SET TAGS [finance,auditor]"                                                                    | "native" | {changeRequired: TRUE, password: "***"}  |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+8 rows
+ready to start consuming query after 32 ms, results consumed after another 1 ms
+----
 
 
 [[access-control-rename-users]]
