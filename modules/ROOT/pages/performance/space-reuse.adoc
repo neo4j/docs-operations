@@ -285,6 +285,139 @@ The reported output for the store size after the compaction is 800.68 KiB, ID Al
 
 ====
 
+[[reclaim-space-with-compact-procedure]]
+[role=label--new-2026.09 label--enterprise-edition label--cypher-25]
+== Reclaim space online with `db.compact()`
+
+In Neo4j, store files do not shrink when logical data is deleted, meaning that the space freed by the delete is not visible on the disk.
+This space becomes reusable, and until it is reused, the store files are sparse and fragmented.
+
+The `db.compact()` procedure reclaims that free space and returns it to the file system, without taking the database offline.
+
+The procedure compacts:
+
+* Native indexes (property and vector indexes).
+* The `block` format's counts and degrees stores.
+* _.id_ files.
+
+How much space a compaction reclaims depends on how much free space has accumulated inside the targeted structures.
+Indexes on entities with high delete or update churn, such as data under a retention policy, typically see the largest reclaim.
+A database that has not deleted much data will see little or nothing to reclaim.
+
+[NOTE]
+====
+While a compaction is running, transaction throughput might degrade slightly, due to increased I/O load.
+====
+
+Transaction logs are stored outside _data/databases/<database>_ and are not affected by the `db.compact()` procedure.
+Manage their size with checkpointing and log pruning, as described in xref:database-internals/checkpointing.adoc[].
+
+The `db.compact()` procedure is not a replacement for the `neo4j-admin database copy` command with `--compact-node-store`, which performs an offline rewrite of the whole store, including the node and relationship stores themselves, and requires a maintenance window.
+Use `db.compact()` for routine online space reclamation, and `neo4j-admin database copy <db-name> --compact-node-store` when a full offline defragmentation is needed.
+
+
+[[db-compaction-example]]
+=== Example of database compaction with `db.compact()` 
+
+The `db.compact()` procedure takes no arguments.
+After a large delete or retention purge, run `db.compact()` to reclaim unused space.
+Use a checkpoint before checking the store size to ensure the measurement reflects a durable state.
+
+The following example is run against a database with a unique constraint on a high-churn entity, loaded to 1.1 million nodes and then reduced by roughly half through a retention-style delete.
+It shows deleting data grows the store rather than shrinking it, and compaction is what actually reclaims the space.
+Numbers on your own database will differ and depend on how much of your data is indexed and how much has been deleted.
+
+. Create a unique constraint, which is backed by a native index:
++
+[source,cypher]
+----
+CREATE CONSTRAINT FOR (t:HighChurnEntity)
+REQUIRE t.entityId IS UNIQUE;
+----
++
+Load a representative dataset:
++
+[source,cypher]
+----
+UNWIND range(0, 1099999) AS i
+CALL {
+  WITH i
+  CREATE (t:HighChurnEntity {
+    entityId: 'ID-' + toString(i),
+    ts: timestamp(),
+    i: i
+  })
+} IN TRANSACTIONS OF 50000 ROWS;
+----
+
+. Checkpoint, then check the store size.
+The checkpoint flushes pending changes to the store files, so the size check that follows reflects a consistent, durable state.
+The store lives under _<neo4j-home>/data/databases/<database>/_.
++
+[source,cypher]
+----
+CALL db.checkpoint();
+----
++
+To check the store size, you can run `:sysinfo` command in Neo4j Browser or `du -sh <neo4j-home>/data/databases/neo4j` command in a terminal.
++
+The reported output for the store size:
++
+[queryresult]
+----
+283.3 MiB
+----
+
+. Delete roughly half the entity's nodes, for example a retention purge of everything older than a cutoff:
++
+[source,cypher]
+----
+MATCH (t:HighChurnEntity) WHERE t.i <= 549999
+DETACH DELETE t;
+----
+
+. Checkpoint, then check the store size again with the same command:
++
+[source,cypher]
+----
+CALL db.checkpoint();
+----
++
+The reported output for the store size shows:
++
+[queryresult]
+----
+384.0 MiB
+----
++
+The store grew by over 100 MiB, despite deleting roughly half the entity's nodes.
+The native index behind the unique constraint can only grow, so the space freed by the delete is not yet visible on disk.
+
+. Run the compaction:
++
+[source,cypher]
+----
+CALL db.compact();
+----
++
+[queryresult]
+----
+numBytesTrimmed
+155811840
+----
+
+. Check the store size a final time.
+The result can be the following:
++
+[queryresult]
+----
+235.6 MiB
+----
++
+`db.compact()` released 155,811,840 bytes (148.6 MiB) back to the file system.
+The store is now smaller than it was before the delete, because the compaction reclaimed space that earlier deletes and inserts had left fragmented inside the index.
+
+
 ifndef::backend-pdf[]
 [discrete.glossary]
 == Glossary
