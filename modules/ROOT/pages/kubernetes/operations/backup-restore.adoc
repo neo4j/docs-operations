@@ -151,7 +151,7 @@ For more information about the available backup parameters, see <<kubernetes-neo
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -180,7 +180,7 @@ consistencyCheck:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -209,7 +209,7 @@ consistencyCheck:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -252,7 +252,7 @@ For example:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -283,7 +283,7 @@ serviceAccountName: "demo-service-account"
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -314,7 +314,7 @@ serviceAccountName: "demo-service-account"
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -398,7 +398,7 @@ The following are examples of how to configure the backup system for different S
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -460,6 +460,43 @@ backup:
 * Legacy MinIO support through the `minioEndpoint` parameter is deprecated in 5.26 - use `s3Endpoint` instead.
 ====
 
+
+[role=label--new-2025.7.1]
+Configure S3 checksum behavior::
+
+The AWS SDK calculates and validates checksums for S3 requests and responses.
+By default, the SDK uses its standard checksum behavior.
+If you use an S3-compatible storage provider that does not support the checksum algorithms used by the AWS SDK, you can configure request checksum calculation and response checksum validation using the corresponding backup parameters.
+You can also disable multipart checksums when required by the storage provider.
++
+If this is an S3-compatible service and you see errors such as checksum mismatches or unsupported checksum headers, then configure the following:
++
+[source, yaml]
+----
+backup:
+  cloudProvider: "aws"
+  bucketName: "my-bucket"
+  s3Endpoint: "https://your-s3-compatible-endpoint"
+
+  s3RequestChecksumCalculation: "WHEN_REQUIRED" #<1>
+  s3ResponseChecksumValidation: "WHEN_REQUIRED" #<2>
+  s3DisableMultipartChecksums: true #<3>
+----
++
+<1> (Optional) Controls when AWS SDK calculates request checksums.
+Valid values are `WHEN_SUPPORTED` (default), `WHEN_REQUIRED`.
+Set to `WHEN_REQUIRED` to disable automatic checksum calculation for custom S3 endpoints that do not support CRC32 or other checksum algorithms.
++
+<2> (Optional) Controls when AWS SDK validates response checksums.
+Valid values are `WHEN_SUPPORTED` (default), `WHEN_REQUIRED`.
+Set to `WHEN_REQUIRED` to disable automatic checksum validation for custom S3 endpoints.
++
+<3> (Optional) Disables multipart upload checksums entirely.
+The default value is `false`.
+Set to `true` to disable checksums for multipart uploads when using custom S3 endpoints.
+This sets `AWS_S3_DISABLE_MULTIPART_CHECKSUMS` environment variable.
+
+
 === S3 CA certificate setup
 
 For S3 endpoints with custom CA certificates, use a Kubernetes secret to manage the CA certificate:
@@ -503,7 +540,7 @@ For example:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -550,7 +587,15 @@ disableLookups: false
 
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
+
+  # Optional registry for backup image, e.g., "my.private.registry.com"
+  registry: ""
+
+  # imagePullSecrets for pulling the backup image from private registries
+  imagePullSecrets: []
+  #  - name: my-docker-secret
+
   podLabels: {}
 #    app: "demo"
 #    acac: "dcdddc"
@@ -569,19 +614,33 @@ neo4j:
   labels: {}
 
 backup:
+  # Neo4j Backup Modes:
+  # - Cloud Provider Mode (aws/gcp/azure): Uses Neo4j native cloud storage with direct upload to create immutable backup objects
+  # - Local Mode (empty cloudProvider): Creates local backups in /backups mount - requires persistent storage for large databases
+  # - Native cloud storage supports differential backups and eliminates need for persistent volume claims
+  
   # Ensure the bucket is already existing in the respective cloud provider
   # In case of azure the bucket is the container name in the storage account
   # bucket: azure-storage-container
+  #
+  # Path prefix (folder) within the bucket: use '/' separator
+  # Example: "my-bucket/backups" uses bucket "my-bucket" and path prefix "backups"
+  # Backups are written to s3://my-bucket/backups/ (or equivalent for GCP/Azure)
+  # No manual folder creation needed - cloud storage uses path prefixes in object keys
   bucketName: ""
+
   # Specify multiple backup endpoints as comma-separated string
   # e.g. "10.3.3.2:6362,10.3.3.3:6362,10.3.3.4:6362"
   databaseBackupEndpoints: ""
+
   #ex: standalone-admin.default.svc.cluster.local:6362
   # admin service name -  standalone-admin
   # namespace - default
   # cluster domain - cluster.local
   # port - 6362
 
+  # Minio endpoint configuration
+  minioEndpoint: ""
   #ex: 10.3.3.2:6362
   # admin service ip - 10.3.3.2
   # port - 6362
@@ -594,24 +653,57 @@ backup:
   databaseBackupPort: ""
   #default value is cluster.local
   databaseClusterDomain: ""
-  # specify S3-compatible endpoint (e.g., http://s3.amazonaws.com or your custom S3 endpoint)
+  # specify S3-compatible endpoint (e.g., https://s3.amazonaws.com or your custom S3 endpoint)
   # This can be any S3-compatible endpoint including AWS S3, MinIO, or other S3-compatible storage services
-  # For TLS endpoints (https), set s3EndpointTLS to true
+  # TLS is automatically enabled for https:// endpoints
   s3Endpoint: ""
-  # Enable TLS for S3 endpoint (default: false)
-  s3EndpointTLS: false
-  # Optional: Base64-encoded CA certificate for S3 endpoint TLS verification
+  # Name of the Kubernetes secret containing the CA certificate for S3 endpoint TLS verification
   # Only needed for self-signed certificates or private CA
-  s3CACert: ""
+  s3CASecretName: ""
+  # Key in the secret containing the CA certificate
+  s3CASecretKey: ""
   # Optional: Skip TLS verification (not recommended for production)
   s3SkipVerify: false
-  # Optional: Force path-style addressing for S3 requests
-  s3ForcePathStyle: false
-  # Optional: Specify S3 region
+  # Optional: Force path-style addressing (default: true)
+  # Some S3-compatible storage providers require this to be set to true
+  s3ForcePathStyle: true
+  # Optional: Explicitly set the region for S3 signature calculation
+  # For non-AWS S3 providers, this is often set to a fixed value like "us-east-1"
   s3Region: ""
-  # Alternative: Use Kubernetes secret for CA certificate
-  s3CASecretName: ""
-  s3CASecretKey: ""
+  # Optional: Force a specific signature version (2 or 4)
+  # Some S3-compatible storage providers only support signature version 2
+  # Valid values: "2", "4", or "" (empty for auto-detection)
+  s3SignatureVersion: ""
+
+  # AWS SDK checksum configuration for S3 uploads
+  # These settings control AWS SDK v2's automatic checksum calculation behavior
+  # Useful for custom S3 endpoints that don't support AWS's newer checksum requirements
+  
+  # Optional: Control when AWS SDK calculates request checksums
+  # Valid values: "WHEN_SUPPORTED" (default), "WHEN_REQUIRED"
+  # Set to "WHEN_REQUIRED" to disable automatic checksum calculation for custom S3 endpoints
+  # that don't support CRC32 or other checksum algorithms
+  # IMPORTANT: For custom S3 endpoints experiencing "Checksum Type mismatch" errors,
+  # set this to "WHEN_REQUIRED" to resolve the issue
+  s3RequestChecksumCalculation: ""
+  
+  # Optional: Control when AWS SDK validates response checksums
+  # Valid values: "WHEN_SUPPORTED" (default), "WHEN_REQUIRED"
+  # Set to "WHEN_REQUIRED" to disable automatic checksum validation for custom S3 endpoints
+  # IMPORTANT: For custom S3 endpoints experiencing checksum validation errors,
+  # set this to "WHEN_REQUIRED" to resolve the issue
+  s3ResponseChecksumValidation: ""
+  
+  # Optional: Disable multipart upload checksums entirely
+  # Set to true to disable checksums for multipart uploads when using custom S3 endpoints
+  # This sets AWS_S3_DISABLE_MULTIPART_CHECKSUMS environment variable
+  # IMPORTANT: For custom S3 endpoints, set this to true along with the above checksum settings
+  s3DisableMultipartChecksums: false
+
+  # Note: When using AWS cloud provider, the chart automatically configures the AWS SDK
+  # to use URLConnection HTTP client via JAVA_OPTS system property to avoid 
+  # "Unable to load HTTP implementation" errors in containerized environments
+
   #name of the database to backup ex: neo4j or neo4j,system (You can provide command separated database names)
   # In case of comma separated databases failure of any single database will lead to failure of complete operation
   database: ""
@@ -620,8 +712,8 @@ backup:
   # the /backups mount can point to a persistentVolume based on the definition set in tempVolume
   cloudProvider: ""
 
-
-
+  # Cloud provider authentication
+  # For cloud providers, credentials are used by Neo4j native backup for direct cloud storage access
   # name of the kubernetes secret containing the respective cloud provider credentials
   # Ensure you have read,write access to the mentioned bucket
   # For AWS :
@@ -637,18 +729,38 @@ backup:
   # add the storage account name and key in below format in a file create a secret via
   # 'kubectl create secret generic azurecred --from-file=credentials=/demo/azurecredentials'
 
-  #  AZURE_STORAGE_ACCOUNT_NAME=XXXX
-  #  AZURE_STORAGE_ACCOUNT_KEY=XXXX
+  #  AZURE_STORAGE_ACCOUNT=XXXX
+  #  AZURE_STORAGE_KEY=XXXX
+  #  AZURE_CLIENT_ID=XXXX
+  #  AZURE_CLIENT_SECRET=XXXX
+  #  AZURE_TENANT_ID=XXXX
 
   # For GCP :
   # create the secret via the gcp service account json key file.
   # ex: 'kubectl create secret generic gcpcred --from-file=credentials=/demo/gcpcreds.json'
+  # When using Workload Identity (via serviceAccountName), leave secretName empty
   secretName: ""
   # provide the keyname used in the above secret
   secretKeyName: ""
+  # Cloud provider specific credential environment variables
+  # These are set by Neo4j's native cloud storage clients for authentication
+  # AWS: Path to AWS credentials file (will set AWS_SHARED_CREDENTIALS_FILE)
+  awsCredentialsFile: ""
+  # GCP: Path to Google Cloud service account key file (will set GOOGLE_APPLICATION_CREDENTIALS)
+  gcpCredentialsFile: ""
+  # 
+  # NOTE: When cloudProvider is set to "aws" or "gcp" and secretKeyName is provided,
+  # the chart will automatically set AWS_SHARED_CREDENTIALS_FILE or GOOGLE_APPLICATION_CREDENTIALS
+  # to "/credentials/secretKeyName". Use awsCredentialsFile/gcpCredentialsFile to override this default.
   # provide the azure storage account name
   # this to be provided when you are using workload identity integration for azure
   azureStorageAccountName: ""
+  # Azure blob service URL for different Azure clouds
+  # This configures both the Go SDK client and Neo4j's native backup via dbms.integrations.cloud_storage.azb.blob_endpoint_suffix
+  # Default: "" (uses Neo4j default which is "blob.core.windows.net" for Azure Commercial)
+  # Azure Government: "blob.core.usgovcloudapi.net"
+  # See: https://neo4j.com/docs/operations-manual/current/configuration/configuration-settings/
+  azureBlobServiceURL: ""
   #setting this to true will not delete the backup files generated at the /backup mount
   keepBackupFiles: true
 
@@ -661,12 +773,23 @@ backup:
   parallelRecovery: false
   verbose: true
   heapSize: ""
-  # Enable differential backups using the latest differential backup as parent
-  # This eliminates the need for persistent volumes when using cloud providers
-  preferDiffAsParent: false
-  # Fallback to FULL backup if DIFF backup fails
-  fallbackToFull: true
+  compress: true
 
+  # Neo4j Native Cloud Storage Features
+  # Enable differential backups - allows Neo4j to create differential backups directly to cloud storage
+  # This creates backup chains where subsequent backups only store changes from previous backup
+  preferDiffAsParent: false
+  
+  # Neo4j 2025.09+ feature: Enable remote address resolution for backup operations
+  # This flag controls how remote addresses are resolved during backup operations
+  remoteAddressResolution: false
+  
+  # Optional temporary directory for backup process when using cloud storage
+  # If not specified, Neo4j will use a temporary directory inside the current working directory
+  # This is strongly recommended when backing up to cloud storage to avoid disk space issues
+  # on the local filesystem where Neo4j is installed
+  tempDir: ""
+  
   # https://neo4j.com/docs/operations-manual/current/backup-restore/aggregate/
   # Performs aggregate backup. If enabled, NORMAL BACKUP WILL NOT BE DONE only aggregate backup
   # fromPath supports only s3 or local mount. For s3 , please set cloudProvider to aws and use either serviceAccount or creds
@@ -681,11 +804,12 @@ backup:
     # database name to aggregate. Can contain * and ? for globbing.
     database: ""
     # Optional temporary directory for aggregation process
-    # If not specified, will use the backup directory
+    # If not specified, will use the backup directory (/backups)
+    # This is especially useful when working with cloud storage and large backup chains
     tempDir: ""
 
 #Below are all neo4j-admin database check flags / options
-#To know more about the flags read here : https://neo4j.com/docs/operations-manual/current/backup-restore/consistency-checker/
+#To know more about the flags read here : https://neo4j.com/docs/operations-manual/current/tools/neo4j-admin/consistency-checker/
 consistencyCheck:
   enable: false
   checkIndexes: true
@@ -695,10 +819,25 @@ consistencyCheck:
   #The database name for which consistency check needs to be done.
   #Defaults to the backup.database values if left empty
   #The database name here should match with one of the database names present in backup.database. If not , the consistency check will be ignored
+  # 
+  # When left empty: Consistency check will be performed for ALL backed up databases
+  # When specified: Only the specified database(s) will be checked
+  # 
+  # You can specify multiple databases using comma separation: "neo4j,system"
   database: ""
   maxOffHeapMemory: ""
   threads: ""
   verbose: true
+  # Optional temporary directory for consistency check process when using cloud storage
+  # If not specified, will use the backup directory with a "consistency-temp" subdirectory
+  tempDir: ""
+  # Timeout for consistency check operations
+  # Must be a valid Go duration format (supports compound durations and decimals)
+  # Examples: "30m", "1h", "90m", "2h", "2h30m", "1.5h", "4h"
+  # Helm validation will fail immediately for invalid formats
+  # Default: "30m" for cloud storage (aws/gcp/azure), no timeout for local storage
+  # For large databases, increase this value (e.g., "2h", "4h", "6h")
+  timeout: ""
 
 # Set to name of an existing Service Account to use if desired
 # Follow the following links for setting up a service account with workload identity
@@ -707,9 +846,11 @@ consistencyCheck:
 # AWS - https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html
 serviceAccountName: ""
 
-# Volume to use as temporary storage for files before they are uploaded to cloud. For large databases local storage may not have sufficient space.
-# In that case set an ephemeral or persistent volume with sufficient space here
+# Volume to use for local backup storage and temporary files. 
+# Note: When using cloud providers (aws/gcp/azure), Neo4j native backup uploads directly to cloud storage
+# For large databases with local backups, you may need persistent storage here
 # The chart defaults to an emptyDir, use this to overwrite default behavior
+
 #tempVolume:
 #  persistentVolumeClaim:
 #    claimName: backup-pvc
@@ -730,6 +871,7 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]
+
 # default ephemeral storage of backup container
 resources:
   requests:
@@ -769,6 +911,30 @@ affinity: {}
 #                values:
 #                  - S2
 #          topologyKey: topology.kubernetes.io/zone
+
+# Additional environment variables for the backup container
+# Follows the standard Kubernetes env var format
+# Supports value, valueFrom.secretKeyRef, valueFrom.configMapKeyRef, etc.
+extraEnvVars: []
+#  - name: AWS_CA_BUNDLE
+#    value: "/custom-ca/ca-bundle.crt"
+#  - name: MY_SECRET_VAR
+#    valueFrom:
+#      secretKeyRef:
+#        name: my-secret
+#        key: secret-key
+
+# Additional volumes to mount on the backup pod
+extraVolumes: []
+#  - name: custom-ca
+#    secret:
+#      secretName: my-ca-cert-secret
+
+# Additional volume mounts for the backup container
+extraVolumeMounts: []
+#  - name: custom-ca
+#    mountPath: /custom-ca
+#    readOnly: true
 
 #Add tolerations to the Neo4j pod
 tolerations: []
@@ -832,7 +998,7 @@ For example:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -868,7 +1034,7 @@ resources:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   jobSchedule: "* * * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
@@ -927,7 +1093,7 @@ resources:
 ----
 neo4j:
   image: "neo4j/helm-charts-backup"
-  imageTag: "{neo4j-version-exact}"
+  imageTag: "{neo4j-helm-chart-version}"
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   backoffLimit: 1
@@ -1080,3 +1246,10 @@ See <<kubernetes-neo4j-backup-cloud, Prepare to back up a database(s) to a cloud
 . Install the _neo4j-admin_ Helm chart with the updated _backup-values.yaml_ file to back up your databases to the cloud provider bucket.
 See <<#_back_up_your_databases, Back up your databases>> for details.
 
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]
