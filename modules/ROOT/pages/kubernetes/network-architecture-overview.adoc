@@ -64,7 +64,7 @@ This is a simple and effective option when Bolt access is restricted to internal
 The following table summarizes the supported network architecture patterns for exposing Neo4j on Kubernetes.
 
 [[common-architecture-patterns]]
-.Common approaches
+.Common architecture patterns
 [cols="1,1,1,1",options="header"]
 |===
 | Architecture pattern
@@ -123,12 +123,14 @@ neo4j:
       type: LoadBalancer
 ----
 
-**Pros:**
+image::load-balancer.svg[width='450',title='Figure 1']
+
+**Benefits:**
 
 * Zero configuration, works out of the box.
 * All drivers supported (native Bolt, no WebSocket wrapping).
 
-**Cons:**
+**Costs:**
 
 * Neo4j is exposed directly to the Internet.
 
@@ -160,14 +162,16 @@ config:
   dbms.ssl.policy.https.enabled: "true"
 ----
 
-**Pros:**
+image::ingress-tls-passthrough.svg[width='450',title='Figure 2']
+
+**Benefits:**
 
 * End-to-end encryption — traffic is never decrypted outside the Neo4j pod.
 * Simpler Ingress configuration (no TCP termination needed).
 * Neo4j remains autonomous regarding its own TLS stack.
 * Good fit for compliance requirements that mandate end-to-end encryption.
 
-**Cons:**
+**Costs:**
 
 * Certificate management is done directly on Neo4j.
 * Certificate rotation must be handled per instance.
@@ -208,7 +212,9 @@ With Envoy Gateway or Traefik, a `TCPRoute` or `IngressRouteTCP` resource is nee
 See the <<bolt-exposure, Bolt exposure table>> for alternatives if your ingress controller does not support TCP.
 ====
 
-**Pros:**
+image::ingress-tls-termination.svg[width='450',title='Figure 3']
+
+**Benefits:**
 
 * Centralized certificate management with cert-manager and automatic rotation.
 * Neo4j is not exposed directly to the Internet.
@@ -216,7 +222,7 @@ See the <<bolt-exposure, Bolt exposure table>> for alternatives if your ingress 
 * WAF, rate limiting, and access policies can be applied at the ingress level.
 * All Neo4j drivers are supported (native Neo4j Bolt, not limited to WebSocket).
 
-**Cons:**
+**Costs:**
 
 * Requires explicit TCP routing configuration for Bolt (not just a standard ingress rule).
 * Traffic between Ingress and Neo4j is unencrypted, and this is acceptable only if the cluster network is trusted.
@@ -240,12 +246,14 @@ If your use case includes any non-JS client, do not use this option alone — se
 For details about accessing Neo4j through a Kubernetes Ingress and Neo4j reverse proxy, see
 xref:kubernetes/accessing-neo4j-ingress.adoc[Accessing Neo4j using Kubernetes Ingress].
 
-**Pros:**
+image::reverse-proxy-wss.svg[width='450',title='Figure 4']
+
+**Benefits:**
 
 * Single port (`443`) for both HTTPS and Bolt.
 * Good for web-only access (Neo4j Browser, Bloom, NeoDash).
 
-**Cons:**
+**Costs:**
 
 * Only works for the JavaScript driver (WSS).
 * Other native Bolt drivers (Python, Java, Go, .NET, ETL tools) are not supported.
@@ -270,14 +278,16 @@ xref:kubernetes/accessing-neo4j-ingress.adoc[Accessing Neo4j using Kubernetes In
 For information about configuring Bolt and HTTP(S) connectors, see
 xref:configuration/connectors.adoc[Configure network connectors].
 
-**Pros:**
+image::ingress-tls-termination-wss.svg[width='450',title='Figure 5']
+
+**Benefits:**
 
 * All driver types are supported (native Bolt via Ingress + WSS via Reverse Proxy).
 * Web clients (Neo4j Browser, Bloom, NeoDash) work through the reverse proxy.
 * ETL tools and microservices connect via native Bolt through the Ingress.
 * WAF and rate limiting can be applied at both Ingress and proxy levels.
 
-**Cons:**
+**Costs:**
 
 * Higher complexity — two Ingress paths to manage.
 * Neo4j reverse proxy does not support TLS to Neo4j, so internal traffic from the proxy is unencrypted.
@@ -309,7 +319,9 @@ config:
   dbms.ssl.policy.https.enabled: "true"
 ----
 
-**Pros:**
+image::sni-based-tls-envoy.svg[width='450',title='Figure 6']
+
+**Benefits:**
 
 * Single port `443` (TCP) for all traffic.
 * All Neo4j drivers are supported (native Bolt, not limited to WebSocket).
@@ -317,7 +329,7 @@ config:
 * cert-manager compatible.
 * Suitable for strict compliance environments (end-to-end encryption).
 
-**Cons:**
+**Costs:**
 
 * Requires DNS and valid certificates configured before deployment.
 * More complex to set up and operate than the patterns: _Ingress with TLS passthrough_ or _Ingress with TLS termination_.
