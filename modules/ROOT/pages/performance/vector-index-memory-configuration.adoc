@@ -10,7 +10,7 @@ Tools like `iotop`, or equivalent Linux I/O monitoring tools, can help you under
 
 == Optimal memory configuration for Neo4j with vector indexes
 
-To estimate a vector index's filesystem cache requirements, we need to understand how Lucene stores the index.
+To estimate a vector index's filesystem cache requirements, you need to understand how Lucene stores the index.
 The main file types are:
 
 * `.vex` files for the HNSW graph
@@ -22,30 +22,31 @@ Depending on the segment size, Lucene can store these files as entries inside a 
 When inspecting an index that uses compound files, use a Lucene-aware tool that reports the entries inside each `.cfs` file, such as a tool based on Lucene's link:https://lucene.apache.org/core/10_4_0/core/org/apache/lucene/codecs/CompoundDirectory.html[`CompoundDirectory` API].
 A filesystem search for `.vex`, `.vec`, or `.veq` files alone undercounts the index.
 
-For optimal performance we want enough filesystem cache to hold the HNSW graph in memory (`.vex`) and the vector values associated with it.
-The associated vector values depend on the quantization used by the index, either the default binary (`.veq`), scalar (`.veq`), or the full-precision unquantized vectors (`.vec`).
-For example, for binary quantization we want enough memory for the `.vex` and `.veq` files.
+For optimal performance, you want enough filesystem cache to hold the HNSW graph (`.vex`) and its associated vector values in memory.
+The associated vector values depend on the quantization used by the index: either the default binary or scalar (`.veq`) vectors, or full-precision unquantized (`.vec`) vectors.
+For example, for binary quantization, you want enough memory for the `.vex` and `.veq` files.
 
 [NOTE]
 ====
 Quantization is useful when there is not enough memory to keep the full-precision vector values in the filesystem cache.
-Because quantization reduces search accuracy, especially with binary quantization, by default binary-quantized search results are rescored using the full-precision vector values from the `.vec` files.
+Because quantization reduces search accuracy, especially with binary quantization, binary-quantized search results are by default rescored using the full-precision vector values from the `.vec` files.
 Only the vectors selected as candidates by the quantized search need to be read for rescoring.
-The `.vec` files therefore do not need to be cached, and reads for uncached values can be served from disk.
+The `.vec` files, therefore, do not need to be cached, and reads for uncached values can be served from disk.
 ====
 
 If the index has already been built, sum the sizes of the Lucene files or compound-file entries that need to be cached.
-Lucene indexes are made up of segments and each segment has its own vector file set, so include the files for every segment:
+Lucene indexes are made up of segments, and each segment has its own vector file set, so include the files for every segment:
 
 * For an unquantized index, sum the `.vex` and `.vec` files.
 * For a scalar-quantized index, sum the `.vex` and `.veq` files.
 * For a binary-quantized index, sum the `.vex` and `.veq` files.
 
+.Measured vector index file sizes
+====
 The following table shows measured file sizes for indexes containing 1 million 768-dimensional `FLOAT32` vectors.
 The indexes were built with Neo4j 2026.07.1 and `vector.hnsw.m = 16`.
-Lucene created between 313 and 327 segments per index, and the sizes include the entries from every segment, including entries stored inside compound files.
+Lucene created between 313 and 327 segments per index, and the sizes include entries from every segment, including those stored in compound files.
 
-.Measured vector index file sizes
 [options="header", cols="1,1,1,1,1"]
 |===
 | Quantization | HNSW graph | Values used for search | Full-precision values retained for rescoring | Filesystem cache for the index
@@ -70,42 +71,60 @@ Lucene created between 313 and 327 segments per index, and the sizes include the
 |===
 
 The filesystem cache values include the HNSW graph and the values used for search.
-For quantized indexes, they do not include the full-precision `.vec` files used to rescore candidates.
-The file sizes vary with the Neo4j and Lucene versions, index settings, vector data, and segment layout, so measure the files of an existing index rather than relying on these example values.
+Quantized indexes do not include the full-precision `.vec` files used to rescore candidates.
+The file sizes vary with Neo4j and Lucene versions, index settings, vector data, and segment layout, so measure the file sizes of an existing index rather than relying on these example values.
+====
 
 === Estimating file sizes
 
-When planning an index, we can estimate the sizes of these files as follows. Start by calculating the size of the full-precision vector values:
+When planning an index, you can estimate the sizes of these files as follows.
+The example uses the same 1 million 768-dimensional `FLOAT32` vectors as in the previous measured vector index file sizes example.
 
-`full-precision vector values ≈ 4 bytes per dimension x dimension count x vector count`
+. Start by calculating the size of the full-precision vector values using the formula:
++
+* `full-precision vector values ≈ 4 bytes per dimension x dimension count x vector count`
++
+[source, text]
+----
+full-precision vector values ≈ 4 bytes x 768 dimensions x 1,000,000 = 3.072 GB
+----
++
+[TIP]
+====
+For Lucene-backed vector indexes, the dimension precision is `4 bytes` even if the `VECTOR` type in Neo4j has a different precision.
+====
 
-For Lucene-backed vector indexes, the dimension precision is `4 bytes` even if the VECTOR type in Neo4j has a different precision.
-
-If the index is using quantization, the quantized vector data size can be estimated as follows:
-
+. If the index is using quantization, estimate the quantized vector data size using the formulas:
++
 * `scalar-quantized vector values ≈ full-precision vector values / 4`
 * `binary-quantized vector values ≈ full-precision vector values / 32`
++
+[source, text]
+----
+scalar-quantized vector values ≈ 3.072 GB / 4 = 768 MB
+binary-quantized vector values ≈ 3.072 GB / 32 = 96 MB
+----
 
-Finally, estimate the size of the HNSW graph using the following formula:
-
-`HNSW graph size ≈ 8 bytes x vector count x HNSW_M`
-
+. Estimate the size of the HNSW graph using the formula:
++
+* `HNSW graph size ≈ 8 bytes x vector count x HNSW_M`
++
+[source, text]
+----
+HNSW graph size ≈ 8 bytes x 1,000,000 x 16 HNSW_M = 128 MB
+----
++
+[TIP]
+====
 This formula is intended to provide an upper estimate.
 `HNSW_M` is the configured link:{neo4j-docs-base-uri}/cypher-manual/current/indexes/semantic-indexes/vector-indexes/#config-vector.hnsw.m[`vector.hnsw.m`] value (default `16`).
-Add the vector-value and HNSW graph estimates to calculate the filesystem cache requirement for the index.
+====
 
-Using the same example of 1 million 768-dimensional vectors, calculate the following:
-
-* `full-precision vector values ≈ 4 bytes x 768 dimensions x 1,000,000 = 3.072 GB`
-* `scalar-quantized vector values ≈ 3.072 GB / 4 = 768 MB`
-* `binary-quantized vector values ≈ 3.072 GB / 32 = 96 MB`
-* `HNSW graph size ≈ 8 bytes x 1,000,000 x 16 HNSW_M = 128 MB`
-
-The estimated filesystem cache requirements are therefore:
-
-* 3.2 GB for a full-precision, unquantized index
-* 896 MB for a scalar-quantized index
-* 224 MB for a binary-quantized index with rescoring
+. Calculate the filesystem cache requirement for the index by adding the vector-value and HNSW graph estimates:
++
+* for a full-precision, unquantized index: 3.072 GB + 0.128 GB = 3.2 GB
+* for a scalar-quantized index: 768 MB + 128 MB = 896 MB
+* for a binary-quantized index with rescoring: 96 MB + 128 MB = 224 MB
 
 === Neo4j page cache depends on vector access pattern
 
@@ -134,7 +153,7 @@ The Lucene files used for filtering depend on the property type.
 Numeric, temporal, and duration values use link:https://lucene.apache.org/core/10_4_0/core/org/apache/lucene/codecs/lucene90/Lucene90PointsFormat.html[point indexes], which the current Lucene format stores in `.kdd`, `.kdi`, and `.kdm` files.
 String and boolean values use link:https://lucene.apache.org/core/10_4_0/core/org/apache/lucene/codecs/lucene104/Lucene104PostingsFormat.html[term dictionaries and postings], stored primarily in `.tim`, `.tip`, and `.doc` files.
 Some property types use both.
-As with the vector files, these can be entries inside compound `.cfs` files and there is one set for each segment.
+As with the vector files, these can be entries inside compound `.cfs` files, and there is one set for each segment.
 
 For capacity planning, estimate the filter index data by summing the following for every filterable property:
 
@@ -145,7 +164,7 @@ The additional `8 bytes` per populated value is a planning allowance for Lucene 
 This provides a conservative estimate because Lucene compresses point values, document identifiers, repeated terms, and common string prefixes.
 Use the following encoded value widths:
 
-[options="header", cols="2,1"]
+[options="header", cols="1,2"]
 |===
 | Property type | Encoded value width
 
