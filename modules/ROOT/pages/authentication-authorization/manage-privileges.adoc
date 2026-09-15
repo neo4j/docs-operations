@@ -6,12 +6,20 @@
 ----
 CREATE ROLE noAccessUsers IF NOT EXISTS;
 CREATE ROLE regularUsers IF NOT EXISTS;
+CREATE ROLE regularAuthRules IF NOT EXISTS;
 CREATE USER jake SET PASSWORD 'abcd1234' CHANGE NOT REQUIRED;
 CREATE USER joe SET PASSWORD 'abcd5678' CHANGE NOT REQUIRED;
+CREATE AUTH RULE salesRule IF NOT EXISTS
+  SET CONDITION abac.oidc.user_attribute('department') = 'sales';
+CREATE AUTH RULE engineeringUKRule IF NOT EXISTS
+  SET CONDITION abac.oidc.user_attribute('department') = 'engineering' AND abac.oidc.user_attribute('location') = 'UK';
 DENY ACCESS ON DATABASE neo4j TO `noAccessUsers`;
-GRANT ACCESS ON DATABASE neo4j TO `regularUsers`;
+GRANT ACCESS ON DATABASE neo4j TO `regularUsers`, `regularAuthRules`;
 GRANT ROLE `regularUsers` TO `jake`;
 GRANT ROLE `noAccessUsers` TO `joe`;
+GRANT ROLE `regularAuthRules` TO AUTH RULE `salesRule`, `engineeringUKRule`;
+GRANT ROLE `reader` TO AUTH RULE `salesRule`;
+GRANT ROLE `architect` TO AUTH RULE `engineeringUKRule`;
 ----
 ////
 
@@ -387,6 +395,15 @@ SHOW [ALL] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
 | Description
 | List all granted or denied privileges.
 
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW PRIVILEGE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-privilege-management-privileges.adoc[DBMS PRIVILEGE MANAGEMENT privileges].
+
 |===
 
 .Show role privileges syntax
@@ -409,6 +426,14 @@ SHOW ROLE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
 | Description
 | List privileges granted or denied to a specific role.
 
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW PRIVILEGE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-privilege-management-privileges.adoc[DBMS PRIVILEGE MANAGEMENT privileges].
 |===
 
 .Show user privileges syntax
@@ -438,27 +463,114 @@ Therefore, if a non-native auth provider like LDAP is in use, `SHOW USER PRIVILE
 
 Other users' privileges cannot be listed when using a non-native auth provider.
 ====
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW PRIVILEGE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-privilege-management-privileges.adoc[DBMS PRIVILEGE MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW USER
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-user-management-privileges.adoc[DBMS USER MANAGEMENT privileges].
+|===
+
+.Show auth rule privileges syntax
+[cols="<15s,<85"]
+|===
+
+| Command
+m| label:cypher[Cypher 25] label:new[Introduced in 2026.09] +SHOW AUTH RULE ... PRIVILEGE+
+
+| Syntax
+a|
+[source, syntax, role="noheader", indent=0]
+----
+SHOW AUTH RULE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+  [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+| Description
+| List privileges for a specific auth rule.
+
+| Required privilege
+a|
+[source, privilege, role="noheader"]
+----
+GRANT SHOW PRIVILEGE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-privilege-management-privileges.adoc[DBMS PRIVILEGE MANAGEMENT privileges].
+
+[source, privilege, role="noheader"]
+----
+GRANT SHOW AUTH RULE
+----
+
+For more information, see xref:authentication-authorization/dbms-administration/dbms-auth-rule-management-privileges.adoc[DBMS AUTH RULE MANAGEMENT privileges].
 |===
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
 
-For an easy overview of the existing privileges, it is recommended to use the `AS COMMANDS` version of the `SHOW` command, which returns two columns.
+For an easy overview of the existing privileges, it is recommended to use the `AS COMMANDS` version of the `SHOW` command, which returns the privilege as a string of the `GRANT` or `DENY` command.
+It also has a few other columns that can be useful for filtering.
 
 .`SHOW PRIVILEGES AS COMMANDS` output
-[options="header", width="100%", cols="2a,4,2m"]
+[options="header", width="100%", cols="2a,4,2m,^.^"]
 |===
 | Column
 | Description
 | Type
+| Default
 
 | command
 | The privilege as the command that is granted or denied.
 Or in the `AS REVOKE COMMANDS` case, the command to revoke the privilege. label:default-output[]
 | STRING
+| {check-mark}
+
+| access
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] Whether the privilege is granted or denied.
+| STRING
+|
+
+| action
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] The type of the privilege.
+E.g., traverse, read, index management, or role management.
+| STRING
+|
+
+| roles
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] The roles the privilege is granted to.
+| LIST<STRING>
+|
 
 | immutable
 | Whether or not the privilege is immutable.
 | BOOLEAN
+|
+
+| users
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] The users the privilege belongs to.
+
+Note that this is only returned for `SHOW USER [username] PRIVILEGES`.
+| LIST<STRING>
+| {check-mark}
+
+| authRules
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] The auth rules the privilege belongs to.
+
+Note that this is only returned for `SHOW AUTH RULE ruleName PRIVILEGES`.
+| LIST<STRING>
+| {check-mark}
 |===
 
 Alternatively, you can omit the `AS COMMANDS` clause and get the full details of the privileges returned in multiple columns.
@@ -505,6 +617,12 @@ E.g., the entire DBMS, a specific database, a graph, or sub-graph access.
 Note that this is only returned for `SHOW USER [username] PRIVILEGES`.
 | STRING
 
+| authRule
+| label:cypher[Cypher 25] label:new[Introduced in 2026.09] The auth rule the privilege belongs to.
+
+Note that this is only returned for `SHOW AUTH RULE ruleName PRIVILEGES`.
+| STRING
+
 |===
 
 [[access-control-list-all-privileges]]
@@ -533,63 +651,64 @@ Lists all privileges for all roles:
 .Result
 [role="queryresult"]
 ----
-+---------------------------------------------------------------------------------------------------------------------+
-| access    | action                   | resource         | graph   | segment           | role            | immutable |
-+---------------------------------------------------------------------------------------------------------------------+
-| "GRANTED" | "load"                   | "file"           | "*"     | "ALL DATA"        | "PUBLIC"        | FALSE     |
-| "GRANTED" | "execute"                | "database"       | "*"     | "FUNCTION(*)"     | "PUBLIC"        | FALSE     |
-| "GRANTED" | "execute"                | "database"       | "*"     | "PROCEDURE(*)"    | "PUBLIC"        | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "HOME"  | "database"        | "PUBLIC"        | FALSE     |
-| "GRANTED" | "load"                   | "file"           | "*"     | "ALL DATA"        | "admin"         | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "admin"         | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "admin"         | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "admin"         | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "admin"         | FALSE     |
-| "GRANTED" | "transaction_management" | "database"       | "*"     | "USER(*)"         | "admin"         | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "constraint"             | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "dbms_actions"           | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "index"                  | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "start_database"         | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "stop_database"          | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "admin"         | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "architect"     | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "architect"     | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "architect"     | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "architect"     | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "constraint"             | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "index"                  | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "architect"     | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "editor"        | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "editor"        | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "editor"        | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "editor"        | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "editor"        | FALSE     |
-| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "editor"        | FALSE     |
-| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "editor"        | FALSE     |
-| "DENIED"  | "access"                 | "database"       | "neo4j" | "database"        | "noAccessUsers" | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "publisher"     | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "publisher"     | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "publisher"     | FALSE     |
-| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "publisher"     | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "publisher"     | FALSE     |
-| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "publisher"     | FALSE     |
-| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "publisher"     | FALSE     |
-| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "publisher"     | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "reader"        | FALSE     |
-| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "reader"        | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "reader"        | FALSE     |
-| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "reader"        | FALSE     |
-| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "reader"        | FALSE     |
-| "GRANTED" | "access"                 | "database"       | "neo4j" | "database"        | "regularUsers"  | FALSE     |
-+---------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------+
+| access    | action                   | resource         | graph   | segment           | role               | immutable |
++------------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "load"                   | "file"           | "*"     | "ALL DATA"        | "PUBLIC"           | FALSE     |
+| "GRANTED" | "execute"                | "database"       | "*"     | "FUNCTION(*)"     | "PUBLIC"           | FALSE     |
+| "GRANTED" | "execute"                | "database"       | "*"     | "PROCEDURE(*)"    | "PUBLIC"           | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "HOME"  | "database"        | "PUBLIC"           | FALSE     |
+| "GRANTED" | "load"                   | "file"           | "*"     | "ALL DATA"        | "admin"            | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "admin"            | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "admin"            | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "admin"            | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "admin"            | FALSE     |
+| "GRANTED" | "transaction_management" | "database"       | "*"     | "USER(*)"         | "admin"            | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "constraint"             | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "dbms_actions"           | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "index"                  | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "start_database"         | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "stop_database"          | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "admin"            | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "architect"        | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "architect"        | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "architect"        | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "architect"        | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "constraint"             | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "index"                  | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "architect"        | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "editor"           | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "editor"           | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "editor"           | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "editor"           | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "editor"           | FALSE     |
+| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "editor"           | FALSE     |
+| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "editor"           | FALSE     |
+| "DENIED"  | "access"                 | "database"       | "neo4j" | "database"        | "noAccessUsers"    | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "publisher"        | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "NODE(*)"         | "publisher"        | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "publisher"        | FALSE     |
+| "GRANTED" | "write"                  | "graph"          | "*"     | "RELATIONSHIP(*)" | "publisher"        | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "publisher"        | FALSE     |
+| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "publisher"        | FALSE     |
+| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "publisher"        | FALSE     |
+| "GRANTED" | "token"                  | "database"       | "*"     | "database"        | "publisher"        | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "NODE(*)"         | "reader"           | FALSE     |
+| "GRANTED" | "match"                  | "all_properties" | "*"     | "RELATIONSHIP(*)" | "reader"           | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "*"     | "database"        | "reader"           | FALSE     |
+| "GRANTED" | "show_constraint"        | "database"       | "*"     | "database"        | "reader"           | FALSE     |
+| "GRANTED" | "show_index"             | "database"       | "*"     | "database"        | "reader"           | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "neo4j" | "database"        | "regularAuthRules" | FALSE     |
+| "GRANTED" | "access"                 | "database"       | "neo4j" | "database"        | "regularUsers"     | FALSE     |
++------------------------------------------------------------------------------------------------------------------------+
 
-51 rows
+52 rows
 ready to start consuming query after 12 ms, results consumed after another 6 ms
 ----
 
@@ -662,15 +781,16 @@ In this example, the `WHERE` clause is used to filter privileges down to those t
 .Result
 [role="queryresult"]
 ----
-+----------------------------------------------------------------------------------------+
-| access    | action   | resource   | graph   | segment    | role            | immutable |
-+----------------------------------------------------------------------------------------+
-| "GRANTED" | "access" | "database" | "HOME"  | "database" | "PUBLIC"        | FALSE     |
-| "DENIED"  | "access" | "database" | "neo4j" | "database" | "noAccessUsers" | FALSE     |
-| "GRANTED" | "access" | "database" | "neo4j" | "database" | "regularUsers"  | FALSE     |
-+----------------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------+
+| access    | action   | resource   | graph   | segment    | role               | immutable |
++-------------------------------------------------------------------------------------------+
+| "GRANTED" | "access" | "database" | "HOME"  | "database" | "PUBLIC"           | FALSE     |
+| "DENIED"  | "access" | "database" | "neo4j" | "database" | "noAccessUsers"    | FALSE     |
+| "GRANTED" | "access" | "database" | "neo4j" | "database" | "regularAuthRules" | FALSE     |
+| "GRANTED" | "access" | "database" | "neo4j" | "database" | "regularUsers"     | FALSE     |
++-------------------------------------------------------------------------------------------+
 
-3 rows
+4 rows
 ready to start consuming query after 3 ms, results consumed after another 2 ms
 ----
 
@@ -685,20 +805,21 @@ SHOW PRIVILEGES YIELD * RETURN role, access, collect([graph, resource, segment, 
 .Result
 [role="queryresult"]
 ----
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| role            | access    | privileges                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
-| "PUBLIC"        | "GRANTED" | [["*", "file", "ALL DATA", "load"], ["*", "database", "FUNCTION(*)", "execute"], ["*", "database", "PROCEDURE(*)", "execute"], ["HOME", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| "admin"         | "GRANTED" | [["*", "file", "ALL DATA", "load"], ["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "USER(*)", "transaction_management"], ["*", "database", "database", "access"], ["*", "database", "database", "constraint"], ["*", "database", "database", "dbms_actions"], ["*", "database", "database", "index"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "start_database"], ["*", "database", "database", "stop_database"], ["*", "database", "database", "token"]] |
-| "architect"     | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "constraint"], ["*", "database", "database", "index"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "token"]]                                                                                                                                                                                                                                            |
-| "editor"        | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"]]                                                                                                                                                                                                                                                                                                                                                                         |
-| "noAccessUsers" | "DENIED"  | [["neo4j", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| "publisher"     | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "token"]]                                                                                                                                                                                                                                                                                                                                 |
-| "reader"        | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| "regularUsers"  | "GRANTED" | [["neo4j", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| role               | access    | privileges                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "PUBLIC"           | "GRANTED" | [["*", "file", "ALL DATA", "load"], ["*", "database", "FUNCTION(*)", "execute"], ["*", "database", "PROCEDURE(*)", "execute"], ["HOME", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| "admin"            | "GRANTED" | [["*", "file", "ALL DATA", "load"], ["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "USER(*)", "transaction_management"], ["*", "database", "database", "access"], ["*", "database", "database", "constraint"], ["*", "database", "database", "dbms_actions"], ["*", "database", "database", "index"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "start_database"], ["*", "database", "database", "stop_database"], ["*", "database", "database", "token"]] |
+| "architect"        | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "constraint"], ["*", "database", "database", "index"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "token"]]                                                                                                                                                                                                                                            |
+| "editor"           | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"]]                                                                                                                                                                                                                                                                                                                                                                         |
+| "noAccessUsers"    | "DENIED"  | [["neo4j", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| "publisher"        | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "graph", "NODE(*)", "write"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "graph", "RELATIONSHIP(*)", "write"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"], ["*", "database", "database", "token"]]                                                                                                                                                                                                                                                                                                                                 |
+| "reader"           | "GRANTED" | [["*", "all_properties", "NODE(*)", "match"], ["*", "all_properties", "RELATIONSHIP(*)", "match"], ["*", "database", "database", "access"], ["*", "database", "database", "show_constraint"], ["*", "database", "database", "show_index"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| "regularAuthRules" | "GRANTED" | [["neo4j", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| "regularUsers"     | "GRANTED" | [["neo4j", "database", "database", "access"]]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
-8 rows
+9 rows
 ready to start consuming query after 3 ms, results consumed after another 1 ms
 ----
 
@@ -751,6 +872,7 @@ SHOW PRIVILEGES AS COMMANDS;
 | "GRANT ACCESS ON DATABASE * TO `editor`"                    |
 | "GRANT ACCESS ON DATABASE * TO `publisher`"                 |
 | "GRANT ACCESS ON DATABASE * TO `reader`"                    |
+| "GRANT ACCESS ON DATABASE `neo4j` TO `regularAuthRules`"    |
 | "GRANT ACCESS ON DATABASE `neo4j` TO `regularUsers`"        |
 | "GRANT ACCESS ON HOME DATABASE TO `PUBLIC`"                 |
 | "GRANT ALL DBMS PRIVILEGES ON DBMS TO `admin`"              |
@@ -794,7 +916,7 @@ SHOW PRIVILEGES AS COMMANDS;
 | "GRANT WRITE ON GRAPH * TO `publisher`"                     |
 +-------------------------------------------------------------+
 
-47 rows
+48 rows
 ready to start consuming query after 30 ms, results consumed after another 2 ms
 ----
 
@@ -846,6 +968,7 @@ SHOW PRIVILEGES AS REVOKE COMMANDS;
 | "REVOKE GRANT ACCESS ON DATABASE * FROM `editor`"                    |
 | "REVOKE GRANT ACCESS ON DATABASE * FROM `publisher`"                 |
 | "REVOKE GRANT ACCESS ON DATABASE * FROM `reader`"                    |
+| "REVOKE GRANT ACCESS ON DATABASE `neo4j` FROM `regularAuthRules`"    |
 | "REVOKE GRANT ACCESS ON DATABASE `neo4j` FROM `regularUsers`"        |
 | "REVOKE GRANT ACCESS ON HOME DATABASE FROM `PUBLIC`"                 |
 | "REVOKE GRANT ALL DBMS PRIVILEGES ON DBMS FROM `admin`"              |
@@ -889,7 +1012,7 @@ SHOW PRIVILEGES AS REVOKE COMMANDS;
 | "REVOKE GRANT WRITE ON GRAPH * FROM `publisher`"                     |
 +----------------------------------------------------------------------+
 
-47 rows
+48 rows
 ready to start consuming query after 9 ms, results consumed after another 1 ms
 ----
 
@@ -1118,15 +1241,15 @@ SHOW USER jake PRIVILEGES AS COMMANDS;
 .Result
 [role="queryresult"]
 ----
-+----------------------------------------------------------+
-| command                                                  |
-+----------------------------------------------------------+
-| "GRANT ACCESS ON DATABASE `neo4j` TO $role"              |
-| "GRANT ACCESS ON HOME DATABASE TO $role"                 |
-| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"             |
-| "GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS TO $role" |
-| "GRANT LOAD ON ALL DATA TO $role"                        |
-+----------------------------------------------------------+
++---------------------------------------------------------------------+
+| command                                                  | users    |
++---------------------------------------------------------------------+
+| "GRANT ACCESS ON DATABASE `neo4j` TO $role"              | ["jake"] |
+| "GRANT ACCESS ON HOME DATABASE TO $role"                 | ["jake"] |
+| "GRANT EXECUTE PROCEDURE * ON DBMS TO $role"             | ["jake"] |
+| "GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS TO $role" | ["jake"] |
+| "GRANT LOAD ON ALL DATA TO $role"                        | ["jake"] |
++---------------------------------------------------------------------+
 
 5 rows
 ready to start consuming query after 20 ms, results consumed after another 1 ms
@@ -1137,19 +1260,154 @@ Additionally, similar to the other show privilege commands, it is also possible 
 
 [source, cypher, role=noplay]
 ----
-SHOW USER jake PRIVILEGES AS REVOKE COMMANDS
+SHOW USER jake, joe PRIVILEGES AS REVOKE COMMANDS
 WHERE command CONTAINS 'EXECUTE';
 ----
 
 .Result
 [role="queryresult"]
 ----
-+-------------------------------------------------------------------+
-| command                                                           |
-+-------------------------------------------------------------------+
-| "REVOKE GRANT EXECUTE PROCEDURE * ON DBMS FROM $role"             |
-| "REVOKE GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS FROM $role" |
-+-------------------------------------------------------------------+
++-------------------------------------------------------------------------------------+
+| command                                                           | users           |
++-------------------------------------------------------------------------------------+
+| "REVOKE GRANT EXECUTE PROCEDURE * ON DBMS FROM $role"             | ["jake", "joe"] |
+| "REVOKE GRANT EXECUTE USER DEFINED FUNCTION * ON DBMS FROM $role" | ["jake", "joe"] |
++-------------------------------------------------------------------------------------+
+
+2 rows
+ready to start consuming query after 19 ms, results consumed after another 0 ms
+----
+
+[role=label--new-2026.09 label--cypher-25]
+[[access-control-list-privileges-auth-rules]]
+=== Examples for showing privileges for specific auth rules
+
+Available privileges for specific auth rules can be displayed using `SHOW AUTH RULE name PRIVILEGES`.
+
+
+[source, syntax]
+----
+SHOW AUTH RULE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+  [WHERE expression]
+
+SHOW AUTH RULE[S] name[, ...] PRIVILEGE[S] [AS [REVOKE] COMMAND[S]]
+  YIELD { * | field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]
+  [WHERE expression]
+  [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
+----
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULE salesRule PRIVILEGES;
+----
+
+Lists all privileges for auth rule `salesRule`.
+
+.Result
+[role="queryresult"]
+----
++-------------------------------------------------------------------------------------------------------------------------------+
+| access    | action            | resource         | graph   | segment           | role               | immutable | authRule    |
++-------------------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "match"           | "all_properties" | "*"     | "NODE(*)"         | "reader"           | FALSE     | "salesRule" |
+| "GRANTED" | "match"           | "all_properties" | "*"     | "RELATIONSHIP(*)" | "reader"           | FALSE     | "salesRule" |
+| "GRANTED" | "access"          | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule" |
+| "GRANTED" | "show_constraint" | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule" |
+| "GRANTED" | "show_index"      | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule" |
+| "GRANTED" | "access"          | "database"       | "neo4j" | "database"        | "regularAuthRules" | FALSE     | "salesRule" |
++-------------------------------------------------------------------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 45 ms, results consumed after another 1 ms
+----
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULES salesRule, engineeringUKRule PRIVILEGES;
+----
+
+Lists all privileges for auth rules `salesRule` and `engineeringUKRule`.
+
+.Result
+[role="queryresult"]
+----
++---------------------------------------------------------------------------------------------------------------------------------------+
+| access    | action            | resource         | graph   | segment           | role               | immutable | authRule            |
++---------------------------------------------------------------------------------------------------------------------------------------+
+| "GRANTED" | "match"           | "all_properties" | "*"     | "NODE(*)"         | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "write"           | "graph"          | "*"     | "NODE(*)"         | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "match"           | "all_properties" | "*"     | "RELATIONSHIP(*)" | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "write"           | "graph"          | "*"     | "RELATIONSHIP(*)" | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "access"          | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "constraint"      | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "index"           | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "show_constraint" | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "show_index"      | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "token"           | "database"       | "*"     | "database"        | "architect"        | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "access"          | "database"       | "neo4j" | "database"        | "regularAuthRules" | FALSE     | "engineeringUKRule" |
+| "GRANTED" | "match"           | "all_properties" | "*"     | "NODE(*)"         | "reader"           | FALSE     | "salesRule"         |
+| "GRANTED" | "match"           | "all_properties" | "*"     | "RELATIONSHIP(*)" | "reader"           | FALSE     | "salesRule"         |
+| "GRANTED" | "access"          | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule"         |
+| "GRANTED" | "show_constraint" | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule"         |
+| "GRANTED" | "show_index"      | "database"       | "*"     | "database"        | "reader"           | FALSE     | "salesRule"         |
+| "GRANTED" | "access"          | "database"       | "neo4j" | "database"        | "regularAuthRules" | FALSE     | "salesRule"         |
++---------------------------------------------------------------------------------------------------------------------------------------+
+
+17 rows
+ready to start consuming query after 9 ms, results consumed after another 0 ms
+----
+
+As for the other privilege commands, available privileges for users can also be listed as Cypher commands with the optional `AS COMMAND[S]`.
+
+[NOTE]
+====
+When showing auth rule privileges as commands, the roles in the Cypher commands are replaced with a parameter.
+This can be used to quickly create new roles based on the privileges of specific auth rules.
+====
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULE salesRule PRIVILEGES AS COMMANDS;
+----
+
+.Result
+[role="queryresult"]
+----
++----------------------------------------------------------------------+
+| command                                              | authRules     |
++----------------------------------------------------------------------+
+| "GRANT ACCESS ON DATABASE * TO $role"                | ["salesRule"] |
+| "GRANT ACCESS ON DATABASE `neo4j` TO $role"          | ["salesRule"] |
+| "GRANT MATCH {*} ON GRAPH * NODE * TO $role"         | ["salesRule"] |
+| "GRANT MATCH {*} ON GRAPH * RELATIONSHIP * TO $role" | ["salesRule"] |
+| "GRANT SHOW CONSTRAINT ON DATABASE * TO $role"       | ["salesRule"] |
+| "GRANT SHOW INDEX ON DATABASE * TO $role"            | ["salesRule"] |
++----------------------------------------------------------------------+
+
+6 rows
+ready to start consuming query after 20 ms, results consumed after another 1 ms
+----
+
+Like other `SHOW` commands, the output can also be processed using `YIELD` / `WHERE` / `RETURN`.
+Additionally, similar to the other show privilege commands, it is also possible to show the commands for revoking the privileges.
+
+[source, cypher, role=noplay]
+----
+SHOW AUTH RULE salesRule, engineeringUKRule PRIVILEGES AS REVOKE COMMANDS
+YIELD *
+WHERE action = 'access';
+----
+
+.Result
+[role="queryresult"]
+----
++------------------------------------------------------------------------------------------------------------------------------------------------------+
+| command                                            | access    | action   | roles                   | immutable | authRules                          |
++------------------------------------------------------------------------------------------------------------------------------------------------------+
+| "REVOKE GRANT ACCESS ON DATABASE * TO $role"       | "GRANTED" | "access" | ["architect", "reader"] | FALSE     | ["salesRule", "engineeringUKRule"] |
+| "REVOKE GRANT ACCESS ON DATABASE `neo4j` TO $role" | "GRANTED" | "access" | ["regularAuthRules"]    | FALSE     | ["salesRule", "engineeringUKRule"] |
++------------------------------------------------------------------------------------------------------------------------------------------------------+
+
 
 2 rows
 ready to start consuming query after 19 ms, results consumed after another 0 ms
