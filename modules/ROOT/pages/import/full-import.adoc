@@ -1,0 +1,694 @@
+:description: This section describes how to perform bulk offline imports of data into Neo4j using the command line tool `neo4j-admin database import full`.
+:check-mark: icon:check[]
+:rfc-4180: https://datatracker.ietf.org/doc/html/rfc4180
+[[full-import]]
+= Full import
+
+[[import-tool-syntax]]
+== Syntax
+
+The syntax for importing a set of CSV files is:
+
+[source, syntax, role="nocopy"]
+----
+neo4j-admin database import full [-h] [--expand-commands] [--verbose] [--auto-skip-subsequent-headers[=true|false]]
+                                 [--compress[=true|false]] [--dry-run[=true|false]] [--ignore-empty-strings
+                                 [=true|false]] [--ignore-extra-columns[=true|false]] [--legacy-style-quoting
+                                 [=true|false]] [--normalize-types[=true|false]] [--overwrite-destination[=true|false]]
+                                 [--profile[=true|false]] [--skip-bad-entries-logging[=true|false]]
+                                 [--skip-bad-relationships[=true|false]] [--skip-duplicate-nodes[=true|false]] [--strict
+                                 [=true|false]] [--trim-strings[=true|false]] [--additional-config=<file>]
+                                 [--array-delimiter=<char>] [--bad-tolerance=<num>] [--delimiter=<char>]
+                                 [--format=<format>] [--high-parallel-io=on|off|auto] [--id-type=string|integer|actual]
+                                 [--input-encoding=<character-set>] [--input-type=csv|parquet]
+                                 [--max-off-heap-memory=<size>] [--path-pattern-style=regex|glob|none]
+                                 [--profile-results-path=<path>] [--property-shard-count=<propertyShardCount>]
+                                 [--quote=<char>] [--read-buffer-size=<size>] [--report-file=<path>] [--schema=<path>]
+                                 [--target-format=<format>] [--target-location=<path>] [--temp-path=<path>]
+                                 [--threads=<num>] [--vector-delimiter=<char>] [--nodes=[<label>[:<label>]...=]
+                                 <files>...]... [--relationships=[<type>=]<files>...]...
+                                 [--multiline-fields=true|false|<path>[,<path>] [--multiline-fields-format=v1|v2]]
+                                 <database>
+----
+
+== Description
+
+High-speed initial import of fault-free data from CSV files into a non-existent or empty database.
+
+== Parameters
+
+.`neo4j-admin database import full` parameters
+[options="header", cols="5m,10a,2m"]
+|===
+| Parameter
+| Description
+| Default
+
+|<database>
+|Name of the database to import.
+If the database into which you import does not exist prior to importing, you must create it subsequently using `CREATE DATABASE`.
+|neo4j
+|===
+
+[CAUTION]
+====
+Some of the options below are marked as *Advanced*.
+These options should not be used for experimentation. +
+For more information, contact Neo4j Professional Services.
+====
+
+== Options
+
+`neo4j-admin import` also supports the Parquet file format.
+You can use the parameter `--input-type=csv|parquet` to explicitly specify whether to use CSV or Parquet for the importer.
+If not defined, it defaults to CSV.
+The <<import-tool-examples, examples>> for CSV can also be used with Parquet.
+
+[[full-import-options-table]]
+.`neo4j-admin database import full` options
+[options="header", cols="4m,6a,2m,1,2"]
+|===
+| Option
+| Description
+| Default
+| CSV
+| Parquet
+
+|--additional-config=<file>footnote:[See xref:neo4j-admin-neo4j-cli.adoc#_configuration[Neo4j Admin and Neo4j CLI -> Configuration] for details.]
+|Configuration file with additional configuration.
+|
+| {check-mark}
+| {check-mark}
+
+|--array-delimiter=<char>
+|Delimiter character between array elements within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the array is encoded as a string.
+
+====
+* ASCII character -- e.g. `--array-delimiter=";"`.
+* `\ID` -- Unicode character with ID, e.g. `--array-delimiter="\59"`.
+* `U+XXXX` -- Unicode character specified with 4 HEX characters, e.g. `--array-delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--array-delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+
+|;
+| {check-mark}
+| {check-mark}
+
+
+| --auto-skip-subsequent-headers[=true\|false]
+|Automatically skip accidental header lines in subsequent files in file groups with more than one file.
+|false
+| {check-mark}
+|
+
+|--bad-tolerance=<num>
+|Number of bad entries before the import is aborted. The import process is optimized for error-free data. Therefore, cleaning the data before importing it is highly recommended. If you encounter any bad entries during the import process, you can set the number of bad entries to a specific value that suits your needs. However, setting a high value may affect the performance of the tool.
+|-1 label:changed[Changed in 2025.12]
+| {check-mark}
+| {check-mark}
+
+|--compress[=true\|false]footnote:shardedDb1[For using this option with sharded property databases, see xref:scalability/sharded-property-databases/data-ingestion.adoc[Property Sharding -> Data import].]
+|label:new[Introduced in 2026.04] Request backup artifact to be compressed. Compression can yield a backup artefact many times smaller, but the exact reduction depends upon many factors, including the database format and the kind of data stored. If disabled, the size of the produced artifact will be approximately equal to the size of the backed-up database. The speed of the import operation is affected by compression, but which is faster depends upon the relative performance of CPU and storage. If import speed is important, consider evaluating both options - with compression enabled and disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--delimiter=<char>
+|Delimiter character between values in CSV data. Also accepts `TAB` and e.g. `U+002A` for specifying a character using Unicode. Note that the delimiter character must be a single byte character in UTF-8.
+
+====
+* ASCII character -- e.g. `--delimiter=","`.
+* `\ID` -- Unicode character with ID, e.g. `--delimiter="\44"`.
+* `U+XXXX` -- Unicode character specified with 4 HEX characters, e.g. `--delimiter="U+20AC"`.
+* `\t` -- horizontal tabulation (HT), e.g. `--delimiter="\t"`.
+====
+
+For horizontal tabulation (HT), use `\t` or the Unicode character ID `\9`.
+
+Unicode character ID can be used if prepended by `\`.
+|,
+| {check-mark}
+|
+
+|--dry-run[=true\|false]footnote:[See <<import-full-dry-run, Perform a dry run before importing data>> for details.]
+|label:new[Introduced in 2026.02]Flag used to indicate that a dry run of the import should be performed, i.e. no data will actually be imported, only the validation of the various arguments and estimation of size of the import will be performed and reported.
+|false
+| {check-mark}
+| {check-mark}
+
+|--expand-commands
+|Allow command expansion in config value evaluation.
+|
+| {check-mark}
+| {check-mark}
+
+|--format=<format>
+|Name of database format.
+The imported database will be created in the specified format or use the format set in the configuration.
+Valid formats are `standard`, `aligned`, `high_limit`, and `block`.
+|
+| {check-mark}
+| {check-mark}
+
+|-h, --help
+|Show this help message and exit.
+|
+| {check-mark}
+| {check-mark}
+
+|--high-parallel-io=on\|off\|auto
+|Ignore environment-based heuristics and indicate if the target storage subsystem can support parallel IO with high throughput or auto detect.
+Typically this is `on` for SSDs, large raid arrays, and network-attached storage.
+|auto
+| {check-mark}
+| {check-mark}
+
+|--id-type=string\|integer\|actual
+|Each node must provide a unique ID.
+This is used to find the correct nodes when creating relationships.
+
+Possible values are:
+
+* `string` -- arbitrary strings for identifying nodes.
+* `integer` -- arbitrary integer values for identifying nodes.
+* `actual` -- (advanced) actual node IDs.
+|string
+| {check-mark}
+| {check-mark}
+
+|--ignore-empty-strings[=true\|false]
+|Whether or not empty string fields, i.e. "" from input source are ignored, i.e. treated as null.
+|false
+| {check-mark}
+| {check-mark}
+
+|--ignore-extra-columns[=true\|false]
+|If unspecified columns should be ignored during the import.
+|false
+| {check-mark}
+|
+
+|--input-encoding=<character-set>
+|Character set that input data is encoded in.
+|UTF-8
+| {check-mark}
+|
+
+|--input-type=csv\|parquet
+|File type to import from. Can be csv or parquet. Defaults to csv.
+|
+| {check-mark}
+| {check-mark}
+
+|--legacy-style-quoting[=true\|false]
+|Whether or not a backslash-escaped quote e.g. \" is interpreted as an inner quote.
+|false
+| {check-mark}
+| {check-mark}
+
+|--max-off-heap-memory=<size>
+|Maximum off-heap memory that the command can use for page cache and various caching data structures to improve performance. Use this option to tune the command memory usage; the command does not use the server.memory.pagecache.size configuration setting for this purpose. Values can be plain numbers, such as 10000000, or, for example, 20G for 20 gigabytes, or 70%, which will amount to 70% of currently free memory on the machine.
+|90%
+| {check-mark}
+| {check-mark}
+
+|--multiline-fields=true\|false\|<path>[,<path>] footnote:[The option's value depends on `--multiline-fields-format`. For details, see xref:import/header-format.adoc#import-tool-multiline-fields[Importing data that spans multiple lines].]
+|In v1, whether or not fields from an input source can span multiple lines, i.e. contain newline characters. Setting `--multiline-fields=true` can severely degrade the performance of the importer. Therefore, use it with care, especially with large imports. In v2, this option will specify the list of files that contain multiline fields. Files can also be specified using regular expressions.
+|
+| {check-mark}
+|
+
+|--multiline-fields-format=v1\|v2
+|Controls the parsing of input source that can span multiple lines, i.e. contain newline characters. When set to `v1`, the value for `--multiline-fields` can only be `true` or `false`. When set to `v2`, the value for `--multiline-fields` should be the list of files that contain multiline fields.
+|v1
+| {check-mark}
+|
+
+|--nodes=[<label>[:<label>]...=]<files>...
+|Node CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+It is possible to import files from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+
+For an example, see <<full-import-multiple-input-files-regex-example>>.
+|
+| {check-mark}
+| {check-mark}
+
+|--normalize-types[=true\|false]
+|When `true`, non-array property values are converted to their equivalent Cypher types. For example, all integer values will be converted to 64-bit long integers.
+|true
+| {check-mark}
+| {check-mark}
+
+|--overwrite-destination[=true\|false]
+|Delete any existing database files prior to the import.
+|false
+| {check-mark}
+| {check-mark}
+
+|--path-pattern-style=regex\|glob\|nonefootnote:[See xref:import/path-pattern-styles.adoc[Using pattern style for matching nodes and relationships files] for details.]
+|label:new[Introduced in 2026.01] Pattern style to use for matching `--nodes` and `--relationships` files.
+
+Possible values are:
+
+* `glob` -- allows you to write patterns like `/some+++/**+++/deep+++/**+++/nested/structure.*`.
+* `regex` -- allows you to write regular expressions, i.e. `/some/nested/structure.*`.
+* `none` -- you have to enumerate all the file paths exactly, i.e. `/some/content/structure1.csv,/some/content/structure2.csv`.
+|regex
+| {check-mark}
+| {check-mark}
+
+|--profile[=true\|false]
+|label:new[Introduced in 2026.02]Capture a java flight recording for the entire duration of the import.
+|false
+| {check-mark}
+| {check-mark}
+
+|--profile-results-path=<path>
+|label:new[Introduced in 2026.02]Provide a path where to store java flight recordings captured with the `--profile` option. Requires `--profile` or `--profile=true` to be set to have an effect.
+|
+| {check-mark}
+| {check-mark}
+
+|--property-shard-count=<propertyShardCount>footnote:shardedDb1[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Number of shards of property data that will be created, each shard will be its own database. When this value is `0`, it is the equivalent of running just a `FULL` import.
+|0
+| {check-mark}
+|
+
+|--quote=<char> footnote:[To escape quotation marks in the CSV data, you should double the configured character.]
+|Character to treat as a quotation mark for values in CSV data.
+
+For example, quotes can be escaped as per link:{rfc-4180}[RFC 4180] by doubling them.
+Thus `""` would be interpreted as a literal `"`.
+
+You cannot escape using `\`.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+|"
+| {check-mark}
+|
+
+|--read-buffer-size=<size>
+|Size of each buffer for reading input data.
+
+It has to be at least large enough to hold the biggest single value in the input data.
+The value can be a plain number or a byte units string, e.g. `128k`, `1m`.
+|4194304
+| {check-mark}
+| {check-mark}
+
+|--relationships=[<type>=]<files>...
+|Relationship CSV header and data.
+
+* Multiple files will be logically seen as one big file from the perspective of the importer.
+* The first line must contain the header.
+* Multiple data sources like these can be specified in one import, where each data source has its own header.
+* Files can also be specified using regular expressions.
+
+It is possible to import files from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+
+For an example, see <<full-import-multiple-input-files-regex-example>>.
+|
+| {check-mark}
+| {check-mark}
+
+|--report-file=<path>
+|File in which to store the report of the csv-import.
+
+The location of the import log file can be controlled using the `--report-file` option.
+If you run large imports of CSV files that have low data quality, the import log file can grow very large.
+For example, CSV files that contain duplicate node IDs, or that attempt to create relationships between non-existent nodes, could be classed as having low data quality.
+In these cases, you may wish to direct the output to a location that can handle the large log file.
+
+If you are running on a UNIX-like system and you are not interested in the output, you can get rid of it altogether by directing the report file to `/dev/null`.
+
+If you need to debug the import, it might be useful to collect the stack trace.
+This is done by using the `--verbose` option.
+|
+| {check-mark}
+| {check-mark}
+
+|--schema=<path>
+|label:enterprise[Enterprise edition] Path to the file containing the Cypher commands for creating indexes and constraints during data import. It is possible to load commands from AWS S3 buckets, Google Cloud storage buckets, and Azure buckets using the appropriate URI as the path.
+|
+| {check-mark}
+| {check-mark}
+
+|--skip-bad-entries-logging[=true\|false]
+|When set to `true`, the details of bad entries are not written in the log. Disabling logging can improve performance when the data contains lots of faults. Cleaning the data before importing it is highly recommended because faults dramatically affect the tool's performance even without logging.
+|false
+| {check-mark}
+| {check-mark}
+
+|--skip-bad-relationships[=true\|false]
+|Whether or not to skip importing relationships that refer to missing node IDs, i.e. either start or end node ID/group referring to a node that was not specified by the node input data.
+
+Skipped relationships will be logged if they are within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--skip-duplicate-nodes[=true\|false]
+|Whether or not to skip importing nodes that have the same ID/group.
+
+In the event of multiple nodes within the same group having the same ID, the first encountered will be imported, whereas consecutive such nodes will be skipped.
+
+Skipped nodes will be logged if they are within the limit of entities specified by `--bad-tolerance` and the `--skip-bad-entries-logging` option is disabled.
+|false
+| {check-mark}
+| {check-mark}
+
+|--strict[=true\|false]
+| Whether or not the lookup of nodes referred to from relationships needs to be checked strict.
+If disabled, most but not all relationships referring to non-existent nodes will be detected.
+If enabled all those relationships will be found but at the cost of lower performance.
+|false
+| {check-mark}
+| {check-mark}
+
+|--target-format=<format>footnote:shardedDb1[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Target format can be either a plain database directory/files structure (`database`) or a backup artifact (`backup`). Uses the `--temp-path` location to keep any intermediate state.
+|database
+| {check-mark}
+|
+
+|--target-location=<path>footnote:shardedDb1[]
+|label:new[Introduced in 2025.12]label:enterprise[Enterprise edition] Location for target backup artifact data. Used together with `--target-format=backup`.
+|
+| {check-mark}
+|
+
+|--temp-path=<path>
+|label:new[Introduced in 2025.04] Provide a path where to store temporary files that are created and deleted during import.
+If not specifically provided, the default temp path will be created inside the database directory of the imported database.
+|
+| {check-mark}
+| {check-mark}
+
+|--threads=<num>
+| (advanced) Max number of worker threads used by the importer. Defaults to the number of available processors reported by the JVM. There is a certain amount of minimum threads needed so for that reason there is no lower bound for this value. For optimal
+performance, this value should not be greater than the number of available processors.
+|
+| {check-mark}
+| {check-mark}
+
+|--trim-strings[=true\|false]
+|Whether or not strings should be trimmed for whitespaces.
+|false
+| {check-mark}
+|
+
+|--vector-delimiter=<char>
+|label:new[Introduced in 2025.10] Delimiter character between vector coordinates within a value in CSV data. Also accepts `TAB` and e.g. `U+20AC` for specifying a character using Unicode.
+For CSV data, this value must be different from the one specified in the `--delimiter` option.
+For Parquet data, this is only needed if the vector is encoded as a string.
+|;
+| {check-mark}
+| {check-mark}
+
+|--verbose
+|Enable verbose output.
+|
+| {check-mark}
+| {check-mark}
+|===
+
+
+== Tips and limitations
+
+The following tips and limitations apply to the `neo4j-admin database import full` command:
+
+Heap size for the import::
+If you want to set the maximum heap size to a relevant value for the import, define the `HEAP_SIZE` environment parameter before starting the import.
+For example, 2G is an appropriate value for smaller imports.
++
+If doing imports in the order of magnitude of 100 billion entities, 20G will be an appropriate value.
+
+
+Record format::
+If your import data results in a graph that is larger than 34 billion nodes, 34 billion relationships, or 68 billion properties, you will need to configure the importer to use the `block` format.
+This is achieved by using the `format` option of the import command and setting the value to `block`:
++
+[source, shell]
+--
+bin/neo4j-admin database import full \
+--format=block
+--
++
+The `block` format is available in Enterprise Edition only.
+See xref:database-internals/store-formats.adoc[Store formats] for more information on the `block` format.
+
+
+Providing arguments in a file::
+All options can be provided in a file and passed to the command using the `@` prefix.
+This is useful when the command line becomes too long to manage.
+For example, the following command:
++
+[source, shell]
+----
+bin/neo4j-admin database import full \
+@/path/to/your/<args-filename> \
+databasename
+----
+For more information, see link:https://picocli.info/#AtFiles[Picocli -> AtFiles] official documentation.
+
+Using both a multi-value option and a positional parameter::
+When using both a multi-value option, such as `--nodes` and `--relationships`, and a positional parameter (for example, in `--additional-config neo4j.properties --nodes 0-nodes.csv mydatabase`), the `--nodes` option acts "greedy" and the next option, in this case, `mydatabase`,  is pulled in via the nodes convertor.
++
+This is a limitation of the underlying library, Picocli, and is not specific to Neo4j Admin.
+For more information, see link:https://picocli.info/#_variable_arity_options_and_positional_parameters[Picocli -> Variable Arity Options and Positional Parameters] official documentation.
++
+To resolve the problem, use one of the following solutions:
++
+* Put the positional parameters first.
+For example, `mydatabase --nodes 0-nodes.csv`.
+* Put the positional parameters last, after `--` and the final value of the last multi-value option.
+For example, `nodes 0-nodes.csv -- mydatabase`.
+
+
+[[import-tool-examples]]
+== Examples
+
+The following examples show how to import data from CSV files into a Neo4j database.
+For in-depth examples of using the command `neo4j-admin database import full`, refer to the xref:tutorial/neo4j-admin-import.adoc[Tutorials -> Full data import].
+
+[NOTE]
+====
+Importing data into an existing database does not work unless you use the `--overwrite-destination` option, which deletes any existing database files prior to the import.
+If you import data into a non-existent database, you must subsequently create it using `CREATE DATABASE`.
+====
+
+Assume that you have formatted your data as per xref:import/header-format.adoc#import-tool-csv-header-format[CSV header format] so that you have it in six different files:
+
+. `movies_header.csv`
+. `movies.csv`
+. `actors_header.csv`
+. `actors.csv`
+. `roles_header.csv`
+. `roles.csv`
+
+[role=label--new-2026.02]
+[[import-full-dry-run]]
+=== Perform a dry run before importing data
+
+Before performing the actual import, you can run a dry run to validate the input files and estimate the size of the import.
+The command does not write any data to the database.
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--dry-run=true \
+--nodes=import/movies_header.csv,import/movies.csv \
+--nodes=import/actors_header.csv,import/actors.csv \
+--relationships=import/roles_header.csv,import/roles.csv
+----
+
+.Example output
+[result, subs="attributes+,+macros"]
+----
+Neo4j version: {neo4j-version-exact}
+Checking the contents of the following files:
+Nodes:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/actors_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/actors.csv
+
+Relationships:
+  null:
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/roles_header.csv
+  /path/to/neo4j-enterprise-{neo4j-version-exact}/import/roles.csv
+
+
+Available resources:
+  Total machine memory: 32.00GiB
+  Free machine memory: 81.34MiB
+  Max heap memory : 7.111GiB
+  Max worker threads: 10
+  Configured max memory: 88.11MiB
+  High parallel IO: true
+
+Cypher type normalization is enabled (disable with --normalize-types=false):
+  Property type of 'year' normalized from 'int' --> 'long' in /path/to/neo4j-enterprise-{neo4j-version-exact}/import/movies_header.csv
+Estimated entity counts / sizes:
+  Nodes: 6
+    Labels: 8
+    Total property count: 15
+    Total properties size: 237B
+  Relationships: 9
+    Total property count: 9
+    Total properties size: 108B
+----
+
+=== Import data from multiple CSV files
+
+The following command imports the three datasets:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/movies_header.csv,import/movies.csv \
+--nodes=import/actors_header.csv,import/actors.csv \
+--relationships=import/roles_header.csv,import/roles.csv
+----
+
+[[full-import-multiple-input-files-regex-example]]
+=== Import data from CSV files using regular expression
+
+Assume that you want to include a header and then multiple files that match a pattern, e.g. containing numbers.
+In this case, a regular expression can be used.
+It is guaranteed that groups of digits will be sorted in numerical order, as opposed to lexicographic order.
+
+For example:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,import/node_data_\d+\.csv
+----
+
+[TIP]
+====
+In many scripting languages, you must use double backslashes (`\\`) when defining regular expression patterns inside string literals.
+This is because a single backslash (`\`) is treated as an escape character.
+====
+
+
+=== Import data from CSV files using a more complex regular expression
+
+For regular expression patterns containing commas, which is also the delimiter between files in a group, the pattern can be quoted to preserve the pattern.
+
+For example:
+
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=import/node_header.csv,'import/node_data_\d{1,5}.csv' \
+databasename
+----
+
+[[import-files-from-cloud-storage]]
+=== Importing files from a cloud storage
+
+In Neo4j 2025.03, new cloud integration settings are introduced to provide better support for deployment and management in cloud ecosystems.
+For details, refer to xref:configuration/configuration-settings.adoc#cloud-storage-integration-settings[Configuration settings -> Cloud storage integration settings].
+
+The following examples show how to import data stored in a cloud storage bucket using the `--nodes` and `--relationships` options.
+
+[.tabbed-example]
+=====
+[role=include-with-AWS-S3]
+======
+
+include::partial$/aws-s3-overrides.adoc[]
+
+include::partial$/aws-s3-credentials.adoc[]
+
+. Run the `neo4j-admin database import` command to import your data from your AWS S3 storage bucket.
+The example assumes that you have data stored in the `myBucket/data` folder in your bucket.
++
+[source, shell, role=noplay]
+----
+bin/neo4j-admin database import full \
+--nodes=s3://myBucket/data/nodes.csv \
+--relationships=s3://myBucket/data/relationships.csv \
+databasename
+----
+======
+
+[role=include-with-Google-cloud-storage]
+======
+
+include::partial$/gcs-credentials.adoc[]
+
+. Run the `neo4j-admin database import` command to import your data from your Google storage bucket.
+The example assumes that you have data stored in the `myBucket/data` folder in your bucket.
++
+[source,shell]
+----
+bin/neo4j-admin database import full \
+--nodes=gs://myBucket/data/nodes.csv \
+--relationships=gs://myBucket/data/relationships.csv \
+databasename
+----
+======
+
+[role=include-with-Azure-cloud-storage]
+======
+
+include::partial$/azb-credentials.adoc[]
+
+. Run the `neo4j-admin database import` command to import your data from your Azure blob storage container.
+The example assumes that you have data stored in the `myStorageAccount/myContainer/data` folder in your container.
++
+[source,shell]
+----
+bin/neo4j-admin database full \
+--nodes=azb://myStorageAccount/myContainer/data/nodes.csv \
+--relationships=azb://myStorageAccount/myContainer/data/relationships.csv \
+databasename
+----
+======
+=====
+
+
+[[import-tool-header-format-compressed-files]]
+=== Importing compressed files
+
+You can import files compressed with `zip` or `gzip`.
+Each compressed file must contain a single file.
+
+For example, the following command imports compressed files, where `actors.csv.zip` is a zip file and `movies.csv.gz` and `roles.csv.gz` are gzip files:
+
+[source, sh]
+----
+neo4j_home$ ls import
+actors-header.csv  actors.csv.zip  movies-header.csv  movies.csv.gz  roles-header.csv  roles.csv.gz
+----
+
+[source, sh]
+----
+bin/neo4j-admin database import full \
+--nodes=import/movies-header.csv,import/movies.csv.gz \
+--nodes=import/actors-header.csv,import/actors.csv.zip \
+--relationships=import/roles-header.csv,import/roles.csv.gz
+----
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]
