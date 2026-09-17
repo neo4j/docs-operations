@@ -73,6 +73,17 @@ See <<grant-privilege-based-on-list-property-value>> for an example.
 In Cypher 5, the property must appear on the left-hand side of a scalar comparison operator, and `IN` can only be used to check the property against a list of values (`var.property IN [value, ...]`).
 ====
 
+[NOTE]
+====
+The following form is available from Cypher 25 (introduced in Neo4j 2026.10):
+
+* Checking whether a property value is one of the tags of the authenticated user with `var.property IN abac.native.user_tags()`.
+See <<grant-privilege-using-native-user-tags>> for an example.
+
+Unlike the other `IN` forms, this form cannot be negated: `NOT` is not supported in front of a predicate that uses `abac.native.user_tags()`.
+See <<native-user-tags-negation-not-supported,this note>> for the reason.
+====
+
 
 == Performance considerations
 
@@ -234,6 +245,53 @@ GRANT MATCH {*} ON GRAPH * FOR ()-[r]-() WHERE NOT 'EU' IN r.regions TO regularU
 The value on the left of `NOT IN` must be a single value that is not `NULL` or `NaN`.
 The rule only matches when the property is a list that does not contain the value.
 If the property is missing or is a single (scalar) value rather than a list, the rule does not match.
+====
+
+[role=label--new-2026.10 label--cypher-25]
+[[grant-privilege-using-native-user-tags]]
+=== Grant a property-based privilege using native user tags
+
+You can match a property against the tags of the authorizing user using the `var.property IN abac.native.user_tags()` syntax.
+The `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function returns the list of tags attached to the user's native user object, and the rule matches when the property value is one of those tags.
+Unlike a rule that checks the property against a fixed list of literals, the list of values is resolved dynamically per user from their tags, so a single privilege can grant different access to different users according to how they are tagged.
+
+For information about attaching tags to native users, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users] and xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
+
+The following example shows how to grant permission to `READ` all properties on `Document` nodes whose `classification` property matches one of the authenticated user's tags to the role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT READ {*} ON GRAPH * FOR (n:Document) WHERE n.classification IN abac.native.user_tags() TO regularUsers
+----
+
+For example, a user tagged with `confidential` matches `Document` nodes whose `classification` is `confidential`, while a user tagged with `public` matches only those classified as `public`.
+
+To use `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` in a property rule, the `native` provider must be configured as an attribute-based access control (ABAC) authorization provider, that is, it must appear in both xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] and xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`].
+If the `native` provider is not configured as an ABAC authorization provider, the `GRANT` or `DENY` administration command still succeeds, but the property rule is not applied when a user's access is evaluated, and so it has no effect, because the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function cannot be resolved.
+The fact that the rule was skipped is logged.
+For details on configuring ABAC providers, see xref:authentication-authorization/attribute-based-access-control.adoc#attribute-based-access-control[Attribute-based access control].
+
+[NOTE]
+====
+`link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` is the only ABAC function permitted on the right-hand side of `IN` in a property rule.
+Other ABAC accessor functions, such as `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]`, are not allowed in property rules.
+====
+
+[NOTE]
+====
+For a property rule to resolve `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for an externally authenticated user, such as an OIDC or an LDAP user, the external identity must be linked to a native user so that the user's tags can be resolved.
+If the authenticated user has no resolvable native user, or has no tags, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` returns an empty list, so the rule matches no nodes or relationships.
+
+For details on linking external identities to native users, see xref:authentication-authorization/attribute-based-access-control.adoc#linking-external-users-to-native[Attribute-based access control -> linking external users to native users].
+====
+
+[NOTE#native-user-tags-negation-not-supported]
+====
+Negation is not supported for property rules that use `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]`, i.e. you cannot create a rule with a negated predicate such as `n.classification NOT IN abac.native.user_tags()`.
+
+The reason for this is that `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` returns an empty list when the authenticated user has no resolvable native user or no tags, as described above.
+A negated rule would then match _every_ node or relationship, because a property value is trivially not contained in an empty list, so a `GRANT` would silently widen to apply to all data for such a user.
+Forbidding negated rules ensures that when a user's tags cannot be resolved, access is never unintentionally broadened.
 ====
 
 === Grant a property-based privilege using temporal value
