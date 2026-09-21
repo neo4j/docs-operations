@@ -37,7 +37,7 @@ It does not support SSL/TLS.
 neo4j-admin database dump [-h] [--expand-commands]
                           [--verbose] [--overwrite-destination[=true|false]]
                           [--additional-config=<file>]
-                          [--to-path=<path> | --to-stdout]
+                          [--split-archive-part-size=<splitsize>] [--to-path=<path> | --to-stdout]
                           <database>
 ----
 
@@ -89,6 +89,10 @@ The `neo4j-admin database dump` command has the following options:
 | --overwrite-destination[=true\|false]
 |Overwrite any existing dump file in the destination folder.
 |false
+
+|--split-archive-part-size=<splitsize>
+|label:new[Introduced in 2026.09] Splits the resulting dump artifact into multiple files of the specified size. The size can be specified in bytes or with a unit suffix (e.g. `5G`, `100g`, `1TiB`). The minimum split size is `1GiB`. If not specified the default value of `0` means the dump is not split and is written as a single file.
+|0
 
 |--to-path=<path>
 |Destination folder of a database dump.
@@ -184,6 +188,63 @@ bin/neo4j-admin database dump mydatabase --to-path=azb://myStorageAccount/myCont
 ----
 ======
 =====
+
+
+[role=label--new-2026.09]
+[[split-dump-archive]]
+=== Split a dump archive into multiple files
+
+Starting with Neo4j 2026.09, you can split the dump archive created by `neo4j-admin database dump` into multiple files using the `--split-archive-part-size` option.
+
+Run the following command to split the backup into parts of up to 500GB:
+
+[source, shell]
+----
+neo4j-admin database dump \
+    --to-path=/path/to/dump \
+    --split-archive-part-size=500G mydatabase
+----
+
+The `--split-archive-part-size` option defines the maximum size of each split part.
+The size can be specified in bytes or with a unit suffix, such as `5G`, `100g`, or `1TiB`.
+
+The minimum split size is `1GiB`.
+If the option is not specified, or is set to `0`, the dump is written as a single file.
+
+When splitting is enabled, the dump is written as a set of files in the same directory:
+
+* _file.dump_
+* _file.dump.1_
+* _file.dump.2_
+* ...
+
+The first file (_.dump_) is a metadata file that contains information about the split archive, such as its ID and the number of files.
+The remaining files contain the dump data.
+
+You must keep all files belonging to a split archive in the same location.
+If you move some of the files, all files for that dump artifact must be moved together.
+
+When loading a split archive, specify the first file (_.dump_) as the dump artifact, in the same way as for an unsplit dump.
+
+You can also configure a default split size using the xref:configuration/configuration-settings.adoc#config_server.split_archive.part_size[`server.split_archive.part_size` setting].
+This is useful when you regularly run `neo4j-admin` commands and want to use the same split size without specifying `--split-archive-part-size` for every command.
+
+For example:
+
+[source,properties]
+----
+server.split_archive.part_size=500GiB
+----
+
+When `server.split_archive.part_size` is configured, `neo4j-admin database dump` uses that value by default.
+
+If both `server.split_archive.part_size` and `--split-archive-part-size` are specified, the command-line option overrides the setting's value.
+
+Both the `server.split_archive.part_size` setting and the `--split-archive-part-size` option default to `0`, which disables splitting.
+
+For both the configuration setting and the command-line option, a non-zero value must be at least 1GiB.
+Values smaller than 1GiB cause the command to fail.
+
 
 ifndef::backend-pdf[]
 [discrete.glossary]

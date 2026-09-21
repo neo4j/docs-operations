@@ -80,8 +80,8 @@ neo4j-admin database backup [-h] [--expand-commands] [--prefer-diff-as-parent] [
                             [=true|false]] [--skip-recovery[=true|false]]
                             [--additional-config=<file>] [--include-metadata=none|all|users
                             [=user1,user2]|roles] [--inspect-path=<path>] [--pagecache=<size>]
-                            [--temp-path=<path>] [--to-path=<path>] [--type=<type>] [--from=<host:
-                            port>[,<host:port>...]]... [<database>...]
+                            [--split-archive-part-size=<splitsize>] [--temp-path=<path>] [--to-path=<path>] [--type=<type>] 
+                            [--from=<host:port>[,<host:port>...]]... [<database>...]
 ----
 
 === Description
@@ -191,6 +191,10 @@ Note: this is an EXPERIMENTAL option. Consult Neo4j support before use.
 |--skip-recovery[=true\|false]
 |label:new[Introduced in 2025.11] Skip recovery as part of the full backup. Skipping recovery might result in faster backups, but recovery will have to be done during restore time.
 |false
+
+|--split-archive-part-size=<splitsize>
+|label:new[Introduced in 2026.09] Splits the resulting backup artifact into multiple files of the specified size. The size can be specified in bytes or with a unit suffix (e.g. `5G`, `100g`, `1TiB`). The minimum split size is `1GiB`. If not specified the default value of `0` means the backup is not split and is written as a single file.
+|0
 
 |--temp-path=<path>
 |Provide a path to a temporary empty directory for storing backup files until the command is completed. The files will be deleted once the command is finished.
@@ -730,6 +734,65 @@ The result would be (with or without the `--prefer-diff-as-parent` option):
 
 ======
 =====
+
+
+[role=label--new-2026.09]
+[[split-backup-archive]]
+=== Split a backup archive into multiple files
+
+Starting with Neo4j 2026.09, you can split the backup archive created by `neo4j-admin database backup` into multiple files using the `--split-archive-part-size` option.
+
+Run the following command to split the backup into parts of up to 500GB:
+
+[source, shell]
+----
+neo4j-admin database backup \
+    --type=full \
+    --to-path=/path/to/backup \
+    --temp-path=/path/to/preferred/staging/area \
+    --split-archive-part-size=500G mydatabase
+----
+
+The `--split-archive-part-size` option defines the maximum size of each split part.
+The size can be specified in bytes or with a unit suffix, such as `5G`, `100g`, or `1TiB`.
+
+The minimum split size is `1GiB`.
+If the option is not specified, or is set to `0`, the backup is written as a single file.
+
+When splitting is enabled, the backup is written as a set of files in the same directory:
+
+* _file.backup_
+* _file.backup.1_
+* _file.backup.2_
+* ...
+
+The first file (_.backup_) is a metadata file that contains information about the split archive, such as its ID and the number of files.
+The remaining files contain the backup data.
+
+You must keep all files belonging to a split archive in the same location.
+If you move some of the files, all files for that backup artifact must be moved together.
+
+When loading a split archive, specify the first file (_.backup_) as the backup artifact, in the same way as for an unsplit backup.
+
+You can also configure a default split size using the xref:configuration/configuration-settings.adoc#config_server.split_archive.part_size[`server.split_archive.part_size` setting].
+This is useful when you regularly run `neo4j-admin` commands and want to use the same split size without specifying `--split-archive-part-size` for every command.
+
+For example:
+
+[source,properties]
+----
+server.split_archive.part_size=500GiB
+----
+
+When `server.split_archive.part_size` is configured, `neo4j-admin database backup` uses that value by default.
+
+If both `server.split_archive.part_size` and `--split-archive-part-size` are specified, the command-line option overrides the setting's value.
+
+Both the `server.split_archive.part_size` setting and the `--split-archive-part-size` option default to `0`, which disables splitting.
+
+For both the configuration setting and the command-line option, a non-zero value must be at least 1GiB.
+Values smaller than 1GiB cause the command to fail.
+
 
 ifndef::backend-pdf[]
 [discrete.glossary]
