@@ -735,6 +735,65 @@ The result would be (with or without the `--prefer-diff-as-parent` option):
 ======
 =====
 
+
+[role=label--new-2026.09]
+[[split-backup-archive]]
+=== Split a backup archive into multiple files
+
+Starting with Neo4j 2026.09, you can split the backup archive created by `neo4j-admin database backup` into multiple files using the `--split-archive-part-size` option.
+
+Run the following command to split the backup into parts of up to 500GB:
+
+[source, shell]
+----
+neo4j-admin database backup \
+    --type=full \
+    --to-path=/path/to/backup \
+    --temp-path=/path/to/preferred/staging/area \
+    --split-archive-part-size=500G mydatabase
+----
+
+The `--split-archive-part-size` option defines the maximum size of each split part.
+The size can be specified in bytes or with a unit suffix, such as `5G`, `100g`, or `1TiB`.
+
+The minimum split size is `1GiB`.
+If the option is not specified, or is set to `0`, the backup is written as a single file.
+
+When splitting is enabled, the backup is written as a set of files in the same directory:
+
+* _file.backup_
+* _file.backup.1_
+* _file.backup.2_
+* ...
+
+The first file (_.backup_) is a metadata file that contains information about the split archive, such as its ID and the number of files.
+The remaining files contain the backup data.
+
+You must keep all files belonging to a split archive in the same location.
+If you move some of the files, all files for that backup artifact must be moved together.
+
+When loading a split archive, specify the first file (_.backup_) as the backup artifact, in the same way as for an unsplit backup.
+
+You can also configure a default split size using the xref:configuration/configuration-settings.adoc#config_server.split_archive.part_size[`server.split_archive.part_size` setting].
+This is useful when you regularly run `neo4j-admin` commands and want to use the same split size without specifying `--split-archive-part-size` for every command.
+
+For example:
+
+[source,properties]
+----
+server.split_archive.part_size=500GiB
+----
+
+When `server.split_archive.part_size` is configured, `neo4j-admin database backup` uses that value by default.
+
+If both `server.split_archive.part_size` and `--split-archive-part-size` are specified, the command-line option overrides the setting's value.
+
+Both the `server.split_archive.part_size` setting and the `--split-archive-part-size` option default to `0`, which disables splitting.
+
+For both the configuration setting and the command-line option, a non-zero value must be at least 1GiB.
+Values smaller than 1GiB cause the command to fail.
+
+
 ifndef::backend-pdf[]
 [discrete.glossary]
 == Glossary

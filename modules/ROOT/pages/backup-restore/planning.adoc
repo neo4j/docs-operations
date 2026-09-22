@@ -22,6 +22,7 @@ Depending on your particular deployment and environment, it is important to desi
 There are various factors to consider when deciding on your strategy, such as:
 
 * Type of environment – development, test, or production.
+* Neo4j Edition.
 * Data volumes.
 * Number of databases.
 * Available system resources.
@@ -193,13 +194,14 @@ They must be run directly on the databases that are associated with that Composi
 ====
 
 
+[role=enterprise-edition]
 == Considerations for backing up and restoring databases in a cluster
 
 Backing up a database in a clustered environment is not essentially different from a standalone backup, apart from the fact that you must know which server in a cluster to connect to.
 Use `SHOW DATABASE <database>` to learn which servers are hosting the database you want to back up.
 See xref:clustering/monitoring/show-databases-monitoring.adoc#show-databases-monitoring-listing-single[Listing a single database] for more information.
 
-Starting from 2025.09, you can use the `--remote-address-resolution` option to let the DBMS select which servers to use as backup sources.
+Starting with 2025.09, you can use the `--remote-address-resolution` option to let the DBMS select which servers to use as backup sources.
 See xref:backup-restore/online-backup.adoc#_using_remote_address_resolution[Back up an online database -> Cluster configurations] for more details.
 
 Restoring from the command line involves putting a copy of the database on disk on each server that will need it.
@@ -247,6 +249,34 @@ If you have a cluster, you should back up these files for each cluster member.
 For any backup, it is important that you store your data separately from the production system, where there are no common dependencies, and preferably off-site.
 If you are running Neo4j in the cloud, you may use a different availability zone or even a separate cloud provider.
 Since backups are kept for a long time, the longevity of archival storage should be considered as part of backup planning.
+
+
+[role=label--new-2026.09]
+[[splitting-backup-archive]]
+== Splitting a backup archive
+
+By default, a backup is created as a single file.
+This becomes a limitation for very large databases because cloud storage providers, such as Amazon S3, impose maximum object-size limits.
+As Neo4j supports increasingly large data stores, including databases of 10 TB and larger, a complete backup may exceed the maximum size supported by the target storage system.
+
+Splitting a backup into multiple files removes this limitation.
+Starting with Neo4j 2026.09, a single backup operation can divide the backup archive into smaller parts, with the complete set representing the backup.
+The `--split-archive-part-size` option controls the maximum size of each part and is available with the following commands:
+
+* Community Edition
+** xref:backup-restore/offline-backup.adoc#split-dump-archive[`neo4j-admin database dump`].
+* Enterprise Edition
+** xref:import/full-import.adoc[`neo4j-admin import full`].
+** xref:import/incremental-import.adoc[`neo4j-admin import incremental`].
+** xref:backup-restore/online-backup.adoc#split-backup-archive[`neo4j-admin database backup`].
+** xref:backup-restore/aggregate.adoc#split-consolidated-backup-archive[`neo4j-admin backup aggregate`].
+** xref:backup-restore/copy-database.adoc#split-backup-archive[`neo4j-admin database copy`].
+
+The `--split-archive-part-size` option defines the maximum size of each split part.
+
+If you regularly run `neo4j-admin` commands and want to use the same split size without specifying `--split-archive-part-size` for every command, you can configure the xref:configuration/configuration-settings.adoc#config_server.split_archive.part_size[`server.split_archive.part_size`] setting.
+When this setting is configured, `neo4j-admin` commands use its value by default, unless the `--split-archive-part-size` option is specified explicitly.
+
 
 ifndef::backend-pdf[]
 [discrete.glossary]

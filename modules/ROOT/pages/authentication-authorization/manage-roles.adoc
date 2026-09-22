@@ -29,6 +29,7 @@ a|
 [source, syntax, role="noheader"]
 ----
 SHOW [ALL\|POPULATED] ROLE[S]
+  [AS COMMAND[S]]
   [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
   [WHERE expression]
   [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -39,6 +40,8 @@ a|
 Lists roles.
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+label:new[Introduced in 2026.09] label:cypher[Cypher 25] When using the `AS COMMAND` clause, the result will be the commands to create the roles.
 
 For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-list-roles[Showing roles].
 
@@ -65,6 +68,7 @@ a|
 [source, syntax, role="noheader"]
 ----
 SHOW [ALL\|POPULATED] ROLE[S] WITH USER[S]
+  [AS COMMAND[S]]
   [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
   [WHERE expression]
   [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -75,6 +79,9 @@ a|
 Lists roles and users assigned to them.
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+label:new[Introduced in 2026.09] label:cypher[Cypher 25] When using the `AS COMMAND` clause, the result will be the commands to assign the users to the roles.
+This is filtered to only show assignments that exist and can be granted.
 
 For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-list-roles[Showing roles].
 
@@ -109,6 +116,7 @@ a|
 [source, syntax, role="noheader"]
 ----
 SHOW [ALL\|POPULATED] ROLE[S] WITH AUTH RULE[S]
+  [AS COMMAND[S]]
   [YIELD { * \| field[, ...] } [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
   [WHERE expression]
   [RETURN field[, ...] [ORDER BY field[, ...]] [SKIP n] [LIMIT n]]
@@ -119,6 +127,9 @@ a|
 Lists roles and auth rules assigned to them.
 
 When using the `RETURN` clause, the `YIELD` clause is mandatory and must not be omitted.
+
+label:new[Introduced in 2026.09] label:cypher[Cypher 25] When using the `AS COMMAND` clause, the result will be the commands to assign the auth rules to the roles.
+This is filtered to only show assignments that exist.
 
 For more information, see xref:authentication-authorization/manage-roles.adoc#access-control-list-roles[Showing roles].
 
@@ -667,6 +678,144 @@ It is also possible to use `SKIP` and `LIMIT` to paginate the results.
 3 rows
 ready to start consuming query after 40 ms, results consumed after another 1 ms
 ----
+
+[role=label--new-2026.09 label--cypher-25]
+[[access-control-list-roles-as-commands]]
+== Showing roles as commands
+
+You can view the commands to create all available roles using the Cypher command `SHOW ROLES AS COMMANDS`, the commands to assign the available roles to the users they are assigned to using `SHOW ROLES WITH USERS AS COMMANDS`, and the commands to assign the available roles to the auth rules they are assigned to using `SHOW ROLES WITH AUTH RULES AS COMMANDS`.
+The commands yield the following columns:
+
+.Output
+[options="header", width="100%", cols="2a,4,2m,^.^"]
+|===
+| Column
+| Description
+| Type
+| Default
+
+| command
+| The command to create the role.
+| STRING
+| {check-mark}
+
+| role
+| Role name
+| STRING
+|
+
+| member
+| User assigned to the role.
+
+This is only returned for `SHOW ROLES WITH USERS AS COMMANDS`.
+| STRING
+| {check-mark}
+
+| authRule
+| Auth rule assigned to the role.
+
+This is only returned for `SHOW ROLES WITH AUTH RULES AS COMMANDS`.
+| STRING
+| {check-mark}
+
+| immutable
+| `true` if the role is immutable, otherwise `false`.
+See <<access-control-immutable-roles, Immutable roles>> for more information.
+| BOOLEAN
+|
+|===
+
+=== Showing create role commands
+
+To list all roles as create commands, use the `SHOW ROLES AS COMMANDS` command:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLES AS COMMANDS;
+----
+
+This is the same command as `SHOW ALL ROLES AS COMMANDS`.
+
+.Result
+[role="queryresult"]
+----
++----------------------------+
+| command                    |
++----------------------------+
+| "CREATE ROLE admin"        |
+| "CREATE ROLE architect"    |
+| "CREATE ROLE publisher"    |
+| "CREATE ROLE editor"       |
+| "CREATE ROLE reader"       |
+| "CREATE ROLE mysecondrole" |
+| "CREATE ROLE myrole"       |
+| "CREATE ROLE role1"        |
+| "CREATE ROLE role2"        |
++----------------------------+
+
+9 rows
+ready to start consuming query after 24 ms, results consumed after another 0 ms
+----
+
+=== Showing assign user to role commands
+
+To list the commands used to grant roles to users, use the `SHOW ROLES WITH USERS AS COMMANDS`.
+
+[source, cypher, role=noplay]
+----
+SHOW ROLES WITH USERS AS COMMANDS;
+----
+
+The command produces a row per role per user.
+If a role is assigned to multiple users, it will appear once for each user, and if it is assigned to no users, it will not appear at all.
+The result is already filtered, so adding the `POPULATED` clause has no effect.
+
+[NOTE]
+====
+The `PUBLIC` role is never returned because it cannot be assigned to users.
+====
+
+.Result
+[role="queryresult"]
+----
++--------------------------------------------+
+| command                          | member  |
++--------------------------------------------+
+| "GRANT ROLE admin TO USER neo4j" | "neo4j" |
++--------------------------------------------+
+
+1 row
+ready to start consuming query after 26 ms, results consumed after another 1 ms
+----
+
+=== Showing assign auth rule to role commands
+
+To see the commands used to grant roles to auth rules, add `WITH AUTH RULES` to the command:
+
+[source, cypher, role=noplay]
+----
+SHOW ROLES WITH AUTH RULES AS COMMANDS;
+----
+
+The command produces a row per role per auth rule.
+If a role is assigned to multiple auth rules, it will appear once for each auth rule, and if it is assigned to no auth rule, it will not appear at all.
+The result is already filtered, so adding the `POPULATED` clause has no effect.
+
+.Result
+[role="queryresult"]
+----
++---------------------------------------------------------------------------+
+| command                                            | authRule             |
++---------------------------------------------------------------------------+
+| "GRANT ROLE role1 TO AUTH RULE financeRule"        | "financeRule"        |
+| "GRANT ROLE role2 TO AUTH RULE financeRule"        | "financeRule"        |
+| "GRANT ROLE role2 TO AUTH RULE financeAuditorRule" | "financeAuditorRule" |
++---------------------------------------------------------------------------+
+
+3 rows
+ready to start consuming query after 24 ms, results consumed after another 0 ms
+----
+
 
 [[access-control-rename-roles]]
 == Renaming roles
