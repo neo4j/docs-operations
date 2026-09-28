@@ -61,18 +61,34 @@ To specify the property/value conditions of the privilege, you can use the follo
  {TO | FROM} role[, ...]
 ----
 
+or in a more concise form, for example, for granting a property-based privilege to a role, you can use the following syntax:
+
+[source, syntax, role="noheader"]
+----
+GRANT privilege-name ON GRAPH graph-name FOR pattern TO role-name
+----
+
 [NOTE]
 ====
-The following forms are available from Cypher 25 (introduced in Neo4j 2026.08):
+The user role does not need to have `READ` privilege for the property used by the property-based privilege.
+====
 
+The following forms are available in Cypher 25:
+
+label:new[Introduced in 2026.08]::
 * Placing the property on either side of a scalar comparison operator (`=`, `<>`, `>`, `>=`, `<`, `<=`), for example both `var.property > value` and `value < var.property`.
 See <<grant-privilege-with-property-on-either-side-of-operator>> for an example.
 * Checking whether a value is contained in a list-valued property using `value IN var.property`.
 See <<grant-privilege-based-on-list-property-value>> for an example.
-
++
 In Cypher 5, the property must appear on the left-hand side of a scalar comparison operator, and `IN` can only be used to check the property against a list of values (`var.property IN [value, ...]`).
-====
 
+label:new[Introduced in 2026.10]::
+* Checking whether a property value is one of the tags of the authenticated user with `var.property IN abac.native.user_tags()`.
+See <<grant-privilege-using-native-user-tags>> for an example.
++
+Unlike the other `IN` forms, this form cannot be negated: `NOT` is not supported in front of a predicate that uses `abac.native.user_tags()`.
+See <<negation-and-deny-with-abac-native-user-tags>> for details.
 
 == Performance considerations
 
@@ -90,22 +106,7 @@ To reduce the performance impact, it is recommended to use the `block` storage f
 
 For performance-critical scenarios, it is recommended to design privileges based on labels.
 
-
-== Examples
-
-You can use the following syntax for defining a property-based privilege:
-
-[source, syntax, role="noheader"]
-----
-GRANT privilege-name ON GRAPH graph-name FOR pattern TO role-name
-----
-
-[NOTE]
-====
-The user role does not need to have `READ` privilege for the property used by the property-based privilege.
-====
-
-=== Grant a property-based privilege on a specific property using the value of another property
+== Grant a property-based privilege on a specific property using the value of another property
 
 The following example shows how to grant permission to `READ` the `address` property on `Email` or `Website` nodes with domain `exampledomain.com` to role `regularUsers`:
 
@@ -130,7 +131,7 @@ GRANT READ { since } ON GRAPH * FOR ()-[o:OWNS]-() WHERE o.classification = 'UNC
 
 [role=label--new-2026.08 label--cypher-25]
 [[grant-privilege-with-property-on-either-side-of-operator]]
-=== Grant a property-based privilege with the property on either side of the operator
+== Grant a property-based privilege with the property on either side of the operator
 
 The property can appear on either side of a scalar comparison operator (`=`, `<>`, `>`, `>=`, `<`, `<=`).
 The following example shows how to grant permission to `READ` all properties on nodes where the value `3` is less than the `securityLevel` property to the role `regularUsers`:
@@ -145,7 +146,7 @@ When the property is on the right, the operator is mirrored, so this rule matche
 Regardless of the orientation used to create the privilege, it is always stored and listed in the canonical property-on-the-left form.
 Running `SHOW PRIVILEGES AS COMMANDS` for the example above returns the rule as `n.securityLevel > 3`.
 
-=== Grant a property-based privilege using `NULL`
+== Grant a property-based privilege using `NULL`
 
 The following example shows how to grant permission to `TRAVERSE` nodes with the label `Email` where property `classification` is `NULL` to role `regularUsers`:
 
@@ -154,7 +155,7 @@ The following example shows how to grant permission to `TRAVERSE` nodes with the
 GRANT TRAVERSE ON GRAPH * FOR (n:Email) WHERE n.classification IS NULL TO regularUsers
 ----
 
-=== Deny a property-based privilege using a comparison operator
+== Deny a property-based privilege using a comparison operator
 
 The following example shows how to deny permission to `READ` and `TRAVERSE` nodes and relationships where the property `classification` is different from `UNCLASSIFIED` to role `regularUsers`:
 
@@ -171,7 +172,7 @@ When the property is missing, the `<>` comparison cannot be evaluated, so the re
 For details, see xref:authentication-authorization/limitations.adoc#fail-open-deny-behavior[Limitations -> Fail-open `DENY` behavior].
 ====
 
-=== Grant a property-based privilege on all properties using a property value
+== Grant a property-based privilege on all properties using a property value
 
 The following example shows how to grant permission to `READ` all properties on nodes and relationships where the property `securityLevel` is higher than `3` to role `regularUsers`:
 
@@ -186,7 +187,7 @@ GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.securityLevel > 3 TO regularUser
 The role `regularUsers` does not need to have `READ` privilege for the property `securityLevel` used by the property-based privilege.
 ====
 
-=== Grant a property-based privilege using a list of values
+== Grant a property-based privilege using a list of values
 
 The following example shows how to grant permission to `READ` all properties on nodes and relationships where the property `classification` is included in the list `[UNCLASSIFIED, PUBLIC]`:
 
@@ -200,7 +201,7 @@ GRANT READ {*} ON GRAPH * FOR ()-[r]-() WHERE r.classification IN ['UNCLASSIFIED
 
 [role=label--new-2026.08 label--cypher-25]
 [[grant-privilege-based-on-list-property-value]]
-=== Grant a property-based privilege based on a value in a list property
+== Grant a property-based privilege based on a value in a list property
 
 You can check whether a value is a member of a list-valued property using the `value IN var.property` syntax.
 Here, the property stored on the node or relationship is a list, and the rule matches when the given value is an element of that list.
@@ -236,7 +237,60 @@ The rule only matches when the property is a list that does not contain the valu
 If the property is missing or is a single (scalar) value rather than a list, the rule does not match.
 ====
 
-=== Grant a property-based privilege using temporal value
+[role=label--new-2026.10 label--cypher-25]
+[[grant-privilege-using-native-user-tags]]
+== Grant a property-based privilege using native user tags
+
+You can match a property against the tags of the authorizing user using the `var.property IN abac.native.user_tags()` syntax.
+The `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function returns the list of tags attached to the user's native user object, and the rule matches when the property value is one of those tags.
+
+Unlike a rule that checks the property against a fixed list of literals, the list of values is dynamically resolved per user from their tags, so a single privilege can grant different access to different users based on how they are tagged.
+
+For information about attaching tags to native users, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users] and xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
+
+[NOTE]
+====
+The `abac.native.user_tags()` function is the only ABAC function permitted on the right-hand side of `IN` in a property rule.
+Other ABAC accessor functions, such as `abac.oidc.user_attribute()`, are not allowed in property rules.
+====
+
+=== Configuring the `native` provider for ABAC
+
+To use `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` in a property rule, you must configure the `native` provider as an attribute-based access control (ABAC) authorization provider in both xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] and xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`].
+For details on configuring ABAC providers, see xref:authentication-authorization/attribute-based-access-control.adoc[Attribute-based access control].
+
+If the `native` provider is not configured as an ABAC authorization provider, the `GRANT` administration command *still succeeds*, but the property rule *is not applied* when a user's access is evaluated and so it has no effect, because the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function cannot be resolved.
+The fact that the rule was skipped is logged.
+
+=== Resolving `abac.native.user_tags()` for externally authenticated users
+
+For a property rule to resolve `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for an externally authenticated user, such as an OIDC or an LDAP user, the external identity must be linked to a native user so that the user's tags can be resolved.
+If the authenticated user has no resolvable native user, or has no tags, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` returns an empty list, so the rule matches no nodes or relationships.
+For details on linking external identities to native users, see xref:authentication-authorization/attribute-based-access-control.adoc#linking-external-users-to-native[Attribute-based access control -> linking external users to native users].
+
+[[negation-and-deny-with-abac-native-user-tags]]
+=== Negation and DENY with `abac.native.user_tags()`
+
+Negation is not supported for property rules that use `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]`, i.e., you cannot create a rule with a negated predicate such as `n.classification NOT IN abac.native.user_tags()`.
+
+The reason for this is that `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` returns an empty list when the authenticated user has no resolvable native user or no tags, as described above.
+A negated rule would then match _every_ node or relationship, because a property value is trivially not contained in an empty list, so a `GRANT` would silently widen to apply to all data for such a user.
+Forbidding negated rules ensures that when a user's tags cannot be resolved, access is never unintentionally broadened.
+
+Similarly, `DENY` is not permitted in conjunction with `abac.native.user_tags()`, because a `DENY` rule fails open when its criteria cannot be evaluated, which means the restriction is not applied and access is granted by default if a broader `GRANT` exists.
+
+=== Example of granting access based on user tags
+
+The following example shows how to grant permission to `READ` all properties on `Document` nodes whose `classification` property matches one of the authenticated user's tags to the role `regularUsers`:
+
+[source, syntax, role="noheader"]
+----
+GRANT READ {*} ON GRAPH * FOR (n:Document) WHERE n.classification IN abac.native.user_tags() TO regularUsers
+----
+
+For example, a user tagged with `confidential` matches `Document` nodes whose `classification` is `confidential`, while a user tagged with `public` matches only those classified as `public`.
+
+== Grant a property-based privilege using temporal value
 
 The following example shows how to grant permission to `READ` all properties on nodes and relationships where the property `createdAt` is later than the current date:
 
