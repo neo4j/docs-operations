@@ -6,6 +6,7 @@ You can specify SSL policy objects for `bolt`, `https`, `cluster`, and `backup`.
 SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes Secrets_.
 
 To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
+
 This example shows how to configure the `bolt` SSL policy:
 
 [source, yaml]
@@ -21,7 +22,12 @@ ssl:
 ----
 
 When a private key is specified in the _values.yaml_ file, the Neo4j `ssl` policy is enabled automatically.
-To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `config` object.
+To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `config` object and redeploy the Neo4j Helm chart.
+
+Starting with 2026.09, `subPath` identifies the key inside the Kubernetes Secret, for example, `private.key` or `public.crt`.
+The Neo4j Helm chart adds the key to the Neo4j certificate directory and no longer creates a Kubernetes `volumeMount.subPath` for it.
+See <<reload-certificates-without-restarting-pods>> for more information.
+
 
 [NOTE]
 ====
@@ -74,6 +80,7 @@ kubectl create namespace neo4j
 kubectl config set-context --current --namespace=neo4j
 ----
 
+[[configure-ssl-with-tls-secret]]
 == Configure an SSL policy using a `tls` Kubernetes secret
 
 This example shows how to configure an SSL policy for intra-cluster communication using a self-signed certificate stored in a `tls` Kubernetes secret.
@@ -347,8 +354,8 @@ neo4j@server-1-0:~/certificates/cluster$ ls -lst
 ----
 total 8
 0 drwxrwsrwt 3 root neo4j  100 Jan  4 13:56 trusted
-4 -rw-r--r-- 1 root neo4j 1704 Jan  4 13:56 private.key
-4 -rw-r--r-- 1 root neo4j 1159 Jan  4 13:56 public.crt
+0 lrwxrwxrwx 1 root neo4j   17 Jan  4 13:56 private.key -> ..data/private.key
+0 lrwxrwxrwx 1 root neo4j   17 Jan  4 13:56 public.crt -> ..data/public.crt
 ----
 +
 [source, shell]
@@ -480,6 +487,52 @@ neo4j@server-1-0:~/bin$ SHOW SERVERS;
 37 rows
 ready to start consuming query after 212 ms, results consumed after another 11 ms
 ----
+
+[role=enterprise-edition label--new-2026.09]
+[[reload-certificates-without-restarting-pods]]
+== Reload certificates without restarting pods
+
+You can reload certificates in place without restarting the Neo4j pods.
+The `private.key` and `public.crt` files in the Neo4j certificate directory are Kubernetes-managed symlinks to the current data in the projected Secret volume.
+This allows Kubernetes to update the files when the Secret changes.
+
+Prerequisites::
+
+* Kubernetes cluster with Neo4j pods deployed.
+* Existing TLS certificates and private keys managed via Kubernetes Secrets.
+* `dbms.security.tls_reload_enabled: "true"` in the `config` object in the _ssl-values.yaml_ file.
+
+To reload the certificates:
+
+. Update the existing Kubernetes Secret with the new certificate and private key.
+See <<configure-ssl-with-tls-secret>> for details.
+. Wait for Kubernetes to propagate the updated projected Secret contents into each Neo4j pod.
+Verify that the updated `private.key` and `public.crt` are present in the certificate directory.
+. On each Neo4j server, run xref:procedures/built-in-procedures.adoc#procedure_dbms_security_reloadTLS[`dbms.security.reloadTLS()`], for example:
++
+.. Connect to the Neo4j pod:
++
+[source, shell]
+----
+kubectl exec -it server-1-0 -- bash
+----
+.. Navigate to the _bin_ directory and connect to server-1 using `cypher-shell`:
++
+[source, shell]
+----
+neo4j@server-1-0:~$ cd bin
+neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a neo4j+ssc://server-1.neo4j.svc.cluster.local:7687
+----
+.. Run the `dbms.security.reloadTLS()` procedure to reload the TLS certificates without restarting the pod:
++
+[source, cypher]
+----
+CALL dbms.security.reloadTLS();
+----
+. Repeat step 3 on each Neo4j server.
+
+Existing connections continue using their current TLS session.
+New connections use the reloaded certificates.
 
 ifndef::backend-pdf[]
 [discrete.glossary]
