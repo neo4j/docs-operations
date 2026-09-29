@@ -40,13 +40,14 @@ Bolt protocol provides connectivity for Neo4j drivers (Python, Java, Go, .NET, a
 
 [[bolt-exposure]]
 .Bolt exposure
-[cols="1,1,1,1,1,1,2"]
+[cols="1,1,1,2,1,1,2"]
 |===
 | Pattern ^| Port | TLS handled by ^| WAF / L7 policies | Ingress requirement | Clients | Notes
 
-| **LoadBalancer** ^| `7687` | Neo4j ^| {cross-mark} | N/A | All drivers | Can be private/internal LB
+| **LoadBalancer** ^| `7687` | Neo4j ^| {cross-mark} | N/A | All drivers | Can be private/internal LoadBalancer.
 | **Ingress with TLS Passthrough** ^| `7687` | Neo4j ^| {cross-mark} | TCP routing | All drivers | 
-| **Ingress with TLS Termination** ^| `7687` | Ingress (cert-manager) ^| {check-mark} | TCP + TLS termination | All drivers | Not all ingress controllers support this
+| **Ingress with TLS Termination** ^| `7687` | Ingress (cert-manager) ^| TCP controls {check-mark} +
+HTTP WAF {cross-mark} | TCP + TLS termination | All drivers | Not all ingress controllers support this.
 |===
 
 [NOTE]
@@ -150,9 +151,9 @@ Helm values:
 
 [source,yaml]
 ----
-neo4j:
-  services:
-    neo4j:
+services:
+  neo4j:
+    spec:
       type: ClusterIP
 
 config:
@@ -193,9 +194,9 @@ xref:configuration/connectors.adoc[Configure network connectors].
 
 [source,yaml]
 ----
-neo4j:
-  services:
-    neo4j:
+services:
+  neo4j:
+    spec:
       type: ClusterIP
 
 # Neo4j listens in plaintext internally
@@ -231,14 +232,15 @@ image::ingress-tls-termination.svg[width='450',title='Ingress with TLS terminati
 [[reverse-proxy-based-connectivity]]
 == Reverse proxy-based connectivity (WSS only)
 
-Neo4j reverse proxy sits in front of Neo4j and handles SSL termination.
-Bolt is exposed over WebSocket Secure (WSS) on the port `443` (reverse proxy).
+A TLS-terminating Ingress or LoadBalancer sits in front of the Neo4j reverse proxy and handles SSL/TLS termination.
+It forwards plaintext HTTP/WebSocket traffic to the reverse proxy.
+Bolt is exposed externally over WebSocket Secure (WSS) on the port `443` (TLS terminator), while the reverse proxy itself uses plaintext HTTP.
 
 [WARNING]
 ====
 WSS is only supported by the Neo4j JavaScript driver.
 This covers Neo4j Browser, Bloom, and NeoDash.
-All other Neo4j drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **do not work** through a reverse proxy.
+All other officially supported Neo4j drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **do not work** through a reverse proxy.
 
 If your use case includes any non-JS client, do not use this option alone — see the <<ingress-with-tls-terminated-wss-connectivity ,Ingress with TLS-terminated WSS connectivity>>.
 ====
@@ -246,7 +248,7 @@ If your use case includes any non-JS client, do not use this option alone — se
 For details about accessing Neo4j through a Kubernetes Ingress and Neo4j reverse proxy, see
 xref:kubernetes/accessing-neo4j-ingress.adoc[Accessing Neo4j using Kubernetes Ingress].
 
-image::reverse-proxy-wss.svg[width='450',title='Reverse proxy-based connectivity']
+// image::reverse-proxy-wss.svg[width='300',title='Reverse proxy-based connectivity']
 
 **Benefits:**
 
@@ -307,9 +309,9 @@ This requires DNS and valid certificates for both hostnames.
 **Helm values:**
 [source,yaml]
 ----
-neo4j:
-  services:
-    neo4j:
+services:
+  neo4j:
+    spec:
       type: ClusterIP
 
 config:
@@ -344,9 +346,10 @@ In a Neo4j cluster, the driver can use xref:clustering/setup/routing.adoc#cluste
 For an example of client-side routing from inside Kubernetes, see
 xref:kubernetes/quickstart-cluster/access-inside-k8s.adoc[Access the Neo4j cluster from inside Kubernetes].
 
-This requires each member to be reachable at its own address.
-Only the **Direct LoadBalancer** method supports this, since each Neo4j server can be assigned its own external IP.
-All other methods (Ingress, Reverse Proxy, SNI) route traffic through a single entry point, making individual members unreachable from outside the cluster.
+Client-side routing requires each cluster member to be reachable at its own advertised address.
+Each advertised address must resolve to an externally reachable endpoint that routes traffic to the corresponding Neo4j member.
+The endpoints do not need to have separate external IP addresses: for example, multiple per-member DNS names can share an ingress IP and use SNI-based routing to direct each hostname to the appropriate member.
+A single shared endpoint that indiscriminately load-balances traffic across multiple members does not satisfy this requirement, because the driver rmust be able to reach the specific member identified by each advertised address.
 
 
 [[repository-structure]]
