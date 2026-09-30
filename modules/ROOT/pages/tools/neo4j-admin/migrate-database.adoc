@@ -3,13 +3,19 @@
 [[neo4j-admin-migrate]]
 = Migrate a database
 
+
+[[migrate-store-command-overview]]
+== Overview
+
 You can use the `neo4j-admin database migrate` command to migrate a Neo4j database from one store format to another or to a later `MAJOR` version of the same format.
+
+The `neo4j-admin database migrate` command is run only on a stopped database.
 
 A store format defines how the data of a database is stored on the file system.
 
 As of Neo4j 5, the store format of a database is versioned with the `MAJOR.MINOR` scheme, independent of Neo4j versioning.
 An upgrade to the latest `MINOR` format version is an automatic operation performed on database startup.
-A migration to a higher `MAJOR` format version or another format is a manual action performed with the `migrate` command.
+A migration to a higher `MAJOR` format version or another format is a manual action performed with the `neo4j-admin database migrate` command.
 
 The store format for new databases can be set with the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration setting.
 
@@ -47,12 +53,8 @@ neo4j-admin database migrate [-h] [--expand-commands]
                              [--to-format=standard|high_limit|aligned|block] <database>
 ----
 
-[NOTE]
-====
-The `neo4j-admin database migrate` command is run only on a stopped database.
-====
 
-=== Parameters
+== Parameters
 
 .`neo4j-admin database migrate` parameters
 [options="header", cols="1m,3a"]
@@ -64,7 +66,7 @@ The `neo4j-admin database migrate` command is run only on a stopped database.
 |Name of the database to migrate. Can contain * and ? for globbing. Note that * and ? have special meaning in some shells and might need to be escaped or used with quotes.
 |===
 
-=== Options
+== Options
 
 The `neo4j-admin database migrate` command has the following options:
 
@@ -84,10 +86,12 @@ The `neo4j-admin database migrate` command has the following options:
 |Special option for automatically turning all BTREE indexes/constraints into RANGE. Be aware that RANGE indexes are not always the optimal replacement of BTREEs and performance may be affected while the new indexes are populated.
 See the Neo4j v5 migration guide online for more information.
 The newly created indexes will be populated in the background on the first database start up following the migration and users should monitor the successful completion of that process.
-[NOTE]
+[WARNING]
+====
 BTREE indexes are not supported in Neo4j 5 and the `neo4j-admin database migrate` command will remove all BTREE indexes and BTREE index-backed constraints.
 It is recommended to create valid replacements before migrating the database.
 For more information, see link:https://neo4j.com/docs/upgrade-migration-guide/current/version-5/migration/planning/#_prepare_indexes[[Upgrade and Migration Guide -> Prepare indexes].
+====
 
 |-h, --help
 |Show this help message and exit.
@@ -106,9 +110,44 @@ If not specified, the tool migrates the target database to the latest known comb
 
 [NOTE]
 ====
-The block format is introduced in Neo4j 5.14 and from Neo4j 5.22, is the default format for all newly-created databases in Enterprise Edition as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified.
-For more information on the block format, see xref:database-internals/store-formats.adoc[Store formats].
+The `block` format is introduced in Neo4j 5.14 and, from Neo4j 5.22, is the default format for all newly created databases in Enterprise Edition, as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified.
+For more information on the `block` format, see xref:database-internals/store-formats.adoc[Store formats].
 ====
+
+
+== Memory considerations
+
+To successfully run the command, ensure that you configure the heap and page cache appropriately.
+
+The JVM heap memory size is determined by the settings xref:configuration/configuration-settings.adoc#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`] and xref:configuration/configuration-settings.adoc#config_server.memory.heap.max_size[`server.memory.heap.max_size`] in the _neo4j-admin.conf_ file.
+It is recommended to set these two settings to the same value to avoid unwanted full garbage collection pauses.
+
+You can also configure the heap size via the `HEAP_SIZE` environment variable (see xref:tools/neo4j-admin/index.adoc#_environment_variables[`neo4j-admin` and `neo4j` tools -> Environment variables]):
+
+[source,shell]
+----
+HEAP_SIZE=8g bin/neo4j-admin database migrate mydatabase
+----
+
+The page cache size is also important for successfully running the `neo4j-admin database migrate` command.
+For migrations across store formats (within the same storage engine or across different storage engines), the command needs to read from the source database and write to the new migrated database.
+
+To set the page cache size, use the `--pagecache` option of the command or the xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.size[`server.memory.pagecache.size`] setting.
+
+It is recommended to set `--pagecache` to around 70% of the available free RAM.
+
+[CAUTION]
+====
+If the `--pagecache` value is not defined or `server.memory.pagecache.size` is not set in _neo4j-admin.conf_, _neo4j.conf_ files, or when using `--additional-config`, the command defaults to **8 MiB**.
+In this case, the migration process can be severely under-resourced. +
+Therefore, it is critical to set the page cache size via the `--pagecache` option or the `server.memory.pagecache.size` setting.
+====
+
+The command also uses memory outside of the heap and page cache.
+Consequently, configuring only the heap and page cache does not account for all of the command's memory usage.
+The command uses approximately 13 B of additional off-heap memory per node, outside the page cache.
+
+
 
 == Example
 
