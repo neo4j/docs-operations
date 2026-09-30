@@ -3,9 +3,9 @@
 
 The Neo4j xref:security/ssl-framework.adoc[SSL Framework] can be used with Neo4j Helm charts.
 You can specify SSL policy objects for `bolt`, `https`, `cluster`, and `backup`.
-SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes Secrets_.
+SSL public certificates and private keys to use with a Neo4j Helm deployment must be stored in _Kubernetes secrets_.
 
-To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the _Kubernetes Secrets_ containing the SSL certificates and keys to use.
+To enable Neo4j SSL policies, configure the `ssl.<policy name>` object in the Neo4j Helm deployment's _values.yaml_ file to reference the Kubernetes secrets containing the SSL certificates and keys to use.
 
 This example shows how to configure the `bolt` SSL policy:
 
@@ -24,8 +24,8 @@ ssl:
 When a private key is specified in the _values.yaml_ file, the Neo4j `ssl` policy is enabled automatically.
 To disable a policy, add `dbms.ssl.policy.{{ $name }}.enabled: "false"` to the `config` object and redeploy the Neo4j Helm chart.
 
-Starting with 2026.09, `subPath` identifies the key inside the Kubernetes Secret, for example, `private.key` or `public.crt`.
-The Neo4j Helm chart adds the key to the Neo4j certificate directory and no longer creates a Kubernetes `volumeMount.subPath` for it.
+Starting with 2026.09, `subPath` identifies the key inside the Kubernetes secret, for example, `private.key` or `public.crt`.
+The Neo4j Helm chart adds the key to the Neo4j certificate directory and no longer creates a Kubernetes secret `volumeMount.subPath` for it.
 See <<reload-certificates-without-restarting-pods>> for more information.
 
 
@@ -493,22 +493,28 @@ ready to start consuming query after 212 ms, results consumed after another 11 m
 == Reload certificates without restarting pods
 
 You can reload certificates in place without restarting the Neo4j pods.
-The `private.key` and `public.crt` files in the Neo4j certificate directory are Kubernetes-managed symlinks to the current data in the projected Secret volume.
-This allows Kubernetes to update the files when the Secret changes.
+The `private.key` and `public.crt` files in the Neo4j certificate directory are Kubernetes-managed symlinks to the current data in the projected secret volume.
+This allows Kubernetes to update the files when the secret changes.
 
 Prerequisites::
 
 * Kubernetes cluster with Neo4j pods deployed.
-* Existing TLS certificates and private keys managed via Kubernetes Secrets.
+* Existing TLS certificates and private keys managed via Kubernetes secrets.
 * `dbms.security.tls_reload_enabled: "true"` in the `config` object in the _ssl-values.yaml_ file.
 
 To reload the certificates:
 
-. Update the existing Kubernetes Secret with the new certificate and private key.
-See <<configure-ssl-with-tls-secret>> for details.
-. Wait for Kubernetes to propagate the updated projected Secret contents into each Neo4j pod.
+. Update the existing `neo4j-tls` secret with the new certificate and private key:
++
+[source, shell]
+----
+kubectl create secret tls neo4j-tls --namespace neo4j --cert=/path/to/neo4j-ssl/public.crt --key=/path/to/neo4j-ssl/private.key --dry-run=client -o yaml | kubectl apply -f -
+----
++
+This command updates the existing secret. See <<configure-ssl-with-tls-secret>> for details about the secret and its keys.
+. Wait for Kubernetes to propagate the updated projected secret contents into each Neo4j pod.
 Verify that the updated `private.key` and `public.crt` are present in the certificate directory.
-. On each Neo4j server, run xref:procedures/built-in-procedures.adoc#procedure_dbms_security_reloadTLS[`dbms.security.reloadTLS()`], for example:
+. Connect to each Neo4j server using `bolt+ssc://` and run xref:procedures/built-in-procedures.adoc#procedure_dbms_security_reloadTLS[`dbms.security.reloadTLS()`], for example:
 +
 .. Connect to the Neo4j pod:
 +
@@ -521,7 +527,7 @@ kubectl exec -it server-1-0 -- bash
 [source, shell]
 ----
 neo4j@server-1-0:~$ cd bin
-neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a neo4j+ssc://server-1.neo4j.svc.cluster.local:7687
+neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a bolt+ssc://server-1.neo4j.svc.cluster.local:7687
 ----
 .. Run the `dbms.security.reloadTLS()` procedure to reload the TLS certificates without restarting the pod:
 +
@@ -529,7 +535,7 @@ neo4j@server-1-0:~/bin$ ./cypher-shell -u neo4j -p my-password -a neo4j+ssc://se
 ----
 CALL dbms.security.reloadTLS();
 ----
-. Repeat step 3 on each Neo4j server.
+. Repeat step 3 on each Neo4j server, using that server's pod and direct Bolt address, for example, `server-2.neo4j.svc.cluster.local:7687` for server-2, etc.
 
 Existing connections continue using their current TLS session.
 New connections use the reloaded certificates.
