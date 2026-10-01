@@ -114,38 +114,54 @@ The `block` format is introduced in Neo4j 5.14 and, from Neo4j 5.22, is the defa
 For more information on the `block` format, see xref:database-internals/store-formats.adoc[Store formats].
 ====
 
-[[memory-considerations]]
-== Memory considerations
+[[memory-configuration]]
+== Memory configuration
 
-To successfully run the command, ensure that you configure the heap and page cache appropriately.
+The `neo4j-admin database migrate` command requires a significant amount of memory, especially when migrating between store formats.
+Before running the command, make sure enough memory is available for the JVM heap, page cache, and additional off-heap memory used by the migration.
 
-The JVM heap memory size is determined by the settings xref:configuration/configuration-settings.adoc#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`] and xref:configuration/configuration-settings.adoc#config_server.memory.heap.max_size[`server.memory.heap.max_size`] in the _neo4j-admin.conf_ file.
+
+[[jvm-heap]]
+=== JVM heap
+
+The JVM heap memory size is determined by configuring the following settings:
+
+* xref:configuration/configuration-settings.adoc#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`]
+* xref:configuration/configuration-settings.adoc#config_server.memory.heap.max_size[`server.memory.heap.max_size`]
+
 It is recommended to set these two settings to the same value to avoid unwanted full garbage collection pauses.
 
-You can also configure the heap size via the `HEAP_SIZE` environment variable (see xref:tools/neo4j-admin/index.adoc#_environment_variables[`neo4j-admin` and `neo4j` tools -> Environment variables]):
+Alternatively, you can configure the heap size for a single command using the `HEAP_SIZE` environment variable (see xref:tools/neo4j-admin/index.adoc#_environment_variables[`neo4j-admin` and `neo4j` tools -> Environment variables]):
 
 [source,shell]
 ----
 HEAP_SIZE=8g bin/neo4j-admin database migrate mydatabase
 ----
 
-The page cache size is also important for successfully running the `neo4j-admin database migrate` command.
-For migrations across store formats (within the same storage engine or across different storage engines), the command needs to read from the source database and write to the new migrated database.
 
-To set the page cache size, use the `--pagecache` option of the command or the xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.size[`server.memory.pagecache.size`] setting.
+[[page-cache]]
+=== Page cache
+
+The migration reads from the source database while writing the migrated database, so sufficient page cache is important for good performance.
+
+To set the page cache size, use:
+
+* the `--pagecache` option of the command
+* or the xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.size[`server.memory.pagecache.size`] setting
 
 It is recommended to set `--pagecache` to around 70% of the available free RAM.
 
-[CAUTION]
+[TIP]
 ====
-If the `--pagecache` value is not defined or `server.memory.pagecache.size` is not set in _neo4j-admin.conf_, _neo4j.conf_ files, or when using `--additional-config`, the command defaults to **8 MiB**.
-In this case, the migration process can be severely under-resourced.
+If the page cache value is not configured, the command defaults to **8 MiB**, which can severely limit the migration.
 ====
+
+=== Additional memory
 
 The command also uses memory outside of the heap and page cache.
-Consequently, configuring only the heap and page cache does not account for all of the command's memory usage.
 The command uses approximately 13 B of additional off-heap memory per node, outside the page cache.
-
+This memory is managed by the migration process and does not need to be configured separately.
+When sizing memory, however, make sure to leave enough RAM available for it.
 
 
 == Example
