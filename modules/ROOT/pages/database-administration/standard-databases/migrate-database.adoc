@@ -53,7 +53,7 @@ neo4j-admin database migrate [-h] [--expand-commands]
 The `neo4j-admin database migrate` command is run only on a stopped database.
 ====
 
-=== Parameters
+== Parameters
 
 .`neo4j-admin database migrate` parameters
 [options="header", cols="1m,3a"]
@@ -65,7 +65,7 @@ The `neo4j-admin database migrate` command is run only on a stopped database.
 |Name of the database to migrate. Can contain * and ? for globbing. Note that * and ? have special meaning in some shells and might need to be escaped or used with quotes.
 |===
 
-=== Options
+== Options
 
 The `neo4j-admin database migrate` command has the following options:
 
@@ -97,7 +97,7 @@ This option is only relevant when migrating from Neo4j 4.4.
 |
 
 |--max-off-heap-memory=<size> label:new[Introduced in Neo4j 2025.04]
-|Maximum off-heap memory that the command can use for page cache and various caching data structures to improve performance. Use this option to tune the command memory usage; the command does not use the server.memory.pagecache.size configuration setting for this purpose. Values can be plain numbers, such as 10000000, or, for example, 20G for 20 gigabytes, or 70%, which will amount to 70% of currently free memory on the machine.
+|Maximum off-heap memory that the command can use for page cache and various caching data structures to improve performance. Use this option to tune the command memory usage; the command does not use the `server.memory.pagecache.size` configuration setting for this purpose. Values can be plain numbers, such as 10000000, or, for example, 20G for 20 gigabytes, or 70%, which will amount to 70% of currently free memory on the machine.
 |90%
 
 |--pagecache=<size> label:deprecated[Deprecated in Neo4j 2025.04]
@@ -117,9 +117,73 @@ If not specified, the tool migrates the target database to the latest known comb
 
 [NOTE]
 ====
-The block format is the default format for all databases in Enterprise Edition as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified.
-For more information on the block format, see xref:database-internals/store-formats.adoc[Store formats].
+The `block` format is the default format for all databases in Enterprise Edition as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified.
+For more information on the `block` format, see xref:database-internals/store-formats.adoc[Store formats].
 ====
+
+
+[[memory-configuration]]
+== Memory configuration
+
+The `neo4j-admin database migrate` command can require a significant amount of memory, especially when migrating between store formats.
+Before running the command, ensure that sufficient memory is available for the JVM heap and the off-heap memory used by the migration.
+
+
+[[jvm-heap]]
+=== JVM heap
+
+The JVM heap memory size is determined by configuring the following settings:
+
+* xref:configuration/configuration-settings.adoc#config_server.memory.heap.initial_size[`server.memory.heap.initial_size`]
+* xref:configuration/configuration-settings.adoc#config_server.memory.heap.max_size[`server.memory.heap.max_size`]
+
+It is recommended to set these two settings to the same value to avoid unwanted full garbage collection pauses.
+
+Alternatively, you can configure the heap size for a single command using the `HEAP_SIZE` environment variable (see xref:tools/neo4j-admin/index.adoc#_environment_variables[`neo4j-admin` and `neo4j` tools -> Environment variables]):
+
+[source,shell]
+----
+HEAP_SIZE=8g bin/neo4j-admin database migrate mydatabase
+----
+
+
+[[off-heap-memory]]
+=== Off-heap memory
+
+The migration also uses memory outside of the JVM heap.
+
+The migration reads from the source database while writing the migrated database, so sufficient page cache is important for good performance.
+
+In Neo4j 2025.01 through 2025.03, to set the page cache size, use the `--pagecache` option of the command or the xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.size[`server.memory.pagecache.size`] setting.
+
+It is recommended to set `--pagecache` to around 70% of the available free RAM.
+If the page cache value is not configured, the command defaults to **8 MiB**, which can severely limit the migration.
+
+[NOTE]
+====
+In Neo4j 2025.01-2025.03, when migrating a database between store formats, the command uses approximately 13 B of additional off-heap memory per node, outside the page cache.
+This memory is managed by the migration process and does not need to be configured separately.
+However, make sure that sufficient RAM remains available for it.
+====
+
+
+Starting with Neo4j 2025.04, the `--max-off-heap-memory` option is available to control the maximum amount of off-heap memory that the migration command can use.
+This option includes memory used by the page cache and various caching data structures.
+The value can be specified as a number of bytes, or using units such as `G`.
+It can also be specified as a percentage of the currently free memory on the machine.
+
+[source,shell]
+----
+bin/neo4j-admin database migrate --max-off-heap-memory=20G mydatabase
+----
+
+The default value is `90%`.
+
+The `--pagecache` option remains supported, but is deprecated starting with Neo4j 2025.04.
+The `--max-off-heap-memory` option is recommended for Neo4j 2025.04 and later.
+Keep in mind that starting with Neo4j 2025.04, the `server.memory.pagecache.size` configuration setting is no longer used to control the off-heap memory available to the migration command.
+
+
 
 == Example
 
