@@ -229,7 +229,7 @@ m|+++""+++
 == Cluster settings
 
 The cluster settings are used to configure the behavior of a Neo4j cluster.
-For more information, see also xref:clustering/settings.adoc[Clustering settings].
+For more information, see also xref:clustering/index.adoc[Clustering].
 
 
 [role=label--enterprise-edition]
@@ -455,6 +455,15 @@ a|A comma-separated list where each element is a socket address in the format of
 m|
 |===
 
+One or more network addresses used to discover other servers in the cluster.
+The exact method by which endpoints are resolved to other cluster members is determined by the value of `dbms.cluster.discovery.resolver_type`.
+In the default case, the initial discovery members are given as a comma-separated list of address/port pairs, and the default port for the discovery service is `:5000`.
+
+It is good practice to set this parameter to the same value on all servers in the cluster.
+
+For example, `dbms.cluster.discovery.resolver_type=LIST` combined with `server01.example.com:5000,server02.example.com:5000,server03.example.com:5000` attempt to reach Neo4j instances listening on _server01.example.com_, _server02.example.com_ and _server03.example.com_; all on port `5000`.
+
+
 [role=label--enterprise-edition label--new-5.22]
 [[config_dbms.cluster.discovery.v2.endpoints]]
 === `dbms.cluster.discovery.v2.endpoints`
@@ -473,11 +482,19 @@ a|A comma-separated list where each element is a socket address in the format of
 m|
 |===
 
+A comma-separated list of endpoints that a server should contact in order to discover other cluster members.
+Typically, all cluster members, including the current server, must be specified in this list.
+The setting configures the endpoints for discovery service v2.
+For details, see xref:clustering/setup/discovery.adoc[].
+
+For example, `dbms.cluster.discovery.resolver_type=LIST` combined with `server01.example.com:6000,server02.example.com:6000,server03.example.com:6000` attempt to reach Neo4j instances listening on _server01.example.com_, _server02.example.com_ and _server03.example.com_; all on port `6000`.
+
 [NOTE]
 ====
 `dbms.cluster.discovery.endpoints` and `dbms.cluster.discovery.v2.endpoints` must contain all cluster members hosting a `system` database in primary mode.
 However, it is typical that all cluster members, including the current server, are specified in those lists.
 ====
+
 
 [role=label--enterprise-edition label--new-5.22 label--deprecated-5.26]
 [[config_dbms.cluster.discovery.version]]
@@ -504,6 +521,10 @@ a|One of [V1_ONLY, V1_OVER_V2, V2_OVER_V1, V2_ONLY].
 |Default value
 m|+++V1_ONLY+++
 |===
+
+Discovery services v1 and v2 are designed to run in parallel.
+They are completely independent of each other, thus allowing you to keep the cluster functioning while switching over from v1 to v2.
+For details on how to move from discovery service v1 to v2, see xref:clustering/setup/discovery.adoc#clustering-discovery-v1-to-v2[Moving from discovery service v1 to v2].
 
 
 [role=label--enterprise-edition label--deprecated-5.23]
@@ -545,6 +566,26 @@ a|A string.
 m|+++LIST+++
 |===
 
+This setting specifies the strategy that the instance uses to determine the addresses for other instances in the cluster to contact for _bootstrapping_.
+Possible values are:
+
+`LIST`::
+Treats `dbms.cluster.discovery.endpoints` (or `dbms.cluster.discovery.v2.endpoints`, if you use discovery service v2 available as of Neo4j 5.23) as a list of addresses of servers to contact for discovery.
+`DNS`::
+Treats `dbms.cluster.discovery.endpoints` (or `dbms.cluster.discovery.v2.endpoints`, if you use discovery service v2 available as of Neo4j 5.23) as a domain name to resolve via DNS.
+Expect DNS resolution to provide A records with hostnames or IP addresses of servers to contact for discovery, on the port specified by `dbms.cluster.discovery.endpoints`.
+`SRV`::
+Treats `dbms.cluster.discovery.endpoints` (or `dbms.cluster.discovery.v2.endpoints`, if you use discovery service v2 available as of Neo4j 5.23) as a domain name to resolve via DNS.
+Expect DNS resolution to provide SRV records with hostnames or IP addresses and ports, of servers to contact for discovery.
+`K8S`::
+Accesses the Kubernetes list service API to derive addresses of servers to contact for discovery.
+Requires `dbms.kubernetes.label_selector` to be a Kubernetes label selector for Kubernetes services running a server each and `dbms.kubernetes.service_port_name` to be a service port name identifying the discovery port of cluster servers services.
+The value of `dbms.cluster.discovery.endpoints` (or `dbms.cluster.discovery.v2.endpoints`, if you use discovery service v2 available as of Neo4j 5.23) is ignored for this option.
+For more details, see xref:clustering/setup/discovery.adoc#clustering-discovery-k8s[Discovery in Kubernetes].
+
+From Neo4j 5.23, depending on which version of the discovery service you are using, you need to set either `dbms.cluster.discovery.endpoints` or `dbms.cluster.discovery.v2.endpoints` in the _neo4j.conf_ file.
+Detailed information about discovery and discovery configuration options is given in xref:clustering/setup/discovery.adoc#clustering-discovery-methods[Methods for server discovery].
+
 
 [role=label--enterprise-edition label--deprecated-5.7]
 [[config_dbms.cluster.discovery.type]]
@@ -580,6 +621,10 @@ a|An integer that is minimum `1`.
 |Default value
 m|+++3+++
 |===
+
+`dbms.cluster.minimum_initial_system_primaries_count` defines the minimum number of servers initially required to form the cluster.
+Reaching this threshold allows members to discover each other, but it does not guarantee that the DBMS is online or that the `system` databases are in the `STARTED` state.
+For details, see xref:clustering/setup/deploy.adoc[].
 
 
 [role=label--enterprise-edition label--dynamic label--new-5.17]
@@ -860,6 +905,8 @@ a|A boolean.
 m|+++false+++
 |===
 
+After startup, it can be changed with the xref:procedures/built-in-procedures.adoc#procedure_dbms_cluster_setAutomaticallyEnableFreeServers[`dbms.cluster.setAutomaticallyEnableFreeServers`] procedure.
+
 
 [role=label--enterprise-edition label--deprecated-5.23]
 [[config_initial.dbms.database_allocator]]
@@ -958,6 +1005,12 @@ a|One of [PRIMARY, SECONDARY, NONE].
 m|+++NONE+++
 |===
 
+As an initial setting, the value set here is used when a server is first enabled.
+For example, a server configured with `initial.server.mode_constraint=SECONDARY` hosts databases only in `secondary` role.
+For details, see xref:clustering/servers.adoc#server-enabled-state[How to enable a server].
+
+Once enabled, a server's mode constraint can only be changed with xref:clustering/servers.adoc#alter-server-options[`ALTER SERVER 'name' SET OPTIONS {modeConstraint:'PRIMARY'}`].
+
 
 [role=label--enterprise-edition]
 [[config_initial.server.tags]]
@@ -989,6 +1042,10 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port` that
 |Default value
 m|+++:6000+++
 |===
+
+This address/port setting specifies the location where the server advertises its availability for discovery service communication as well as transaction-shipping catch-up requests.
+
+For example,`server.cluster.advertised_address=192.168.33.20:6001` listens for cluster communication on the network interface bound to `192.168.33.20` on port `6001`.
 
 
 [role=label--enterprise-edition label--dynamic label--deprecated-5.4]
@@ -1070,6 +1127,12 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port`. If 
 m|+++:6000+++
 |===
 
+The address/port setting that specifies which network interface and port the Neo4j server binds to for cluster communication.
+This setting must be set in coordination with the address this server advertises it listens at in the setting `server.cluster.advertised_address`.
+
+For example, `server.cluster.listen_address=0.0.0.0:6001` listens for cluster communication on any network interface at port `6001`.
+For details, see xref:configuration/ports.adoc#_cluster[Configuration -> Ports].
+
 
 [role=label--enterprise-edition]
 [[config_server.cluster.network.native_transport_enabled]]
@@ -1102,6 +1165,10 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port` that
 m|+++:7000+++
 |===
 
+The address/port setting that specifies where the Neo4j server advertises to other members of the cluster that it listens for Raft messages within the cluster.
+
+For example, `server.cluster.raft.advertised_address=192.168.33.20:7000` listens for cluster communication in the network interface bound to `192.168.33.20` on port `7000`.
+For information about cluster ports, see xref:configuration/ports.adoc#_cluster[Ports].
 
 [role=label--enterprise-edition]
 [[config_server.cluster.raft.listen_address]]
@@ -1118,6 +1185,11 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port`. If 
 m|+++:7000+++
 |===
 
+The address/port setting that specifies which network interface and port the Neo4j server binds to for cluster communication.
+This setting must be set in coordination with the address this server advertises it listens at in the setting `server.cluster.raft.advertised_address`.
+
+For example, `server.cluster.raft.listen_address=0.0.0.0:7000` listens for cluster communication on any network interface at port `7000`.
+
 
 [role=label--enterprise-edition]
 [[config_server.cluster.system_database_mode]]
@@ -1127,12 +1199,21 @@ m|+++:7000+++
 [frame="topbot", stripes=odd, grid="cols", cols="<1s,<4"]
 |===
 |Description
-a|Users must manually specify the mode for the system database on each server.
+a|Users must manually specify the mode for the `system` database on each server.
 |Valid values
 a|One of [PRIMARY, SECONDARY].
 |Default value
 m|+++PRIMARY+++
 |===
+
+Every cluster member hosts the `system` database.
+This setting controls which mode a given server hosts the `system` database in: `PRIMARY` or `SECONDARY`.
+
+For example, `server.cluster.system_database_mode=SECONDARY` means that this server holds only a secondary copy of the `system` database.
+
+If you have a large cluster, then increasing the number of `system` primaries up to seven can improve the resiliency of your DBMS.
+However, if enabling more than 10 servers, it is recommended to start making the later ones secondaries.
+For details, see xref:clustering/databases.adoc#cluster-system-db[The `system` database in a cluster].
 
 
 [role=label--enterprise-edition label--deprecated-5.23]
@@ -1149,6 +1230,10 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port`. If 
 |Default value
 m|+++:5000+++
 |===
+
+The address/port setting that specifies which network interface and port the Neo4j server binds to for the cluster discovery protocol.
+
+For example, `server.discovery.listen_address=0.0.0.0:5001` listens for cluster membership communication on any network interface at port `5001`.
 
 
 [role=label--enterprise-edition label--deprecated-5.4]
@@ -1715,6 +1800,11 @@ a|A socket address in the format of `hostname:port`, `hostname`, or `:port` that
 |Default value
 m|+++:5000+++
 |===
+
+The address/port setting that specifies where the Neo4j server advertises that it listens for discovery protocol messages from other members of the cluster.
+If this server is included in the `discovery.endpoints` of other cluster members, the value there must **exactly** match this advertised address.
+
+For example, `server.discovery.advertised_address=192.168.33.21:5001` indicates that other cluster members can communicate with this server using the discovery protocol at host `192.168.33.20` and port `5001`.
 
 
 [role=label--enterprise-edition]
