@@ -18,13 +18,18 @@ CREATE ROLE financeApproverTeam;
 = Attribute-based access control
 
 Attribute-based access control (ABAC) grants roles based on the evaluation of user attributes.
-These could be claims contained in a user's authentication token, or starting with Neo4j 2026.06, tags attached to a native user object.
+These attributes could be:
+
+* Claims contained in a user's authentication token
+* label:new[Introduced in 2026.06] Tags attached to a native user object
+* label:new[Introduced in 2026.11] Tags assigned to a user by an link:{neo4j-docs-base-uri}/java-reference/{page-version}/extending-neo4j/security-plugins[authorization plugin]
 
 ABAC is useful when access should depend on _who a user is_ or _the context of their request_, rather than on a static, manually maintained mapping of users to roles.
 Because roles are assigned dynamically from attributes, you can express access policies declaratively, for example, "grant the `finance` role to users in the finance department" or "grant elevated access only during on-call hours", and have them applied automatically as users and their attributes change.
 This reduces the need to manually grant and revoke roles as people join, move between teams, or leave, keeps authorization decisions consistent with the source of truth for user attributes, such as your identity provider, and makes it possible to enforce fine-grained, context-aware policies that would be cumbersome to maintain with role assignments alone.
 
 ABAC is also useful when you need more flexibility than an external auth provider, such as LDAP or OIDC, can offer on its own.
+// TODO: not sure if we want to update this to include plugins. Probably not.
 For example, you may not have control over the provider, the provider might not expose a claim for everything you want to base access on, or you might want to combine its claims with attributes managed inside Neo4j (native user tags) or with contextual conditions such as the time of day.
 In these cases, auth rules let you layer additional, locally-defined logic on top of the identity information supplied by the external provider.
 
@@ -37,8 +42,14 @@ User metadata tagging for native DBMS users as part of ABAC rules is available i
 
 To set up attribute-based access control, follow these steps:
 
-. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to be the list of authorization provider(s) you want to use for ABAC.
-These can include any OIDC provider, as well as the `native` provider starting with Neo4j 2026.06.
+. In the _neo4j.conf_ file, set xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`] to be the list of authorization provider(s) you want to use for ABAC. These can include:
++
+--
+** Any OIDC provider, in the form of `oidc-<provider>`
+** label:new[Introduced in 2026.06] The `native` provider
+** label:new[Introduced in 2026.11] Any externally provided authorization plugin, in the form of `plugin-<provider>`
+--
++
 In order for a provider to be allowed in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], it must also appear in the list of xref:configuration/configuration-settings.adoc#config_dbms.security.authorization_providers[`dbms.security.authorization_providers`].
 +
 [TIP]
@@ -48,7 +59,7 @@ When reasoning about which auth rules will apply for your users, given your choi
 For example, a purely temporal rule such as `time.transaction('UTC').hour >= 9 AND time.transaction('UTC').hour < 17` does not reference any provider, so it can execute regardless of which providers are configured (but only when at least one valid provider is indeed configured).
 
 In contrast, a rule that calls the metadata accessor function of a provider that is not in the list will fail.
-When a provider is not listed in xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], its relevant accessor function, for example, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` for an OIDC provider, or `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for the `native` provider, is not available at all.
+When a provider is not listed in xref:configuration/configuration-settings.adoc#config_dbms.security.abac.authorization_providers[`dbms.security.abac.authorization_providers`], its relevant accessor function, for example, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` for an OIDC provider, `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` for the `native` provider, or `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-plugin-user-tags[abac.plugin.user_tags()]` for an authorization plugin provider, is not available at all.
 Therefore, any rule that references it intentionally fails rather than silently evaluating to a default, meaning the rule cannot be fulfilled, and the user cannot receive the roles from that rule.
 ====
 . Define authorization rules for granting roles based on user attributes using the `CREATE AUTH RULE` command.
@@ -90,7 +101,14 @@ Any assigned roles associated with the old auth rule will not be associated to t
 
 +
 The `conditionExpression` is a Boolean Cypher expression that evaluates conditions against user attributes.
-These attributes could be claims contained in the user's OIDC token (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` function), or tags on the native user object (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function).
+These attributes could be:
++
+--
+* Claims contained in the user's OIDC token (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()]` function)
+* Tags on the native user object (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]` function)
+* label:new[Introduced in 2026.11] Tags assigned to the user by an authorization plugin (accessed via the `link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-plugin-user-tags[abac.plugin.user_tags()]` function)
+--
+// TODO: a FYI section for assigning tags using plugins?
 +
 For more information on attaching tags to native users, see xref:authentication-authorization/manage-users.adoc#access-control-create-users[Creating users] and xref:authentication-authorization/manage-users.adoc#access-control-alter-users[Modifying users].
 +
@@ -113,8 +131,8 @@ The `conditionExpression` can use any valid Cypher expression that evaluates to 
 | Scalar functions
 | link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-char_length[char_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-character_length[character_length()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-coalesce[coalesce()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-head[head()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-last[last()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-nullIf[nullIf()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-size[size()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-toboolean[toBoolean()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tobooleanornull[toBooleanOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloat[toFloat()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tofloatornull[toFloatOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointeger[toInteger()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/scalar/#functions-tointegerornull[toIntegerOrNull()]
 
-| Security functions label:new[Introduced in 2026.06]
-| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()]
+| Security functions label:new[Introduced in 2026.11]
+| link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-oidc-user-attribute[abac.oidc.user_attribute()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-native-user-tags[abac.native.user_tags()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/security/#functions-security-plugin-user-tags[abac.plugin.user_tags()]
 
 | String functions
 | link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-btrim[btrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-left[left()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-lower[lower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-ltrim[ltrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-replace[replace()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-reverse[reverse()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-right[right()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-rtrim[rtrim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-split[split()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-substring[substring()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tolower[toLower()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostring[toString()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-tostringornull[toStringOrNull()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-toupper[toUpper()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-trim[trim()], link:{neo4j-docs-base-uri}/cypher-manual/current/functions/string/#functions-upper[upper()]
@@ -136,6 +154,7 @@ To get the current temporal instant type, use any of the `*.transaction()` funct
 Transaction time functions, such as `datetime.transaction()`, always reflect the server's clock time.
 In a cluster, it is important to keep the system clocks synchronized across all cluster members to ensure consistent auth rule evaluation.
 ====
+// TODO: this section needs to be extended to mention plugin user tags too. This should be a separate paragraph, since the currently listed potential risks are only relevant to native tags.
 +
 [WARNING#avoid-absence-of-tags-warning]
 ====
