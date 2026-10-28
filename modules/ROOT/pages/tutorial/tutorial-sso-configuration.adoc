@@ -445,9 +445,12 @@ dbms.security.oidc.google.well_known_discovery_uri=https://accounts.google.com/.
 dbms.security.oidc.google.audience=345461137297-v9brpjmgbvbm3d5s9fq65tktevosd3rn.apps.googleusercontent.com
 dbms.security.oidc.google.claims.username=email
 dbms.security.oidc.google.params=client_id=345461137297-v9brpjmgbvbm3d5s9fq65tktevosd3rn.apps.googleusercontent.com;response_type=code;scope=openid profile email
-dbms.security.oidc.google.token_params=client_secret=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
+dbms.security.oidc.google.token_params=client_secret=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 #<1>
 dbms.security.oidc.google.config=token_type_principal=id_token;token_type_authentication=id_token
 ----
++
+<1> It is recommended avoid storing or exposing real client secrets unnecessarily.
+However, you have to verify whether the Google OAuth client configuration requires a client secret before removing the `client_secret` token parameter.
 +
 [IMPORTANT]
 ====
@@ -565,9 +568,18 @@ GRANT ROLE reader TO jakesUniqueGoogleUserId
 Some frequently asked questions and answers about SSO configuration.
 
 === Is Google authentication secure if it has a client secret listed in the config?
+
 Yes.
-Google uses the `pkce` flow, but identity providers sometimes also use a client secret to ensure the client asking for a token is the one using it (`pkce` does not guarantee that).
-The client secret does not add any additional security as it is public but the `pkce` flow provides sufficient security.
+Google supports the OAuth 2.0 authorization code flow with PKCE (Proof Key for Code Exchange), which protects against authorization-code interception and misuse.
+
+PKCE and a client secret serve different purposes: PKCE binds the authorization-code exchange to the client that initiated the authorization request, while a client secret can authenticate a confidential client to the token endpoint.
+PKCE does not replace client authentication if the identity provider requires it.
+
+The client secret may be omitted if it is not required by the configured OAuth client and token endpoint.
+For a public client, a client secret embedded in the configuration cannot be treated as confidential and does not provide meaningful client authentication.
+PKCE is the primary protection in that case.
+
+It is recommended to keep PKCE enabled, avoid storing or exposing real client secrets unnecessarily, and verify whether the Google OAuth client configuration requires a client secret before removing the `client_secret` token parameter.
 
 === Could not parse JWT of type "access_token"
 When getting the message `Failed to get credentials: Could not parse JWT of type "access_token"` on Browser, it probably means the provider only accepts ID tokens.
