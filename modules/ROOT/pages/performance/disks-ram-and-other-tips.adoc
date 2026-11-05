@@ -36,6 +36,7 @@ For workloads that perform large numbers of I/O operations and do not need to wa
 This initial delivery enables the background page evictor and checkpointer to take advantage of async I/O when available and configured, representing a limited initial set of components that will expand over time.
 While still in its early stages, these components demonstrate the potential of non-blocking execution to improve database performance, particularly in cloud and high-latency environments.
 
+[[enabling-async-io]]
 === Enabling asynchronous I/O
 
 Asynchronous I/O *is not enabled* by default.
@@ -57,12 +58,34 @@ Now you are ready to take advantage of asynchronous I/O in Neo4j.
 
 === Configuration options
 
-While asynchronous I/O is enabled, you can also experiment with the I/O bandwidth used by the checkpoint process, using xref:configuration/configuration-settings.adoc#config_db.checkpoint.iops.limit[`db.checkpoint.iops.limit`] and xref:configuration/configuration-settings.adoc#config_db.checkpoint.throughput.limit[`db.checkpoint.throughput.limit`].
-These settings are still respected when asynchronous I/O is enabled, and can be used to fine-tune the performance of the checkpoint process in your specific environment.
+The following configuration options are available for tuning asynchronous I/O:
 
-Another setting to consider with asynchronous I/O is xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.directio[`server.memory.pagecache.directio`], which enables Direct I/O for the page cache.
-Direct I/O allows the database to bypass the operating system’s page cache and read/write data directly to the storage device, reducing latency and improving performance for certain workloads.
-Even though Direct I/O may not be suitable for all workloads, if your Neo4j page cache is large enough to cover the entire database store, it may be a good time to revisit this option and evaluate potential performance improvements.
+* xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.async[`server.memory.pagecache.async`] - Enables or disables asynchronous I/O for the page cache.
+Set to `true` to enable.
+See <<enabling-async-io>> for more details.
+* xref:configuration/configuration-settings.adoc#config_db.checkpoint.iops.limit[`db.checkpoint.iops.limit`] - Limits the I/O operations per second for the checkpoint process.
+* xref:configuration/configuration-settings.adoc#config_db.checkpoint.throughput.limit[`db.checkpoint.throughput.limit`] - Limits the I/O throughput for the checkpoint process.
+* xref:configuration/configuration-settings.adoc#config_server.memory.pagecache.directio[`server.memory.pagecache.directio`] - Enables Direct I/O for the page cache, bypassing the Linux kernel's page cache.
+
+Enabling asynchronous I/O (io_uring) does not require changing the checkpoint I/O limits.
+Both settings remain effective with asynchronous I/O enabled.
+
+Keep the existing limits initially, and adjust them based on observed performance:
+
+* If checkpoints are too slow but you have spare storage, consider increasing the limit.
+Higher limits can shorten checkpoint duration, but they may also increase competition with background processes.
+
+* If checkpoints interfere with queries, consider decreasing the limit.
+Lower limits reduce I/O pressure but may extend checkpoint and recovery times.
+
+Consider Direct I/O only after examining page cache behavior, memory allocation, and storage characteristics.
+It may reduce redundant caching when Neo4j's page cache is big enough to hold the active database working set.
+However, if your workloads have frequent page cache misses, then using Direct I/O does not make sense, as they cannot benefit from the Linux filesystem cache.
+
+Benchmark Direct I/O both with and without io_uring before combining the two settings.
+Asynchronous I/O and Direct I/O address different aspects of storage access, and their benefits are not necessarily additive.
+While asynchronous I/O can improve storage performance by reducing I/O wait times, it does not eliminate the need for careful management of Direct I/O and page cache behavior.
+Benchmark Direct I/O both with and without asynchronous I/O using a representative workload, comparing query latency, checkpoint duration, page cache activity, and storage throughput before making any final configuration decisions.
 
 === Metrics
 
