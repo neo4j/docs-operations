@@ -7,6 +7,7 @@ Neo4j's storage engine supports several store formats that describe how data is 
 `block` format uses advanced data structures and inlining techniques to enhance data locality, which leads to better resource utilization.
 
 `aligned` is the default format for Community Edition.
+Starting with Neo4j 2026.11, `block` is the default store format for new databases in Community Edition unless the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting is explicitly specified.
 
 `standard` and `high_limit` formats are deprecated in Neo4j 5.23.
 It is not recommended to use these formats for new databases.
@@ -22,8 +23,8 @@ For information on store formats in Neo4j 4.4, see link:https://neo4j.com/docs/o
 
 Here’s an overview of the available formats and their features:
 
-Block:: label:enterprise-edition[]+
-* Default format unless xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] is specified.
+Block::
+* Default format for all databases in Enterprise Edition, and starting with Neo4j 2026.11 for new databases in Community Edition unless xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] is specified.
 * *Performance:* Fast queries; uses advanced data structures and inlining techniques for better data locality.
 Uses dynamic records and tree structures to handle "growing" data efficiently.
 * *Memory efficiency:* Optimized collocation of data, which allows more related data to be fetched by fewer read operations; enhancing resource utilization.
@@ -31,15 +32,17 @@ Block format means a few pages need to be loaded to serve a query, i.e. fewer pa
 * *Property access:* Properties are stored in blocks with their nodes and relationships drastically reducing the amount of pointer chasing required to access properties.
 * *Entity limits:* Able to run graphs at large scales.
 Supports the highest limits at the time of writing.
+For Community Edition, the `block` format has the same entity limits as `aligned`.
 See <<block-format-limits, Block format entity limits>> for details. +
 Supports token names (including label, property key, and relationship type names) of any length up to the GQL identifier max length of 16,383 characters.
-* *Future-proofing:* Designed to be extended and improved without requiring store migrations. New features such as data types, or performance enhancements are available without rewriting the store.
-* *Supported migration paths to other store formats:* Although it is not recommended, you can change your store format from `block` to `aligned` or `high_limit`.
-Note that `high_limit` is deprecated.
-The `aligned` format has lower limits than `block`, so your graph must fit within those reduced limits.
+* *Future-proofing:* Designed to be extended and improved without requiring store migrations.
+New features such as data types, or performance enhancements are available without rewriting the store.
+* *Supported migration paths to other store formats:* Possible to migrate to `aligned` or `high_limit` but not recommended.
+`high_limit` is deprecated as of 5.23 and will be removed in the next LTS release.
+The `aligned` format has lower limits than `block` in Enterprise Edition, so your graph must fit within those reduced limits.
 
 Aligned::
-* Default format in Community Edition and for all new databases in Enterprise Edition prior to Neo4j 5.22.
+* Default format in Community Edition prior to Neo4j 2026.11 and for all new databases in Enterprise Edition prior to Neo4j 5.22.
 * *Performance:* Performs better than `standard` but requires slightly more disk space.
 * *Memory efficiency:* Based on `standard` but with improved memory efficiency.
 * *Property access:* Stores graph data in linked list-like structures on disk.
@@ -74,14 +77,13 @@ However, it is not recommended to migrate to the `high_limit` format as it is de
 
 `block` format provides better performance and scalability than the deprecated formats.
 They will remain part of the product throughout the v5 and vNext server lifecycles.
-The last version of Neo4j to include these formats will be vNext.LTS which is planned for release in November 2026.
+The last version of Neo4j to include these formats will be vNext.LTS which is planned for release by the end of 2026.
 LTS versions of Neo4j are supported for 3 years following their release.
-This means that support for `standard` and `high_limit` formats is planned to end in November 2029.
 
 It is recommended that Enterprise Edition users migrate all databases to `block` format at their earliest convenience to ensure the best possible performance.
 For more information, see <<change-store-format, Changing the store format of existing databases>>.
 
-[IMPORTANT]
+[WARNING]
 .The `high_limit` format removal notice
 ====
 The next Long-Term Support (LTS) release is the final version that supports operations on `high_limit` databases.
@@ -103,7 +105,7 @@ You can use the `SHOW DATABASES YIELD name, store` Cypher command to get informa
 See xref:database-administration/standard-databases/listing-databases.adoc#_show_detailed_information_for_a_particular_database[Show detailed information for a particular database] for a detailed example.
 +
 . *When will support for `standard` and `high_limit` formats end?* +
-The last version of Neo4j to include these formats will be an LTS release planned for November 2026, which will be supported for three years until November 2029.
+The last version of Neo4j to include these formats will be the next 2026 LTS release, which will be supported for three years until the end of 2029.
 +
 . *How can I change the store format of my database?* +
 For information on changing the store format of an existing database, see <<change-store-format, Changing the store format of existing databases>>.
@@ -112,20 +114,20 @@ For information on changing the store format of an existing database, see <<chan
 For information about supported migration paths, refer to xref:tools/neo4j-admin/migrate-database.adoc#supported-migration-paths[Neo4j Admin -> Migrate a database].
 
 
-[role="enterprise-edition"]
 [[how-to-set-store-format]]
 == How to set the database store format
 
 You can either set the store format when creating a new database or change the store format of an existing database.
 
+`block` is the default format for all newly created databases as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified, including Community Edition as of Neo4j 2026.11.
+If you want to change it, for example, to keep `aligned` as the store format for Community Edition, you can set a new value for the `db.format` configuration in the _neo4j.conf_ file before you start the server or create the database.
+
 [[create-new-databases]]
 === Creating new databases
 
-`block` is the default format for all newly created databases as long as they do not have the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting specified. +
-If you want to change it, you can set a new value for the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] configuration in the _neo4j.conf_ file. +
 You can also create a new database on a specific store format by passing the new format as an argument to the command creating the database, for example, xref:import/full-import.adoc[`neo4j-admin database import full`] or xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] commands, or by using `storeFormat:` option in the Cypher command `CREATE DATABASE`.
 
-The following examples show how to create a new database on the `block` store format.
+The following examples show how to create a new database on the `block` store format in Community and Enterprise Editions.
 However, the same applies to other formats.
 
 .Specify the store format when importing a database using the `neo4j-admin database import full` command
@@ -134,13 +136,13 @@ However, the same applies to other formats.
 bin/neo4j-admin database import full ... --format=block blockdb
 ----
 
-.Specify the store format when copying a database using the `neo4j-admin database copy` command
+.label:enterprise[Enterprise Edition] Specify the store format when copying a database using the `neo4j-admin database copy` command
 [source,shell]
 ----
 bin/neo4j-admin database copy --to-format="block" mydb blockdb
 ----
 
-.Specify the store format when creating a new database using the `CREATE DATABASE` Cypher statement
+.label:enterprise[Enterprise Edition] Specify the store format when creating a new database using the `CREATE DATABASE` Cypher statement
 [source,cypher]
 ----
 CREATE DATABASE blockdb OPTIONS {storeFormat: 'block'}
@@ -186,12 +188,17 @@ Therefore, it is recommended to perform a dry run on a backup to estimate the re
 Changing the store format of an existing database in a standalone server requires the database to be offline.
 The following steps assume that you want to migrate the database called `mydb` to `block` format but the same steps apply to other formats.
 
-. Stop the database using the Cypher command `STOP DATABASE mydb`.
+. Stop the database using the Cypher command `STOP DATABASE mydb` or if you are using Community Edition, stop the Neo4j server.
++
+[TIP]
+====
+It is recommended to take a backup or a dump of the database before changing the store format to ensure that you can restore the database in case anything goes wrong during the migration.
+====
 . Change the store format of the stopped database using *one* of the following options:
 
 * Migrate an existing database using xref:database-administration/standard-databases/migrate-database.adoc[`neo4j-admin database migrate`] command.
 +
-[IMPORTANT]
+[IMPORTANT, role=label--enterprise-edition]
 ====
 You do not need to run `neo4j-admin database copy` with the `--compact-node-store` option prior to running `neo4j-admin database migrate`.
 The database is inherently compacted during the migration process.
@@ -204,7 +211,7 @@ For example:
 bin/neo4j-admin database migrate --to-format="block" mydb
 ----
 
-* Pass the new store format as an argument when using the xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] command to create a copy of an existing database.
+* label:enterprise[Enterprise Edition] Pass the new store format as an argument when using the xref:backup-restore/copy-database.adoc[`neo4j-admin database copy`] command to create a copy of an existing database.
 You can also set the `--copy-schema` option to automatically copy the schema definitions.
 For example:
 +
@@ -212,9 +219,10 @@ For example:
 ----
 bin/neo4j-admin database copy --to-format="block" mydb blockdb --copy-schema
 ----
-. After the successful completion, start the database using the Cypher command `START DATABASE mydb`.
+. After the successful completion, start the database using the Cypher command `START DATABASE mydb` or if you are using Community Edition, start the Neo4j server.
 Indexes are populated the first time the database is started, which might take some time if there are property uniqueness constraints.
 
+[role=label--enterprise-edition]
 [[change-store-format-cluster]]
 ==== In a cluster
 
@@ -318,21 +326,29 @@ For details, see xref:database-internals/neo4j-admin-store-info.adoc[Display sto
 
 The following tables show the format and Neo4j version compatibility and the limits of the different store formats:
 
-[role=enterprise-edition]
 [[block-format]]
 === Block format
+
+Starting with Neo4j 2026.11, `block` is also the default store format for new databases in Community Edition unless the xref:configuration/configuration-settings.adoc#config_db.format[`db.format`] setting is explicitly specified.
 
 .Block format and Neo4j version compatibility
 [options="header"]
 |===
-| Name | Store format version | Introduced in | GA from | Default in
+| Neo4j edition | Name | Store format version | Preview | GA from | Default in
 
+| Community Edition
+| `BLOCK_V1`
+| `block-block-1.1`
+| 
+| `2026.11.0`
+| `2026.11.0`
+
+| Enterprise Edition
 | `BLOCK_V1`
 | `block-block-1.1`
 | `5.14.0`
 | `5.16.0`
 | `5.22.0`
-
 |===
 
 
@@ -340,25 +356,31 @@ The following tables show the format and Neo4j version compatibility and the lim
 .Block format entity limits
 [options="header"]
 |===
-| Name | Limit
+| Name | Limits in Community Edition | Limits in Enterprise Edition
+
+| Property keys
+| `2^31` (2 147 483 648)
+| `2^31` (2 147 483 648)
 
 | Nodes
+| `2^35` (34 359 738 368)
 | `2^48` (281 474 976 710 656)
 
 | Relationships
+| `2^35` (34 359 738 368)
 | `∞` (no defined upper bound)
 
 | Properties
 | `∞` (no defined upper bound)
+| `∞` (no defined upper bound)
 
 | Labels
+| `2^31` (2 147 483 648)
 | `2^31` (2 147 483 648)
 
 | Relationship types
 | `2^30` (1 073 741 824)
-
-| Property keys
-| `2^31` (2 147 483 648)
+| `2^30` (1 073 741 824)
 
 |===
 
