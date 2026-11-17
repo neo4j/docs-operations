@@ -106,35 +106,21 @@ The _/conf_ volume typically contains:
 
 ====
 
-=== Set ownership and permissions on the _/conf_ directory to allow Neo4j to write to it:
-
-You need to set the correct ownership and permissions on the _/conf_ directory to allow the Neo4j container to write to it:
-
+. Set ownership and permissions on the _/conf_ directory to allow the Neo4j container to write to it:
++
 [source, shell, subs="attributes"]
 ----
-sudo chown neo4j:neo4j $HOME/neo4j/conf
+sudo chown 7474:7474 $HOME/neo4j/conf
 sudo chmod 755 $HOME/neo4j/conf
 ----
++
+The Neo4j user inside the Docker container will always have the ID 7474 and be in a group with ID 7474.
+File permissions must be set on the directory, so that a user with this ID and/or group ID can read and write to it.
 
-The Neo4j container runs as the `neo4j` user, so it needs ownership of this directory.
-
-=== Extract the main configuration file using the `dump-config` command:
-
-In order to change the default Neo4j configuration, you need to extract the _neo4j.conf_ file from the Docker image using the `dump-config` command.
-
-[source, shell, subs="attributes"]
-----
-docker run --rm \
-    --volume=$HOME/neo4j/conf:/conf \
-    neo4j:{neo4j-version-exact} dump-config
-----
-
-The `dump-config` command creates _$HOME/neo4j/conf/neo4j.conf_.
-However, it *does not* include the logging configuration files _user-logs.xml_ and _server-logs.xml_.
-
-
-=== (Optional) Extract logging configuration files from the Docker image
-
+. Extract logging configuration files from the Docker image:
++
+[TIP]
+====
 Starting from Neo4j 2025.01, logging configuration files (_user-logs.xml_ and _server-logs.xml_) are located in the _conf_ directory.
 
 * _user-logs.xml_ -- contains configuration for _neo4j.log_ (general Neo4j information).
@@ -142,12 +128,8 @@ Starting from Neo4j 2025.01, logging configuration files (_user-logs.xml_ and _s
 
 When you mount a _/conf_ volume, you can customize logging behavior including log levels, file rotation policies, and log formats.
 See xref:monitoring/logging.adoc[Logging] for details.
-
-The `dump-config` command only extracts _neo4j.conf_.
-Therefore, to be able to customize logging behavior, you must separately copy the logging configuration files (_user-logs.xml_ and _server-logs.xml_) from the Docker image.
-
-Choose one of the two options below:
-
+====
++
 [.tabbed-example]
 =====
 [role=include-with-running-container]
@@ -159,15 +141,17 @@ Copy from a running container
 ----
 # Start a temporary container
 docker run --rm -d --name neo4j-temp \
-    --volume=$HOME/neo4j/conf:/conf \
     neo4j:{neo4j-version-exact}
 
 # Wait for the container to start
 sleep 5
 
+# Copy the neo4j.conf file
+docker cp neo4j-temp:/var/lib/neo4j/conf/neo4j.conf $HOME/neo4j/conf/
+
 # Copy the logging configuration files
-docker cp neo4j-temp:/conf/user-logs.xml $HOME/neo4j/conf/
-docker cp neo4j-temp:/conf/server-logs.xml $HOME/neo4j/conf/
+docker cp neo4j-temp:/var/lib/neo4j/conf/user-logs.xml $HOME/neo4j/conf/
+docker cp neo4j-temp:/var/lib/neo4j/conf/server-logs.xml $HOME/neo4j/conf/
 
 # Stop the temporary container
 docker stop neo4j-temp
@@ -181,8 +165,9 @@ Extract from a stopped container:
 [source, shell, subs="attributes"]
 ----
 docker create --name neo4j-extract neo4j:{neo4j-version-exact}
-docker cp neo4j-extract:/conf/user-logs.xml $HOME/neo4j/conf/
-docker cp neo4j-extract:/conf/server-logs.xml $HOME/neo4j/conf/
+docker cp neo4j-extract:/var/lib/neo4j/conf/neo4j.conf $HOME/neo4j/conf/
+docker cp neo4j-extract:/var/lib/neo4j/conf/user-logs.xml $HOME/neo4j/conf/
+docker cp neo4j-extract:/var/lib/neo4j/conf/server-logs.xml $HOME/neo4j/conf/
 docker rm neo4j-extract
 ----
 ======
