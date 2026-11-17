@@ -23,7 +23,7 @@ This method allows you to create a custom Neo4j image with your own configuratio
 For production use, it is recommended to use one of the latter two methods, replacing the entire configuration.
 This provides stability in the face of changes or additions to the default configuration in the image.
 
-[NOTE]
+[IMPORTANT]
 ====
 When using more than one method, the following precedence is applied (highest to lowest):
 
@@ -46,7 +46,7 @@ For example:
 docker run \
     --detach \
     --publish=7474:7474 --publish=7687:7687 \
-    --volume=$HOME/neo4j/data:/data \ 
+    --volume=$HOME/neo4j/data:/data \
     --volume=$HOME/neo4j/logs:/logs \
     --env NEO4J_dbms_memory_pagecache_size=4G \
     --env NEO4J_server_memory_heap_max_size=2G \
@@ -79,32 +79,19 @@ Docker additional configuration settings via an environment variable for JVM do 
 [[docker-conf-volume]]
 == Mounting the _/conf_ volume
 
-To make arbitrary modifications to the Neo4j configuration, provide the container with a _/conf_ volume:
+To make arbitrary modifications to the Neo4j configuration, provide the container with a _/conf_ volume.
 
-[source, shell, subs="attributes"]
-----
-docker run \
-    --detach \
-    --publish=7474:7474 --publish=7687:7687 \
-    --volume=$HOME/neo4j/data:/data \
-    --volume=$HOME/neo4j/logs:/logs \
-    --volume=$HOME/neo4j/conf:/conf \
-    neo4j:{neo4j-version-exact}
-----
-
-The configuration files in the _/conf_ volume override the files provided by the image.
-So if you want to change one value in a file, you must ensure that the rest of the file is complete and correct.
-Environment variables passed to the container by Docker override the values in configuration files in _/conf_ volume.
-
-[TIP]
-====
-The _/conf_ volume typically contains:
+The _/conf_ volume contains the following files:
 
 * `neo4j.conf` -- Main Neo4j configuration file.
 * `user-logs.xml` -- Log4j 2 configuration for general logging (_neo4j.log_).
 * `server-logs.xml` -- Log4j 2 configuration for debug and other logs (_debug.log_, _http.log_, _query.log_, _security.log_).
 
-====
+The configuration files in the _/conf_ volume override the files provided by the image.
+So if you want to change one value in a file, you must ensure that the rest of the file is complete and correct.
+Environment variables passed to the container by Docker override the values in configuration files in _/conf_ volume.
+
+To customize the Neo4j configuration, follow these steps:
 
 . Set ownership and permissions on the _/conf_ directory to allow the Neo4j container to write to it:
 +
@@ -114,7 +101,7 @@ sudo chown 7474:7474 $HOME/neo4j/conf
 sudo chmod 755 $HOME/neo4j/conf
 ----
 +
-The Neo4j user inside the Docker container will always have the ID 7474 and be in a group with ID 7474.
+The Neo4j user inside the Docker container always has the ID 7474 and is in a group with ID 7474.
 File permissions must be set on the directory, so that a user with this ID and/or group ID can read and write to it.
 
 . Extract logging configuration files from the Docker image:
@@ -173,17 +160,15 @@ docker rm neo4j-extract
 ======
 =====
 
-=== Verify all configuration files are present
-
-You can verify that all required configuration files are present in the _$HOME/neo4j/conf_ directory by listing its contents:
-
+. Verify all configuration files are present in the _$HOME/neo4j/conf_ directory by listing its contents:
++
 [source, shell, subs="attributes"]
 ----
 ls -la $HOME/neo4j/conf/
 ----
-
++
 The output should include the following files:
-
++
 [source, result]
 ----
 -rw-r--r--  neo4j  neo4j  2048  Nov 16 13:00 neo4j.conf
@@ -191,34 +176,31 @@ The output should include the following files:
 -rw-r--r--  neo4j  neo4j  3456  Nov 16 13:00 server-logs.xml
 ----
 
-Now you can modify the logging configuration files as needed before running the container.
-See xref:monitoring/logging.adoc#_advanced_logging_configuration[Logging -> Advanced logging configuration] for details.
+. Modify the neo4j configuration and logging configuration files as needed before running the container.
+See xref:configuration/neo4j-conf.adoc[] and xref:monitoring/logging.adoc#_advanced_logging_configuration[Logging -> Advanced logging configuration] for details.
++
+The default monitoring interval for configuration file changes is 30 seconds.
+If you modify the logging XML files while the container is running, Neo4j will automatically reload the configuration.
+No container restart is required for logging configuration changes to take effect.
++
+[NOTE]
+====
+The xref:configuration/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config`] and xref:configuration/configuration-settings.adoc#config_server.logs.config[`server.logs.config`] settings in _neo4j.conf_ specify the paths to these files.
+The default values point to the _/conf_ directory when using a mounted _/conf_ volume.
+====
 
-=== Run the container with the populated /conf volume
-
-Once all configuration files are present, you can run the container with the mounted _/conf_ volume:
-
+. Once all configuration files are present, run the container with the mounted _/conf_ volume:
++
 [source, shell, subs="attributes"]
 ----
-docker run --detach --name neo4j \
+docker run \
+    --detach \
     --publish=7474:7474 --publish=7687:7687 \
     --volume=$HOME/neo4j/data:/data \
     --volume=$HOME/neo4j/logs:/logs \
     --volume=$HOME/neo4j/conf:/conf \
     neo4j:{neo4j-version-exact}
 ----
-
-=== Monitoring configuration changes
-
-The default monitoring interval for configuration file changes is 30 seconds.
-If you modify the logging XML files while the container is running, Neo4j will automatically reload the configuration.
-No container restart is required for logging configuration changes to take effect.
-
-[NOTE]
-====
-The xref:configuration/configuration-settings.adoc#config_server.logs.user.config[`server.logs.user.config`] and xref:configuration/configuration-settings.adoc#config_server.logs.config[`server.logs.config`] settings in _neo4j.conf_ specify the paths to these files.
-The default values point to the _/conf_ directory when using a mounted _/conf_ volume.
-====
 
 [[docker-new-image]]
 == Customize а Neo4j Docker image
