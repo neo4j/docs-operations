@@ -24,7 +24,7 @@ This machine is known as a backup client.
 === Backup artifact
 
 The `neo4j-admin database backup` command produces one backup artifact file per database each time it is run.
-A backup artifact file is an immutable file containing the backup data of a given database along with some metadata like the database name and ID, the backup time, the lowest/highest transaction ID, etc.
+A backup artifact file is an immutable file containing the backup data of a given database along with some metadata like the database name and ID, the backup time, the lowest/highest transaction ID and append index, etc.
 
 Backup artifacts can be of two types:
 
@@ -38,10 +38,14 @@ The first time the backup command is run, a full backup artifact is produced for
 On the other hand, differential backup artifacts are produced by the subsequent runs.
 
 A _backup chain_ consists of a full backup optionally followed by a sequence of n contiguous differential backups.
+Backups in a chain are connected by the append indexes of the transactions they contain.
+Currently, the append index of a transaction is the same as its transaction ID.
+Therefore, at present, the backups in a chain are also connected by their transaction IDs.
+However, in a future release transaction ID and append index may diverge.
 
 [NOTE]
 ====
-Starting with Neo4j 2026.02, the first differential backup in a chain may _overlap_ with the previous full backup, meaning its lowest transaction ID may be less than or equal to the full backup's highest transaction ID.
+Starting with Neo4j 2026.02, the first differential backup in a chain may _overlap_ with the previous full backup, meaning its lowest append index may be less than or equal to the full backup's highest append index.
 Subsequent differential backups must still be contiguous with their parent.
 
 This allows full and differential backups to be scheduled on independent cadences.
@@ -608,13 +612,13 @@ The following examples cover different scenarios for using the `--prefer-diff-as
 Let's assume that you write 10 transactions to the `neo4j` database every hour, except from 12:30 to 13:30, when you do not write any transactions.
 
 There is a backup job that takes a backup every hour and a full backup every four hours.
-An empty backup has no transactions, meaning that both the lower transaction ID and the upper transaction ID are zero.
+An empty backup has no transactions, meaning that both the lower append index and the upper append index are zero.
 
 Imagine you have the following backup chain:
 
 [cols="h,e,m,h,h"]
 |===
-|Timestamp | Backup name | Backup type | Lower Transaction ID | Upper Transaction ID
+|Timestamp | Backup name | Backup type | Lower Append Index | Upper Append Index
 
 | 10:30
 | backup1
@@ -696,7 +700,7 @@ Let's assume that you write 10 transactions to the `neo4j` database every hour a
 
 [cols="h,e,m,h,h"]
 |===
-|Timestamp | Backup name | Backup type | Lower Transaction ID | Upper Transaction ID
+|Timestamp | Backup name | Backup type | Lower Append Index | Upper Append Index
 
 | 10:30
 | backup1
