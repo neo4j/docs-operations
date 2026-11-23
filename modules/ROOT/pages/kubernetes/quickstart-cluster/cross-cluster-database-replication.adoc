@@ -1,0 +1,218 @@
+
+:description: This section describes how to configure database replication across multiple independent Neo4j clusters when running Neo4j on Kubernetes.
+:page-role: enterprise-edition new-2026.08
+
+
+[[cross-cluster-database-replication]]
+= Cross-cluster database replication
+
+Cross-cluster database replication (CCDR) keeps a read-only replica database in an independent Neo4j cluster.
+The upstream and replica clusters must run compatible Neo4j versions.
+Follow the xref:clustering/replicating-databases-across-clusters.adoc[Clustering -> Replicating databases across clusters] for the release-specific compatibility rules, Cypher syntax, disaster recovery recommendations, and other aspects of managing CCDR.
+
+For details on code and file examples, refer to the link:https://github.com/neo4j/helm-charts/tree/dev/examples/ccdr[Neo4j Helm chart repository]. 
+
+
+[[network-replication]]
+== Replicating databases across clusters via network
+
+Install every member of each Neo4j cluster as a separate Helm release.
+Start with the common values in _source-cluster-values.yaml_ and _replica-cluster-values.yaml_.
+
+.source-cluster-values.yaml
+[source,yaml]
+----
+neo4j:
+  name: ccdr-source
+  edition: enterprise
+  acceptLicenseAgreement: eval
+  minimumClusterSize: 3
+
+volumes:
+  data:
+    mode: defaultStorageClass
+
+services:
+  neo4j:
+    enabled: false
+  ccdr:
+    enabled: true
+    annotations: {}
+    spec:
+      type: ClusterIP
+
+ssl:
+  cluster:
+    privateKey:
+      secretName: cluster-tls
+    publicCertificate:
+      secretName: cluster-tls
+    trustedCerts:
+      sources:
+        - secret:
+            name: source-cluster-ca
+        - secret:
+            name: replica-cluster-ca
+----
+
+
+.replica-cluster-values.yaml
+[source,yaml]
+----
+neo4j:
+  name: ccdr-replica
+  edition: enterprise
+  acceptLicenseAgreement: eval
+  minimumClusterSize: 3
+
+volumes:
+  data:
+    mode: defaultStorageClass
+
+services:
+  neo4j:
+    enabled: false
+  ccdr:
+    enabled: true
+    annotations: {}
+    spec:
+      type: ClusterIP
+
+ssl:
+  cluster:
+    privateKey:
+      secretName: cluster-tls
+    publicCertificate:
+      secretName: cluster-tls
+    trustedCerts:
+      sources:
+        - secret:
+            name: replica-cluster-ca
+        - secret:
+            name: source-cluster-ca
+----
+
+Allow a new cluster to become healthy using the chart's default internal addresses, then roll the members one at a time while setting a unique externally reachable address on every member:
+
+[source,yaml]
+----
+config:
+  server.cluster.advertised_address: source-1.example.com:6000
+
+services:
+  ccdr:
+    enabled: true
+    annotations:
+      # Add provider-specific annotations for an internal load balancer here.
+    spec:
+      type: LoadBalancer
+----
+
+`services.ccdr` creates a service selecting only that Helm release's pod and exposes only `TCP 6000`.
+Enable it only for members that must accept CCDR traffic.
+Prefer private addresses and restrict ingress to the replica cluster's network.
+If both clusters share routable Kubernetes DNS and networking, `ClusterIP` is sufficient.
+
+For GKE clusters in different regions, _gke-network-values.yaml_ creates private internal load balancers with global access enabled so clients in other regions of the same VPC, or connected VPC networks, can reach them.
+
+.gke-network-values.yaml
+[source,yaml]
+----
+services:
+  ccdr:
+    annotations:
+      networking.gke.io/load-balancer-type: Internal
+      networking.gke.io/internal-load-balancer-allow-global-access: "true"
+    spec:
+      type: LoadBalancer
+      externalTrafficPolicy: Cluster
+----
+
+The advertised address is not inferred from a `LoadBalancer` because its address may be allocated asynchronously.
+Configure `server.cluster.advertised_address` explicitly to the stable DNS name or IP assigned to that member's CCDR service.
+
+Do not change all advertised addresses simultaneously, and do not use the external addresses during first-ever `system` database bootstrap.
+Wait for the cluster to become healthy, update one member, wait for it to become ready again, and then continue with the next member.
+
+For encrypted inter-cluster traffic, configure `ssl.cluster` in both clusters.
+Each cluster must trust its own CA and the remote cluster's CA.
+The certificate SANs must cover the member's advertised address.
+The values files show the expected secret mounts; create the referenced secrets before installing the releases.
+
+After all members are reachable, create the source database and the replica database using the syntax documented for your Neo4j version.
+Supply the three upstream `host:6000` endpoints in `replicaConfig.addresses`.
+
+
+[[backup-pull-replication]]
+== Replicating databases across clusters via pulling backups
+
+Backup-pull CCDR does not require `services.ccdr`.
+Configure a `neo4j-admin` backup job to continuously extend and upload an unbroken backup chain, then create the replica with a `replicaConfig.pullURI` pointing at that object-storage location.
+_backup-pull-job-gcp-values.yaml_ and _backup-pull-replica-values.yaml_ provide GKE-oriented starting points.
+
+.backup-pull-job-gcp-values.yaml
+[source,yaml]
+----
+neo4j:
+  # Use the backup image version matching the Neo4j DBMS version.
+  imageTag: {neo4j-helm-chart-version}
+  jobSchedule: "*/5 * * * *"
+
+backup:
+  databaseBackupEndpoints: "source-1-admin.source.svc.cluster.local:6362,source-2-admin.source.svc.cluster.local:6362,source-3-admin.source.svc.cluster.local:6362"
+  database: ccdr-source
+  cloudProvider: gcp
+  # Replace with a GCS bucket and prefix available to the service account below.
+  bucketName: replace-me/ccdr-source
+  preferDiffAsParent: true
+  remoteAddressResolution: true
+  keepBackupFiles: false
+
+# Bind this Kubernetes service account to a Google service account with write access to the bucket.
+serviceAccountName: neo4j-backup
+----
+
+.backup-pull-replica-values.yaml
+[source,yaml]
+----
+neo4j:
+  name: ccdr-replica
+  edition: enterprise
+  acceptLicenseAgreement: eval
+  minimumClusterSize: 3
+
+volumes:
+  data:
+    mode: defaultStorageClass
+
+services:
+  neo4j:
+    enabled: false
+  ccdr:
+    enabled: false
+
+podSpec:
+  # Bind this Kubernetes service account to a Google service account with read access to the backup bucket.
+  serviceAccountName: neo4j-backup-reader
+
+config:
+  # The backup-pull RPO includes both the backup job cadence and this polling interval.
+  db.cluster.backup.pull_interval: 1m
+----
+
+When `backup.remoteAddressResolution` is enabled, every source member must advertise a backup address that the backup job can resolve.
+Set this per Helm release, for example: `server.backup.advertised_address=source-1-admin.source.svc.cluster.local:6362`.
+Leaving the default `localhost:6362` causes discovery to succeed but the subsequent backup connection to fail.
+
+The recovery point objective is the time between uploaded differential backups plus the replica pull interval. `db.cluster.backup.pull_interval` controls polling (defaults to `1m` in Neo4j 2026.06 and later).
+Broken or delayed backup chains increase the possible data-loss window, so monitor both the backup job and replica transaction lag.
+
+
+ifndef::backend-pdf[]
+[discrete.glossary]
+== Glossary
+
+include::partial$glossary.adoc[]
+
+endif::[]
+
