@@ -14,7 +14,7 @@ For details on code and file examples, refer to the link:https://github.com/neo4
 
 
 [[network-replication]]
-== Replicating databases across clusters via network
+== Configure replicating databases across clusters via network
 
 Install every member of each Neo4j cluster as a separate Helm release.
 Start with the common values in _source-cluster-values.yaml_ and _replica-cluster-values.yaml_.
@@ -92,7 +92,8 @@ ssl:
             name: source-cluster-ca
 ----
 
-Allow a new cluster to become healthy using the chart's default internal addresses, then roll the members one at a time while setting a unique externally reachable address on every member:
+Allow a new cluster to become healthy using the chart's default internal addresses.
+Then perform a rolling update, assigning a unique externally reachable address to each member while ensuring cluster health is maintained:
 
 [source,yaml]
 ----
@@ -128,27 +129,39 @@ services:
       externalTrafficPolicy: Cluster
 ----
 
-The advertised address is not inferred from a `LoadBalancer` because its address may be allocated asynchronously.
-Configure `server.cluster.advertised_address` explicitly to the stable DNS name or IP assigned to that member's CCDR service.
+. Configure advertised addresses
+The advertised address is not inferred from a `LoadBalancer` because the address may be allocated asynchronously.
+Explicitly configure xref:configuration/configuration-settings.adoc#config_server.cluster.advertised_address[`server.cluster.advertised_address`] with the stable DNS name or IP assigned to that member's CCDR service.
++
+Update advertised addresses one member at a time.
+Do not update all members simultaneously, and do not use the external addresses during the initial `system` database bootstrap.
+Follow the steps for each cluster member:
++
+* Wait for the cluster to become healthy.
+* Update the advertised address of a cluster member at a time.
+* Wait for that cluster member to become ready again.
+* Repeat the process for the next member.
 
-Do not change all advertised addresses simultaneously, and do not use the external addresses during first-ever `system` database bootstrap.
-Wait for the cluster to become healthy, update one member, wait for it to become ready again, and then continue with the next member.
-
+. Configure inter-cluster TLS
 For encrypted inter-cluster traffic, configure `ssl.cluster` in both clusters.
-Each cluster must trust its own CA and the remote cluster's CA.
-The certificate SANs must cover the member's advertised address.
-The values files show the expected secret mounts; create the referenced secrets before installing the releases.
+Each cluster must trust both its own CA and the remote cluster's CA.
+Ensure that the certificate SANs include the advertised address of each cluster member.
+The Helm values files specify the expected secret mounts.
+Create all referenced Kubernetes secrets before installing the Helm releases.
 
+. Create the source and replica databases
 After all members are reachable, create the source database and the replica database using the syntax documented for your Neo4j version.
-Supply the three upstream `host:6000` endpoints in `replicaConfig.addresses`.
+Supply the three upstream `host:6000` endpoints in xref:clustering/replicating-databases-across-clusters.adoc#syntax-create-replica-db-via-network[`replicaConfig.addresses`].
+For syntax and detailed instructions, see xref:clustering/replicating-databases-across-clusters.adoc#create-replica-via-the-network[Creating a replica database via the network].
 
 
 [[backup-pull-replication]]
-== Replicating databases across clusters via pulling backups
+== Configure replicating databases across clusters via backup pulling
 
-Backup-pull CCDR does not require `services.ccdr`.
-Configure a `neo4j-admin` backup job to continuously extend and upload an unbroken backup chain, then create the replica with a `replicaConfig.pullURI` pointing at that object-storage location.
-_backup-pull-job-gcp-values.yaml_ and _backup-pull-replica-values.yaml_ provide GKE-oriented starting points.
+Backup-pull based CCDR does not require `services.ccdr`.
+You have to configure a `neo4j-admin` backup job to continuously extend and upload an unbroken backup chain.
+Then create a replica with a xref:clustering/replicating-databases-across-clusters.adoc#create-replica-db-via-backups[`replicaConfig.pullURI`] pointing at that object-storage location.
+Files _backup-pull-job-gcp-values.yaml_ and _backup-pull-replica-values.yaml_ provide GKE-oriented starting points.
 
 .backup-pull-job-gcp-values.yaml
 [source,yaml]
@@ -202,9 +215,11 @@ config:
 
 When `backup.remoteAddressResolution` is enabled, every source member must advertise a backup address that the backup job can resolve.
 Set this per Helm release, for example: `server.backup.advertised_address=source-1-admin.source.svc.cluster.local:6362`.
-Leaving the default `localhost:6362` causes discovery to succeed but the subsequent backup connection to fail.
+Leaving the default `localhost:6362` causes the discovery service to succeed but the subsequent backup connection to fail.
 
-The recovery point objective is the time between uploaded differential backups plus the replica pull interval. `db.cluster.backup.pull_interval` controls polling (defaults to `1m` in Neo4j 2026.06 and later).
+The recovery point objective is the time between uploaded differential backups plus the replica pull interval.
+The xref:configuration/configuration-settings.adoc#config_db.cluster.backup.pull_interval[`db.cluster.backup.pull_interval`] controls polling (defaults to `1m` in Neo4j 2026.06 and later).
+For details, see xref:clustering/replicating-databases-across-clusters.adoc#_recovery_point_objective_rpo_2[Recovery point objective].
 Broken or delayed backup chains increase the possible data-loss window, so monitor both the backup job and replica transaction lag.
 
 
